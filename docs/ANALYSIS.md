@@ -14,7 +14,7 @@ The Java compatibility CI job supplies behavioral evidence for a finite packet/e
 
 ## Architecture
 
-The standard-library-only core separates protocol, expressions, crypto, rules, scheduling and transport. The optional eframe desktop depends on the core. Packet processing runs on transport threads; bounded non-blocking log delivery prevents a slow UI from holding up network traffic. Individual write locks preserve complete frames during concurrent injection. Session cancellation shuts down both sockets before worker joins.
+The standard-library-only core separates protocol, expressions, crypto, rules, scheduling and transport. The optional eframe desktop depends on the core. One nonblocking transport loop processes both directions and queues injected frames. Partial writes retain their byte offset; each output queue is bounded to 64 MiB and the injection queue to 256 packets. Bounded nonblocking log delivery prevents a slow UI from holding up network traffic. Cancellation does not depend on interrupting a blocking Windows socket read.
 
 The relay deliberately exposes only its implemented unencrypted protocol. Unsupported packet formats are rejected in the extension codec. Provider integration is outstanding.
 

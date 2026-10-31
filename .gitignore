@@ -3,4 +3,5 @@
 *.capture
 /docs/rea-evidence.json
 *.class
+/source-ci/
 
