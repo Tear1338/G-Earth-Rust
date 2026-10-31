@@ -140,7 +140,7 @@ fn initialize(shared:&Shared,peer:&Peer)->io::Result<()> {
 }
 fn serve_peer(mut stream:TcpStream,id:u64,shared:&Arc<Shared>)->io::Result<()> {
     stream.set_nonblocking(true)?;stream.set_nodelay(true)?;
-    let (output,commands)=mpsc::sync_channel(64);let (responses,response_rx)=mpsc::sync_channel(8);
+    let (output,commands)=mpsc::sync_channel::<Packet>(64);let (responses,response_rx)=mpsc::sync_channel::<Message>(8);
     let closed=Arc::new(AtomicBool::new(false));let mut response_rx=Some(response_rx);let mut peer:Option<Arc<Peer>>=None;
     let mut pending=VecDeque::from([(extension::info_request(),0usize)]);let mut pending_bytes=6usize;
     let mut decoder=FrameDecoder::default();let mut buffer=[0u8;8192];let handshake=Instant::now()+Duration::from_secs(30);
