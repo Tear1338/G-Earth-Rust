@@ -6,11 +6,21 @@ use gearth_rust::{
     relay::{Config, Event, Relay},
     rules::{Action, Rule, Rules},
     scheduler::Scheduler,
+    extension_host::{ExtensionHost,HostEvent,ConnectionDetails},
+    packet_info::PacketInfoManager,
+    relay::RelayOptions,
+    socks::SocksConfig,
+    crypto::Rc4,
+    settings::{Settings,ScheduleTemplate},
+    i18n::{I18n,LANGUAGES},
 };
 use std::{
     collections::VecDeque,
     sync::mpsc::Receiver,
     time::{Duration, Instant},
+    sync::Arc,
+    path::{Path,PathBuf},
+    process::Child,
 };
 
 fn main() -> eframe::Result<()> {
@@ -42,7 +52,7 @@ struct Desktop {
     status: String,
     relay: Option<Relay>,
     events: Option<Receiver<Event>>,
-    logs: VecDeque<Message>,
+    logs: VecDeque<LogRow>,
     filter: String,
     outgoing: bool,
     incoming: bool,
@@ -60,10 +70,38 @@ struct Desktop {
     export_path: String,
     total: u64,
     display_dropped: u64,
+    extension_host:Option<Arc<ExtensionHost>>,
+    extension_events:Option<Receiver<HostEvent>>,
+    extension_runtime:String,
+    extension_path:String,
+    extension_processes:Vec<Child>,
+    extension_console:VecDeque<String>,
+    hotel_version:String,
+    client_identifier:String,
+    packet_database:String,
+    packet_info:PacketInfoManager,
+    socks_proxy:String,
+    socks_user:String,
+    socks_password:String,
+    outgoing_key:String,
+    incoming_key:String,
+    settings:Settings,
+    settings_path:PathBuf,
+    settings_loaded:bool,
+    legacy_cache_path:String,
+    dark_mode:bool,
+    language:String,
+    i18n:I18n,
+    notepad:String,
+    logs_bytes:usize,
+    replacement_expression:String,
 }
+struct LogRow {message:Message,expression:String,search:String,bytes:usize}
 impl Default for Desktop {
     fn default() -> Self {
-        Self {
+        let host=(9092..=9107).find_map(|port|ExtensionHost::start(format!("127.0.0.1:{port}").parse().unwrap(),std::env::args().skip(1).collect()).ok());
+        let (extension_host,extension_events)=match host {Some((h,e))=>(Some(h),Some(e)),None=>(None,None)};
+        let mut desktop=Self {
             tab: Tab::Connection,
             listen: "127.0.0.1:1234".into(),
             remote: "".into(),
@@ -88,36 +126,52 @@ impl Default for Desktop {
             export_path: "gearth.capture".into(),
             total: 0,
             display_dropped: 0,
-        }
+            extension_host,extension_events,extension_runtime:find_java().to_string_lossy().into_owned(),extension_path:String::new(),extension_processes:Vec::new(),extension_console:VecDeque::new(),
+            hotel_version:String::new(),client_identifier:String::new(),packet_database:String::new(),packet_info:PacketInfoManager::default(),
+            socks_proxy:String::new(),socks_user:String::new(),socks_password:String::new(),outgoing_key:String::new(),incoming_key:String::new(),
+            settings:Settings::default(),settings_path:Settings::default_path(),settings_loaded:false,legacy_cache_path:String::new(),dark_mode:false,language:"en".into(),i18n:I18n::new("en"),notepad:String::new(),logs_bytes:0,replacement_expression:String::new(),
+        };
+        desktop.load_settings();desktop
     }
 }
 impl Desktop {
     fn update_rules(&mut self) {
+        let mut entries=match self.settings.compiled_rules(){Ok(entries)=>entries,Err(e)=>{self.status=e.to_string();return;}};
+        let action=if self.replacement_expression.trim().is_empty(){Action::Block}else{match expression::parse_with_info(&self.replacement_expression,self.block_direction,&self.packet_info){Ok(p)=>Action::Replace(p),Err(e)=>{self.status=e.to_string();return;}}};
+        entries.push(Rule {enabled:self.block_enabled,direction:self.block_direction,header:self.block_header,action});
         if let Some(relay) = &self.relay {
-            if let Err(e) = relay.set_rules(Rules {
-                entries: vec![Rule {
-                    enabled: self.block_enabled,
-                    direction: self.block_direction,
-                    header: self.block_header,
-                    action: Action::Block,
-                }],
-            }) {
+            if let Err(e) = relay.set_rules(Rules { entries }) {
                 self.status = e.to_string();
             }
         }
     }
     fn poll(&mut self) {
+        if let Some(events)=&self.extension_events {
+            for event in events.try_iter().take(256) {
+                let line=match event {
+                    HostEvent::Console {id,text}=>format!("#{id} {text}"),
+                    HostEvent::Error {id,text}=>format!("#{id} ERROR: {text}"),
+                    HostEvent::Pending {id,info}=>format!("#{id} {} is waiting for approval",info.title),
+                    HostEvent::Connected {id,info}=>format!("#{id} {} connected",info.title),
+                    HostEvent::Disconnected(id)=>format!("#{id} disconnected"),
+                };
+                if self.extension_console.len()==512{self.extension_console.pop_front();}self.extension_console.push_back(line);
+            }
+        }
+        self.extension_processes.retain_mut(|p|!matches!(p.try_wait(),Ok(Some(_))));
         if let Some(events) = &self.events {
             for event in events.try_iter().take(512) {
                 match event {
                     Event::Packet(message) => {
                         self.total += 1;
                         if !self.paused {
-                            if self.logs.len() == 5000 {
-                                self.logs.pop_front();
+                            let expression=expression::to_lossless_expression(&message.packet);let search=format!("{} {}",message.packet.header(),expression.to_lowercase());let bytes=message.packet.bytes().len()+expression.len()+search.len();
+                            if bytes>self.settings.log_bytes{self.display_dropped+=1;continue;}
+                            while self.logs.len()>=self.settings.log_limit||self.logs_bytes+bytes>self.settings.log_bytes {
+                                if let Some(old)=self.logs.pop_front(){self.logs_bytes-=old.bytes;}else{break;}
                                 self.display_dropped += 1;
                             }
-                            self.logs.push_back(message);
+                            self.logs_bytes+=bytes;self.logs.push_back(LogRow {message,expression,search,bytes});
                         }
                     }
                     Event::Listening(a) => self.status = format!("Listening on {a}"),
@@ -160,14 +214,23 @@ impl Desktop {
                 );
                 ui.end_row();
             });
+        egui::CollapsingHeader::new("Connection options").show(ui,|ui|{
+            egui::Grid::new("connection-options").show(ui,|ui|{
+                for (label,value) in [("Hotel version",&mut self.hotel_version),("Client identifier",&mut self.client_identifier),("Packet identifiers (.tsv)",&mut self.packet_database),("SOCKS5 proxy",&mut self.socks_proxy),("SOCKS username",&mut self.socks_user)] {ui.label(label);ui.text_edit_singleline(value);ui.end_row();}
+                ui.label("SOCKS password");ui.add(egui::TextEdit::singleline(&mut self.socks_password).password(true));ui.end_row();
+                ui.label("Outgoing RC4 key (hex)");ui.add(egui::TextEdit::singleline(&mut self.outgoing_key).password(true));ui.end_row();
+                ui.label("Incoming RC4 key (hex)");ui.add(egui::TextEdit::singleline(&mut self.incoming_key).password(true));ui.end_row();
+            });
+            ui.label("Leave keys blank for plaintext. Explicit keys apply from the first byte of the TCP stream.");
+        });
         ui.add_space(14.0);
         if self.relay.is_none() {
             if ui.button("Start listening").clicked() {
                 match self.listen.parse() {
-                    Ok(listen) => match Relay::start(Config {
+                    Ok(listen) => match self.relay_options().and_then(|options|Relay::start_with_options(Config {
                         listen,
                         remote: self.remote.trim().to_owned(),
-                    }) {
+                    },options)) {
                         Ok((relay, events)) => {
                             self.relay = Some(relay);
                             self.events = Some(events);
@@ -199,6 +262,7 @@ impl Desktop {
             ui.checkbox(&mut self.paused, "Pause display");
             if ui.button("Clear").clicked() {
                 self.logs.clear();
+                self.logs_bytes=0;
             }
         });
         ui.horizontal(|ui| {
@@ -211,13 +275,14 @@ impl Desktop {
             if ui.button("Export displayed capture").clicked() {
                 let mut text =
                     String::from("# G-Earth Rust capture: direction index blocked expression\n");
-                for m in &self.logs {
+                for row in &self.logs {
+                    let m=&row.message;
                     text.push_str(&format!(
                         "{}\t{}\t{}\t{}\n",
                         m.direction.name(),
                         m.index,
                         m.blocked,
-                        expression::to_lossless_expression(&m.packet)
+                        row.expression
                     ));
                 }
                 self.status = match std::fs::write(&self.export_path, text) {
@@ -231,23 +296,20 @@ impl Desktop {
         let filtered: Vec<_> = self
             .logs
             .iter()
-            .filter(|m| {
+            .filter(|row| {
+                let m=&row.message;
                 (if m.direction == Direction::ToServer {
                     self.outgoing
                 } else {
                     self.incoming
-                }) && (filter.is_empty()
-                    || m.packet.header().to_string().contains(&filter)
-                    || expression::to_lossless_expression(&m.packet)
-                        .to_lowercase()
-                        .contains(&filter))
+                }) && (filter.is_empty() || row.search.contains(&filter))
             })
             .collect();
         egui::ScrollArea::vertical()
             .stick_to_bottom(true)
             .show_rows(ui, 24.0, filtered.len(), |ui, range| {
                 for i in range {
-                    let m = filtered[i];
+                    let row=filtered[i];let m = &row.message;
                     let color = if m.blocked {
                         egui::Color32::from_rgb(180, 60, 60)
                     } else if m.direction == Direction::ToServer {
@@ -264,14 +326,14 @@ impl Desktop {
                             "← CLIENT"
                         },
                         if m.blocked { "BLOCKED  " } else { "" },
-                        expression::to_lossless_expression(&m.packet)
+                        row.expression
                     );
                     let response = ui.add(
                         egui::Label::new(egui::RichText::new(label).monospace().color(color))
                             .sense(egui::Sense::click()),
                     );
                     if response.clicked() {
-                        self.expression = expression::to_lossless_expression(&m.packet);
+                        self.expression = row.expression.clone();
                         self.direction = m.direction;
                         self.tab = Tab::Injection;
                     }
@@ -286,7 +348,7 @@ impl Desktop {
                 .desired_rows(5)
                 .desired_width(f32::INFINITY),
         );
-        match expression::parse(&self.expression) {
+        match expression::parse_with_info(&self.expression,self.direction,&self.packet_info) {
             Ok(p) => {
                 ui.label(format!("Header {} · {} bytes", p.header(), p.bytes().len()));
                 ui.monospace(expression::hex(p.bytes()));
@@ -306,9 +368,9 @@ impl Desktop {
             )
             .clicked()
         {
-            self.status = match expression::parse(&self.expression) {
+            self.status = match expression::parse_with_info(&self.expression,self.direction,&self.packet_info) {
                 Ok(packet) => match self.relay.as_ref().unwrap().inject(self.direction, packet) {
-                    Ok(()) => "Packet sent".into(),
+                    Ok(()) => "Packet queued".into(),
                     Err(e) => e.to_string(),
                 },
                 Err(e) => e.to_string(),
@@ -329,6 +391,15 @@ impl Desktop {
         if changed || before != self.block_direction {
             self.update_rules();
         }
+        ui.label("Replacement expression (empty = block)");
+        if ui.text_edit_singleline(&mut self.replacement_expression).changed(){self.update_rules();}
+        if ui.button("Add saved rule").clicked(){
+            let replacement=if self.replacement_expression.trim().is_empty(){Ok(None)}else{expression::parse_with_info(&self.replacement_expression,self.block_direction,&self.packet_info).map(|p|Some(expression::to_lossless_expression(&p)))};
+            match replacement{Ok(replacement)=>{self.settings.rules.push((true,self.block_direction,self.block_header,replacement));self.block_enabled=false;self.update_rules();},Err(e)=>self.status=e.to_string()}
+        }
+        let mut remove=None;let mut changed=false;
+        for (index,(enabled,direction,header,replacement)) in self.settings.rules.iter_mut().enumerate(){ui.horizontal(|ui|{changed|=ui.checkbox(enabled,format!("{} header {} · {}",direction.name(),header,if replacement.is_some(){"replace"}else{"block"})).changed();if ui.small_button("Remove").clicked(){remove=Some(index);}});}
+        if let Some(index)=remove{self.settings.rules.remove(index);changed=true;}if changed{self.update_rules();}
     }
     fn schedule(&mut self, ui: &mut egui::Ui) {
         ui.heading("Scheduler");
@@ -352,7 +423,7 @@ impl Desktop {
             )
             .clicked()
         {
-            self.status = match expression::parse(&self.expression).and_then(|p| {
+            self.status = match expression::parse_with_info(&self.expression,self.direction,&self.packet_info).and_then(|p| {
                 self.scheduler.add(
                     p,
                     self.direction,
@@ -361,7 +432,7 @@ impl Desktop {
                     Instant::now(),
                 )
             }) {
-                Ok(()) => "Schedule added".into(),
+                Ok(()) => {self.settings.schedules.push(ScheduleTemplate {expression:self.expression.clone(),direction:self.direction,interval_ms:self.interval_ms,repeat:self.repeat});"Schedule added".into()},
                 Err(e) => e.to_string(),
             };
         }
@@ -369,6 +440,8 @@ impl Desktop {
             self.scheduler.jobs.clear();
         }
         ui.label(format!("{} active schedules", self.scheduler.jobs.len()));
+        if ui.add_enabled(self.relay.as_ref().is_some_and(Relay::connected),egui::Button::new("Run saved schedules")).clicked(){for template in &self.settings.schedules{match expression::parse_with_info(&template.expression,template.direction,&self.packet_info).and_then(|p|self.scheduler.add(p,template.direction,Duration::from_millis(template.interval_ms),Some(template.repeat),Instant::now())){Ok(())=>{},Err(e)=>{self.status=e.to_string();break;}}}}
+        if ui.button("Clear saved schedules").clicked(){self.settings.schedules.clear();}
         for (i, job) in self.scheduler.jobs.iter().enumerate() {
             ui.monospace(format!(
                 "{}: {} header {} every {} ms · remaining {}",
@@ -407,6 +480,10 @@ impl Desktop {
                 .desired_width(f32::INFINITY)
                 .font(egui::TextStyle::Monospace),
         );
+        ui.separator();ui.label("Notepad");ui.add(egui::TextEdit::multiline(&mut self.notepad).desired_rows(5).desired_width(f32::INFINITY));
+        ui.horizontal(|ui|{ui.label("Import original Cache/cache.json");ui.text_edit_singleline(&mut self.legacy_cache_path);if ui.button("Import").clicked(){let result=std::fs::read(&self.legacy_cache_path).and_then(|bytes|serde_json::from_slice(&bytes).map_err(std::io::Error::other)).and_then(|value|self.settings.import_java_cache(value));match result{Ok(())=>{self.apply_settings();self.status="Original cache imported; use Save settings to keep it".into();},Err(e)=>self.status=e.to_string()}}});
+        ui.label(format!("Settings: {}",self.settings_path.display()));
+        ui.horizontal(|ui|{ui.add(egui::DragValue::new(&mut self.settings.log_limit).range(16..=50000).prefix("Log rows "));ui.add(egui::DragValue::new(&mut self.settings.log_bytes).range(4096..=512*1024*1024).prefix("Log memory bytes "));});
     }
 }
 fn direction_selector(ui: &mut egui::Ui, direction: &mut Direction) {
@@ -417,24 +494,28 @@ fn direction_selector(ui: &mut egui::Ui, direction: &mut Direction) {
 }
 impl eframe::App for Desktop {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
-        ctx.set_visuals(egui::Visuals::light());
+        ctx.set_visuals(if self.dark_mode{egui::Visuals::dark()}else{egui::Visuals::light()});
         self.poll();
         egui::TopBottomPanel::top("tabs").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.strong("G-Earth Rust");
                 ui.label("0.1.0 · development");
+                if ui.button("Save settings").clicked(){self.save_settings();}
+                if ui.button("Reload settings").clicked(){self.load_settings();}
+                ui.checkbox(&mut self.dark_mode,"Dark theme");
+                let before=self.language.clone();egui::ComboBox::from_id_salt("language").selected_text(&self.language).show_ui(ui,|ui|{for (code,name) in LANGUAGES{ui.selectable_value(&mut self.language,(*code).into(),*name);}});if before!=self.language{self.i18n=I18n::new(&self.language);}
             });
             ui.horizontal_wrapped(|ui| {
                 for (tab, name) in [
-                    (Tab::Connection, "Connection"),
+                    (Tab::Connection, "tab.connection"),
                     (Tab::Logger, "Logger"),
-                    (Tab::Injection, "Injection"),
-                    (Tab::Scheduler, "Scheduler"),
-                    (Tab::Tools, "Tools"),
-                    (Tab::Extensions, "Extensions"),
+                    (Tab::Injection, "tab.injection"),
+                    (Tab::Scheduler, "tab.scheduler"),
+                    (Tab::Tools, "tab.tools"),
+                    (Tab::Extensions, "tab.extensions"),
                     (Tab::Info, "Info"),
                 ] {
-                    ui.selectable_value(&mut self.tab, tab, name);
+                    let label=if name.starts_with("tab."){self.i18n.text(name)}else{name.to_owned()};ui.selectable_value(&mut self.tab, tab, label);
                 }
             });
         });
@@ -452,11 +533,60 @@ impl eframe::App for Desktop {
         });
         egui::CentralPanel::default().show(ctx,|ui|match self.tab {
             Tab::Connection=>self.connection(ui),Tab::Logger=>self.logger(ui),Tab::Injection=>self.injection(ui),Tab::Scheduler=>self.schedule(ui),Tab::Tools=>self.tools(ui),
-            Tab::Extensions=>{ui.heading("Extensions");ui.label("The beta-29 EVA_WIRE network message codec is implemented in the Rust library.");ui.label("The extension host, store, Python console and Java JAR launcher are not implemented yet.");ui.label("G-Presets compatibility has not been validated. Continue using the original G-Earth for existing extensions.");},
+            Tab::Extensions=>self.extensions(ui),
             Tab::Info=>{ui.heading("G-Earth Rust");ui.label("Rust port in progress, based on G-Realm/G-Earth 1.5.4-beta-29.");ui.hyperlink_to("Original project · sirjonasxx & contributors","https://github.com/G-Realm/G-Earth");ui.hyperlink_to("Rust project · 1desirable1337","https://github.com/Tear1338/G-Earth-Rust");ui.label("MIT licensed. Read docs/PARITY.md for implemented and missing functionality.");ui.label("Performance improvements have not been measured against the Java application.");}
         });
-        if self.relay.is_some() {
+        if self.relay.is_some()||self.extension_host.is_some() {
             ctx.request_repaint_after(Duration::from_millis(50));
         }
     }
+}
+fn find_java()->PathBuf {
+    let name=if cfg!(windows){"java.exe"}else{"java"};
+    if let Ok(exe)=std::env::current_exe(){for dir in exe.ancestors().skip(1).take(5){let candidate=dir.join("jre").join("bin").join(name);if candidate.is_file(){return candidate;}}}
+    if let Some(home)=std::env::var_os("JAVA_HOME"){let candidate=PathBuf::from(home).join("bin").join(name);if candidate.is_file(){return candidate;}}
+    PathBuf::from("java")
+}
+impl Desktop {
+    fn load_settings(&mut self) {
+        match Settings::read(&self.settings_path){Ok(settings)=>{self.settings=settings;self.settings_loaded=true;self.apply_settings();self.status="Settings loaded".into();},Err(e) if e.kind()==std::io::ErrorKind::NotFound=>{self.settings_loaded=true;},Err(e)=>{self.settings_loaded=false;self.status=format!("Could not load settings: {e}");}}
+    }
+    fn apply_settings(&mut self) {
+        for (key,target) in [("listen",&mut self.listen),("remote",&mut self.remote),("hotel_version",&mut self.hotel_version),("client_identifier",&mut self.client_identifier),("packet_database",&mut self.packet_database),("socks_proxy",&mut self.socks_proxy),("socks_user",&mut self.socks_user),("extension_runtime",&mut self.extension_runtime),("notepad",&mut self.notepad),("language",&mut self.language)] {if let Some(value)=self.settings.values.get(key){*target=value.clone();}}
+        self.dark_mode=self.settings.booleans.get("dark_mode").copied().unwrap_or(false);self.outgoing=self.settings.booleans.get("outgoing").copied().unwrap_or(true);self.incoming=self.settings.booleans.get("incoming").copied().unwrap_or(true);self.i18n=I18n::new(&self.language);self.update_rules();
+    }
+    fn save_settings(&mut self) {
+        for (key,value) in [("listen",&self.listen),("remote",&self.remote),("hotel_version",&self.hotel_version),("client_identifier",&self.client_identifier),("packet_database",&self.packet_database),("socks_proxy",&self.socks_proxy),("socks_user",&self.socks_user),("extension_runtime",&self.extension_runtime),("notepad",&self.notepad),("language",&self.language)] {self.settings.values.insert(key.into(),value.clone());}
+        self.settings.booleans.extend([("dark_mode".into(),self.dark_mode),("outgoing".into(),self.outgoing),("incoming".into(),self.incoming)]);
+        match self.settings.save(&self.settings_path){Ok(())=>{self.settings_loaded=true;self.status="Settings saved".into();},Err(e)=>self.status=e.to_string()}
+    }
+    fn relay_options(&mut self)->std::io::Result<RelayOptions> {
+        self.packet_info=if self.packet_database.trim().is_empty(){PacketInfoManager::default()}else{PacketInfoManager::from_tsv(&self.hotel_version,&std::fs::read_to_string(&self.packet_database)?).map_err(std::io::Error::other)?};
+        let cipher=|key:&str|->std::io::Result<Option<Rc4>>{if key.trim().is_empty(){Ok(None)}else{Rc4::new(&expression::parse_hex(key).map_err(std::io::Error::other)?).map(Some).map_err(std::io::Error::other)}};
+        let (host,port)=self.remote.rsplit_once(':').ok_or_else(||std::io::Error::other("Remote address requires host:port"))?;
+        let connection=ConnectionDetails {host:host.trim_start_matches('[').trim_end_matches(']').into(),port:port.parse().map_err(std::io::Error::other)?,version:self.hotel_version.clone(),identifier:self.client_identifier.clone(),client_type:"FLASH".into(),packets:self.packet_info.clone()};
+        Ok(RelayOptions {extensions:self.extension_host.clone(),connection:Some(connection),socks:if self.socks_proxy.trim().is_empty(){None}else{Some(SocksConfig {proxy:self.socks_proxy.clone(),credentials:if self.socks_user.is_empty(){None}else{Some((self.socks_user.clone(),self.socks_password.clone()))}})},outgoing_rc4:cipher(&self.outgoing_key)?,incoming_rc4:cipher(&self.incoming_key)?})
+    }
+    fn extensions(&mut self,ui:&mut egui::Ui) {
+        ui.heading("Extensions");
+        let Some(host)=&self.extension_host else {ui.label("Unable to bind the extension server on ports 9092–9107.");return;};
+        ui.label(format!("Extension server: {}",host.address));
+        ui.horizontal(|ui|{ui.label("Runtime (Java / Python / Node)");ui.text_edit_singleline(&mut self.extension_runtime);});
+        ui.horizontal(|ui|{ui.label("Extension file");ui.text_edit_singleline(&mut self.extension_path);});
+        if ui.button("Launch extension").clicked(){match host.launch(Path::new(&self.extension_runtime),Path::new(&self.extension_path)){Ok(child)=>{self.extension_processes.push(child);self.status="Extension process launched".into();},Err(e)=>self.status=e.to_string()}}
+        ui.separator();
+        for extension in host.extensions(){
+            ui.horizontal(|ui|{
+                ui.label(format!("{} {} · {}",extension.info.title,extension.info.version,extension.info.author));
+                if !extension.approved&&ui.button("Allow connection").clicked(){if let Err(e)=host.approve(extension.id){self.status=e.to_string();}}
+                if extension.approved&&extension.info.on_click&&ui.button("Open").clicked(){if let Err(e)=host.click(extension.id){self.status=e.to_string();}}
+                if ui.button("Disconnect").clicked(){if let Err(e)=host.disconnect(extension.id){self.status=e.to_string();}}
+            });
+        }
+        ui.separator();ui.label("Extension console");
+        egui::ScrollArea::vertical().stick_to_bottom(true).show(ui,|ui|{for line in &self.extension_console{ui.monospace(line);}});
+    }
+}
+impl Drop for Desktop {
+    fn drop(&mut self){if self.settings_loaded{self.save_settings();}self.relay.take();if let Some(host)=self.extension_host.take(){host.stop();}for child in &mut self.extension_processes{let _=child.kill();let _=child.wait();}}
 }

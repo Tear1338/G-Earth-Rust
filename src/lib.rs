@@ -11,3 +11,5 @@ pub mod relay;
 pub mod rules;
 pub mod scheduler;
 pub mod socks;
+pub mod settings;
+pub mod i18n;

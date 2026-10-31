@@ -143,7 +143,7 @@ fn invalid_expressions_rejected() {
     for s in [
         "",
         "{i:1}",
-        "{h:-1}",
+        "{h:-32769}",
         "{h:65536}",
         "{h:1}{s:\"unterminated}",
         "{h:1}{hex:0}",
