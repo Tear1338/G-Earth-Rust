@@ -1,0 +1,67 @@
+name: Rust validation
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  core:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all
+      - run: cargo test --all-targets
+      - run: cargo clippy --all-targets
+      - run: cargo build --release --bin gearth-rust
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gearth-cli-${{ matrix.os }}
+          path: |
+            target/release/gearth-rust
+            target/release/gearth-rust.exe
+          if-no-files-found: error
+  desktop:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release --features desktop --bin gearth-desktop
+      - uses: actions/upload-artifact@v4
+        with:
+          name: G-Earth-Rust-Windows-development
+          path: target/release/gearth-desktop.exe
+  java-compatibility:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: Swatinem/rust-cache@v2
+      - name: Download the pinned upstream release
+        run: |
+          curl --fail --location --retry 3 'https://github.com/G-Realm/G-Earth/releases/download/1.5.4-beta-29/G-Earth-windows-x64.zip' -o /tmp/gearth.zip
+          echo 'c2bffcf8ef8e9df6b2355fe6c5f45690bc24b7211f9848728209e0a9b2b4a6e6  /tmp/gearth.zip' | sha256sum --check
+          unzip -q /tmp/gearth.zip -d /tmp/upstream-gearth
+      - name: Generate vectors with the actual Java implementation
+        run: |
+          api_jar=$(find /tmp/upstream-gearth -name 'G-Earth-Api-1.5.4-beta-29.jar' -print -quit)
+          test -n "$api_jar"
+          javac -cp "$api_jar" tests/JavaOracle.java
+          java -cp "$api_jar:tests" JavaOracle > /tmp/java-oracle.txt
+          cat /tmp/java-oracle.txt
+      - name: Compare Rust output byte for byte
+        run: cargo test --test oracle
+        env:
+          GEARTH_JAVA_ORACLE: /tmp/java-oracle.txt
