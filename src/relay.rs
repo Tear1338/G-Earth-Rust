@@ -1,6 +1,7 @@
 //! Explicit plaintext EVA_WIRE relay. One cancellable nonblocking transport loop.
 use crate::packet::{Direction, FrameDecoder, Message, Packet};
 use crate::rules::Rules;
+use crate::{crypto::Rc4,extension_host::{ExtensionHost,ConnectionDetails},socks::SocksConfig};
 use std::collections::VecDeque;
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
@@ -25,6 +26,14 @@ pub struct Config {
     pub listen: SocketAddr,
     pub remote: String,
 }
+#[derive(Clone,Default)]
+pub struct RelayOptions {
+    pub extensions:Option<Arc<ExtensionHost>>,
+    pub connection:Option<ConnectionDetails>,
+    pub socks:Option<SocksConfig>,
+    pub outgoing_rc4:Option<Rc4>,
+    pub incoming_rc4:Option<Rc4>,
+}
 struct Session {
     injections: SyncSender<(Direction, Packet)>,
     closed: Arc<AtomicBool>,
@@ -38,14 +47,17 @@ pub struct Relay {
 }
 impl Relay {
     pub fn start(config: Config) -> io::Result<(Self, Receiver<Event>)> {
+        Self::start_with_options(config,RelayOptions::default())
+    }
+    pub fn start_with_options(config:Config,options:RelayOptions)->io::Result<(Self,Receiver<Event>)> {
         if !config.listen.ip().is_loopback() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "listen address must be loopback",
             ));
         }
-        let remote: Vec<SocketAddr> = config.remote.to_socket_addrs()?.collect();
-        if remote.is_empty() {
+        let remote: Vec<SocketAddr> = if options.socks.is_some(){Vec::new()}else{config.remote.to_socket_addrs()?.collect()};
+        if remote.is_empty()&&options.socks.is_none() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "remote has no addresses",
@@ -66,12 +78,12 @@ impl Relay {
             while !worker_stop.load(Ordering::Acquire) {
                 match listener.accept() {
                     Ok((client, _)) => {
-                        let server = remote.iter().find_map(|addr| {
+                        let server = if let Some(socks)=&options.socks {socks.connect(&config.remote).ok()}else{remote.iter().find_map(|addr| {
                             if worker_stop.load(Ordering::Acquire) {
                                 return None;
                             }
                             TcpStream::connect_timeout(addr, Duration::from_secs(2)).ok()
-                        });
+                        })};
                         let Some(server) = server else {
                             let _ =
                                 events.try_send(Event::Error("remote connection failed".into()));
@@ -97,6 +109,9 @@ impl Relay {
                                 .map(|v| v.to_string())
                                 .unwrap_or_default(),
                         ));
+                        if let (Some(host),Some(details))=(&options.extensions,&options.connection) {
+                            if let Err(e)=host.start_connection(details.clone()){let _=events.try_send(Event::Error(e.to_string()));}
+                        }
                         let result = run_session(
                             client,
                             server,
@@ -106,7 +121,9 @@ impl Relay {
                             &events,
                             commands,
                             &mut index,
+                            &options,
                         );
+                        if let Some(host)=&options.extensions {host.end_connection();}
                         closed.store(true, Ordering::Release);
                         if let Err(e) = result {
                             let _ = events.try_send(Event::Error(e.to_string()));
@@ -193,13 +210,14 @@ impl Drop for Relay {
     }
 }
 struct Pending {
-    packet: Packet,
+    bytes: Vec<u8>,
     offset: usize,
 }
 #[derive(Default)]
 struct Output {
     queue: VecDeque<Pending>,
     bytes: usize,
+    cipher:Option<Rc4>,
 }
 impl Output {
     fn push(&mut self, packet: Packet) -> io::Result<()> {
@@ -207,7 +225,8 @@ impl Output {
             return Err(io::Error::other("peer output queue limit exceeded"));
         }
         self.bytes += packet.bytes().len();
-        self.queue.push_back(Pending { packet, offset: 0 });
+        let mut bytes=packet.bytes().to_vec();if let Some(cipher)=&mut self.cipher {cipher.apply(&mut bytes);}
+        self.queue.push_back(Pending { bytes, offset: 0 });
         Ok(())
     }
     fn flush(&mut self, stream: &mut TcpStream) -> io::Result<bool> {
@@ -216,7 +235,7 @@ impl Output {
             let Some(frame) = self.queue.front_mut() else {
                 break;
             };
-            match stream.write(&frame.packet.bytes()[frame.offset..]) {
+            match stream.write(&frame.bytes[frame.offset..]) {
                 Ok(0) => {
                     return Err(io::Error::new(
                         io::ErrorKind::WriteZero,
@@ -227,7 +246,7 @@ impl Output {
                     frame.offset += n;
                     self.bytes -= n;
                     progress = true;
-                    if frame.offset == frame.packet.bytes().len() {
+                    if frame.offset == frame.bytes.len() {
                         self.queue.pop_front();
                     }
                 }
@@ -249,19 +268,23 @@ fn run_session(
     events: &SyncSender<Event>,
     commands: Receiver<(Direction, Packet)>,
     index: &mut i32,
+    options:&RelayOptions,
 ) -> io::Result<()> {
     client.set_nonblocking(true)?;
     server.set_nonblocking(true)?;
     client.set_nodelay(true)?;
     server.set_nodelay(true)?;
-    let mut to_server = Output::default();
-    let mut to_client = Output::default();
+    let mut to_server = Output {cipher:options.outgoing_rc4.clone(),..Default::default()};
+    let mut to_client = Output {cipher:options.incoming_rc4.clone(),..Default::default()};
+    let mut decrypt_outgoing=options.outgoing_rc4.clone();let mut decrypt_incoming=options.incoming_rc4.clone();
     let mut from_client = FrameDecoder::default();
     let mut from_server = FrameDecoder::default();
     let mut buffer = [0u8; 8192];
     while !stop.load(Ordering::Acquire) && !closed.load(Ordering::Acquire) {
         let mut progress = false;
-        for (direction, packet) in commands.try_iter().take(64) {
+        let mut injected:Vec<_>=commands.try_iter().take(64).collect();
+        if let Some(host)=&options.extensions {injected.extend(host.take_injections());}
+        for (direction, packet) in injected {
             let message = Message {
                 packet,
                 direction,
@@ -285,6 +308,8 @@ fn run_session(
                 Ok(0) => return Ok(()),
                 Ok(n) => {
                     progress = true;
+                    let decrypt=if direction==Direction::ToServer {&mut decrypt_outgoing}else{&mut decrypt_incoming};
+                    if let Some(cipher)=decrypt {cipher.apply(&mut buffer[..n]);}
                     decoder.push(&buffer[..n]).map_err(io::Error::other)?;
                     while let Some(packet) = decoder.next_packet().map_err(io::Error::other)? {
                         let mut message = Message {
@@ -298,6 +323,7 @@ fn run_session(
                             .lock()
                             .map_err(|_| io::Error::other("rules lock poisoned"))?
                             .apply(&mut message);
+                        if let Some(host)=&options.extensions {host.intercept(&mut message)?;}
                         if !message.blocked {
                             output.push(message.packet.clone())?;
                         }
