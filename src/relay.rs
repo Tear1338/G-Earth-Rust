@@ -50,6 +50,11 @@ impl Relay {
                         });
                         let Some(server) = server else { let _ = t.try_send(Event::Error("remote connection failed".into())); continue; };
                         if s.load(Ordering::Acquire) { break; }
+                        // Windows can inherit the listener's nonblocking mode on accept.
+                        // read_exact must operate on blocking sockets on every platform.
+                        if let Err(e) = client.set_nonblocking(false).and_then(|_| server.set_nonblocking(false)) {
+                            let _ = t.try_send(Event::Error(e.to_string())); continue;
+                        }
                         let _ = client.set_nodelay(true); let _ = server.set_nodelay(true);
                         let _ = client.set_write_timeout(Some(Duration::from_secs(2))); let _ = server.set_write_timeout(Some(Duration::from_secs(2)));
                         let session = match make_session(&client,&server) { Ok(v)=>Arc::new(v),Err(e)=>{let _=t.try_send(Event::Error(e.to_string()));continue;} };

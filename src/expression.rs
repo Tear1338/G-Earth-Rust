@@ -16,12 +16,18 @@ pub fn parse(expression: &str) -> Result<Packet> {
         let end = end.ok_or_else(|| error("unterminated expression field"))?;
         let (kind,value) = rest[1..end].split_once(':').ok_or_else(|| error("missing ':'"))?;
         let value = value.trim();
-        if packet.is_none() {
+        if let Some(p) = &mut packet {
+            append_field(p, kind, value)?;
+        } else {
             if kind != "h" { return Err(error("first field must be a numeric header")); }
             packet = Some(Packet::new(value.parse().map_err(|_| error("invalid header"))?));
-        } else {
-            let p = packet.as_mut().unwrap();
-            match kind {
+        }
+        rest = rest[end+1..].trim_start();
+    }
+    let mut p = packet.ok_or_else(|| error("empty expression"))?; p.edited = false; Ok(p)
+}
+fn append_field(p: &mut Packet, kind: &str, value: &str) -> Result<()> {
+    match kind {
                 "i" => { p.put_i32(value.parse().map_err(|_| error("invalid integer"))?)?; }
                 "l" => { p.put_i64(value.parse().map_err(|_| error("invalid long"))?)?; }
                 "u" => { p.put_u16(value.parse().map_err(|_| error("invalid unsigned short"))?)?; }
@@ -32,11 +38,8 @@ pub fn parse(expression: &str) -> Result<Packet> {
                 "ls" => { p.put_long_string(&unquote(value)?)?; }
                 "hex" => { p.append(&parse_hex(value)?)?; }
                 _ => return Err(error("unsupported expression field")),
-            }
-        }
-        rest = rest[end+1..].trim_start();
     }
-    let mut p = packet.ok_or_else(|| error("empty expression"))?; p.edited = false; Ok(p)
+    Ok(())
 }
 fn unquote(value: &str) -> Result<String> {
     if !value.starts_with('"') || !value.ends_with('"') || value.len()<2 { return Err(error("string must use double quotes")); }
@@ -49,7 +52,7 @@ fn unquote(value: &str) -> Result<String> {
 }
 pub fn parse_hex(s: &str) -> Result<Vec<u8>> {
     let compact: String = s.chars().filter(|c| !c.is_whitespace()).collect();
-    if compact.len()%2 != 0 || !compact.is_ascii() { return Err(error("hex requires pairs of ASCII digits")); }
+    if !compact.len().is_multiple_of(2) || !compact.is_ascii() { return Err(error("hex requires pairs of ASCII digits")); }
     (0..compact.len()).step_by(2).map(|i| u8::from_str_radix(&compact[i..i+2],16).map_err(|_| error("invalid hex"))).collect()
 }
 pub fn hex(bytes: &[u8]) -> String { bytes.iter().map(|b| format!("{b:02X}")).collect::<Vec<_>>().join(" ") }
