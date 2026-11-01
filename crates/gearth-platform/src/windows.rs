@@ -1,6 +1,6 @@
 use super::*;
 use std::{ffi::c_void,mem::{size_of,zeroed},sync::atomic::Ordering,time::{Duration,Instant}};
-use windows_sys::Win32::{Foundation::{CloseHandle,HANDLE,INVALID_HANDLE_VALUE},System::{Diagnostics::{ToolHelp::{CreateToolhelp32Snapshot,Process32FirstW,Process32NextW,PROCESSENTRY32W,TH32CS_SNAPPROCESS},Debug::ReadProcessMemory},Threading::{OpenProcess,PROCESS_QUERY_INFORMATION,PROCESS_VM_READ},Memory::{VirtualQueryEx,MEMORY_BASIC_INFORMATION,MEM_COMMIT,PAGE_GUARD,PAGE_NOACCESS,PAGE_READWRITE,PAGE_WRITECOPY,PAGE_EXECUTE_READWRITE,PAGE_EXECUTE_WRITECOPY}}};
+use windows_sys::Win32::{Foundation::{CloseHandle,HANDLE,INVALID_HANDLE_VALUE},System::{Diagnostics::{ToolHelp::{CreateToolhelp32Snapshot,Process32FirstW,Process32NextW,PROCESSENTRY32W,TH32CS_SNAPPROCESS},Debug::ReadProcessMemory},Threading::{OpenProcess,PROCESS_QUERY_INFORMATION,PROCESS_VM_READ},Memory::{VirtualQueryEx,MEMORY_BASIC_INFORMATION,MEM_PRIVATE,MEM_COMMIT,PAGE_GUARD,PAGE_NOACCESS,PAGE_READWRITE,PAGE_WRITECOPY,PAGE_EXECUTE_READWRITE,PAGE_EXECUTE_WRITECOPY}}};
 struct Handle(HANDLE);
 impl Drop for Handle {fn drop(&mut self){unsafe{CloseHandle(self.0);}}}
 pub(super) fn processes()->io::Result<Vec<ClientProcess>> {
@@ -27,7 +27,7 @@ pub(super) fn scan(pid:u32,cancel:&AtomicBool,range:Option<(usize,usize)>)->io::
             let mut info:MEMORY_BASIC_INFORMATION=zeroed();if VirtualQueryEx(process.0,address as *const c_void,&mut info,size_of::<MEMORY_BASIC_INFORMATION>())==0{result.complete=true;return Ok(result);}
             let base=info.BaseAddress as usize;let Some(next)=base.checked_add(info.RegionSize)else{break;};if next<=address{break;}
             let writable=info.Protect&(PAGE_READWRITE|PAGE_WRITECOPY|PAGE_EXECUTE_READWRITE|PAGE_EXECUTE_WRITECOPY)!=0;
-            if info.State==MEM_COMMIT&&writable&&info.Protect&(PAGE_GUARD|PAGE_NOACCESS)==0 {
+            if info.State==MEM_COMMIT&&info.Type==MEM_PRIVATE&&writable&&info.Protect&(PAGE_GUARD|PAGE_NOACCESS)==0 {
                 let limit=next.min(end);let mut at=address.max(base);
                 while at<limit {
                     if cancel.load(Ordering::Acquire){return Err(io::Error::new(io::ErrorKind::Interrupted,"memory discovery cancelled"));}
@@ -45,9 +45,9 @@ pub(super) fn scan(pid:u32,cancel:&AtomicBool,range:Option<(usize,usize)>)->io::
 #[cfg(test)] mod tests {
     use super::*;
     #[test] fn reads_only_requested_memory_in_a_controlled_process(){
-        let words:Vec<u32>=(0..256).map(|i|(i*73+19)%256).collect();let start=words.as_ptr() as usize;
+        let mut words:Vec<u32>=(0..256).collect();for i in 0..256{let j=(i*73+words[i] as usize+19)%256;words.swap(i,j);}let start=words.as_ptr() as usize;
         let result=scan(std::process::id(),&AtomicBool::new(false),Some((start,start+1024))).unwrap();
-        assert!(result.complete);assert_eq!(result.bytes_read,1024);assert!(result.states.iter().any(|s|s[0]==19&&s[1]==92));std::hint::black_box(words);
+        assert!(result.complete);assert_eq!(result.bytes_read,1024);assert!(result.states.iter().any(|s|s[0]==words[0] as u8&&s[1]==words[1] as u8));std::hint::black_box(words);
     }
     #[test] fn cancellation_is_checked_before_memory_is_read(){assert_eq!(scan(std::process::id(),&AtomicBool::new(true),None).err().unwrap().kind(),io::ErrorKind::Interrupted);}
 }

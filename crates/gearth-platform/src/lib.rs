@@ -11,6 +11,10 @@ pub fn find_tables(bytes:&[u8],address:usize)->Vec<[u8;256]> {
         if bytes[offset+1..offset+4]!=[0,0,0]||bytes[offset+5..offset+8]!=[0,0,0]{continue;}
         let mut state=[0;256];let mut seen=[false;256];let mut valid=true;
         for (i,word) in bytes[offset..offset+1024].as_chunks::<4>().0.iter().enumerate(){let value=u32::from_le_bytes(*word);if value>255||seen[value as usize]{valid=false;break;}seen[value as usize]=true;state[i]=value as u8;}
+        // OS lookup tables can also be permutations (often a repeated identity table).
+        // RC4 states are shuffled; reject strongly linear tables before the candidate cap.
+        let mut deltas=[0u16;256];for pair in state.windows(2){deltas[pair[1].wrapping_sub(pair[0]) as usize]+=1;}
+        if deltas.iter().any(|count|*count>32){valid=false;}
         if valid&&!result.contains(&state){result.push(state);if result.len()==64{break;}}
     }
     result
@@ -30,8 +34,8 @@ pub fn scan_habbo(pid:u32,cancel:&AtomicBool)->io::Result<ScanResult> {
 #[cfg(test)] mod tests {
     use super::*;
     #[test] fn finds_aligned_word_permutations_and_rejects_duplicates(){
-        let words:Vec<u32>=(0..256).map(|i|255-i).collect();let mut bytes=vec![9;12];for w in &words{bytes.extend(w.to_le_bytes());}
-        let tables=find_tables(&bytes,0);assert_eq!(tables.len(),1);assert_eq!(tables[0][0],255);
-        bytes[16..20].copy_from_slice(&255u32.to_le_bytes());assert!(find_tables(&bytes,0).is_empty());
+        let mut words:Vec<u32>=(0..256).collect();for i in 0..256{let j=(i*73+words[i] as usize+19)%256;words.swap(i,j);}let mut bytes=vec![9;12];for w in &words{bytes.extend(w.to_le_bytes());}
+        let tables=find_tables(&bytes,0);assert_eq!(tables.len(),1);assert_eq!(tables[0][0],words[0] as u8);
+        bytes[16..20].copy_from_slice(&words[0].to_le_bytes());assert!(find_tables(&bytes,0).is_empty());
     }
 }
