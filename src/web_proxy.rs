@@ -62,7 +62,7 @@ impl HttpHandler for Handler {
     async fn handle_response(&mut self,_ctx:&HttpContext,response:Response<Body>)->Response<Body> {
         if self.1==0||response.status()!=StatusCode::OK{return response;}
         use http_body_util::BodyExt;
-        let (parts,mut body)=response.into_parts();let mut bytes=Vec::new();let result:io::Result<()>=async {while let Some(frame)=body.frame().await {let frame=frame.map_err(io::Error::other)?;if let Ok(data)=frame.into_data(){if bytes.len()+data.len()>16*1024*1024{return Err(io::Error::other("Nitro asset response exceeds 16 MiB"));}bytes.extend_from_slice(&data);}}Ok(())}.await;
+        let (parts,mut body)=response.into_parts();let mut bytes=Vec::new();let result=tokio::time::timeout(Duration::from_secs(20),async {while let Some(frame)=body.frame().await {let frame=frame.map_err(io::Error::other)?;if let Ok(data)=frame.into_data(){if bytes.len()+data.len()>16*1024*1024{return Err(io::Error::other("Nitro asset response exceeds 16 MiB"));}bytes.extend_from_slice(&data);}}Ok::<(),io::Error>(())}).await.unwrap_or_else(|_|Err(io::Error::new(io::ErrorKind::TimedOut,"Nitro asset download timed out")));
         if let Err(e)=result {let _=self.0.events.try_send(Event::Error(e.to_string()));return Response::builder().status(StatusCode::BAD_GATEWAY).body(Body::from("Hotel asset could not be read")).unwrap();}
         if self.1==1 {match crate::nitro_assets::hartico_key(&bytes){Ok(key)=>{if let Ok(mut target)=self.0.hartico_key.lock(){*target=Some(key);}},Err(e)=>{let _=self.0.events.try_send(Event::Error(format!("Hartico key extraction failed: {e}")));}}}
         if self.1==2 {
@@ -120,13 +120,13 @@ impl WebProxy {
         let identity=ProxyIdentity::ensure(&options.identity_directory)?;let ca=identity.authority()?;let listener=TcpListener::bind(options.listen)?;let address=listener.local_addr()?;listener.set_nonblocking(true)?;
         let (events,receiver)=mpsc::sync_channel(2048);let state=Arc::new(Shared {city_keys:Mutex::new(options.city_keys.clone()),options,hartico_key:Mutex::new(None),peers:Mutex::new(HashMap::new()),active:Mutex::new(None),rules:Mutex::new(Rules::default()),pipeline:Mutex::new(()),events,index:AtomicI32::new(0),stop:AtomicBool::new(false)});
         let actor=state.clone();let (stop,shutdown)=oneshot::channel();let (ready,started)=mpsc::sync_channel(1);
-        let worker=thread::spawn(move||{let result=(||->io::Result<()>{let runtime=tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build()?;runtime.block_on(async{
+        let worker=thread::spawn(move||{let result=(||->io::Result<()>{let runtime=tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build()?;let result=runtime.block_on(async{
             let provider=aws_lc_rs::default_provider();let _=provider.clone().install_default();let mut roots=rustls::RootCertStore::empty();roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());for der in &actor.options.extra_roots{roots.add(CertificateDer::from(der.clone())).map_err(io::Error::other)?;}
             let tls=rustls::ClientConfig::builder_with_provider(Arc::new(provider)).with_safe_default_protocol_versions().map_err(io::Error::other)?.with_root_certificates(roots).with_no_client_auth();
             let connector=hyper_rustls::HttpsConnectorBuilder::new().with_tls_config(tls.clone()).https_or_http().enable_http1().build();let listener=tokio::net::TcpListener::from_std(listener)?;
             let proxy=Proxy::builder().with_listener(listener).with_ca(ca).with_http_connector(connector).with_websocket_connector(Connector::Rustls(Arc::new(tls))).with_http_handler(Handler(actor.clone(),0)).with_websocket_handler(Handler(actor.clone(),0)).build().map_err(io::Error::other)?;
             let _=ready.send(());let _=actor.events.try_send(Event::Listening(address));tokio::select!{result=proxy.start()=>result.map_err(io::Error::other),_=shutdown=>Ok(())}
-        })})();if let Err(e)=result{let _=actor.events.try_send(Event::Error(e.to_string()));}actor.close_all();});
+        });runtime.shutdown_timeout(Duration::from_secs(1));result})();if let Err(e)=result{let _=actor.events.try_send(Event::Error(e.to_string()));}actor.close_all();});
         let mut proxy=Self {state,stop:Some(stop),worker:Some(worker),address,certificate_path:identity.certificate_path,certificate_der:identity.certificate_der};
         if started.recv_timeout(Duration::from_secs(5)).is_err(){proxy.stop();return Err(io::Error::other("HTTP proxy initialization failed; check TLS configuration"));}Ok((proxy,receiver))
     }

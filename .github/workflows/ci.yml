@@ -111,7 +111,7 @@ jobs:
         env:
           GEARTH_JAVA_ORACLE: /tmp/java-oracle.txt
       - name: Exercise an actual beta-29 Java extension against Rust
-        run: cargo test --locked --test java_extension -- --ignored
+        run: cargo test --locked --features web --test java_extension -- --ignored
       - name: Validate hotel crypto against Java JCE
         run: |
           javac tests/JavaNitroCryptoOracle.java

@@ -10,6 +10,15 @@ async fn connect_tunnel(proxy:std::net::SocketAddr,remote:&str)->tokio::net::Tcp
 impl Directory{fn new()->Self{let mut bytes=[0;8];getrandom::fill(&mut bytes).unwrap();let path=std::env::temp_dir().join(format!("gearth-web-test-{}",u64::from_ne_bytes(bytes)));std::fs::create_dir(&path).unwrap();Self(path)}}
 impl Drop for Directory{fn drop(&mut self){if let (Ok(path),Ok(temp))=(self.0.canonicalize(),std::env::temp_dir().canonicalize()){if path.starts_with(temp)&&path.file_name().is_some_and(|n|n.to_string_lossy().starts_with("gearth-web-test-")){let _=std::fs::remove_dir_all(path);}}}}
 fn packet(header:u16,value:i32)->Packet{let mut p=Packet::new(header);p.put_i32(value).unwrap();p}
+#[test] fn rejects_untrusted_upstream_tls_even_when_client_trusts_the_local_proxy(){
+    use hudsucker::{certificate_authority::CertificateAuthority,rustls::{self,crypto::aws_lc_rs,pki_types::{CertificateDer,ServerName}}};
+    let directory=Directory::new();let authority=ProxyIdentity::ensure(&directory.0.join("untrusted-upstream")).unwrap().authority().unwrap();let (mut proxy,_)=WebProxy::start(WebOptions::new("127.0.0.1:0".parse().unwrap(),directory.0.join("proxy"))).unwrap();
+    let mut roots=rustls::RootCertStore::empty();roots.add(CertificateDer::from(proxy.certificate_der.clone())).unwrap();let tls=rustls::ClientConfig::builder_with_provider(std::sync::Arc::new(aws_lc_rs::default_provider())).with_safe_default_protocol_versions().unwrap().with_root_certificates(roots).with_no_client_auth();
+    let runtime=tokio::runtime::Runtime::new().unwrap();runtime.block_on(async{
+        use tokio::io::{AsyncReadExt,AsyncWriteExt};let server=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();let address=format!("localhost:{}",server.local_addr().unwrap().port());let config=authority.gen_server_config(&address.parse().unwrap()).await;let upstream=tokio::spawn(async move{let (stream,_)=server.accept().await.unwrap();assert!(tokio_rustls::TlsAcceptor::from(config).accept(stream).await.is_err());});
+        let tunnel=connect_tunnel(proxy.address,&address).await;let mut stream=tokio_rustls::TlsConnector::from(std::sync::Arc::new(tls)).connect(ServerName::try_from("localhost").unwrap(),tunnel).await.unwrap();stream.write_all(format!("GET / HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n").as_bytes()).await.unwrap();let mut response=Vec::new();tokio::time::timeout(Duration::from_secs(5),async{while !response.ends_with(b"\r\n\r\n"){assert!(response.len()<8192);let mut byte=[0];stream.read_exact(&mut byte).await.unwrap();response.push(byte[0]);}}).await.unwrap();assert!(String::from_utf8(response).unwrap().starts_with("HTTP/1.1 502"));upstream.await.unwrap();
+    });proxy.stop();
+}
 #[test] fn configured_hotel_bypasses_hubbe_prelude_and_then_processes_packets(){
     use gearth_rust::nitro::{Hotel,HotelKind,Hotels};
     let directory=Directory::new();let runtime=tokio::runtime::Runtime::new().unwrap();runtime.block_on(async{
