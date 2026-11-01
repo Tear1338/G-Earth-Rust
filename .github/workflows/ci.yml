@@ -227,6 +227,6 @@ jobs:
         with:
           python-version: '3.12'
       - uses: Swatinem/rust-cache@v2
-      - run: python -m pip install --require-hashes --only-binary=:all: --no-deps -r tests/gpython-requirements.txt
+      - run: 'python -m pip install --require-hashes --only-binary=:all: --no-deps -r tests/gpython-requirements.txt'
       - run: python -m pip install ipykernel jupyter-client qtconsole PyQt5 jupyter-console psutil
       - run: cargo test --locked --test gpython -- --ignored --nocapture
