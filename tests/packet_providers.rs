@@ -1,10 +1,33 @@
 use gearth_rust::{packet::Direction, packet_info::PacketInfoManager};
 #[test]
-fn cache_preserves_direction_and_names_and_rejects_mismatched_or_truncated_data(){
-    let mut random=[0;8];getrandom::fill(&mut random).unwrap();let path=std::env::temp_dir().join(format!("gearth-packet-cache-{}.bin",u64::from_ne_bytes(random)));
-    let database=PacketInfoManager::from_json("TEST",br#"{"Incoming":[{"Id":77,"Name":"Same"}],"Outgoing":[{"Id":78,"Name":"Same"}]}"#).unwrap();database.save_cache(&path).unwrap();
-    let copy=PacketInfoManager::load_cache(&path,"TEST").unwrap();assert_eq!(copy.entries(),database.entries());assert!(PacketInfoManager::load_cache(&path,"OTHER").is_err());
-    let mut bytes=std::fs::read(&path).unwrap();bytes.pop();std::fs::write(&path,bytes).unwrap();assert!(PacketInfoManager::load_cache(&path,"TEST").is_err());database.save_cache(&path).unwrap();assert_eq!(PacketInfoManager::load_cache(&path,"TEST").unwrap().entries(),database.entries());std::fs::remove_file(path).unwrap();
+fn cache_preserves_direction_and_names_and_rejects_mismatched_or_truncated_data() {
+    let mut random = [0; 8];
+    getrandom::fill(&mut random).unwrap();
+    let path = std::env::temp_dir().join(format!(
+        "gearth-packet-cache-{}.bin",
+        u64::from_ne_bytes(random)
+    ));
+    let database = PacketInfoManager::from_json(
+        "TEST",
+        br#"{"Incoming":[{"Id":77,"Name":"Same"}],"Outgoing":[{"Id":78,"Name":"Same"}]}"#,
+    )
+    .unwrap();
+    database.save_cache(&path).unwrap();
+    let copy = PacketInfoManager::load_cache(&path, "TEST").unwrap();
+    assert_eq!(copy.entries(), database.entries());
+    assert!(PacketInfoManager::load_cache(&path, "OTHER").is_err());
+    let mut bytes = std::fs::read(&path).unwrap();
+    bytes.pop();
+    std::fs::write(&path, bytes).unwrap();
+    assert!(PacketInfoManager::load_cache(&path, "TEST").is_err());
+    database.save_cache(&path).unwrap();
+    assert_eq!(
+        PacketInfoManager::load_cache(&path, "TEST")
+            .unwrap()
+            .entries(),
+        database.entries()
+    );
+    std::fs::remove_file(path).unwrap();
 }
 #[test]
 fn sulek_names_match_upstream_suffix_rules_and_directions() {

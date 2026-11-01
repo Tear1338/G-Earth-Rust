@@ -198,7 +198,15 @@ impl FlashSession {
                 .is_none_or(|t| now.duration_since(t) >= Duration::from_millis(100))
         {
             self.last_scan = Some(now);
-            let pid=if pid==0{let processes=gearth_platform::habbo_processes()?;if processes.len()!=1{return Err(io::Error::other("Unable to identify the connecting client; select the Habbo process before attaching"));}processes[0].pid}else{pid};
+            let pid = if pid == 0 {
+                let processes = gearth_platform::habbo_processes()?;
+                if processes.len() != 1 {
+                    return Err(io::Error::other("Unable to identify the connecting client; select the Habbo process before attaching"));
+                }
+                processes[0].pid
+            } else {
+                pid
+            };
             let scan = gearth_platform::scan_habbo(pid, cancel)?;
             self.scan_stats = Some((scan.states.len(), scan.bytes_read, scan.complete));
             self.recover_with(&scan.states, cancel)?;

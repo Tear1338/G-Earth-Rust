@@ -111,10 +111,17 @@ impl Relay {
             while !worker_stop.load(Ordering::Acquire) {
                 match listener.accept() {
                     Ok((client, _)) => {
-                        let mut session_options=options.clone();
-                        if session_options.flash_process==Some(0){
-                            if let Some(pid)=client.peer_addr().ok().and_then(|address|client.local_addr().ok().and_then(|remote|gearth_platform::tcp_owner(address,remote).ok().flatten())){
-                                session_options.flash_process=Some(pid);let _=events.try_send(Event::Status(format!("Flash client process: {pid}")));
+                        let mut session_options = options.clone();
+                        if session_options.flash_process == Some(0) {
+                            if let Some(pid) = client.peer_addr().ok().and_then(|address| {
+                                client.local_addr().ok().and_then(|remote| {
+                                    gearth_platform::tcp_owner(address, remote).ok().flatten()
+                                })
+                            }) {
+                                session_options.flash_process = Some(pid);
+                                let _ = events.try_send(Event::Status(format!(
+                                    "Flash client process: {pid}"
+                                )));
                             }
                         }
                         let server = if let Some(socks) = &options.socks {
@@ -474,13 +481,29 @@ fn run_session(
                         let mut details = details.clone();
                         details.version = identity.version;
                         details.identifier = identity.identifier;
-                        if details.packets.entries().is_empty(){
-                            let _=events.try_send(Event::Status("Loading packet identifiers for the detected Flash revision...".into()));
-                            match crate::packet_info::PacketInfoManager::fetch_sulek(&details.version,false){
-                                Ok(database)=>{let _=events.try_send(Event::PacketIdentifiers(database.clone()));details.packets=database;},
-                                Err(e)=>{let _=events.try_send(Event::Status(format!("Connected without packet names: {e}")));},
+                        if details.packets.entries().is_empty() {
+                            let _ = events.try_send(Event::Status(
+                                "Loading packet identifiers for the detected Flash revision..."
+                                    .into(),
+                            ));
+                            match crate::packet_info::PacketInfoManager::fetch_sulek(
+                                &details.version,
+                                false,
+                            ) {
+                                Ok(database) => {
+                                    let _ =
+                                        events.try_send(Event::PacketIdentifiers(database.clone()));
+                                    details.packets = database;
+                                }
+                                Err(e) => {
+                                    let _ = events.try_send(Event::Status(format!(
+                                        "Connected without packet names: {e}"
+                                    )));
+                                }
                             }
-                            if stop.load(Ordering::Acquire){return Ok(());}
+                            if stop.load(Ordering::Acquire) {
+                                return Ok(());
+                            }
                         }
                         host.start_connection(details)?;
                     }

@@ -1,6 +1,6 @@
 # Flash and attachment validation
 
-Passing reference run: [41328870381](https://github.com/Tear1338/G-Earth-Rust/actions/runs/41328870381), implementation `8b3f924b78898ee2de8e7c3f6a9274c18536087e`.
+Passing reference run: [41329358947](https://github.com/Tear1338/G-Earth-Rust/actions/runs/41329358947), implementation `06741a3e157fb6bf9296264fc0329833a4720c52`.
 
 All four validation jobs passed: Ubuntu core, Windows core, Windows desktop compilation and Java compatibility. Tests run for the whole Cargo workspace, including the native platform crate. Warnings are rejected by Clippy.
 
@@ -10,4 +10,4 @@ Additional fixtures cover actual read-only process access and cancellation, exac
 
 The existing Java fixture and the 35-vector differential oracle still pass. This is evidence for the declared workloads, not proof of compatibility with a production AIR release or G-Presets. Live Flash/Origins, Nitro/Unity, OS certificate/proxy lifecycle, exact UI parity and whole-application performance remain unvalidated or unimplemented as listed in PARITY.md.
 
-The final packaging check inspects PE imports without executing the EXE and rejects an unexpected external Visual C++ runtime dependency. See the latest Actions run for the exact packaged build.
+The packaging check passed: it inspects PE imports without executing the EXE and rejects an unexpected external Visual C++ runtime dependency. The archive includes the EXE, README, license and documentation. See the latest Actions run for the exact packaged build.

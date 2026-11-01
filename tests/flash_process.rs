@@ -133,10 +133,12 @@ fn discovers_real_child_memory_and_relays_negotiated_encryption_with_rules_and_i
     let deadline = Instant::now() + Duration::from_secs(30);
     let mut out = false;
     let mut incoming = false;
-    let mut owner=false;
+    let mut owner = false;
     while Instant::now() < deadline {
         match events.recv_timeout(Duration::from_millis(100)) {
-            Ok(Event::Status(s)) if s==format!("Flash client process: {}",fixture.0.id())=>owner=true,
+            Ok(Event::Status(s)) if s == format!("Flash client process: {}", fixture.0.id()) => {
+                owner = true
+            }
             Ok(Event::Packet(m))
                 if m.direction == Direction::ToServer && m.packet.header() == 78 && !out =>
             {

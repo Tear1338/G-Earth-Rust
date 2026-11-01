@@ -1,6 +1,6 @@
 # Validation record
 
-Windows Flash and hosts attachment have additional [native integration evidence](FLASH_VALIDATION.md), including automatic process identification, real cross-process memory reads, encrypted traffic and scoped cleanup. Latest passing reference: [41328870381](https://github.com/Tear1338/G-Earth-Rust/actions/runs/41328870381).
+Windows Flash and hosts attachment have additional [native integration evidence](FLASH_VALIDATION.md), including automatic process identification, real cross-process memory reads, encrypted traffic and scoped cleanup. Latest passing reference: [41329358947](https://github.com/Tear1338/G-Earth-Rust/actions/runs/41329358947).
 
 Earlier expanded transport and extension implementation validated at commit `1ece5611c846c04c919ce8ffc272df316115f8a2`:
 https://github.com/Tear1338/G-Earth-Rust/actions/runs/41255104561

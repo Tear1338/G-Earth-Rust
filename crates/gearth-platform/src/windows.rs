@@ -162,27 +162,91 @@ pub(super) fn scan(
         Ok(result)
     }
 }
-pub(super) fn tcp_owner(local:std::net::SocketAddr,remote:std::net::SocketAddr)->io::Result<Option<u32>> {
-    use windows_sys::Win32::{NetworkManagement::IpHelper::{GetExtendedTcpTable,MIB_TCPROW_OWNER_PID,MIB_TCPTABLE_OWNER_PID,TCP_TABLE_OWNER_PID_ALL},Networking::WinSock::AF_INET};
-    if !local.is_ipv4()||!local.ip().is_loopback()||!remote.is_ipv4()||!remote.ip().is_loopback(){return Ok(None);}
+pub(super) fn tcp_owner(
+    local: std::net::SocketAddr,
+    remote: std::net::SocketAddr,
+) -> io::Result<Option<u32>> {
+    use windows_sys::Win32::{
+        NetworkManagement::IpHelper::{
+            GetExtendedTcpTable, MIB_TCPROW_OWNER_PID, MIB_TCPTABLE_OWNER_PID,
+            TCP_TABLE_OWNER_PID_ALL,
+        },
+        Networking::WinSock::AF_INET,
+    };
+    if !local.is_ipv4()
+        || !local.ip().is_loopback()
+        || !remote.is_ipv4()
+        || !remote.ip().is_loopback()
+    {
+        return Ok(None);
+    }
     // SAFETY: Windows writes into an aligned, bounded allocation. Row counts and
     // offsets are checked against the returned buffer before unaligned copies.
     unsafe {
-        let mut size=0u32;let status=GetExtendedTcpTable(std::ptr::null_mut(),&mut size,0,u32::from(AF_INET),TCP_TABLE_OWNER_PID_ALL,0);
-        if status!=0&&status!=122{return Err(io::Error::from_raw_os_error(status as i32));}
+        let mut size = 0u32;
+        let status = GetExtendedTcpTable(
+            std::ptr::null_mut(),
+            &mut size,
+            0,
+            u32::from(AF_INET),
+            TCP_TABLE_OWNER_PID_ALL,
+            0,
+        );
+        if status != 0 && status != 122 {
+            return Err(io::Error::from_raw_os_error(status as i32));
+        }
         for _ in 0..3 {
-            if !(4..=16*1024*1024).contains(&size){return Err(io::Error::other("invalid TCP owner table size"));}
-            let mut buffer=vec![0u64;(size as usize).div_ceil(size_of::<u64>())];let capacity=buffer.len()*size_of::<u64>();
-            let status=GetExtendedTcpTable(buffer.as_mut_ptr().cast(),&mut size,0,u32::from(AF_INET),TCP_TABLE_OWNER_PID_ALL,0);
-            if status==122{continue;}if status!=0{return Err(io::Error::from_raw_os_error(status as i32));}
-            if size as usize>capacity{return Err(io::Error::other("TCP owner table exceeds allocation"));}
-            let base=buffer.as_ptr().cast::<u8>();let count=base.cast::<u32>().read_unaligned() as usize;let offset=std::mem::offset_of!(MIB_TCPTABLE_OWNER_PID,table);
-            let bytes=count.checked_mul(size_of::<MIB_TCPROW_OWNER_PID>()).and_then(|n|n.checked_add(offset)).ok_or_else(||io::Error::other("TCP owner table length overflow"))?;
-            if bytes>size as usize{return Err(io::Error::other("truncated TCP owner table"));}
-            for i in 0..count {let row=base.add(offset+i*size_of::<MIB_TCPROW_OWNER_PID>()).cast::<MIB_TCPROW_OWNER_PID>().read_unaligned();
-                if std::net::IpAddr::V4(std::net::Ipv4Addr::from(row.dwLocalAddr.to_ne_bytes()))==local.ip()&&u16::from_be(row.dwLocalPort as u16)==local.port()&&std::net::IpAddr::V4(std::net::Ipv4Addr::from(row.dwRemoteAddr.to_ne_bytes()))==remote.ip()&&u16::from_be(row.dwRemotePort as u16)==remote.port(){return Ok(Some(row.dwOwningPid));}
-            }return Ok(None);
-        }Err(io::Error::other("TCP owner table kept changing"))
+            if !(4..=16 * 1024 * 1024).contains(&size) {
+                return Err(io::Error::other("invalid TCP owner table size"));
+            }
+            let mut buffer = vec![0u64; (size as usize).div_ceil(size_of::<u64>())];
+            let capacity = buffer.len() * size_of::<u64>();
+            let status = GetExtendedTcpTable(
+                buffer.as_mut_ptr().cast(),
+                &mut size,
+                0,
+                u32::from(AF_INET),
+                TCP_TABLE_OWNER_PID_ALL,
+                0,
+            );
+            if status == 122 {
+                continue;
+            }
+            if status != 0 {
+                return Err(io::Error::from_raw_os_error(status as i32));
+            }
+            if size as usize > capacity {
+                return Err(io::Error::other("TCP owner table exceeds allocation"));
+            }
+            let base = buffer.as_ptr().cast::<u8>();
+            let count = base.cast::<u32>().read_unaligned() as usize;
+            let offset = std::mem::offset_of!(MIB_TCPTABLE_OWNER_PID, table);
+            let bytes = count
+                .checked_mul(size_of::<MIB_TCPROW_OWNER_PID>())
+                .and_then(|n| n.checked_add(offset))
+                .ok_or_else(|| io::Error::other("TCP owner table length overflow"))?;
+            if bytes > size as usize {
+                return Err(io::Error::other("truncated TCP owner table"));
+            }
+            for i in 0..count {
+                let row = base
+                    .add(offset + i * size_of::<MIB_TCPROW_OWNER_PID>())
+                    .cast::<MIB_TCPROW_OWNER_PID>()
+                    .read_unaligned();
+                if std::net::IpAddr::V4(std::net::Ipv4Addr::from(row.dwLocalAddr.to_ne_bytes()))
+                    == local.ip()
+                    && u16::from_be(row.dwLocalPort as u16) == local.port()
+                    && std::net::IpAddr::V4(std::net::Ipv4Addr::from(
+                        row.dwRemoteAddr.to_ne_bytes(),
+                    )) == remote.ip()
+                    && u16::from_be(row.dwRemotePort as u16) == remote.port()
+                {
+                    return Ok(Some(row.dwOwningPid));
+                }
+            }
+            return Ok(None);
+        }
+        Err(io::Error::other("TCP owner table kept changing"))
     }
 }
 #[cfg(test)]

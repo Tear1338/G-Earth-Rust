@@ -296,8 +296,8 @@ impl Desktop {
         if let Some(events) = &self.events {
             for event in events.try_iter().take(512) {
                 match event {
-                    Event::Status(status)=>self.status=status,
-                    Event::PacketIdentifiers(database)=>self.packet_info=database,
+                    Event::Status(status) => self.status = status,
+                    Event::PacketIdentifiers(database) => self.packet_info = database,
                     Event::Packet(message) => {
                         self.total += 1;
                         if !self.paused {
@@ -379,12 +379,23 @@ impl Desktop {
         } else {
             "EVA_WIRE TCP relay"
         });
-        if ui.add_enabled(
-            self.relay.is_none() && self.attachment_pending.is_none(),
-            egui::Checkbox::new(&mut self.origins, "Origins / Shockwave"),
-        ).changed(){
-            let known=gearth_rust::attachment::FLASH_HOTELS.contains(&self.attachment_host.as_str())||gearth_rust::attachment::ORIGINS_HOTELS.contains(&self.attachment_host.as_str());
-            if known{self.attachment_host=if self.origins{"game-od.habbo.com".into()}else{"game-fr.habbo.com".into()};}
+        if ui
+            .add_enabled(
+                self.relay.is_none() && self.attachment_pending.is_none(),
+                egui::Checkbox::new(&mut self.origins, "Origins / Shockwave"),
+            )
+            .changed()
+        {
+            let known = gearth_rust::attachment::FLASH_HOTELS
+                .contains(&self.attachment_host.as_str())
+                || gearth_rust::attachment::ORIGINS_HOTELS.contains(&self.attachment_host.as_str());
+            if known {
+                self.attachment_host = if self.origins {
+                    "game-od.habbo.com".into()
+                } else {
+                    "game-fr.habbo.com".into()
+                };
+            }
         }
         egui::CollapsingHeader::new("Official client attachment").default_open(true).show(ui,|ui|{
             let hotels=if self.origins{gearth_rust::attachment::ORIGINS_HOTELS}else{gearth_rust::attachment::FLASH_HOTELS};
@@ -1149,10 +1160,20 @@ impl Desktop {
             packets: self.packet_info.clone(),
         };
         Ok(RelayOptions {
-            flash_process: if self.flash_auto&&!self.origins {
-                if self.flash_pid!=0&&!gearth_platform::habbo_processes()?.iter().any(|p|p.pid==self.flash_pid){return Err(std::io::Error::other("Selected Habbo process is no longer running"));}
+            flash_process: if self.flash_auto && !self.origins {
+                if self.flash_pid != 0
+                    && !gearth_platform::habbo_processes()?
+                        .iter()
+                        .any(|p| p.pid == self.flash_pid)
+                {
+                    return Err(std::io::Error::other(
+                        "Selected Habbo process is no longer running",
+                    ));
+                }
                 Some(self.flash_pid)
-            }else{None},
+            } else {
+                None
+            },
             shockwave: self.origins,
             extensions: self.extension_host.clone(),
             connection: Some(connection),

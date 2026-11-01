@@ -19,16 +19,7 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo fmt --all
-      - name: Export formatted source for review
-        if: matrix.os == 'ubuntu-latest'
-        shell: python
-        run: |
-          import pathlib,json,base64
-          paths=list(pathlib.Path('src').glob('*.rs'))+list(pathlib.Path('tests').glob('*.rs'))+list(pathlib.Path('tools').glob('*.rs'))+list(pathlib.Path('crates').rglob('*.rs'))
-          data=base64.b64encode(json.dumps({str(p):p.read_text(encoding='utf-8') for p in paths}).encode()).decode()
-          for i in range(0,len(data),30000):
-            print('GEARTH_SOURCE_CHUNK='+data[i:i+30000])
+      - run: cargo fmt --all -- --check
       - run: cargo test --locked --workspace --all-targets
         timeout-minutes: 2
       - run: cargo clippy --locked --workspace --all-targets -- -D warnings
