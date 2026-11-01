@@ -25,6 +25,10 @@ name = "gearth-rust"
 path = "src/main.rs"
 
 [[bin]]
+name = "gearth-benchmark"
+path = "tools/benchmark.rs"
+
+[[bin]]
 name = "gearth-desktop"
 path = "src/desktop.rs"
 required-features = ["desktop"]

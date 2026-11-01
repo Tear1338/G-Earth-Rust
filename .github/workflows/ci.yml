@@ -90,6 +90,18 @@ jobs:
           GEARTH_JAVA_ORACLE: /tmp/java-oracle.txt
       - name: Exercise an actual beta-29 Java extension against Rust
         run: cargo test --locked --test java_extension -- --ignored
+      - name: Compare finite packet-construction throughput
+        run: |
+          api_jar=$(find /tmp/upstream-gearth -name 'G-Earth-Api-1.5.4-beta-29.jar' -print -quit)
+          javac -cp "$api_jar" tests/JavaBenchmark.java
+          cargo build --locked --release --bin gearth-benchmark
+          java -Xms256m -Xmx256m -cp "$api_jar:tests" JavaBenchmark > java-benchmark.csv
+          target/release/gearth-benchmark > rust-benchmark.csv
+          cat java-benchmark.csv rust-benchmark.csv
+      - uses: actions/upload-artifact@v4
+        with:
+          name: packet-microbenchmark
+          path: '*-benchmark.csv'
   publish-development:
     if: github.event_name == 'push' && contains(github.event.head_commit.message, '[build]')
     needs: [core, desktop, java-compatibility]
@@ -113,6 +125,7 @@ jobs:
           cp artifacts/G-Earth-Rust-Windows-development/gearth-desktop.exe G-Earth-Rust-Windows.exe
           cp artifacts/gearth-cli-windows-latest/gearth-rust.exe G-Earth-Rust-CLI-Windows.exe
           cp artifacts/gearth-cli-ubuntu-latest/gearth-rust gearth-cli-linux
+          cp artifacts/packet-microbenchmark/*-benchmark.csv .
           sha256sum G-Earth-Rust-Windows.exe G-Earth-Rust-CLI-Windows.exe gearth-cli-linux formatted-source-and-lockfile.zip > SHA256SUMS.txt
           printf '%s\n' 'Development build of the incomplete Rust port. Read docs/PARITY.md before use. This is not a complete replacement for G-Earth beta-29; official client attachment and Nitro/Unity integration are outstanding. No performance superiority has been established.' > release-notes.txt
-          gh release create "$BUILD_TAG" --target "$BUILD_COMMIT" --title "Rust development build $BUILD_TAG" --prerelease --notes-file release-notes.txt G-Earth-Rust-Windows.exe G-Earth-Rust-CLI-Windows.exe gearth-cli-linux formatted-source-and-lockfile.zip SHA256SUMS.txt
+          gh release create "$BUILD_TAG" --target "$BUILD_COMMIT" --title "Rust development build $BUILD_TAG" --prerelease --notes-file release-notes.txt G-Earth-Rust-Windows.exe G-Earth-Rust-CLI-Windows.exe gearth-cli-linux formatted-source-and-lockfile.zip SHA256SUMS.txt java-benchmark.csv rust-benchmark.csv
