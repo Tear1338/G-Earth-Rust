@@ -175,8 +175,13 @@ impl Default for Desktop {
             logs_bytes: 0,
             replacement_expression: String::new(),
             origins: false,
-            flash_auto: false, flash_pid: 0, client_processes: gearth_platform::habbo_processes().unwrap_or_default(),
-            attachment_host: "game-fr.habbo.com".into(), attachment_pending: None, attachment_worker: None, redirect: None,
+            flash_auto: false,
+            flash_pid: 0,
+            client_processes: gearth_platform::habbo_processes().unwrap_or_default(),
+            attachment_host: "game-fr.habbo.com".into(),
+            attachment_pending: None,
+            attachment_worker: None,
+            redirect: None,
             packet_download: None,
         };
         desktop.load_settings();
@@ -220,11 +225,30 @@ impl Desktop {
         }
     }
     fn poll(&mut self) {
-        if let Some(pending)=&self.attachment_pending {
-            match pending.try_recv(){
-                Ok(result)=>{match result{Ok(attachment)=>{self.relay=Some(attachment.relay);self.events=Some(attachment.events);self.redirect=Some(attachment.redirect);self.status="Waiting for the official client; reconnect Habbo now".into();self.update_rules();},Err(e)=>self.status=format!("Attachment failed: {e}")};self.attachment_pending=None;if let Some(worker)=self.attachment_worker.take(){let _=worker.join();}},
-                Err(std::sync::mpsc::TryRecvError::Disconnected)=>{self.attachment_pending=None;self.status="Attachment worker stopped".into();},
-                Err(std::sync::mpsc::TryRecvError::Empty)=>{},
+        if let Some(pending) = &self.attachment_pending {
+            match pending.try_recv() {
+                Ok(result) => {
+                    match result {
+                        Ok(attachment) => {
+                            self.relay = Some(attachment.relay);
+                            self.events = Some(attachment.events);
+                            self.redirect = Some(attachment.redirect);
+                            self.status =
+                                "Waiting for the official client; reconnect Habbo now".into();
+                            self.update_rules();
+                        }
+                        Err(e) => self.status = format!("Attachment failed: {e}"),
+                    };
+                    self.attachment_pending = None;
+                    if let Some(worker) = self.attachment_worker.take() {
+                        let _ = worker.join();
+                    }
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.attachment_pending = None;
+                    self.status = "Attachment worker stopped".into();
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
             }
         }
 
@@ -272,6 +296,8 @@ impl Desktop {
         if let Some(events) = &self.events {
             for event in events.try_iter().take(512) {
                 match event {
+                    Event::Status(status)=>self.status=status,
+                    Event::PacketIdentifiers(database)=>self.packet_info=database,
                     Event::Packet(message) => {
                         self.total += 1;
                         if !self.paused {
@@ -308,10 +334,26 @@ impl Desktop {
                     }
                     Event::Listening(a) => self.status = format!("Listening on {a}"),
                     Event::Connected(a) => {
-                        self.status=format!("Connected to {a}");
-                        if let Some(redirect)=&mut self.redirect{match redirect.restore(){Ok(())=>{self.redirect=None;},Err(e)=>self.status=format!("Connected; hosts restoration failed: {e}")}}
-                    },
-                    Event::Identified {version,identifier}=>{self.hotel_version=version;self.client_identifier=identifier;},
+                        self.status = format!("Connected to {a}");
+                        if let Some(redirect) = &mut self.redirect {
+                            match redirect.restore() {
+                                Ok(()) => {
+                                    self.redirect = None;
+                                }
+                                Err(e) => {
+                                    self.status =
+                                        format!("Connected; hosts restoration failed: {e}")
+                                }
+                            }
+                        }
+                    }
+                    Event::Identified {
+                        version,
+                        identifier,
+                    } => {
+                        self.hotel_version = version;
+                        self.client_identifier = identifier;
+                    }
                     Event::Disconnected => {
                         self.status = "Client disconnected; listening".into();
                         self.scheduler.jobs.clear();
@@ -338,7 +380,7 @@ impl Desktop {
             "EVA_WIRE TCP relay"
         });
         ui.add_enabled(
-            self.relay.is_none()&&self.attachment_pending.is_none(),
+            self.relay.is_none() && self.attachment_pending.is_none(),
             egui::Checkbox::new(&mut self.origins, "Origins / Shockwave"),
         );
         egui::CollapsingHeader::new("Official client attachment").default_open(true).show(ui,|ui|{
@@ -405,7 +447,7 @@ impl Desktop {
                 self.packet_info.entries().len()
             ));
         });
-        if self.relay.is_none()&&self.attachment_pending.is_none() {
+        if self.relay.is_none() && self.attachment_pending.is_none() {
             if ui.button("Start listening").clicked() {
                 match self.listen.parse() {
                     Ok(listen) => match self.relay_options().and_then(|options| {
@@ -427,12 +469,17 @@ impl Desktop {
                     Err(e) => self.status = format!("Invalid local address: {e}"),
                 }
             }
-        } else if self.relay.is_some()&&ui.button("Stop").clicked() {
+        } else if self.relay.is_some() && ui.button("Stop").clicked() {
             self.relay.take();
             self.events = None;
             self.scheduler.jobs.clear();
             self.status = "Disconnected".into();
-            if let Some(redirect)=&mut self.redirect{match redirect.restore(){Ok(())=>self.redirect=None,Err(e)=>self.status=format!("Hosts restoration failed: {e}")}}
+            if let Some(redirect) = &mut self.redirect {
+                match redirect.restore() {
+                    Ok(()) => self.redirect = None,
+                    Err(e) => self.status = format!("Hosts restoration failed: {e}"),
+                }
+            }
         }
         ui.add_space(20.0);
         ui.group(|ui|{
@@ -914,7 +961,10 @@ impl eframe::App for Desktop {
                 );
             }
         });
-        if self.relay.is_some() || self.attachment_pending.is_some() || self.extension_host.is_some() {
+        if self.relay.is_some()
+            || self.attachment_pending.is_some()
+            || self.extension_host.is_some()
+        {
             ctx.request_repaint_after(Duration::from_millis(50));
         }
     }
@@ -1095,10 +1145,23 @@ impl Desktop {
             packets: self.packet_info.clone(),
         };
         Ok(RelayOptions {
-            flash_process: if self.flash_auto&&!self.origins {
-                let processes=gearth_platform::habbo_processes()?;
-                Some(if self.flash_pid!=0{if !processes.iter().any(|p|p.pid==self.flash_pid){return Err(std::io::Error::other("Selected Habbo process is no longer running"));}self.flash_pid}else if processes.len()==1{processes[0].pid}else{return Err(std::io::Error::other("Select the Habbo process to attach; automatic selection requires exactly one running client"));})
-            }else{None},
+            flash_process: if self.flash_auto && !self.origins {
+                let processes = gearth_platform::habbo_processes()?;
+                Some(if self.flash_pid != 0 {
+                    if !processes.iter().any(|p| p.pid == self.flash_pid) {
+                        return Err(std::io::Error::other(
+                            "Selected Habbo process is no longer running",
+                        ));
+                    }
+                    self.flash_pid
+                } else if processes.len() == 1 {
+                    processes[0].pid
+                } else {
+                    return Err(std::io::Error::other("Select the Habbo process to attach; automatic selection requires exactly one running client"));
+                })
+            } else {
+                None
+            },
             shockwave: self.origins,
             extensions: self.extension_host.clone(),
             connection: Some(connection),
@@ -1182,8 +1245,12 @@ impl Desktop {
 }
 impl Drop for Desktop {
     fn drop(&mut self) {
-        if let Some(worker)=self.attachment_worker.take(){let _=worker.join();}
-        if let Some(redirect)=&mut self.redirect{let _=redirect.restore();}
+        if let Some(worker) = self.attachment_worker.take() {
+            let _ = worker.join();
+        }
+        if let Some(redirect) = &mut self.redirect {
+            let _ = redirect.restore();
+        }
         if self.settings_loaded {
             self.save_settings();
         }

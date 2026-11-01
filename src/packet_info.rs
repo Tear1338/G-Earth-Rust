@@ -109,7 +109,29 @@ impl PacketInfoManager {
         } else {
             format!("https://api.sulek.dev/releases/{version}/messages")
         };
-        Self::from_json(version, &download_json(&agent, &url)?).map_err(std::io::Error::other)
+        let cache=crate::settings::Settings::default_path().parent().unwrap_or_else(||std::path::Path::new(".")).join("packet-identifiers").join(format!("{}-{version}.bin",if origins{"SHOCKWAVE"}else{"FLASH"}));
+        if let Ok(database)=Self::load_cache(&cache,&version){return Ok(database);}
+        let database=Self::from_json(version, &download_json(&agent, &url)?).map_err(std::io::Error::other)?;
+        let _=database.save_cache(&cache);Ok(database)
+    }
+    pub fn load_cache(path:&std::path::Path,version:&str)->std::io::Result<Self> {
+        use std::io::Read;
+        let mut bytes=Vec::new();std::fs::File::open(path)?.take(8*1024*1024+1).read_to_end(&mut bytes)?;
+        if bytes.len()>8*1024*1024{return Err(std::io::Error::other("packet cache exceeds 8 MiB"));}
+        let mut packet=Packet::from_bytes(bytes).map_err(std::io::Error::other)?;
+        if packet.header()!=1||packet.read_string().map_err(std::io::Error::other)?!=version{return Err(std::io::Error::other("packet cache version mismatch"));}
+        let database=Self::read_from(version,&mut packet).map_err(std::io::Error::other)?;
+        if packet.remaining()!=0{return Err(std::io::Error::other("trailing packet cache data"));}Ok(database)
+    }
+    pub fn save_cache(&self,path:&std::path::Path)->std::io::Result<()> {
+        use std::io::Write;
+        let mut packet=Packet::new(1);packet.put_string(&self.version).map_err(std::io::Error::other)?;self.append_to(&mut packet).map_err(std::io::Error::other)?;
+        if packet.bytes().len()>8*1024*1024{return Err(std::io::Error::other("packet cache exceeds 8 MiB"));}
+        let parent=path.parent().unwrap_or_else(||std::path::Path::new("."));std::fs::create_dir_all(parent)?;
+        let mut random=[0;16];getrandom::fill(&mut random).map_err(|e|std::io::Error::other(e.to_string()))?;
+        let suffix=random.iter().map(|b|format!("{b:02x}")).collect::<String>();let temporary=parent.join(format!(".packet-info-{suffix}.tmp"));
+        let result=(||{let mut file=std::fs::OpenOptions::new().create_new(true).write(true).open(&temporary)?;file.write_all(packet.bytes())?;file.sync_all()?;drop(file);std::fs::rename(&temporary,path)})();
+        if result.is_err(){let _=std::fs::remove_file(&temporary);}result
     }
     pub fn new(version: impl Into<String>, entries: Vec<PacketInfo>) -> Self {
         let mut names = HashMap::new();

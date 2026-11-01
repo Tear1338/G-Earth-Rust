@@ -21,7 +21,9 @@ use std::time::Duration;
 const MAX_PENDING_BYTES: usize = 64 * 1024 * 1024;
 #[derive(Debug, Clone)]
 pub enum Event {
-    Identified {version:String,identifier:String},
+    Status(String),
+    PacketIdentifiers(crate::packet_info::PacketInfoManager),
+    Identified { version: String, identifier: String },
     Listening(SocketAddr),
     Connected(String),
     Disconnected,
@@ -34,7 +36,7 @@ pub struct Config {
 }
 #[derive(Clone, Default)]
 pub struct RelayOptions {
-    pub flash_process:Option<u32>,
+    pub flash_process: Option<u32>,
     pub shockwave: bool,
     pub extensions: Option<Arc<ExtensionHost>>,
     pub connection: Option<ConnectionDetails>,
@@ -61,7 +63,16 @@ impl Relay {
         config: Config,
         options: RelayOptions,
     ) -> io::Result<(Self, Receiver<Event>)> {
-        if options.flash_process.is_some()&&(options.shockwave||options.outgoing_rc4.is_some()||options.incoming_rc4.is_some()){return Err(io::Error::new(io::ErrorKind::InvalidInput,"automatic Flash discovery cannot be combined with Origins or explicit keys"));}
+        if options.flash_process.is_some()
+            && (options.shockwave
+                || options.outgoing_rc4.is_some()
+                || options.incoming_rc4.is_some())
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "automatic Flash discovery cannot be combined with Origins or explicit keys",
+            ));
+        }
         if options.shockwave && (options.outgoing_rc4.is_some() || options.incoming_rc4.is_some()) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -138,9 +149,11 @@ impl Relay {
                         if let (Some(host), Some(details)) =
                             (&options.extensions, &options.connection)
                         {
-                            if options.flash_process.is_none(){if let Err(e) = host.start_connection(details.clone()) {
-                                let _ = events.try_send(Event::Error(e.to_string()));
-                            }}
+                            if options.flash_process.is_none() {
+                                if let Err(e) = host.start_connection(details.clone()) {
+                                    let _ = events.try_send(Event::Error(e.to_string()));
+                                }
+                            }
                         }
                         let result = run_session(
                             client,
@@ -329,7 +342,9 @@ fn run_session(
     } else {
         None
     };
-    let mut flash=options.flash_process.map(|_|crate::flash::FlashSession::default());
+    let mut flash = options
+        .flash_process
+        .map(|_| crate::flash::FlashSession::default());
     while !stop.load(Ordering::Acquire) && !closed.load(Ordering::Acquire) {
         let mut progress = false;
         let mut injected: Vec<_> = commands.try_iter().take(64).collect();
@@ -368,9 +383,13 @@ fn run_session(
                         to_client.push_wire(shock.encode_to_client(&message.packet)?)?
                     }
                 }
-            } else if let Some(flash)=&mut flash {
-                let encrypted=flash.encrypted(direction);let bytes=flash.encode(direction,&message.packet,encrypted)?;
-                match direction{Direction::ToServer=>to_server.push_wire(bytes)?,Direction::ToClient=>to_client.push_wire(bytes)?}
+            } else if let Some(flash) = &mut flash {
+                let encrypted = flash.encrypted(direction);
+                let bytes = flash.encode(direction, &message.packet, encrypted)?;
+                match direction {
+                    Direction::ToServer => to_server.push_wire(bytes)?,
+                    Direction::ToClient => to_client.push_wire(bytes)?,
+                }
             } else {
                 match direction {
                     Direction::ToServer => to_server.push(message.packet.clone())?,
@@ -385,41 +404,118 @@ fn run_session(
                 Direction::ToServer => (&mut client, &mut from_client, &mut to_server),
                 Direction::ToClient => (&mut server, &mut from_server, &mut to_client),
             };
-            let n=match input.read(&mut buffer) {
-                Ok(0)=>return Ok(()),
-                Ok(n)=>{progress=true;n},
-                Err(e) if matches!(e.kind(),io::ErrorKind::WouldBlock|io::ErrorKind::Interrupted)=>0,
-                Err(e) if matches!(e.kind(),io::ErrorKind::ConnectionReset|io::ErrorKind::ConnectionAborted)=>return Ok(()),
-                Err(e)=>return Err(e),
-            };
-            let decrypt=if direction==Direction::ToServer{&mut decrypt_outgoing}else{&mut decrypt_incoming};
-            if let Some(cipher)=decrypt{cipher.apply(&mut buffer[..n]);}
-            let packets:Vec<(Packet,bool)>=if let Some(flash)=&mut flash {
-                flash.feed(direction,&buffer[..n])?.into_iter().map(|p|(p.packet,p.encrypted)).collect()
-            }else if let Some(shock)=&mut shockwave {
-                let packets=if direction==Direction::ToServer{shock.client_packets(&buffer[..n])?}else{shock.server_packets(&buffer[..n])?};
-                packets.into_iter().map(|p|(p,false)).collect()
-            }else{
-                decoder.push(&buffer[..n]).map_err(io::Error::other)?;let mut packets=Vec::new();
-                while let Some(p)=decoder.next_packet().map_err(io::Error::other)?{packets.push((p,false));}packets
-            };
-            if let Some(flash)=&mut flash {if let Some(identity)=flash.take_identity(){
-                let _=events.try_send(Event::Identified {version:identity.version.clone(),identifier:identity.identifier.clone()});
-                if let (Some(host),Some(details))=(&options.extensions,&options.connection){let mut details=details.clone();details.version=identity.version;details.identifier=identity.identifier;host.start_connection(details)?;}
-            }}
-            for (packet,encrypted) in packets {
-                progress=true;let mut message=Message {packet,direction,index:*index,blocked:false};*index=index.wrapping_add(1);
-                rules.lock().map_err(|_|io::Error::other("rules lock poisoned"))?.apply(&mut message);
-                if let Some(host)=&options.extensions{host.intercept(&mut message)?;}
-                if !message.blocked {
-                    if let Some(shock)=&mut shockwave {let bytes=if direction==Direction::ToServer{shock.encode_to_server(&message.packet)?}else{shock.encode_to_client(&message.packet)?};output.push_wire(bytes)?;}
-                    else if let Some(flash)=&mut flash {output.push_wire(flash.encode(direction,&message.packet,encrypted)?)?;}
-                    else{output.push(message.packet.clone())?;}
+            let n = match input.read(&mut buffer) {
+                Ok(0) => return Ok(()),
+                Ok(n) => {
+                    progress = true;
+                    n
                 }
-                let _=events.try_send(Event::Packet(message));
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+                    ) =>
+                {
+                    0
+                }
+                Err(e)
+                    if matches!(
+                        e.kind(),
+                        io::ErrorKind::ConnectionReset | io::ErrorKind::ConnectionAborted
+                    ) =>
+                {
+                    return Ok(())
+                }
+                Err(e) => return Err(e),
+            };
+            let decrypt = if direction == Direction::ToServer {
+                &mut decrypt_outgoing
+            } else {
+                &mut decrypt_incoming
+            };
+            if let Some(cipher) = decrypt {
+                cipher.apply(&mut buffer[..n]);
+            }
+            let packets: Vec<(Packet, bool)> = if let Some(flash) = &mut flash {
+                flash
+                    .feed(direction, &buffer[..n])?
+                    .into_iter()
+                    .map(|p| (p.packet, p.encrypted))
+                    .collect()
+            } else if let Some(shock) = &mut shockwave {
+                let packets = if direction == Direction::ToServer {
+                    shock.client_packets(&buffer[..n])?
+                } else {
+                    shock.server_packets(&buffer[..n])?
+                };
+                packets.into_iter().map(|p| (p, false)).collect()
+            } else {
+                decoder.push(&buffer[..n]).map_err(io::Error::other)?;
+                let mut packets = Vec::new();
+                while let Some(p) = decoder.next_packet().map_err(io::Error::other)? {
+                    packets.push((p, false));
+                }
+                packets
+            };
+            if let Some(flash) = &mut flash {
+                if let Some(identity) = flash.take_identity() {
+                    let _ = events.try_send(Event::Identified {
+                        version: identity.version.clone(),
+                        identifier: identity.identifier.clone(),
+                    });
+                    if let (Some(host), Some(details)) = (&options.extensions, &options.connection)
+                    {
+                        let mut details = details.clone();
+                        details.version = identity.version;
+                        details.identifier = identity.identifier;
+                        if details.packets.entries().is_empty(){
+                            let _=events.try_send(Event::Status("Loading packet identifiers for the detected Flash revision...".into()));
+                            match crate::packet_info::PacketInfoManager::fetch_sulek(&details.version,false){
+                                Ok(database)=>{let _=events.try_send(Event::PacketIdentifiers(database.clone()));details.packets=database;},
+                                Err(e)=>{let _=events.try_send(Event::Status(format!("Connected without packet names: {e}")));},
+                            }
+                            if stop.load(Ordering::Acquire){return Ok(());}
+                        }
+                        host.start_connection(details)?;
+                    }
+                }
+            }
+            for (packet, encrypted) in packets {
+                progress = true;
+                let mut message = Message {
+                    packet,
+                    direction,
+                    index: *index,
+                    blocked: false,
+                };
+                *index = index.wrapping_add(1);
+                rules
+                    .lock()
+                    .map_err(|_| io::Error::other("rules lock poisoned"))?
+                    .apply(&mut message);
+                if let Some(host) = &options.extensions {
+                    host.intercept(&mut message)?;
+                }
+                if !message.blocked {
+                    if let Some(shock) = &mut shockwave {
+                        let bytes = if direction == Direction::ToServer {
+                            shock.encode_to_server(&message.packet)?
+                        } else {
+                            shock.encode_to_client(&message.packet)?
+                        };
+                        output.push_wire(bytes)?;
+                    } else if let Some(flash) = &mut flash {
+                        output.push_wire(flash.encode(direction, &message.packet, encrypted)?)?;
+                    } else {
+                        output.push(message.packet.clone())?;
+                    }
+                }
+                let _ = events.try_send(Event::Packet(message));
             }
         }
-        if let (Some(flash),Some(pid))=(&mut flash,options.flash_process){flash.discover(pid,stop)?;}
+        if let (Some(flash), Some(pid)) = (&mut flash, options.flash_process) {
+            flash.discover(pid, stop)?;
+        }
         progress |= to_server.flush(&mut server)?;
         progress |= to_client.flush(&mut client)?;
         if !progress {
