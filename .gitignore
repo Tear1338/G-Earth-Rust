@@ -1,0 +1,8 @@
+/target/
+*.log
+*.capture
+/docs/rea-evidence.json
+*.class
+/source-ci/
+/build/
+
