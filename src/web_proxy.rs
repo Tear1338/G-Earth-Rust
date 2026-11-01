@@ -340,10 +340,9 @@ impl Shared {
 }
 #[derive(Clone)]
 struct Handler(Arc<Shared>, u8, Option<crate::unity_assets::UnityAsset>);
-impl HttpHandler for Handler {
-    async fn handle_request(
+impl Handler {
+    async fn handle_asset_request(
         &mut self,
-        _ctx: &HttpContext,
         mut request: Request<Body>,
     ) -> RequestOrResponse {
         self.1 = if request.uri().host() == Some("images.hartico.tv")
@@ -369,9 +368,8 @@ impl HttpHandler for Handler {
         }
         request.into()
     }
-    async fn handle_response(
+    async fn handle_asset_response(
         &mut self,
-        _ctx: &HttpContext,
         response: Response<Body>,
     ) -> Response<Body> {
         if self.1 == 0 || response.status() != StatusCode::OK {
@@ -462,6 +460,10 @@ impl HttpHandler for Handler {
         Response::from_parts(parts, Body::from(bytes))
     }
 
+ }
+impl HttpHandler for Handler {
+    async fn handle_request(&mut self,_ctx:&HttpContext,request:Request<Body>)->RequestOrResponse{self.handle_asset_request(request).await}
+    async fn handle_response(&mut self,_ctx:&HttpContext,response:Response<Body>)->Response<Body>{self.handle_asset_response(response).await}
     async fn should_intercept_connect(
         &mut self,
         _ctx: &HttpContext,
@@ -669,12 +671,12 @@ impl Drop for WebProxy {
     struct Directory(PathBuf);
     impl Drop for Directory {fn drop(&mut self){for file in ["ca/gearth-proxy-cert.pem","ca/gearth-proxy-key.pem"]{let _=std::fs::remove_file(self.0.join(file));}let _=std::fs::remove_dir(self.0.join("ca"));let _=std::fs::remove_dir(&self.0);}}
     #[test] fn proxy_asset_handler_preserves_gzip_and_updates_headers_without_changing_system_settings(){
-        let mut random=[0;16];getrandom::fill(&mut random).unwrap();let directory=Directory(std::env::temp_dir().join(format!("gearth-unity-http-{}",random.iter().map(|b|format!("{b:02x}")).collect::<String>())));std::fs::create_dir(&directory.0).unwrap();let mut options=WebOptions::new("127.0.0.1:0".parse().unwrap(),directory.0.join("ca"));options.unity=Some(UnityAssets {websocket_port:12345,token:"a".repeat(64),cache_directory:directory.0.join("unused")});options.detect_nitro=false;let (mut proxy,_)=WebProxy::start(options).unwrap();let mut handler=Handler(proxy.state.clone(),0,None);let context=HttpContext {client_addr:"127.0.0.1:12345".parse().unwrap()};let runtime=tokio::runtime::Runtime::new().unwrap();runtime.block_on(async{
+        let mut random=[0;16];getrandom::fill(&mut random).unwrap();let directory=Directory(std::env::temp_dir().join(format!("gearth-unity-http-{}",random.iter().map(|b|format!("{b:02x}")).collect::<String>())));std::fs::create_dir(&directory.0).unwrap();let mut options=WebOptions::new("127.0.0.1:0".parse().unwrap(),directory.0.join("ca"));options.unity=Some(UnityAssets {websocket_port:12345,token:"a".repeat(64),cache_directory:directory.0.join("unused")});options.detect_nitro=false;let (mut proxy,_)=WebProxy::start(options).unwrap();let mut handler=Handler(proxy.state.clone(),0,None);let runtime=tokio::runtime::Runtime::new().unwrap();runtime.block_on(async{
             use http_body_util::BodyExt;
-            let url="https://images.habbo.com/habbo-webgl-clients/TEST-1/WebGL/habbo2020-global-prod/StreamingAssets/Version.txt";let request=Request::builder().uri(url).header("if-none-match","old-tag").header("accept-encoding","gzip, br").body(Body::empty()).unwrap();let RequestOrResponse::Request(request)=handler.handle_request(&context,request).await else{panic!("asset request was not forwarded")};assert!(!request.headers().contains_key("if-none-match"));assert_eq!(request.headers()["accept-encoding"],"identity");
-            let mut encoder=flate2::write::GzEncoder::new(Vec::new(),flate2::Compression::fast());encoder.write_all(b"fixture-version").unwrap();let bytes=encoder.finish().unwrap();let response=Response::builder().header("etag","old-tag").header("last-modified","old-date").header("content-encoding","gzip").header("content-length",bytes.len()).body(Body::from(bytes)).unwrap();let response=handler.handle_response(&context,response).await;assert_eq!(response.status(),StatusCode::OK);assert_eq!(response.headers()["cache-control"],"no-store");assert_eq!(response.headers()["x-modified-by"],"G-Earth-Rust");assert_eq!(response.headers()["content-encoding"],"gzip");assert!(!response.headers().contains_key("etag"));assert!(!response.headers().contains_key("last-modified"));let length=response.headers()["content-length"].to_str().unwrap().parse::<usize>().unwrap();let bytes=response.into_body().collect().await.unwrap().to_bytes();assert_eq!(bytes.len(),length);let mut text=String::new();flate2::read::GzDecoder::new(bytes.as_ref()).read_to_string(&mut text).unwrap();assert_eq!(text,"fixture-version - G-Earth Rust");
-            let data_url=url.replace("StreamingAssets/Version.txt","Build/habbo2020-global-prod.data.gz");let request=Request::builder().uri(data_url).body(Body::empty()).unwrap();let _=handler.handle_request(&context,request).await;let response=Response::builder().header("etag","data-tag").body(Body::from("original-data")).unwrap();let response=handler.handle_response(&context,response).await;assert!(!response.headers().contains_key("etag"));assert_eq!(response.into_body().collect().await.unwrap().to_bytes(),"original-data");
-            let request=Request::builder().uri(url).body(Body::empty()).unwrap();let _=handler.handle_request(&context,request).await;let response=Response::builder().status(404).header("etag","error-tag").body(Body::from("not found")).unwrap();let response=handler.handle_response(&context,response).await;assert_eq!(response.status(),StatusCode::NOT_FOUND);assert_eq!(response.headers()["etag"],"error-tag");
+            let url="https://images.habbo.com/habbo-webgl-clients/TEST-1/WebGL/habbo2020-global-prod/StreamingAssets/Version.txt";let request=Request::builder().uri(url).header("if-none-match","old-tag").header("accept-encoding","gzip, br").body(Body::empty()).unwrap();let RequestOrResponse::Request(request)=handler.handle_asset_request(request).await else{panic!("asset request was not forwarded")};assert!(!request.headers().contains_key("if-none-match"));assert_eq!(request.headers()["accept-encoding"],"identity");
+            let mut encoder=flate2::write::GzEncoder::new(Vec::new(),flate2::Compression::fast());encoder.write_all(b"fixture-version").unwrap();let bytes=encoder.finish().unwrap();let response=Response::builder().header("etag","old-tag").header("last-modified","old-date").header("content-encoding","gzip").header("content-length",bytes.len()).body(Body::from(bytes)).unwrap();let response=handler.handle_asset_response(response).await;assert_eq!(response.status(),StatusCode::OK);assert_eq!(response.headers()["cache-control"],"no-store");assert_eq!(response.headers()["x-modified-by"],"G-Earth-Rust");assert_eq!(response.headers()["content-encoding"],"gzip");assert!(!response.headers().contains_key("etag"));assert!(!response.headers().contains_key("last-modified"));let length=response.headers()["content-length"].to_str().unwrap().parse::<usize>().unwrap();let bytes=response.into_body().collect().await.unwrap().to_bytes();assert_eq!(bytes.len(),length);let mut text=String::new();flate2::read::GzDecoder::new(bytes.as_ref()).read_to_string(&mut text).unwrap();assert_eq!(text,"fixture-version - G-Earth Rust");
+            let data_url=url.replace("StreamingAssets/Version.txt","Build/habbo2020-global-prod.data.gz");let request=Request::builder().uri(data_url).body(Body::empty()).unwrap();let _=handler.handle_asset_request(request).await;let response=Response::builder().header("etag","data-tag").body(Body::from("original-data")).unwrap();let response=handler.handle_asset_response(response).await;assert!(!response.headers().contains_key("etag"));assert_eq!(response.into_body().collect().await.unwrap().to_bytes(),"original-data");
+            let request=Request::builder().uri(url).body(Body::empty()).unwrap();let _=handler.handle_asset_request(request).await;let response=Response::builder().status(404).header("etag","error-tag").body(Body::from("not found")).unwrap();let response=handler.handle_asset_response(response).await;assert_eq!(response.status(),StatusCode::NOT_FOUND);assert_eq!(response.headers()["etag"],"error-tag");
         });proxy.stop();
     }
 }
