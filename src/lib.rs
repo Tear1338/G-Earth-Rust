@@ -16,3 +16,5 @@ pub mod scheduler;
 pub mod settings;
 pub mod shockwave;
 pub mod socks;
+#[cfg(feature="web")] pub mod web_ca;
+#[cfg(feature="web")] pub mod web_proxy;
