@@ -22,7 +22,7 @@ impl Side {
 pub struct DecodedPacket {pub packet:Packet,pub encrypted:bool}
 #[derive(Clone,Debug)] pub struct Identity {pub version:String,pub identifier:String}
 #[derive(Default)]
-pub struct FlashSession {outgoing:Side,incoming:Side,identity:Option<Identity>,reported:bool,incoming_count:usize,negotiated:bool,last_scan:Option<Instant>}
+pub struct FlashSession {outgoing:Side,incoming:Side,identity:Option<Identity>,reported:bool,incoming_count:usize,negotiated:bool,last_scan:Option<Instant>,scan_stats:Option<(usize,usize,bool)>}
 impl FlashSession {
     pub fn feed(&mut self,direction:Direction,bytes:&[u8])->io::Result<Vec<DecodedPacket>> {
         self.side(direction).feed(bytes)?;let mut packets=Vec::new();
@@ -59,10 +59,10 @@ impl FlashSession {
     }
     pub fn discover(&mut self,pid:u32,cancel:&AtomicBool)->io::Result<()> {
         let now=Instant::now();
-        for side in [&self.outgoing,&self.incoming]{if side.waiting.is_some_and(|t|now.duration_since(t)>Duration::from_secs(15)){return Err(io::Error::new(io::ErrorKind::TimedOut,"Flash RC4 discovery timed out; select the correct client process and reconnect"));}}
+        for side in [&self.outgoing,&self.incoming]{if side.waiting.is_some_and(|t|now.duration_since(t)>Duration::from_secs(15)){return Err(io::Error::new(io::ErrorKind::TimedOut,format!("Flash RC4 discovery timed out; scan {:?}; pending outgoing {} bytes, incoming {} bytes",self.scan_stats,if self.outgoing.reader.is_none(){self.outgoing.buffer.len()}else{0},if self.incoming.reader.is_none(){self.incoming.buffer.len()}else{0})));}}
         let pending=[&self.outgoing,&self.incoming].iter().any(|s|s.encrypted&&s.reader.is_none()&&s.buffer.len()>=6);
         if pending&&self.last_scan.is_none_or(|t|now.duration_since(t)>=Duration::from_millis(100)) {
-            self.last_scan=Some(now);let scan=gearth_platform::scan_habbo(pid,cancel)?;self.recover_with(&scan.states,cancel)?;
+            self.last_scan=Some(now);let scan=gearth_platform::scan_habbo(pid,cancel)?;self.scan_stats=Some((scan.states.len(),scan.bytes_read,scan.complete));self.recover_with(&scan.states,cancel)?;
         }Ok(())
     }
 }

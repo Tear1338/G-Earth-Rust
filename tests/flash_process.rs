@@ -1,6 +1,6 @@
 #![cfg(windows)]
 use gearth_rust::{crypto::Rc4,packet::{Packet,Direction,read_frame,write_frame},relay::{Relay,RelayOptions,Config,Event},rules::{Rules,Rule,Action}};
-use std::{io::{Read,Write},net::TcpListener,process::{Command,Child,Stdio},time::{Duration,Instant},thread};
+use std::{io::{Read,Write,BufRead},net::TcpListener,process::{Command,Child,Stdio},time::{Duration,Instant},thread};
 use std::os::windows::process::CommandExt;
 struct Fixture(Child,std::path::PathBuf);
 impl Drop for Fixture{fn drop(&mut self){let _=self.0.kill();let _=self.0.wait();let _=std::fs::remove_file(self.1.join("Habbo.exe"));let _=std::fs::remove_dir(&self.1);}}
@@ -18,6 +18,10 @@ fn receive(stream:&mut std::net::TcpStream,cipher:&mut Rc4)->Packet{let mut h=[0
         let mut p=Packet::new(88);p.put_i32(17).unwrap();let mut bytes=p.bytes().to_vec();cipher.apply(&mut bytes);stream.write_all(&bytes).unwrap();
         let p=receive(&mut stream,&mut outgoing);assert_eq!(p.header(),90);
     });
+    let mut stdout=std::io::BufReader::new(fixture.0.stdout.take().unwrap());let mut ready=String::new();stdout.read_line(&mut ready).unwrap();assert!(ready.contains("FLASH_FIXTURE_READY"));
+    let scan=gearth_platform::scan_habbo(fixture.0.id(),&std::sync::atomic::AtomicBool::new(false)).unwrap();
+    let fresh=Rc4::new(b"flash-fixture-shared-secret").unwrap().state().0;
+    assert!(scan.states.contains(&fresh),"native scan missed live table: {} candidates, {} bytes, complete={}",scan.states.len(),scan.bytes_read,scan.complete);
     let deadline=Instant::now()+Duration::from_secs(30);let mut out=false;let mut incoming=false;
     while Instant::now()<deadline {
         match events.recv_timeout(Duration::from_millis(100)){
@@ -25,6 +29,6 @@ fn receive(stream:&mut std::net::TcpStream,cipher:&mut Rc4)->Packet{let mut h=[0
             Ok(Event::Packet(m)) if m.direction==Direction::ToClient&&m.packet.header()==88&&!incoming=>{let mut p=Packet::new(89);p.put_i32(33).unwrap();relay.inject(Direction::ToClient,p).unwrap();incoming=true;},
             Ok(Event::Error(e))=>panic!("{e}"),_=>{}
         }
-        if let Some(status)=fixture.0.try_wait().unwrap(){let mut stdout=String::new();fixture.0.stdout.take().unwrap().read_to_string(&mut stdout).unwrap();let mut stderr=String::new();fixture.0.stderr.take().unwrap().read_to_string(&mut stderr).unwrap();assert!(status.success(),"fixture failed: {stderr}");assert!(stdout.contains("FLASH_FIXTURE_OK"));assert!(out&&incoming);server.join().unwrap();relay.stop();return;}
+        if let Some(status)=fixture.0.try_wait().unwrap(){let mut output=String::new();stdout.read_to_string(&mut output).unwrap();let mut stderr=String::new();fixture.0.stderr.take().unwrap().read_to_string(&mut stderr).unwrap();assert!(status.success(),"fixture failed: {stderr}");assert!(output.contains("FLASH_FIXTURE_OK"));assert!(out&&incoming);server.join().unwrap();relay.stop();return;}
     }panic!("native Flash fixture timed out");
 }

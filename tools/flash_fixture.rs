@@ -8,6 +8,7 @@ fn main()->io::Result<()> {
     let mut outgoing=Rc4::new(b"flash-fixture-shared-secret").unwrap();let mut incoming=outgoing.clone();
     // Simulate AIR's 256 u32 RC4 tables in this controlled process's heap.
     let mut outgoing_words=outgoing.state().0.map(u32::from).to_vec();let incoming_words=incoming.state().0.map(u32::from).to_vec();
+    println!("FLASH_FIXTURE_READY");io::stdout().flush()?;
     let mut hello=Packet::new(1);hello.put_string("FLASH-TEST").unwrap().put_string("fixture").unwrap();write_frame(&mut stream,&hello)?;
     let mut secret=read_frame(&mut stream)?;assert_eq!(secret.header(),2);secret.read_string().unwrap();assert!(secret.read_bool().unwrap());
     let mut wire=Vec::new();for (header,value) in [(77,13),(78,41)]{let mut p=Packet::new(header);p.put_i32(value).unwrap();wire.extend_from_slice(p.bytes());}outgoing.apply(&mut wire);outgoing_words.copy_from_slice(&outgoing.state().0.map(u32::from));
