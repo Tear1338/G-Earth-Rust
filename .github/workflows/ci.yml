@@ -112,6 +112,13 @@ jobs:
           GEARTH_JAVA_ORACLE: /tmp/java-oracle.txt
       - name: Exercise an actual beta-29 Java extension against Rust
         run: cargo test --locked --test java_extension -- --ignored
+      - name: Validate hotel crypto against Java JCE
+        run: |
+          javac tests/JavaNitroCryptoOracle.java
+          java -cp tests JavaNitroCryptoOracle > /tmp/nitro-crypto-oracle.txt
+          cargo test --locked --features web --lib java_crypto -- --ignored
+        env:
+          GEARTH_NITRO_CRYPTO_ORACLE: /tmp/nitro-crypto-oracle.txt
       - name: Compare finite packet-construction throughput
         run: |
           api_jar=$(find /tmp/upstream-gearth -name 'G-Earth-Api-1.5.4-beta-29.jar' -print -quit)

@@ -6,8 +6,8 @@ use tokio::sync::{mpsc as asynchronous,oneshot,watch,Notify};
 pub const NITRO_REVISION:&str="PRODUCTION-201611291003-338511768";
 const MAX_QUEUED:usize=32*1024*1024;
 #[derive(Clone)]
-pub struct WebOptions {pub listen:SocketAddr,pub identity_directory:PathBuf,pub packet_info:PacketInfoManager,pub extensions:Option<Arc<ExtensionHost>>,pub extra_roots:Vec<Vec<u8>>,pub websocket_urls:Vec<String>,pub hotels:Hotels}
-impl WebOptions {pub fn new(listen:SocketAddr,identity_directory:PathBuf)->Self{Self {listen,identity_directory,packet_info:PacketInfoManager::default(),extensions:None,extra_roots:Vec::new(),websocket_urls:Vec::new(),hotels:Hotels::beta29()}}}
+pub struct WebOptions {pub listen:SocketAddr,pub identity_directory:PathBuf,pub packet_info:PacketInfoManager,pub extensions:Option<Arc<ExtensionHost>>,pub extra_roots:Vec<Vec<u8>>,pub websocket_urls:Vec<String>,pub hotels:Hotels,pub allow_city_helper:bool,pub city_keys:Option<crate::nitro_city::CityKeys>}
+impl WebOptions {pub fn new(listen:SocketAddr,identity_directory:PathBuf)->Self{Self {listen,identity_directory,packet_info:PacketInfoManager::default(),extensions:None,extra_roots:Vec::new(),websocket_urls:Vec::new(),hotels:Hotels::beta29(),allow_city_helper:false,city_keys:None}}}
 #[derive(Clone,PartialEq,Eq,Hash)]
 struct PeerKey {client:SocketAddr,uri:String}
 struct Peer {key:PeerKey,modifier:tokio::sync::Mutex<Modifier>,active:AtomicBool,ready:AtomicBool,closed:AtomicBool,notify:Notify,queued:AtomicUsize,finished:AtomicUsize,senders:[asynchronous::Sender<Packet>;2],receivers:Mutex<[Option<asynchronous::Receiver<Packet>>;2]>,stop:watch::Sender<bool>}
@@ -21,9 +21,9 @@ impl Peer {
     }
 }
 fn side(direction:Direction)->usize{if direction==Direction::ToServer{0}else{1}}
-struct Shared {options:WebOptions,hartico_key:Mutex<Option<[u8;24]>>,peers:Mutex<HashMap<PeerKey,Arc<Peer>>>,active:Mutex<Option<Arc<Peer>>>,rules:Mutex<Rules>,pipeline:Mutex<()>,events:SyncSender<Event>,index:AtomicI32,stop:AtomicBool}
+struct Shared {options:WebOptions,hartico_key:Mutex<Option<[u8;24]>>,city_keys:Mutex<Option<crate::nitro_city::CityKeys>>,peers:Mutex<HashMap<PeerKey,Arc<Peer>>>,active:Mutex<Option<Arc<Peer>>>,rules:Mutex<Rules>,pipeline:Mutex<()>,events:SyncSender<Event>,index:AtomicI32,stop:AtomicBool}
 impl Shared {
-    fn peer(&self,key:PeerKey)->io::Result<Arc<Peer>>{let mut peers=self.peers.lock().map_err(|_|io::Error::other("web peer lock poisoned"))?;if let Some(peer)=peers.get(&key){return Ok(peer.clone());}if peers.len()>=128{return Err(io::Error::other("too many pending WebSocket connections"));}let kind=self.options.hotels.find(&key.uri).map(|h|h.kind.clone()).unwrap_or(crate::nitro::HotelKind::Plain);let modifier=if kind==crate::nitro::HotelKind::Hartico{Modifier::Hartico(crate::nitro_assets::Hartico::new(self.hartico_key.lock().map_err(|_|io::Error::other("Hartico asset lock poisoned"))?.ok_or_else(||io::Error::other("Hartico logo key is unavailable; reload the hotel assets before connecting"))?))}else{Modifier::new(&kind)?};let peer=Arc::new(Peer::new(key.clone(),modifier));peers.insert(key,peer.clone());Ok(peer)}
+    fn peer(&self,key:PeerKey)->io::Result<Arc<Peer>>{let mut peers=self.peers.lock().map_err(|_|io::Error::other("web peer lock poisoned"))?;if let Some(peer)=peers.get(&key){return Ok(peer.clone());}if peers.len()>=128{return Err(io::Error::other("too many pending WebSocket connections"));}let kind=self.options.hotels.find(&key.uri).map(|h|h.kind.clone()).unwrap_or(crate::nitro::HotelKind::Plain);let modifier=if kind==crate::nitro::HotelKind::Hartico{Modifier::Hartico(crate::nitro_assets::Hartico::new(self.hartico_key.lock().map_err(|_|io::Error::other("Hartico asset lock poisoned"))?.ok_or_else(||io::Error::other("Hartico logo key is unavailable; reload the hotel assets before connecting"))?))}else if kind==crate::nitro::HotelKind::HabboCity {Modifier::HabboCity(Box::new(crate::nitro_city::HabboCity::new(self.city_keys.lock().map_err(|_|io::Error::other("HabboCity key lock poisoned"))?.clone().ok_or_else(||io::Error::other("HabboCity keys are unavailable; import keys or opt in to Nitro Helper, then reload the hotel"))?)))}else{Modifier::new(&kind)?};let peer=Arc::new(Peer::new(key.clone(),modifier));peers.insert(key,peer.clone());Ok(peer)}
     fn close(&self,peer:&Peer){if peer.closed.swap(true,Ordering::AcqRel){return;}peer.stop.send_replace(true);peer.notify.notify_waiters();if let Ok(mut active)=self.active.lock(){if active.as_ref().is_some_and(|p|p.key==peer.key){*active=None;if let Some(host)=&self.options.extensions{host.end_connection();}let _=self.events.try_send(Event::Disconnected);}}}
     fn finish(&self,peer:&Peer){self.close(peer);if peer.finished.fetch_add(1,Ordering::AcqRel)==1{if let Ok(mut peers)=self.peers.lock(){peers.remove(&peer.key);}}}
     fn close_all(&self){let peers=self.peers.lock().map(|p|p.values().cloned().collect::<Vec<_>>()).unwrap_or_default();for peer in peers{self.close(&peer);}}
@@ -52,19 +52,23 @@ impl Shared {
         }).await.map_err(|e|io::Error::other(e.to_string()))?
     }
 }
-#[derive(Clone)] struct Handler(Arc<Shared>,bool);
+#[derive(Clone)] struct Handler(Arc<Shared>,u8);
 impl HttpHandler for Handler {
     async fn handle_request(&mut self,_ctx:&HttpContext,mut request:Request<Body>)->RequestOrResponse {
-        self.1=request.uri().host()==Some("images.hartico.tv")&&request.uri().path()=="/cosmos/img/logos/logo.png";
-        if self.1 {for name in ["if-none-match","if-modified-since","accept-encoding"]{request.headers_mut().remove(name);}}
+        self.1=if request.uri().host()==Some("images.hartico.tv")&&request.uri().path()=="/cosmos/img/logos/logo.png" {1}else if request.uri().host()==Some("cdn.habbocity.fr")&&request.uri().path()=="/crypto/file/city_crypto_bg.wasm" {2}else{0};
+        if self.1!=0 {for name in ["if-none-match","if-modified-since","accept-encoding"]{request.headers_mut().remove(name);}}
         request.into()
     }
     async fn handle_response(&mut self,_ctx:&HttpContext,response:Response<Body>)->Response<Body> {
-        if !self.1||response.status()!=StatusCode::OK{return response;}
+        if self.1==0||response.status()!=StatusCode::OK{return response;}
         use http_body_util::BodyExt;
-        let (parts,mut body)=response.into_parts();let mut bytes=Vec::new();let result:io::Result<()>=async {while let Some(frame)=body.frame().await {let frame=frame.map_err(io::Error::other)?;if let Ok(data)=frame.into_data(){if bytes.len()+data.len()>16*1024*1024{return Err(io::Error::other("Hartico logo response exceeds 16 MiB"));}bytes.extend_from_slice(&data);}}Ok(())}.await;
+        let (parts,mut body)=response.into_parts();let mut bytes=Vec::new();let result:io::Result<()>=async {while let Some(frame)=body.frame().await {let frame=frame.map_err(io::Error::other)?;if let Ok(data)=frame.into_data(){if bytes.len()+data.len()>16*1024*1024{return Err(io::Error::other("Nitro asset response exceeds 16 MiB"));}bytes.extend_from_slice(&data);}}Ok(())}.await;
         if let Err(e)=result {let _=self.0.events.try_send(Event::Error(e.to_string()));return Response::builder().status(StatusCode::BAD_GATEWAY).body(Body::from("Hotel asset could not be read")).unwrap();}
-        match crate::nitro_assets::hartico_key(&bytes){Ok(key)=>{if let Ok(mut target)=self.0.hartico_key.lock(){*target=Some(key);}},Err(e)=>{let _=self.0.events.try_send(Event::Error(format!("Hartico key extraction failed: {e}")));}}
+        if self.1==1 {match crate::nitro_assets::hartico_key(&bytes){Ok(key)=>{if let Ok(mut target)=self.0.hartico_key.lock(){*target=Some(key);}},Err(e)=>{let _=self.0.events.try_send(Event::Error(format!("Hartico key extraction failed: {e}")));}}}
+        if self.1==2 {
+            if self.0.options.allow_city_helper {let wasm=bytes.clone();match tokio::task::spawn_blocking(move||crate::nitro_city::fetch_keys(&wasm)).await {Ok(Ok(keys))=>{if let Ok(mut target)=self.0.city_keys.lock(){*target=Some(keys);}},Ok(Err(e))=>{let _=self.0.events.try_send(Event::Error(format!("Nitro Helper failed: {e}")));},Err(e)=>{let _=self.0.events.try_send(Event::Error(e.to_string()));}}}
+            else if self.0.city_keys.lock().is_ok_and(|keys|keys.is_none()){let _=self.0.events.try_send(Event::Status("HabboCity requires imported key data or an explicit Nitro Helper opt-in before reloading".into()));}
+        }
         Response::from_parts(parts,Body::from(bytes))
     }
 
@@ -114,13 +118,13 @@ impl WebProxy {
     pub fn start(options:WebOptions)->io::Result<(Self,Receiver<Event>)>{
         if !options.listen.ip().is_loopback(){return Err(io::Error::other("HTTP proxy must bind loopback"));}
         let identity=ProxyIdentity::ensure(&options.identity_directory)?;let ca=identity.authority()?;let listener=TcpListener::bind(options.listen)?;let address=listener.local_addr()?;listener.set_nonblocking(true)?;
-        let (events,receiver)=mpsc::sync_channel(2048);let state=Arc::new(Shared {options,hartico_key:Mutex::new(None),peers:Mutex::new(HashMap::new()),active:Mutex::new(None),rules:Mutex::new(Rules::default()),pipeline:Mutex::new(()),events,index:AtomicI32::new(0),stop:AtomicBool::new(false)});
+        let (events,receiver)=mpsc::sync_channel(2048);let state=Arc::new(Shared {city_keys:Mutex::new(options.city_keys.clone()),options,hartico_key:Mutex::new(None),peers:Mutex::new(HashMap::new()),active:Mutex::new(None),rules:Mutex::new(Rules::default()),pipeline:Mutex::new(()),events,index:AtomicI32::new(0),stop:AtomicBool::new(false)});
         let actor=state.clone();let (stop,shutdown)=oneshot::channel();let (ready,started)=mpsc::sync_channel(1);
         let worker=thread::spawn(move||{let result=(||->io::Result<()>{let runtime=tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build()?;runtime.block_on(async{
             let provider=aws_lc_rs::default_provider();let _=provider.clone().install_default();let mut roots=rustls::RootCertStore::empty();roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());for der in &actor.options.extra_roots{roots.add(CertificateDer::from(der.clone())).map_err(io::Error::other)?;}
             let tls=rustls::ClientConfig::builder_with_provider(Arc::new(provider)).with_safe_default_protocol_versions().map_err(io::Error::other)?.with_root_certificates(roots).with_no_client_auth();
             let connector=hyper_rustls::HttpsConnectorBuilder::new().with_tls_config(tls.clone()).https_or_http().enable_http1().build();let listener=tokio::net::TcpListener::from_std(listener)?;
-            let proxy=Proxy::builder().with_listener(listener).with_ca(ca).with_http_connector(connector).with_websocket_connector(Connector::Rustls(Arc::new(tls))).with_http_handler(Handler(actor.clone(),false)).with_websocket_handler(Handler(actor.clone(),false)).build().map_err(io::Error::other)?;
+            let proxy=Proxy::builder().with_listener(listener).with_ca(ca).with_http_connector(connector).with_websocket_connector(Connector::Rustls(Arc::new(tls))).with_http_handler(Handler(actor.clone(),0)).with_websocket_handler(Handler(actor.clone(),0)).build().map_err(io::Error::other)?;
             let _=ready.send(());let _=actor.events.try_send(Event::Listening(address));tokio::select!{result=proxy.start()=>result.map_err(io::Error::other),_=shutdown=>Ok(())}
         })})();if let Err(e)=result{let _=actor.events.try_send(Event::Error(e.to_string()));}actor.close_all();});
         let mut proxy=Self {state,stop:Some(stop),worker:Some(worker),address,certificate_path:identity.certificate_path,certificate_der:identity.certificate_der};

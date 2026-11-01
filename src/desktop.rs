@@ -105,6 +105,8 @@ struct Desktop {
     public_certificate: Option<(PathBuf,Vec<u8>)>,
     certificate_task: Option<Receiver<std::io::Result<String>>>,
     nitro_urls: String,
+    allow_city_helper: bool,
+    city_key_path: String,
     flash_auto: bool,
     flash_pid: u32,
     client_processes: Vec<gearth_platform::ClientProcess>,
@@ -190,6 +192,8 @@ impl Default for Desktop {
             public_certificate: None,
             certificate_task: None,
             nitro_urls: String::new(),
+            allow_city_helper: false,
+            city_key_path: String::new(),
             flash_auto: false,
             flash_pid: 0,
             client_processes: gearth_platform::habbo_processes().unwrap_or_default(),
@@ -545,6 +549,8 @@ impl Desktop {
         options.packet_info=self.packet_info.clone();options.extensions=self.extension_host.clone();
         options.hotels=gearth_rust::nitro::Hotels::load(&self.settings_path.parent().unwrap_or_else(||Path::new(".")).join("nitro.json"))?.with_defaults();
         options.websocket_urls=self.nitro_urls.lines().map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect();
+        options.allow_city_helper=self.allow_city_helper;
+        if !self.city_key_path.trim().is_empty(){use std::io::Read;let mut bytes=Vec::new();std::fs::File::open(&self.city_key_path)?.take(65537).read_to_end(&mut bytes)?;options.city_keys=Some(gearth_rust::nitro_city::CityKeys::from_json(&bytes)?);}
         let (proxy,events)=WebProxy::start(options)?;
         if self.system_proxy {self.proxy_guard=Some(gearth_platform::SystemProxyGuard::activate(proxy.address)?);}
         self.status=format!("Browser proxy listening on {}; reload the Nitro client",proxy.address);
@@ -569,6 +575,8 @@ impl Desktop {
         egui::CollapsingHeader::new("Nitro options").show(ui,|ui|{
             ui.label("Packet identifiers (.tsv / .json)");ui.text_edit_singleline(&mut self.packet_database);
             ui.label("Optional game WebSocket URLs (final * accepts a prefix), one per line. Otherwise the game is recognized by its first outgoing packet (4000).");ui.add(egui::TextEdit::multiline(&mut self.nitro_urls).desired_rows(3));
+            ui.label("HabboCity key data file (optional Nitro Helper JSON response)");ui.text_edit_singleline(&mut self.city_key_path);
+            ui.add_enabled(self.relay.is_none(),egui::Checkbox::new(&mut self.allow_city_helper,"For this session, allow sending HabboCity's crypto WASM file to https://nitro.sulek.dev/habbocity to obtain its protocol keys"));
             ui.label("With the Windows proxy disabled, configure your test browser to use the local address and trust the public certificate in that browser.");
         });
         ui.horizontal(|ui|{
@@ -576,7 +584,7 @@ impl Desktop {
             ui.label(format!("{} packet identifiers",self.packet_info.entries().len()));
         });
         if self.relay.is_none(){if ui.add_enabled(self.certificate_task.is_none(),egui::Button::new("Start browser proxy")).clicked(){if let Err(e)=self.start_nitro(){self.status=e.to_string();}}}else if ui.button("Stop").clicked(){self.stop_connection();}
-        ui.separator();ui.label("Generic Nitro HTTP, HTTPS and WebSocket transport is implemented. Hotel-specific encryption, asset changes and Chrome TLS emulation still need porting.");
+        ui.separator();ui.label("Nitro transport and beta-29 hotel adapters are implemented with finite fixture tests. Real hotel sessions and Chrome TLS emulation still need validation and work.");
     }
     fn logger(&mut self, ui: &mut egui::Ui) {
         ui.heading("Packet logger");

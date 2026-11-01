@@ -14,14 +14,14 @@ impl Hartico {
     pub fn decode(&mut self,direction:crate::packet::Direction,bytes:&mut Vec<u8>)->io::Result<()> {
         use cbc::cipher::{KeyIvInit,BlockDecryptMut,block_padding::Pkcs7};
         if direction==crate::packet::Direction::ToServer&&self.authenticated {
-            if bytes.len()<16||bytes.len()%8!=0{return Err(io::Error::other("invalid Hartico encrypted frame"));}
+            if bytes.len()<16||!bytes.len().is_multiple_of(8){return Err(io::Error::other("invalid Hartico encrypted frame"));}
             *bytes=cbc::Decryptor::<des::TdesEde3>::new((&self.key).into(),(&bytes[..8]).into()).decrypt_padded_vec_mut::<Pkcs7>(&bytes[8..]).map_err(|_|io::Error::other("invalid Hartico ciphertext padding"))?;
         }Ok(())
     }
     pub fn encode(&mut self,direction:crate::packet::Direction,bytes:&mut Vec<u8>)->io::Result<()> {
         if direction==crate::packet::Direction::ToServer&&self.authenticated {let mut iv=[0;8];getrandom::fill(&mut iv).map_err(|e|io::Error::other(e.to_string()))?;*bytes=self.encrypt(bytes,iv);}else if direction==crate::packet::Direction::ToClient&&bytes.as_slice()==[0,0,0,2,9,187]{self.authenticated=true;}Ok(())
     }
-    fn encrypt(&self,bytes:&[u8],iv:[u8;8])->Vec<u8>{use cbc::cipher::{KeyIvInit,BlockEncryptMut,block_padding::Pkcs7};let mut result=iv.to_vec();result.extend(cbc::Encryptor::<des::TdesEde3>::new((&self.key).into(),(&iv).into()).encrypt_padded_vec_mut::<Pkcs7>(bytes));result}
+    pub(crate) fn encrypt(&self,bytes:&[u8],iv:[u8;8])->Vec<u8>{use cbc::cipher::{KeyIvInit,BlockEncryptMut,block_padding::Pkcs7};let mut result=iv.to_vec();result.extend(cbc::Encryptor::<des::TdesEde3>::new((&self.key).into(),(&iv).into()).encrypt_padded_vec_mut::<Pkcs7>(bytes));result}
 }
 #[cfg(test)] mod tests {
     use super::*;use crate::packet::{Direction,Packet};
