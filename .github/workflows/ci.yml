@@ -47,6 +47,9 @@ jobs:
           name: formatted-source-and-lockfile
           path: |
             Cargo.lock
+            Cargo.toml
+            LICENSE
+            resources/
             src/
             tests/
             tools/
@@ -116,6 +119,8 @@ jobs:
           GEARTH_JAVA_ORACLE: /tmp/java-oracle.txt
       - name: Exercise an actual beta-29 Java extension against Rust
         run: cargo test --locked --features web --test java_extension -- --ignored
+      - name: Exercise the original Java extension through Unity
+        run: cargo test --locked --features web --test java_unity_extension -- --ignored
       - name: Validate hotel crypto against Java JCE
         run: |
           javac tests/JavaNitroCryptoOracle.java
