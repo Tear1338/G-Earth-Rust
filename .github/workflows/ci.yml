@@ -19,17 +19,7 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo generate-lockfile
-      - run: cargo fmt --all
-      - name: Export formatted source and lockfile for review
-        if: matrix.os == 'ubuntu-latest'
-        shell: python
-        run: |
-          import pathlib,json,base64
-          paths=[pathlib.Path('Cargo.lock')]+list(pathlib.Path('src').glob('*.rs'))+list(pathlib.Path('tests').glob('*.rs'))+list(pathlib.Path('tools').glob('*.rs'))+list(pathlib.Path('crates').rglob('*.rs'))
-          data=base64.b64encode(json.dumps({str(p):p.read_text(encoding='utf-8') for p in paths}).encode()).decode()
-          for i in range(0,len(data),30000):
-            print('GEARTH_SOURCE_CHUNK='+data[i:i+30000])
+      - run: cargo fmt --all -- --check
       - run: cargo test --locked --workspace --all-targets
         timeout-minutes: 2
       - run: cargo clippy --locked --workspace --all-targets -- -D warnings
@@ -59,8 +49,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo generate-lockfile
+      - run: cargo clippy --locked --features desktop --bin gearth-desktop -- -D warnings
       - run: cargo build --locked --release --features desktop --bin gearth-desktop
       - run: python tools/check_pe_imports.py target/release/gearth-desktop.exe
       - name: Package desktop usage and license
@@ -85,7 +77,6 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: Swatinem/rust-cache@v2
-      - run: cargo generate-lockfile
       - name: Download the pinned upstream release
         run: |
           curl --fail --location --retry 3 'https://github.com/G-Realm/G-Earth/releases/download/1.5.4-beta-29/G-Earth-windows-x64.zip' -o /tmp/gearth.zip
@@ -156,7 +147,7 @@ jobs:
           cp artifacts/gearth-cli-ubuntu-latest/gearth-rust gearth-cli-linux
           cp artifacts/packet-microbenchmark/*-benchmark.csv .
           sha256sum G-Earth-Rust-Windows.exe G-Earth-Rust-CLI-Windows.exe gearth-cli-linux formatted-source-and-lockfile.zip > SHA256SUMS.txt
-          printf '%s\n' 'Development build of the incomplete Rust port. Read docs/PARITY.md before use. This is not a complete replacement for G-Earth beta-29; official client attachment and Nitro/Unity integration are outstanding. No performance superiority has been established.' > release-notes.txt
+          printf '%s\n' 'Development build of the incomplete Rust port. Read docs/PARITY.md before use. This is not a complete replacement for G-Earth beta-29; real client validation, Unity, Chrome TLS emulation and exact UI parity remain outstanding. No performance superiority has been established.' > release-notes.txt
           gh release create "$BUILD_TAG" --target "$BUILD_COMMIT" --title "Rust development build $BUILD_TAG" --prerelease --notes-file release-notes.txt G-Earth-Rust-Windows.exe G-Earth-Rust-CLI-Windows.exe gearth-cli-linux formatted-source-and-lockfile.zip SHA256SUMS.txt java-benchmark.csv rust-benchmark.csv
 
   web:
@@ -168,8 +159,7 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo generate-lockfile
-      - run: cargo fmt --all
+      - run: cargo fmt --all -- --check
       - run: cargo test --locked --features web --all-targets -- --nocapture
         timeout-minutes: 8
       - run: cargo clippy --locked --features web --all-targets -- -D warnings

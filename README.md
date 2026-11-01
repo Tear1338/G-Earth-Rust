@@ -2,7 +2,7 @@
 
 Rust port in progress of [G-Realm/G-Earth](https://github.com/G-Realm/G-Earth), based on **1.5.4-beta-29**, commit `242155c291b1109d6c9a02370f6a2af1ead41ea8`.
 
-**Development version. This does not yet replace the original G-Earth.** Windows Flash state discovery and hosts-based Flash/Origins attachment are now implemented and tested with a controlled client process. Real hotel sessions, raw-IP attachment, Nitro and Unity connection providers remain outstanding. The Rust host now runs external Java extensions, verified with a fixture built against the actual beta-29 API; G-Presets itself has not been tested. [Feature-by-feature status](docs/PARITY.md).
+**Development version. This does not yet replace the original G-Earth.** Windows Flash state discovery and hosts-based Flash/Origins attachment are now implemented and tested with a controlled client process. The Nitro HTTP/TLS/WebSocket provider, beta-29 hotel adapters and Windows proxy/certificate controls are also implemented with fixture tests. Real hotel sessions, raw-IP attachment, Unity and exact UI parity remain outstanding. The Rust host now runs external Java extensions, verified with a fixture built against the actual beta-29 API; G-Presets itself has not been tested. [Feature-by-feature status](docs/PARITY.md).
 
 ## Implemented
 
@@ -12,6 +12,7 @@ Rust port in progress of [G-Realm/G-Earth](https://github.com/G-Realm/G-Earth), 
 - Explicit TCP relay with bidirectional logging, injection, ordered block/replace rules, reconnect and cancellation; authenticated SOCKS5 upstream routing and manual independent RC4 keys.
 - Windows Flash negotiation and read-only RC4 discovery from the connecting client process; independent input/output counters, rejection of ambiguous snapshots, automatic revision detection and versioned packet-name caching.
 - Hosts-based Flash/Origins attachment with a background setup worker, scoped redirect removal on connection/stop and explicit stale-redirect recovery.
+- Nitro browser mode: verified upstream TLS, EVA_WIRE WebSockets, built-in/dynamic hotel matching, Hubbe preludes, HabboSK RC4, Hartico PNG/TripleDES, HabboCity GCM/CTR, shared rules/injection and Java extensions. Explicit certificate controls and journaled Windows proxy restoration; see [Nitro setup and limits](docs/NITRO.md).
 - Origins transport: bidirectional plaintext framing, Diffie-Hellman substitution, HKDF-SHA256 keys and independent ChaCha20 header/data channels. Tested against original Java crypto vectors and simulated client/server sessions; a hosts-based attachment path is available, but has not been validated against the official client.
 - Authenticated loopback extension host, one-use launch tokens, Java/Python/Node external processes, connection details, packet names, interception, injection, click callbacks, language updates and console output. Java extensions still need a Java runtime.
 - Sulek HTTPS packet-name lookup, upstream Unity messages.json import and portable TSV databases, with direction-aware expression lookup.
@@ -35,7 +36,7 @@ For a compatible **unencrypted test client**, explicitly configure its endpoint 
 cargo run --release --bin gearth-rust -- relay 127.0.0.1:1234 test-server.example:30000
 ```
 
-CLI relay commands: `server EXPR`, `client EXPR`, `quit`. Binding is restricted to loopback. The program does not install certificates or change the operating system proxy. The desktop includes negotiated Flash decryption and scoped hostname attachment; see [Windows attachment](docs/ATTACHMENT.md) for setup and limitations.
+CLI relay commands: `server EXPR`, `client EXPR`, `quit`. Binding is restricted to loopback. The CLI TCP relay does not modify system proxy settings. The desktop includes negotiated Flash decryption and scoped hostname attachment; see [Windows attachment](docs/ATTACHMENT.md) for setup and limitations.
 
 ## Validation
 
@@ -43,7 +44,7 @@ CI runs core and TCP loopback tests on Windows and Linux and builds the Windows 
 
 The source tree was inspected through GitHub and the released API JAR inventoried using [REA](https://rea.tools/). REA's Java decompiler service is unavailable in this environment; source review and executable Java oracles supply the semantic checks. [Analysis notes](docs/ANALYSIS.md). A [packet-construction microbenchmark](docs/PERFORMANCE.md) measures one narrow workload; whole-application performance is unmeasured.
 
-Tested development executables are published as prereleases on [GitHub Releases](https://github.com/Tear1338/G-Earth-Rust/releases). The latest validated builds are also available in [Actions artifacts](https://github.com/Tear1338/G-Earth-Rust/actions). Desktop hostname attachment changes only its marked hosts entries; the program does not install certificates or change the system proxy.
+Validated development builds are available in [Actions artifacts](https://github.com/Tear1338/G-Earth-Rust/actions). Older prereleases remain on [GitHub Releases](https://github.com/Tear1338/G-Earth-Rust/releases); the release-publishing integration has encountered a permission error. Desktop hostname attachment changes its marked hosts entries. Nitro mode changes the Windows proxy only when started with that option enabled; public-certificate installation/removal requires its separate explicit buttons.
 
 ## Credits
 

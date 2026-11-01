@@ -1,10 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use eframe::egui;
 use gearth_rust::{
-    crypto::Rc4,
     connection::Connection,
-    web_ca::ProxyIdentity,
-    web_proxy::{WebOptions, WebProxy, NITRO_REVISION},
+    crypto::Rc4,
     expression,
     extension_host::{ConnectionDetails, ExtensionHost, HostEvent},
     i18n::{I18n, LANGUAGES},
@@ -16,6 +14,8 @@ use gearth_rust::{
     scheduler::Scheduler,
     settings::{ScheduleTemplate, Settings},
     socks::SocksConfig,
+    web_ca::ProxyIdentity,
+    web_proxy::{WebOptions, WebProxy, NITRO_REVISION},
 };
 use std::{
     collections::VecDeque,
@@ -102,7 +102,7 @@ struct Desktop {
     nitro: bool,
     system_proxy: bool,
     proxy_guard: Option<gearth_platform::SystemProxyGuard>,
-    public_certificate: Option<(PathBuf,Vec<u8>)>,
+    public_certificate: Option<(PathBuf, Vec<u8>)>,
     certificate_task: Option<Receiver<std::io::Result<String>>>,
     nitro_urls: String,
     allow_city_helper: bool,
@@ -244,11 +244,17 @@ impl Desktop {
         }
     }
     fn poll(&mut self) {
-        if let Some(task)=&self.certificate_task {
+        if let Some(task) = &self.certificate_task {
             match task.try_recv() {
-                Ok(result)=>{self.status=result.unwrap_or_else(|e|e.to_string());self.certificate_task=None;},
-                Err(std::sync::mpsc::TryRecvError::Disconnected)=>{self.status="Certificate operation stopped".into();self.certificate_task=None;},
-                Err(std::sync::mpsc::TryRecvError::Empty)=>{},
+                Ok(result) => {
+                    self.status = result.unwrap_or_else(|e| e.to_string());
+                    self.certificate_task = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.status = "Certificate operation stopped".into();
+                    self.certificate_task = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
             }
         }
         if let Some(pending) = &self.attachment_pending {
@@ -361,8 +367,14 @@ impl Desktop {
                     Event::Listening(a) => self.status = format!("Listening on {a}"),
                     Event::Connected(a) => {
                         self.status = format!("Connected to {a}");
-                        if let Some(guard)=&mut self.proxy_guard {
-                            match guard.restore(){Ok(())=>self.proxy_guard=None,Err(e)=>self.status=format!("Connected; proxy restoration failed: {e}")}
+                        if let Some(guard) = &mut self.proxy_guard {
+                            match guard.restore() {
+                                Ok(()) => self.proxy_guard = None,
+                                Err(e) => {
+                                    self.status =
+                                        format!("Connected; proxy restoration failed: {e}")
+                                }
+                            }
                         }
                         if let Some(redirect) = &mut self.redirect {
                             match redirect.restore() {
@@ -403,8 +415,20 @@ impl Desktop {
     }
     fn connection(&mut self, ui: &mut egui::Ui) {
         ui.heading("Connection");
-        if ui.add_enabled(self.relay.is_none()&&self.attachment_pending.is_none(),egui::Checkbox::new(&mut self.nitro,"Nitro / HTML5 browser")).changed()&&self.nitro {self.origins=false;}
-        if self.nitro {self.nitro_connection(ui);return;}
+        if ui
+            .add_enabled(
+                self.relay.is_none() && self.attachment_pending.is_none(),
+                egui::Checkbox::new(&mut self.nitro, "Nitro / HTML5 browser"),
+            )
+            .changed()
+            && self.nitro
+        {
+            self.origins = false;
+        }
+        if self.nitro {
+            self.nitro_connection(ui);
+            return;
+        }
         ui.label(if self.origins {
             "Origins TCP · negotiated Bobba encryption"
         } else {
@@ -526,50 +550,177 @@ impl Desktop {
         });
     }
     fn stop_connection(&mut self) {
-        self.status="Disconnected".into();
-        if let Some(guard)=&mut self.proxy_guard {
-            match guard.restore(){Ok(())=>self.proxy_guard=None,Err(e)=>self.status=format!("Proxy restoration failed: {e}")}
+        self.status = "Disconnected".into();
+        if let Some(guard) = &mut self.proxy_guard {
+            match guard.restore() {
+                Ok(()) => self.proxy_guard = None,
+                Err(e) => self.status = format!("Proxy restoration failed: {e}"),
+            }
         }
-        if let Some(redirect)=&mut self.redirect {
-            match redirect.restore(){Ok(())=>self.redirect=None,Err(e)=>self.status=format!("Hosts restoration failed: {e}")}
+        if let Some(redirect) = &mut self.redirect {
+            match redirect.restore() {
+                Ok(()) => self.redirect = None,
+                Err(e) => self.status = format!("Hosts restoration failed: {e}"),
+            }
         }
-        self.relay.take();self.events=None;self.scheduler.jobs.clear();
+        self.relay.take();
+        self.events = None;
+        self.scheduler.jobs.clear();
     }
-    fn identity_directory(&self)->PathBuf {self.settings_path.parent().unwrap_or_else(||Path::new(".")).join("certificate-authority")}
-    fn prepare_certificate(&mut self)->std::io::Result<()> {
-        let identity=ProxyIdentity::ensure(&self.identity_directory())?;
-        self.public_certificate=Some((identity.certificate_path,identity.certificate_der));Ok(())
+    fn identity_directory(&self) -> PathBuf {
+        self.settings_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("certificate-authority")
     }
-    fn start_nitro(&mut self)->std::io::Result<()> {
-        if !self.socks_proxy.trim().is_empty(){return Err(std::io::Error::other("Nitro upstream SOCKS5 support is not implemented; clear the SOCKS setting to use a direct connection"));}
+    fn prepare_certificate(&mut self) -> std::io::Result<()> {
+        let identity = ProxyIdentity::ensure(&self.identity_directory())?;
+        self.public_certificate = Some((identity.certificate_path, identity.certificate_der));
+        Ok(())
+    }
+    fn start_nitro(&mut self) -> std::io::Result<()> {
+        if !self.socks_proxy.trim().is_empty() {
+            return Err(std::io::Error::other("Nitro upstream SOCKS5 support is not implemented; clear the SOCKS setting to use a direct connection"));
+        }
         self.prepare_certificate()?;
-        self.hotel_version=NITRO_REVISION.into();self.client_identifier="HTML5".into();self.load_packet_database()?;
-        if self.system_proxy&&!gearth_platform::certificate_trusted(&self.public_certificate.as_ref().unwrap().1)? {return Err(std::io::Error::other("Install the displayed public certificate before enabling the Windows proxy"));}
-        let mut options=WebOptions::new(self.listen.parse().map_err(std::io::Error::other)?,self.identity_directory());
-        options.packet_info=self.packet_info.clone();options.extensions=self.extension_host.clone();
-        options.hotels=gearth_rust::nitro::Hotels::load(&self.settings_path.parent().unwrap_or_else(||Path::new(".")).join("nitro.json"))?.with_defaults();
-        options.websocket_urls=self.nitro_urls.lines().map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect();
-        options.allow_city_helper=self.allow_city_helper;
-        if !self.city_key_path.trim().is_empty(){use std::io::Read;let mut bytes=Vec::new();std::fs::File::open(&self.city_key_path)?.take(65537).read_to_end(&mut bytes)?;options.city_keys=Some(gearth_rust::nitro_city::CityKeys::from_json(&bytes)?);}
-        let (proxy,events)=WebProxy::start(options)?;
-        if self.system_proxy {self.proxy_guard=Some(gearth_platform::SystemProxyGuard::activate(proxy.address)?);}
-        self.status=format!("Browser proxy listening on {}; reload the Nitro client",proxy.address);
-        self.relay=Some(Connection::Web(proxy));self.events=Some(events);self.update_rules();Ok(())
+        self.hotel_version = NITRO_REVISION.into();
+        self.client_identifier = "HTML5".into();
+        self.load_packet_database()?;
+        if self.system_proxy
+            && !gearth_platform::certificate_trusted(&self.public_certificate.as_ref().unwrap().1)?
+        {
+            return Err(std::io::Error::other(
+                "Install the displayed public certificate before enabling the Windows proxy",
+            ));
+        }
+        let mut options = WebOptions::new(
+            self.listen.parse().map_err(std::io::Error::other)?,
+            self.identity_directory(),
+        );
+        options.packet_info = self.packet_info.clone();
+        options.extensions = self.extension_host.clone();
+        options.hotels = gearth_rust::nitro::Hotels::load(
+            &self
+                .settings_path
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .join("nitro.json"),
+        )?
+        .with_defaults();
+        options.websocket_urls = self
+            .nitro_urls
+            .lines()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_owned)
+            .collect();
+        options.allow_city_helper = self.allow_city_helper;
+        if !self.city_key_path.trim().is_empty() {
+            use std::io::Read;
+            let mut bytes = Vec::new();
+            std::fs::File::open(&self.city_key_path)?
+                .take(65537)
+                .read_to_end(&mut bytes)?;
+            options.city_keys = Some(gearth_rust::nitro_city::CityKeys::from_json(&bytes)?);
+        }
+        let (proxy, events) = WebProxy::start(options)?;
+        if self.system_proxy {
+            self.proxy_guard = Some(gearth_platform::SystemProxyGuard::activate(proxy.address)?);
+        }
+        self.status = format!(
+            "Browser proxy listening on {}; reload the Nitro client",
+            proxy.address
+        );
+        self.relay = Some(Connection::Web(proxy));
+        self.events = Some(events);
+        self.update_rules();
+        Ok(())
     }
-    fn nitro_connection(&mut self,ui:&mut egui::Ui) {
+    fn nitro_connection(&mut self, ui: &mut egui::Ui) {
         ui.label("Nitro browser connection");
-        ui.horizontal(|ui|{ui.label("Local address");ui.add_enabled(self.relay.is_none(),egui::TextEdit::singleline(&mut self.listen));});
-        ui.add_enabled(self.relay.is_none(),egui::Checkbox::new(&mut self.system_proxy,"Configure Windows browser proxy while waiting for Nitro"));
+        ui.horizontal(|ui| {
+            ui.label("Local address");
+            ui.add_enabled(
+                self.relay.is_none(),
+                egui::TextEdit::singleline(&mut self.listen),
+            );
+        });
+        ui.add_enabled(
+            self.relay.is_none(),
+            egui::Checkbox::new(
+                &mut self.system_proxy,
+                "Configure Windows browser proxy while waiting for Nitro",
+            ),
+        );
         ui.label("Start the proxy, then reload your hotel. The previous Windows proxy is restored when the game connects or when you stop.");
-        if ui.add_enabled(self.relay.is_none(),egui::Button::new("Restore saved Windows proxy after an interrupted session")).clicked(){self.status=match gearth_platform::recover_system_proxy(){Ok(())=>"Saved proxy settings restored; later user changes preserved".into(),Err(e)=>e.to_string()};}
-        if ui.add_enabled(self.relay.is_none()&&self.certificate_task.is_none(),egui::Button::new("Prepare public certificate")).clicked(){self.status=match self.prepare_certificate(){Ok(())=>"Public certificate ready".into(),Err(e)=>e.to_string()};}
-        if let Some((path,der))=self.public_certificate.clone() {
-            ui.label(format!("Public certificate: {}",path.display()));
+        if ui
+            .add_enabled(
+                self.relay.is_none(),
+                egui::Button::new("Restore saved Windows proxy after an interrupted session"),
+            )
+            .clicked()
+        {
+            self.status = match gearth_platform::recover_system_proxy() {
+                Ok(()) => "Saved proxy settings restored; later user changes preserved".into(),
+                Err(e) => e.to_string(),
+            };
+        }
+        if ui
+            .add_enabled(
+                self.relay.is_none() && self.certificate_task.is_none(),
+                egui::Button::new("Prepare public certificate"),
+            )
+            .clicked()
+        {
+            self.status = match self.prepare_certificate() {
+                Ok(()) => "Public certificate ready".into(),
+                Err(e) => e.to_string(),
+            };
+        }
+        if let Some((path, der)) = self.public_certificate.clone() {
+            ui.label(format!("Public certificate: {}", path.display()));
             ui.label("Installing this certificate allows this local proxy to inspect HTTPS while it is running. Only the public certificate belongs in the Windows certificate store.");
-            ui.horizontal(|ui|{
-                let available=self.relay.is_none()&&self.certificate_task.is_none();
-                let action=if ui.add_enabled(available,egui::Button::new("Install certificate for my Windows account")).clicked(){Some(true)}else if ui.add_enabled(available,egui::Button::new("Remove certificate from my Windows account")).clicked(){Some(false)}else{None};
-                if let Some(install)=action {let (send,receive)=std::sync::mpsc::channel();self.certificate_task=Some(receive);self.status="Waiting for certificate operation...".into();std::thread::spawn(move||{let result=if install {gearth_platform::install_root_certificate(&path)}else{gearth_platform::remove_root_certificate(&der)}.map(|()|if install{"Certificate installed".into()}else{"Certificate removed".into()});let _=send.send(result);});}
+            ui.horizontal(|ui| {
+                let available = self.relay.is_none() && self.certificate_task.is_none();
+                let action = if ui
+                    .add_enabled(
+                        available,
+                        egui::Button::new("Install certificate for my Windows account"),
+                    )
+                    .clicked()
+                {
+                    Some(true)
+                } else if ui
+                    .add_enabled(
+                        available,
+                        egui::Button::new("Remove certificate from my Windows account"),
+                    )
+                    .clicked()
+                {
+                    Some(false)
+                } else {
+                    None
+                };
+                if let Some(install) = action {
+                    let (send, receive) = std::sync::mpsc::channel();
+                    self.certificate_task = Some(receive);
+                    self.status = "Waiting for certificate operation...".into();
+                    std::thread::spawn(move || {
+                        let result = if install {
+                            gearth_platform::install_root_certificate(&path)
+                        } else {
+                            gearth_platform::remove_root_certificate(&der)
+                        }
+                        .map(|()| {
+                            if install {
+                                "Certificate installed".into()
+                            } else {
+                                "Certificate removed".into()
+                            }
+                        });
+                        let _ = send.send(result);
+                    });
+                }
             });
         }
         egui::CollapsingHeader::new("Nitro options").show(ui,|ui|{
@@ -579,12 +730,43 @@ impl Desktop {
             ui.add_enabled(self.relay.is_none(),egui::Checkbox::new(&mut self.allow_city_helper,"For this session, allow sending HabboCity's crypto WASM file to https://nitro.sulek.dev/habbocity to obtain its protocol keys"));
             ui.label("With the Windows proxy disabled, configure your test browser to use the local address and trust the public certificate in that browser.");
         });
-        ui.horizontal(|ui|{
-            if ui.add_enabled(self.relay.is_none()&&self.packet_download.is_none(),egui::Button::new("Load Nitro packet identifiers")).clicked(){let (send,receive)=std::sync::mpsc::channel();self.packet_download=Some(receive);self.status="Loading Nitro packet identifiers...".into();std::thread::spawn(move||{let _=send.send(PacketInfoManager::fetch_sulek(NITRO_REVISION,false));});}
-            ui.label(format!("{} packet identifiers",self.packet_info.entries().len()));
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(
+                    self.relay.is_none() && self.packet_download.is_none(),
+                    egui::Button::new("Load Nitro packet identifiers"),
+                )
+                .clicked()
+            {
+                let (send, receive) = std::sync::mpsc::channel();
+                self.packet_download = Some(receive);
+                self.status = "Loading Nitro packet identifiers...".into();
+                std::thread::spawn(move || {
+                    let _ = send.send(PacketInfoManager::fetch_sulek(NITRO_REVISION, false));
+                });
+            }
+            ui.label(format!(
+                "{} packet identifiers",
+                self.packet_info.entries().len()
+            ));
         });
-        if self.relay.is_none(){if ui.add_enabled(self.certificate_task.is_none(),egui::Button::new("Start browser proxy")).clicked(){if let Err(e)=self.start_nitro(){self.status=e.to_string();}}}else if ui.button("Stop").clicked(){self.stop_connection();}
-        ui.separator();ui.label("Nitro transport and beta-29 hotel adapters are implemented with finite fixture tests. Real hotel sessions and Chrome TLS emulation still need validation and work.");
+        if self.relay.is_none() {
+            if ui
+                .add_enabled(
+                    self.certificate_task.is_none(),
+                    egui::Button::new("Start browser proxy"),
+                )
+                .clicked()
+            {
+                if let Err(e) = self.start_nitro() {
+                    self.status = e.to_string();
+                }
+            }
+        } else if ui.button("Stop").clicked() {
+            self.stop_connection();
+        }
+        ui.separator();
+        ui.label("Nitro transport and beta-29 hotel adapters are implemented with finite fixture tests. Real hotel sessions and Chrome TLS emulation still need validation and work.");
     }
     fn logger(&mut self, ui: &mut egui::Ui) {
         ui.heading("Packet logger");
@@ -1126,8 +1308,15 @@ impl Desktop {
             .get("origins")
             .copied()
             .unwrap_or_else(|| self.settings.get("client_type") == "SHOCKWAVE");
-        self.nitro=self.settings.booleans.get("nitro").copied().unwrap_or(false);
-        if self.nitro {self.origins=false;}
+        self.nitro = self
+            .settings
+            .booleans
+            .get("nitro")
+            .copied()
+            .unwrap_or(false);
+        if self.nitro {
+            self.origins = false;
+        }
         self.dark_mode = self
             .settings
             .booleans
@@ -1356,7 +1545,9 @@ impl Drop for Desktop {
         if self.settings_loaded {
             self.save_settings();
         }
-        if let Some(guard)=&mut self.proxy_guard {let _=guard.restore();}
+        if let Some(guard) = &mut self.proxy_guard {
+            let _ = guard.restore();
+        }
         self.relay.take();
         if let Some(host) = self.extension_host.take() {
             host.stop();

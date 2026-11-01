@@ -30,6 +30,8 @@ Packet-provider parsing and extension language-update tests passed on Windows an
 
 A finite packet-construction microbenchmark is recorded in PERFORMANCE.md. Its result does not establish application-wide performance.
 
-Ordinary core runs skip the two environment-dependent Java tests; the dedicated Java job runs them explicitly. CI generates development artifacts. The validated Cargo.lock and rustfmt output have been imported directly. CI now checks formatting and uses locked dependencies.
+Nitro validation is documented in [NITRO.md](NITRO.md). Run [41334348534](https://github.com/Tear1338/G-Earth-Rust/actions/runs/41334348534) verifies the actual beta-29 Java extension over both TCP and a Nitro WebSocket, and five independent JCE hotel-crypto vectors. Separate web fixtures cover HTTP/WSS, rules/injections, Hubbe matching and rejection of an untrusted upstream certificate. Windows registry fixtures verify exact restoration, owner locking, crash-journal recovery and preservation of later user changes in isolated keys.
+
+Ordinary runs skip environment-dependent Java tests; the dedicated Java job runs them explicitly. CI generates development artifacts. The validated Cargo.lock and rustfmt output have been imported directly. CI now checks formatting and uses locked dependencies.
 
 Passing these checks is finite protocol evidence, not a complete application port.

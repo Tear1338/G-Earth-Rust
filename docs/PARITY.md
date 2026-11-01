@@ -7,7 +7,7 @@ Status describes source implementation and finite tests, not successful producti
 | EVA_WIRE | Framing, primitive fields, Latin-1, HPacket/HMessage serialization | Full upstream mutation and structure-prediction API |
 | WEDGIE | Incoming/outgoing packet formats, fixed B64, VL64 and format-aware expressions | Wider parser corpus and official client regression |
 | Packet expressions | Typed/numeric/named expressions, mixed raw display notation, lossless hex | Structure prediction and all editor conveniences |
-| Explicit TCP relay | Nonblocking bidirectional relay, bounded output, injection, ordered block/replace, reconnect, scoped hosts attachment | Raw-IP and web providers |
+| Explicit TCP relay | Nonblocking bidirectional relay, bounded output, injection, ordered block/replace, reconnect, scoped hosts attachment | Raw-IP provider and real client regression |
 | RC4 | State import/export/rewind, manual keys and Windows negotiated discovery, bounded read-only heap scan, ambiguity rejection | Real AIR client regression; broaden memory-layout coverage |
 | Origins crypto | DH substitution, HKDF-SHA256, ChaCha20 channels, encrypted framing and hosts attachment | Official client end-to-end live validation |
 | Network extensions | Loopback host, one-use launch tokens, approval, flags, interception, injection, click, console, connection details, language changes | Full extension corpus, store and lifecycle parity |
@@ -21,14 +21,14 @@ Status describes source implementation and finite tests, not successful producti
 | UI/theme/languages | Rust eframe desktop, light/dark theme, nine original resource files, localized tabs | Exact UI/layout, all controls translated, shortcuts, tray |
 | Flash | Negotiation, Windows client memory discovery, socket owner detection, hosts attachment, independent counters | Official client validation, raw-IP attachment and non-Windows discovery |
 | Origins attachment | Scoped hosts routing to the original port | Official client validation and non-Windows privileged helpers |
-| Nitro | Not implemented | HTTP/TLS/WebSocket proxy, assets, certificates, system proxy cleanup |
+| Nitro | HTTP/TLS/WebSocket backend, beta-29 hotel matching/config, RC4/TripleDES/GCM/CTR adapters, assets, shared rules/injection/extensions, explicit current-user certificates and journaled Windows proxy cleanup | Real hotel sessions, Chrome TLS fingerprint, SOCKS upstream, non-Windows OS helpers |
 | Unity connection | Not implemented | WebSocket communicator, WASM patching, local file server |
-| Hotel detection | Pinned Flash/Origins hotel lists, custom domain, detected Flash revision/identifier | Nitro/Unity discovery and hotel-specific adapters |
+| Hotel detection | Flash/Origins lists, custom domain/revision, Nitro hello fallback, dynamic nitro.json, beta-29 hotel URL/prefixes and adapters | Live hotel regression and Unity discovery |
 | Room/catalog/inventory/entity API | Existing Java extensions retain their original Java parsers | Native Rust parser API parity |
 | Extension store/updater | Not implemented | Metadata, downloads, validation and lifecycle |
 | Windows packaging | Tested development EXE and CLI via Actions/prereleases | Installer, signing and release QA |
 | Linux/macOS | Core tests on Linux; Windows desktop compiled | Desktop distribution and platform proxy helpers |
-| beta-29 integration fixes | Not ported completely | leet/habblet, Chrome TLS fingerprint, privileged macOS helper, tray cropping |
+| beta-29 integration fixes | leet/habblet prefix matching and dynamic nitro.json ported | Chrome TLS fingerprint, privileged macOS helper, tray cropping |
 | Performance gain | Unmeasured | Equivalent end-to-end workload benchmark against Java |
 
 ## Completion criteria

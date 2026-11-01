@@ -73,34 +73,95 @@ pub fn find_tables(bytes: &[u8], address: usize) -> Vec<[u8; 256]> {
     result
 }
 #[cfg(windows)]
+mod web_settings;
+#[cfg(windows)]
 mod windows;
-#[cfg(windows)] mod web_settings;
-pub struct SystemProxyGuard {#[cfg(windows)] inner:web_settings::ProxyGuard}
-pub fn recover_system_proxy()->io::Result<()> {
-    #[cfg(windows)] {web_settings::ProxyGuard::recover()}
-    #[cfg(not(windows))] {Err(io::Error::new(io::ErrorKind::Unsupported,"automatic system proxy restoration currently requires Windows"))}
+pub struct SystemProxyGuard {
+    #[cfg(windows)]
+    inner: web_settings::ProxyGuard,
+}
+pub fn recover_system_proxy() -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        web_settings::ProxyGuard::recover()
+    }
+    #[cfg(not(windows))]
+    {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "automatic system proxy restoration currently requires Windows",
+        ))
+    }
 }
 impl SystemProxyGuard {
-    pub fn activate(address:std::net::SocketAddr)->io::Result<Self>{
-        #[cfg(windows)] {Ok(Self {inner:web_settings::ProxyGuard::activate(address)?})}
-        #[cfg(not(windows))] {let _=address;Err(io::Error::new(io::ErrorKind::Unsupported,"automatic system proxy configuration currently requires Windows"))}
+    pub fn activate(address: std::net::SocketAddr) -> io::Result<Self> {
+        #[cfg(windows)]
+        {
+            Ok(Self {
+                inner: web_settings::ProxyGuard::activate(address)?,
+            })
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = address;
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "automatic system proxy configuration currently requires Windows",
+            ))
+        }
     }
-    pub fn restore(&mut self)->io::Result<()> {
-        #[cfg(windows)] {self.inner.restore()}
-        #[cfg(not(windows))] {Ok(())}
+    pub fn restore(&mut self) -> io::Result<()> {
+        #[cfg(windows)]
+        {
+            self.inner.restore()
+        }
+        #[cfg(not(windows))]
+        {
+            Ok(())
+        }
     }
 }
-pub fn certificate_trusted(der:&[u8])->io::Result<bool>{
-    #[cfg(windows)] {web_settings::certificate_trusted(der)}
-    #[cfg(not(windows))] {let _=der;Err(io::Error::new(io::ErrorKind::Unsupported,"import the public proxy CA through the operating-system certificate manager"))}
+pub fn certificate_trusted(der: &[u8]) -> io::Result<bool> {
+    #[cfg(windows)]
+    {
+        web_settings::certificate_trusted(der)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = der;
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "import the public proxy CA through the operating-system certificate manager",
+        ))
+    }
 }
-pub fn install_root_certificate(path:&std::path::Path)->io::Result<()> {
-    #[cfg(windows)] {web_settings::install_certificate(path)}
-    #[cfg(not(windows))] {let _=path;Err(io::Error::new(io::ErrorKind::Unsupported,"automatic CA installation currently requires Windows"))}
+pub fn install_root_certificate(path: &std::path::Path) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        web_settings::install_certificate(path)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = path;
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "automatic CA installation currently requires Windows",
+        ))
+    }
 }
-pub fn remove_root_certificate(der:&[u8])->io::Result<()> {
-    #[cfg(windows)] {web_settings::remove_certificate(der)}
-    #[cfg(not(windows))] {let _=der;Err(io::Error::new(io::ErrorKind::Unsupported,"automatic CA removal currently requires Windows"))}
+pub fn remove_root_certificate(der: &[u8]) -> io::Result<()> {
+    #[cfg(windows)]
+    {
+        web_settings::remove_certificate(der)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = der;
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "automatic CA removal currently requires Windows",
+        ))
+    }
 }
 pub fn habbo_processes() -> io::Result<Vec<ClientProcess>> {
     #[cfg(windows)]
