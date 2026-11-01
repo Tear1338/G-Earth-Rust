@@ -23,7 +23,7 @@ pub(super) fn scan(pid:u32,cancel:&AtomicBool,range:Option<(usize,usize)>)->io::
         let mut result=ScanResult::default();let mut address=range.map_or(0,|r|r.0);let end=range.map_or(usize::MAX,|r|r.1);let deadline=Instant::now()+Duration::from_secs(5);
         while address<end {
             if cancel.load(Ordering::Acquire){return Err(io::Error::new(io::ErrorKind::Interrupted,"memory discovery cancelled"));}
-            if result.bytes_read>=1024*1024*1024||Instant::now()>deadline||result.states.len()>=64{return Ok(result);}
+            if result.bytes_read>=1024*1024*1024||Instant::now()>deadline||result.states.len()>=MAX_TABLES{return Ok(result);}
             let mut info:MEMORY_BASIC_INFORMATION=zeroed();if VirtualQueryEx(process.0,address as *const c_void,&mut info,size_of::<MEMORY_BASIC_INFORMATION>())==0{result.complete=true;return Ok(result);}
             let base=info.BaseAddress as usize;let Some(next)=base.checked_add(info.RegionSize)else{break;};if next<=address{break;}
             let writable=info.Protect&(PAGE_READWRITE|PAGE_WRITECOPY|PAGE_EXECUTE_READWRITE|PAGE_EXECUTE_WRITECOPY)!=0;
@@ -35,7 +35,7 @@ pub(super) fn scan(pid:u32,cancel:&AtomicBool,range:Option<(usize,usize)>)->io::
                     let size=(limit-at).min(65536+1020);let mut bytes=vec![0u8;size];let mut read=0;
                     ReadProcessMemory(process.0,at as *const c_void,bytes.as_mut_ptr().cast(),size,&mut read);
                     result.bytes_read+=read;bytes.truncate(read);
-                    for state in find_tables(&bytes,at){if !result.states.contains(&state){result.states.push(state);if result.states.len()==64{return Ok(result);}}}
+                    for state in find_tables(&bytes,at){if !result.states.contains(&state){result.states.push(state);if result.states.len()==MAX_TABLES{return Ok(result);}}}
                     at=at.saturating_add(65536);
                 }
             }address=next;

@@ -2,6 +2,7 @@
 use std::{io,sync::atomic::AtomicBool};
 #[derive(Clone,Debug)]
 pub struct ClientProcess {pub pid:u32,pub executable:String}
+pub const MAX_TABLES:usize=8192;
 #[derive(Default)]
 pub struct ScanResult {pub states:Vec<[u8;256]>,pub bytes_read:usize,pub complete:bool}
 pub fn find_tables(bytes:&[u8],address:usize)->Vec<[u8;256]> {
@@ -13,9 +14,9 @@ pub fn find_tables(bytes:&[u8],address:usize)->Vec<[u8;256]> {
         for (i,word) in bytes[offset..offset+1024].as_chunks::<4>().0.iter().enumerate(){let value=u32::from_le_bytes(*word);if value>255||seen[value as usize]{valid=false;break;}seen[value as usize]=true;state[i]=value as u8;}
         // OS lookup tables can also be permutations (often a repeated identity table).
         // RC4 states are shuffled; reject strongly linear tables before the candidate cap.
-        let mut deltas=[0u16;256];for pair in state.windows(2){deltas[pair[1].wrapping_sub(pair[0]) as usize]+=1;}
-        if deltas.iter().any(|count|*count>32){valid=false;}
-        if valid&&!result.contains(&state){result.push(state);if result.len()==64{break;}}
+        if valid{let mut deltas=[0u16;256];for pair in state.windows(2){deltas[pair[1].wrapping_sub(pair[0]) as usize]+=1;}
+        if deltas.iter().any(|count|*count>32){valid=false;}}
+        if valid&&!result.contains(&state){result.push(state);if result.len()==MAX_TABLES{break;}}
     }
     result
 }

@@ -67,6 +67,9 @@ impl FlashSession {
     }
 }
 fn valid_frames(encrypted:&[u8],candidate:&Rc4)->bool {
+    let mut prefix=encrypted[..4].to_vec();let mut cipher=candidate.clone();cipher.apply(&mut prefix);
+    let length=u32::from_be_bytes(prefix[..4].try_into().unwrap()) as usize;
+    if !(2..=MAX_FRAME).contains(&length)||length+4>encrypted.len(){return false;}
     let mut decoded=encrypted.to_vec();candidate.clone().apply(&mut decoded);let mut at=0;let mut count=0;
     while at+6<=decoded.len(){let n=u32::from_be_bytes(decoded[at..at+4].try_into().unwrap()) as usize;if !(2..=MAX_FRAME).contains(&n)||at+n+4>decoded.len(){break;}at+=n+4;count+=1;}
     at==decoded.len()&&count>0
@@ -77,7 +80,7 @@ pub fn recover_state(states:&[[u8;256]],encrypted:&[u8],direction:Direction,canc
     // Flash commonly retains the fresh shared-secret table for the opposite direction.
     // Prefer that exact table over reversing a snapshot with an unknown j counter.
     let mut fresh=None;
-    for state in states.iter().take(64){let candidate=Rc4::from_state(*state,0,0).map_err(io::Error::other)?;
+    for state in states.iter().take(gearth_platform::MAX_TABLES){let candidate=Rc4::from_state(*state,0,0).map_err(io::Error::other)?;
         if valid_frames(encrypted,&candidate){if fresh.as_ref().is_some_and(|c:&Rc4|c.state()!=candidate.state()){return Ok(None);}fresh=Some(candidate);}
     }
     if fresh.is_some()||direction==Direction::ToClient{return Ok(fresh);}
