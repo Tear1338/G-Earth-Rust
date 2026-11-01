@@ -2,6 +2,7 @@
 #![forbid(unsafe_code)]
 pub mod attachment;
 pub mod crypto;
+pub mod connection;
 pub mod encoding;
 pub mod expression;
 pub mod extension;

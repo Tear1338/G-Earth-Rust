@@ -2,6 +2,9 @@
 use eframe::egui;
 use gearth_rust::{
     crypto::Rc4,
+    connection::Connection,
+    web_ca::ProxyIdentity,
+    web_proxy::{WebOptions, WebProxy, NITRO_REVISION},
     expression,
     extension_host::{ConnectionDetails, ExtensionHost, HostEvent},
     i18n::{I18n, LANGUAGES},
@@ -50,7 +53,7 @@ struct Desktop {
     listen: String,
     remote: String,
     status: String,
-    relay: Option<Relay>,
+    relay: Option<Connection>,
     events: Option<Receiver<Event>>,
     logs: VecDeque<LogRow>,
     filter: String,
@@ -96,6 +99,12 @@ struct Desktop {
     logs_bytes: usize,
     replacement_expression: String,
     origins: bool,
+    nitro: bool,
+    system_proxy: bool,
+    proxy_guard: Option<gearth_platform::SystemProxyGuard>,
+    public_certificate: Option<(PathBuf,Vec<u8>)>,
+    certificate_task: Option<Receiver<std::io::Result<String>>>,
+    nitro_urls: String,
     flash_auto: bool,
     flash_pid: u32,
     client_processes: Vec<gearth_platform::ClientProcess>,
@@ -175,6 +184,12 @@ impl Default for Desktop {
             logs_bytes: 0,
             replacement_expression: String::new(),
             origins: false,
+            nitro: false,
+            system_proxy: cfg!(windows),
+            proxy_guard: None,
+            public_certificate: None,
+            certificate_task: None,
+            nitro_urls: String::new(),
             flash_auto: false,
             flash_pid: 0,
             client_processes: gearth_platform::habbo_processes().unwrap_or_default(),
@@ -225,12 +240,19 @@ impl Desktop {
         }
     }
     fn poll(&mut self) {
+        if let Some(task)=&self.certificate_task {
+            match task.try_recv() {
+                Ok(result)=>{self.status=result.unwrap_or_else(|e|e.to_string());self.certificate_task=None;},
+                Err(std::sync::mpsc::TryRecvError::Disconnected)=>{self.status="Certificate operation stopped".into();self.certificate_task=None;},
+                Err(std::sync::mpsc::TryRecvError::Empty)=>{},
+            }
+        }
         if let Some(pending) = &self.attachment_pending {
             match pending.try_recv() {
                 Ok(result) => {
                     match result {
                         Ok(attachment) => {
-                            self.relay = Some(attachment.relay);
+                            self.relay = Some(Connection::Tcp(attachment.relay));
                             self.events = Some(attachment.events);
                             self.redirect = Some(attachment.redirect);
                             self.status =
@@ -335,6 +357,9 @@ impl Desktop {
                     Event::Listening(a) => self.status = format!("Listening on {a}"),
                     Event::Connected(a) => {
                         self.status = format!("Connected to {a}");
+                        if let Some(guard)=&mut self.proxy_guard {
+                            match guard.restore(){Ok(())=>self.proxy_guard=None,Err(e)=>self.status=format!("Connected; proxy restoration failed: {e}")}
+                        }
                         if let Some(redirect) = &mut self.redirect {
                             match redirect.restore() {
                                 Ok(()) => {
@@ -374,6 +399,8 @@ impl Desktop {
     }
     fn connection(&mut self, ui: &mut egui::Ui) {
         ui.heading("Connection");
+        if ui.add_enabled(self.relay.is_none()&&self.attachment_pending.is_none(),egui::Checkbox::new(&mut self.nitro,"Nitro / HTML5 browser")).changed()&&self.nitro {self.origins=false;}
+        if self.nitro {self.nitro_connection(ui);return;}
         ui.label(if self.origins {
             "Origins TCP · negotiated Bobba encryption"
         } else {
@@ -475,7 +502,7 @@ impl Desktop {
                         )
                     }) {
                         Ok((relay, events)) => {
-                            self.relay = Some(relay);
+                            self.relay = Some(Connection::Tcp(relay));
                             self.events = Some(events);
                             self.update_rules();
                         }
@@ -485,23 +512,69 @@ impl Desktop {
                 }
             }
         } else if self.relay.is_some() && ui.button("Stop").clicked() {
-            self.relay.take();
-            self.events = None;
-            self.scheduler.jobs.clear();
-            self.status = "Disconnected".into();
-            if let Some(redirect) = &mut self.redirect {
-                match redirect.restore() {
-                    Ok(()) => self.redirect = None,
-                    Err(e) => self.status = format!("Hosts restoration failed: {e}"),
-                }
-            }
+            self.stop_connection();
         }
         ui.add_space(20.0);
         ui.group(|ui|{
             ui.label("Development scope");
             ui.label("Point a compatible test client at the local address. The relay forwards framed packets to the explicit remote address.");
-            ui.label("Hosts-based Flash/Origins attachment is implemented. Raw-IP attachment, Nitro TLS/WebSocket and Unity integration are still outstanding.");
+            ui.label("Hosts-based Flash/Origins attachment is implemented. Raw-IP attachment and Unity integration are still outstanding. Nitro has a separate browser connection mode.");
         });
+    }
+    fn stop_connection(&mut self) {
+        self.status="Disconnected".into();
+        if let Some(guard)=&mut self.proxy_guard {
+            match guard.restore(){Ok(())=>self.proxy_guard=None,Err(e)=>self.status=format!("Proxy restoration failed: {e}")}
+        }
+        if let Some(redirect)=&mut self.redirect {
+            match redirect.restore(){Ok(())=>self.redirect=None,Err(e)=>self.status=format!("Hosts restoration failed: {e}")}
+        }
+        self.relay.take();self.events=None;self.scheduler.jobs.clear();
+    }
+    fn identity_directory(&self)->PathBuf {self.settings_path.parent().unwrap_or_else(||Path::new(".")).join("certificate-authority")}
+    fn prepare_certificate(&mut self)->std::io::Result<()> {
+        let identity=ProxyIdentity::ensure(&self.identity_directory())?;
+        self.public_certificate=Some((identity.certificate_path,identity.certificate_der));Ok(())
+    }
+    fn start_nitro(&mut self)->std::io::Result<()> {
+        if !self.socks_proxy.trim().is_empty(){return Err(std::io::Error::other("Nitro upstream SOCKS5 support is not implemented; clear the SOCKS setting to use a direct connection"));}
+        self.prepare_certificate()?;
+        self.hotel_version=NITRO_REVISION.into();self.client_identifier="HTML5".into();self.load_packet_database()?;
+        if self.system_proxy&&!gearth_platform::certificate_trusted(&self.public_certificate.as_ref().unwrap().1)? {return Err(std::io::Error::other("Install the displayed public certificate before enabling the Windows proxy"));}
+        let mut options=WebOptions::new(self.listen.parse().map_err(std::io::Error::other)?,self.identity_directory());
+        options.packet_info=self.packet_info.clone();options.extensions=self.extension_host.clone();
+        options.websocket_urls=self.nitro_urls.lines().map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect();
+        let (proxy,events)=WebProxy::start(options)?;
+        if self.system_proxy {self.proxy_guard=Some(gearth_platform::SystemProxyGuard::activate(proxy.address)?);}
+        self.status=format!("Browser proxy listening on {}; reload the Nitro client",proxy.address);
+        self.relay=Some(Connection::Web(proxy));self.events=Some(events);self.update_rules();Ok(())
+    }
+    fn nitro_connection(&mut self,ui:&mut egui::Ui) {
+        ui.label("Nitro browser connection");
+        ui.horizontal(|ui|{ui.label("Local address");ui.add_enabled(self.relay.is_none(),egui::TextEdit::singleline(&mut self.listen));});
+        ui.add_enabled(self.relay.is_none(),egui::Checkbox::new(&mut self.system_proxy,"Configure Windows browser proxy while waiting for Nitro"));
+        ui.label("Start the proxy, then reload your hotel. The previous Windows proxy is restored when the game connects or when you stop.");
+        if ui.add_enabled(self.relay.is_none()&&self.certificate_task.is_none(),egui::Button::new("Prepare public certificate")).clicked(){self.status=match self.prepare_certificate(){Ok(())=>"Public certificate ready".into(),Err(e)=>e.to_string()};}
+        if let Some((path,der))=self.public_certificate.clone() {
+            ui.label(format!("Public certificate: {}",path.display()));
+            ui.label("Installing this certificate allows this local proxy to inspect HTTPS while it is running. Only the public certificate belongs in the Windows certificate store.");
+            ui.horizontal(|ui|{
+                let available=self.relay.is_none()&&self.certificate_task.is_none();
+                let action=if ui.add_enabled(available,egui::Button::new("Install certificate for my Windows account")).clicked(){Some(true)}else if ui.add_enabled(available,egui::Button::new("Remove certificate from my Windows account")).clicked(){Some(false)}else{None};
+                if let Some(install)=action {let (send,receive)=std::sync::mpsc::channel();self.certificate_task=Some(receive);self.status="Waiting for certificate operation...".into();std::thread::spawn(move||{let result=if install {gearth_platform::install_root_certificate(&path)}else{gearth_platform::remove_root_certificate(&der)}.map(|()|if install{"Certificate installed".into()}else{"Certificate removed".into()});let _=send.send(result);});}
+            });
+        }
+        egui::CollapsingHeader::new("Nitro options").show(ui,|ui|{
+            ui.label("Packet identifiers (.tsv / .json)");ui.text_edit_singleline(&mut self.packet_database);
+            ui.label("Optional exact game WebSocket URLs, one per line. Otherwise the game is recognized by its first outgoing packet (4000).");ui.add(egui::TextEdit::multiline(&mut self.nitro_urls).desired_rows(3));
+            ui.label("With the Windows proxy disabled, configure your test browser to use the local address and trust the public certificate in that browser.");
+        });
+        ui.horizontal(|ui|{
+            if ui.add_enabled(self.relay.is_none()&&self.packet_download.is_none(),egui::Button::new("Load Nitro packet identifiers")).clicked(){let (send,receive)=std::sync::mpsc::channel();self.packet_download=Some(receive);self.status="Loading Nitro packet identifiers...".into();std::thread::spawn(move||{let _=send.send(PacketInfoManager::fetch_sulek(NITRO_REVISION,false));});}
+            ui.label(format!("{} packet identifiers",self.packet_info.entries().len()));
+        });
+        if self.relay.is_none(){if ui.add_enabled(self.certificate_task.is_none(),egui::Button::new("Start browser proxy")).clicked(){if let Err(e)=self.start_nitro(){self.status=e.to_string();}}}else if ui.button("Stop").clicked(){self.stop_connection();}
+        ui.separator();ui.label("Generic Nitro HTTP, HTTPS and WebSocket transport is implemented. Hotel-specific encryption, asset changes and Chrome TLS emulation still need porting.");
     }
     fn logger(&mut self, ui: &mut egui::Ui) {
         ui.heading("Packet logger");
@@ -617,7 +690,7 @@ impl Desktop {
         self.editor(ui);
         if ui
             .add_enabled(
-                self.relay.as_ref().is_some_and(Relay::connected),
+                self.relay.as_ref().is_some_and(Connection::connected),
                 egui::Button::new("Send packet"),
             )
             .clicked()
@@ -732,7 +805,7 @@ impl Desktop {
         });
         if ui
             .add_enabled(
-                self.relay.as_ref().is_some_and(Relay::connected),
+                self.relay.as_ref().is_some_and(Connection::connected),
                 egui::Button::new("Add schedule"),
             )
             .clicked()
@@ -769,7 +842,7 @@ impl Desktop {
         ui.label(format!("{} active schedules", self.scheduler.jobs.len()));
         if ui
             .add_enabled(
-                self.relay.as_ref().is_some_and(Relay::connected),
+                self.relay.as_ref().is_some_and(Connection::connected),
                 egui::Button::new("Run saved schedules"),
             )
             .clicked()
@@ -1043,6 +1116,8 @@ impl Desktop {
             .get("origins")
             .copied()
             .unwrap_or_else(|| self.settings.get("client_type") == "SHOCKWAVE");
+        self.nitro=self.settings.booleans.get("nitro").copied().unwrap_or(false);
+        if self.nitro {self.origins=false;}
         self.dark_mode = self
             .settings
             .booleans
@@ -1086,6 +1161,7 @@ impl Desktop {
         }
         self.settings.booleans.extend([
             ("origins".into(), self.origins),
+            ("nitro".into(), self.nitro),
             ("dark_mode".into(), self.dark_mode),
             ("outgoing".into(), self.outgoing),
             ("incoming".into(), self.incoming),
@@ -1099,7 +1175,7 @@ impl Desktop {
         }
     }
     fn packet_format(&self, direction: Direction) -> PacketFormat {
-        if self.origins {
+        if self.origins && !self.nitro {
             if direction == Direction::ToServer {
                 PacketFormat::WedgieOutgoing
             } else {
@@ -1109,7 +1185,7 @@ impl Desktop {
             PacketFormat::EvaWire
         }
     }
-    fn relay_options(&mut self) -> std::io::Result<RelayOptions> {
+    fn load_packet_database(&mut self) -> std::io::Result<()> {
         if !self.packet_database.trim().is_empty() {
             use std::io::Read;
             let mut bytes = Vec::new();
@@ -1134,6 +1210,10 @@ impl Desktop {
         } else if self.packet_info.version != self.hotel_version {
             self.packet_info = PacketInfoManager::default();
         }
+        Ok(())
+    }
+    fn relay_options(&mut self) -> std::io::Result<RelayOptions> {
+        self.load_packet_database()?;
         let cipher = |key: &str| -> std::io::Result<Option<Rc4>> {
             if key.trim().is_empty() {
                 Ok(None)
@@ -1266,6 +1346,7 @@ impl Drop for Desktop {
         if self.settings_loaded {
             self.save_settings();
         }
+        if let Some(guard)=&mut self.proxy_guard {let _=guard.restore();}
         self.relay.take();
         if let Some(host) = self.extension_host.take() {
             host.stop();
