@@ -3,6 +3,7 @@ import json
 import sys
 
 if len(sys.argv) > 1 and sys.argv[1] == "probe":
+    import importlib
     from importlib.metadata import PackageNotFoundError, version
     packages = {}
     for name in ("g-python", "qtconsole", "PyQt5", "jupyter-console", "jupyter-client", "ipykernel"):
@@ -10,7 +11,13 @@ if len(sys.argv) > 1 and sys.argv[1] == "probe":
             packages[name] = version(name)
         except PackageNotFoundError:
             packages[name] = None
-    print(json.dumps({"python": list(sys.version_info[:3]), "packages": packages}))
+    issues = []
+    if packages["g-python"] is not None:
+        try:
+            importlib.import_module("g_python.gextension")
+        except Exception as error:
+            issues.append("g-python cannot be imported: " + str(error)[:500])
+    print(json.dumps({"python": list(sys.version_info[:3]), "packages": packages, "issues": issues}))
     raise SystemExit(0)
 
 import subprocess

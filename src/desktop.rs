@@ -1,7 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use eframe::egui;
-mod store_ui;
 mod gpython_ui;
+mod store_ui;
 use gearth_rust::{
     connection::Connection,
     crypto::Rc4,
@@ -1577,7 +1577,8 @@ impl Desktop {
         })
     }
     fn extensions(&mut self, ui: &mut egui::Ui) {
-        self.python_console.show(ui,self.extension_host.as_ref(),&mut self.status);
+        self.python_console
+            .show(ui, self.extension_host.as_ref(), &mut self.status);
         self.store.show(
             ui,
             self.extension_host.as_ref(),

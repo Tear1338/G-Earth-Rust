@@ -1,0 +1,2 @@
+# Published G-Python 0.1.6 wheel, as distributed on PyPI (not the broken main branch).
+g-python==0.1.6 --hash=sha256:baf5a0a6769c71d8cb88c3979b8d5a8802080fa7dbe747070df8e52420bd48d6

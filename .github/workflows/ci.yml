@@ -227,5 +227,6 @@ jobs:
         with:
           python-version: '3.12'
       - uses: Swatinem/rust-cache@v2
-      - run: python -m pip install ipykernel jupyter-client qtconsole PyQt5 jupyter-console psutil https://github.com/sirjonasxx/G-Python/archive/55681fd81d03595a0d37f168454247ee72a97409.zip
+      - run: python -m pip install --require-hashes --only-binary=:all: --no-deps -r tests/gpython-requirements.txt
+      - run: python -m pip install ipykernel jupyter-client qtconsole PyQt5 jupyter-console psutil
       - run: cargo test --locked --test gpython -- --ignored --nocapture
