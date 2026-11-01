@@ -23,7 +23,7 @@ impl PacketFormat {
 #[derive(Debug,Clone,PartialEq,Eq)]
 pub struct Packet {format:PacketFormat,bytes:Vec<u8>,cursor:usize,pub edited:bool}
 impl Packet {
-    pub fn new(header:u16)->Self {let mut bytes=vec![0,0,0,2];bytes.extend_from_slice(&header.to_be_bytes());Self {format:PacketFormat::EvaWire,bytes,cursor:6,edited:false}}
+    pub fn new(header:u16)->Self {let mut bytes=Vec::with_capacity(64);bytes.extend_from_slice(&[0,0,0,2]);bytes.extend_from_slice(&header.to_be_bytes());Self {format:PacketFormat::EvaWire,bytes,cursor:6,edited:false}}
     pub fn new_with_format(format:PacketFormat,header:u16)->Result<Self>{
         if format==PacketFormat::EvaWire{return Ok(Self::new(header));}
         Ok(Self {format,bytes:crate::encoding::encode_b64(u32::from(header),2)?,cursor:2,edited:false})
@@ -82,6 +82,11 @@ impl Packet {
     pub fn put_f32(&mut self,v:f32)->Result<&mut Self>{self.ensure_eva()?;self.append(&v.to_be_bytes())}
     pub fn put_f64(&mut self,v:f64)->Result<&mut Self>{self.ensure_eva()?;self.append(&v.to_be_bytes())}
     pub fn put_string(&mut self,s:&str)->Result<&mut Self>{
+        if self.format==PacketFormat::EvaWire&&s.is_ascii(){
+            let length=u16::try_from(s.len()).map_err(|_|error("short string too long"))?;
+            if self.bytes.len()+2+s.len()>MAX_FRAME+4{return Err(error("packet too large"));}
+            self.bytes.reserve(2+s.len());self.bytes.extend_from_slice(&length.to_be_bytes());self.bytes.extend_from_slice(s.as_bytes());self.fix_length();self.edited=true;return Ok(self);
+        }
         let bytes=latin1_encode(s)?;
         let mut field=match self.format{
             PacketFormat::EvaWire=>u16::try_from(bytes.len()).map_err(|_|error("short string too long"))?.to_be_bytes().to_vec(),
