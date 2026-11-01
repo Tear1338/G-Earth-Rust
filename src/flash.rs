@@ -66,21 +66,28 @@ impl FlashSession {
         }Ok(())
     }
 }
+fn valid_frames(encrypted:&[u8],candidate:&Rc4)->bool {
+    let mut decoded=encrypted.to_vec();candidate.clone().apply(&mut decoded);let mut at=0;let mut count=0;
+    while at+6<=decoded.len(){let n=u32::from_be_bytes(decoded[at..at+4].try_into().unwrap()) as usize;if !(2..=MAX_FRAME).contains(&n)||at+n+4>decoded.len(){break;}at+=n+4;count+=1;}
+    at==decoded.len()&&count>0
+}
 pub fn recover_state(states:&[[u8;256]],encrypted:&[u8],direction:Direction,cancel:&AtomicBool)->io::Result<Option<Rc4>> {
+    if cancel.load(Ordering::Acquire){return Err(io::Error::new(io::ErrorKind::Interrupted,"key discovery cancelled"));}
     if encrypted.len()<6||encrypted.len()>BOOTSTRAP_LIMIT{return Ok(None);}
-    let deadline=Instant::now()+Duration::from_secs(5);
-    for state in states.iter().take(64){
-        let max=if direction==Direction::ToServer{256}else{1};
-        for y in 0..max {
-            if cancel.load(Ordering::Acquire){return Err(io::Error::new(io::ErrorKind::Interrupted,"key discovery cancelled"));}if Instant::now()>deadline{return Ok(None);}
-            let x=if direction==Direction::ToServer{encrypted.len() as u8}else{0};
-            let mut candidate=Rc4::from_state(*state,x,y as u8).map_err(io::Error::other)?;
-            if direction==Direction::ToServer{candidate.rewind(encrypted.len());}
-            let (_,x,y)=candidate.state();if x!=0||y!=0{continue;}
-            let mut decoded=encrypted.to_vec();candidate.clone().apply(&mut decoded);
-            let mut at=0;let mut count=0;
-            while at+6<=decoded.len(){let n=u32::from_be_bytes(decoded[at..at+4].try_into().unwrap()) as usize;if !(2..=MAX_FRAME).contains(&n)||at+n+4>decoded.len(){break;}at+=n+4;count+=1;}
-            if at==decoded.len()&&count>0{return Ok(Some(candidate));}
-        }
-    }Ok(None)
+    // Flash commonly retains the fresh shared-secret table for the opposite direction.
+    // Prefer that exact table over reversing a snapshot with an unknown j counter.
+    let mut fresh=None;
+    for state in states.iter().take(64){let candidate=Rc4::from_state(*state,0,0).map_err(io::Error::other)?;
+        if valid_frames(encrypted,&candidate){if fresh.as_ref().is_some_and(|c:&Rc4|c.state()!=candidate.state()){return Ok(None);}fresh=Some(candidate);}
+    }
+    if fresh.is_some()||direction==Direction::ToClient{return Ok(fresh);}
+    let deadline=Instant::now()+Duration::from_secs(5);let mut found=None;
+    for state in states.iter().take(64){for y in 0..256 {
+        if cancel.load(Ordering::Acquire){return Err(io::Error::new(io::ErrorKind::Interrupted,"key discovery cancelled"));}if Instant::now()>deadline{return Ok(None);}
+        let mut candidate=Rc4::from_state(*state,encrypted.len() as u8,y as u8).map_err(io::Error::other)?;candidate.rewind(encrypted.len());
+        let (_,x,y)=candidate.state();if x!=0||y!=0||!valid_frames(encrypted,&candidate){continue;}
+        // Different reverse states can reproduce frame lengths yet corrupt the final body byte.
+        // Wait for additional evidence rather than silently selecting the first match.
+        if found.as_ref().is_some_and(|c:&Rc4|c.state()!=candidate.state()){return Ok(None);}found=Some(candidate);
+    }}Ok(found)
 }

@@ -1,4 +1,4 @@
-//! Explicit plaintext EVA_WIRE relay. One cancellable nonblocking transport loop.
+//! Cancellable nonblocking relay for EVA_WIRE, negotiated Flash and Origins.
 use crate::packet::{Direction, FrameDecoder, Message, Packet};
 use crate::rules::Rules;
 use crate::{
