@@ -10,7 +10,7 @@ pub fn find_tables(bytes:&[u8],address:usize)->Vec<[u8;256]> {
         // Reject most windows before inspecting all 256 words.
         if bytes[offset+1..offset+4]!=[0,0,0]||bytes[offset+5..offset+8]!=[0,0,0]{continue;}
         let mut state=[0;256];let mut seen=[false;256];let mut valid=true;
-        for (i,word) in bytes[offset..offset+1024].chunks_exact(4).enumerate(){let value=u32::from_le_bytes(word.try_into().unwrap());if value>255||seen[value as usize]{valid=false;break;}seen[value as usize]=true;state[i]=value as u8;}
+        for (i,word) in bytes[offset..offset+1024].as_chunks::<4>().0.iter().enumerate(){let value=u32::from_le_bytes(*word);if value>255||seen[value as usize]{valid=false;break;}seen[value as usize]=true;state[i]=value as u8;}
         if valid&&!result.contains(&state){result.push(state);if result.len()==64{break;}}
     }
     result
