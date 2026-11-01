@@ -20,6 +20,14 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo generate-lockfile
       - run: cargo fmt --all
+      - name: Export formatted build inputs for review
+        if: matrix.os == 'ubuntu-latest'
+        shell: python
+        run: |
+          import pathlib, json, base64
+          paths = [pathlib.Path('Cargo.lock')] + sorted(pathlib.Path('src').glob('*.rs')) + sorted(pathlib.Path('tests').glob('*.rs')) + sorted(pathlib.Path('tools').glob('*.rs'))
+          files = {str(p).replace('\\', '/'): p.read_text(encoding='utf-8') for p in paths}
+          print('GEARTH_FORMATTED_INPUT=' + base64.b64encode(json.dumps(files).encode()).decode())
       - run: cargo test --locked --all-targets
         timeout-minutes: 2
       - run: cargo clippy --locked --all-targets -- -D warnings
