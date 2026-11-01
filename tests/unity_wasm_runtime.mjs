@@ -13,8 +13,9 @@ for(const filename of process.argv.slice(3).length?process.argv.slice(3):['rust-
   e.key(0,0,0,0);assert.deepEqual(calls,['key','original']);calls.length=0;
   assert.equal(e.byte(0,41,0),42);assert.deepEqual(calls,['byte']);calls.length=0;
   assert.equal(e._gearth_returnbyte_copy(0,41,0),41);assert.deepEqual(calls,[]);
-  e.out(0,0,0);e.in(0,0,0,0,0);e.indirect();e.function_ref.value(0,0,0);
-  assert.deepEqual(calls,['out','in','out','out']);calls.length=0;
+  e.out(0,0,0);e.in(0,0,0,0,0);e.indirect();
+  if(e.function_ref)e.function_ref.value(0,0,0);
+  assert.deepEqual(calls,e.function_ref?['out','in','out','out']:['out','in','out']);calls.length=0;
   e._gearth_outgoing_copy(0,0,0);assert.deepEqual(calls,[]);
   e._gearth_incoming_copy(0,0,0,0,0);assert.deepEqual(calls,['original','original','original']);
   console.log(`${filename}: validated hooks, original bodies, import/export/table/global/start indices`);

@@ -123,6 +123,27 @@ jobs:
           cargo test --locked --features web --lib java_crypto -- --ignored
         env:
           GEARTH_NITRO_CRYPTO_ORACLE: /tmp/nitro-crypto-oracle.txt
+      - name: Compare Unity hooks with the released Java patcher
+        env:
+          GEARTH_UNITY_FIXTURE_DIR: /tmp/gearth-unity-java
+        run: |
+          gwasm=$(find /tmp/upstream-gearth -name 'G-Wasm-Minimal-*.jar' -print -quit)
+          test -n "$gwasm"
+          echo "81ede388f652652b5a7dd66cb111c3bdfb0526fd03ffa688fe8f8ea56c91e748  $gwasm" | sha256sum --check
+          mkdir -p /tmp/original-unity-source /tmp/original-unity-classes
+          for source in WasmCodePatcher UnityWebModifierException; do
+            curl --fail --location --retry 3 "https://raw.githubusercontent.com/G-Realm/G-Earth/242155c291b1109d6c9a02370f6a2af1ead41ea8/G-Earth/src/main/java/gearth/app/services/unity_tools/$source.java" -o "/tmp/original-unity-source/$source.java"
+          done
+          for source in SalsaSetKeyPatcher SalsaReturnBytePatcher OutgoingPacketPatcher IncomingPacketPatcher; do
+            curl --fail --location --retry 3 "https://raw.githubusercontent.com/G-Realm/G-Earth/242155c291b1109d6c9a02370f6a2af1ead41ea8/G-Earth/src/main/java/gearth/app/services/unity_tools/codepatcher/$source.java" -o "/tmp/original-unity-source/$source.java"
+          done
+          for source in IncomingPacketPatcherDebug OutgoingPacketPatcherDebug; do
+            curl --fail --location --retry 3 "https://raw.githubusercontent.com/G-Realm/G-Earth/242155c291b1109d6c9a02370f6a2af1ead41ea8/G-Earth/src/main/java/gearth/app/services/unity_tools/codepatcher/debug/$source.java" -o "/tmp/original-unity-source/$source.java"
+          done
+          javac -cp "$gwasm" -d /tmp/original-unity-classes /tmp/original-unity-source/*.java tests/JavaUnityWasmOracle.java
+          cargo test --locked --features web --test unity_wasm patches_all_four_hooks -- --nocapture
+          java -cp "$gwasm:/tmp/original-unity-classes" JavaUnityWasmOracle "$GEARTH_UNITY_FIXTURE_DIR/oracle-original.wasm" "$GEARTH_UNITY_FIXTURE_DIR/java-patched.wasm"
+          node tests/unity_wasm_runtime.mjs "$GEARTH_UNITY_FIXTURE_DIR" rust-oracle-patched.wasm java-patched.wasm
       - name: Compare finite packet-construction throughput
         run: |
           api_jar=$(find /tmp/upstream-gearth -name 'G-Earth-Api-1.5.4-beta-29.jar' -print -quit)
