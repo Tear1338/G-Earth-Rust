@@ -9,6 +9,7 @@ jobs:
   core:
     timeout-minutes: 10
     strategy:
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
@@ -52,15 +53,25 @@ jobs:
   desktop:
     timeout-minutes: 15
     runs-on: windows-latest
+    env:
+      RUSTFLAGS: -C target-feature=+crt-static
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --locked --release --features desktop --bin gearth-desktop
+      - run: python tools/check_pe_imports.py target/release/gearth-desktop.exe
+      - name: Package desktop usage and license
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path package -Force | Out-Null
+          Copy-Item -LiteralPath target/release/gearth-desktop.exe -Destination package/gearth-desktop.exe
+          Copy-Item -LiteralPath README.md,LICENSE -Destination package
+          Copy-Item -LiteralPath docs -Destination package/docs -Recurse
       - uses: actions/upload-artifact@v4
         with:
           name: G-Earth-Rust-Windows-development
-          path: target/release/gearth-desktop.exe
+          path: package/
   java-compatibility:
     timeout-minutes: 10
     runs-on: ubuntu-latest

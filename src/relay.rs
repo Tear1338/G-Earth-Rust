@@ -113,7 +113,7 @@ impl Relay {
                     Ok((client, _)) => {
                         let mut session_options=options.clone();
                         if session_options.flash_process==Some(0){
-                            if let Some(pid)=client.peer_addr().ok().and_then(|address|gearth_platform::tcp_owner(address).ok().flatten()){
+                            if let Some(pid)=client.peer_addr().ok().and_then(|address|client.local_addr().ok().and_then(|remote|gearth_platform::tcp_owner(address,remote).ok().flatten())){
                                 session_options.flash_process=Some(pid);let _=events.try_send(Event::Status(format!("Flash client process: {pid}")));
                             }
                         }

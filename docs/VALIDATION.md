@@ -1,6 +1,8 @@
 # Validation record
 
-Expanded transport and extension implementation validated at commit `1ece5611c846c04c919ce8ffc272df316115f8a2`:
+Windows Flash and hosts attachment have additional [native integration evidence](FLASH_VALIDATION.md), including automatic process identification, real cross-process memory reads, encrypted traffic and scoped cleanup. Latest passing reference: [41328870381](https://github.com/Tear1338/G-Earth-Rust/actions/runs/41328870381).
+
+Earlier expanded transport and extension implementation validated at commit `1ece5611c846c04c919ce8ffc272df316115f8a2`:
 https://github.com/Tear1338/G-Earth-Rust/actions/runs/41255104561
 
 | Check | Result |
@@ -16,7 +18,7 @@ https://github.com/Tear1338/G-Earth-Rust/actions/runs/41255104561
 | Official client/hotel connection | Not performed |
 | Existing G-Presets binary | Not performed |
 | Complete application equivalence | Incomplete; see PARITY.md |
-| Java-versus-Rust performance | Not measured |
+| Java-versus-Rust performance | Packet microbenchmark only; whole application unmeasured |
 
 The differential oracle compares 35 vectors: 18 original EVA/encoding vectors, four WEDGIE packet/message vectors and 13 Origins DH/HKDF/nonce/ChaCha vectors. The Java API comes from the pinned upstream Windows release, whose SHA-256 is verified before execution. BobbaCrypto classes are compiled from the pinned upstream commit and use the upstream release's Bouncy Castle dependency.
 

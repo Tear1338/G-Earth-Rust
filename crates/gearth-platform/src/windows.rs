@@ -162,9 +162,9 @@ pub(super) fn scan(
         Ok(result)
     }
 }
-pub(super) fn tcp_owner(local:std::net::SocketAddr)->io::Result<Option<u32>> {
+pub(super) fn tcp_owner(local:std::net::SocketAddr,remote:std::net::SocketAddr)->io::Result<Option<u32>> {
     use windows_sys::Win32::{NetworkManagement::IpHelper::{GetExtendedTcpTable,MIB_TCPROW_OWNER_PID,MIB_TCPTABLE_OWNER_PID,TCP_TABLE_OWNER_PID_ALL},Networking::WinSock::AF_INET};
-    if !local.is_ipv4()||!local.ip().is_loopback(){return Ok(None);}
+    if !local.is_ipv4()||!local.ip().is_loopback()||!remote.is_ipv4()||!remote.ip().is_loopback(){return Ok(None);}
     // SAFETY: Windows writes into an aligned, bounded allocation. Row counts and
     // offsets are checked against the returned buffer before unaligned copies.
     unsafe {
@@ -180,7 +180,7 @@ pub(super) fn tcp_owner(local:std::net::SocketAddr)->io::Result<Option<u32>> {
             let bytes=count.checked_mul(size_of::<MIB_TCPROW_OWNER_PID>()).and_then(|n|n.checked_add(offset)).ok_or_else(||io::Error::other("TCP owner table length overflow"))?;
             if bytes>size as usize{return Err(io::Error::other("truncated TCP owner table"));}
             for i in 0..count {let row=base.add(offset+i*size_of::<MIB_TCPROW_OWNER_PID>()).cast::<MIB_TCPROW_OWNER_PID>().read_unaligned();
-                if std::net::IpAddr::V4(std::net::Ipv4Addr::from(row.dwLocalAddr.to_ne_bytes()))==local.ip()&&u16::from_be(row.dwLocalPort as u16)==local.port(){return Ok(Some(row.dwOwningPid));}
+                if std::net::IpAddr::V4(std::net::Ipv4Addr::from(row.dwLocalAddr.to_ne_bytes()))==local.ip()&&u16::from_be(row.dwLocalPort as u16)==local.port()&&std::net::IpAddr::V4(std::net::Ipv4Addr::from(row.dwRemoteAddr.to_ne_bytes()))==remote.ip()&&u16::from_be(row.dwRemotePort as u16)==remote.port(){return Ok(Some(row.dwOwningPid));}
             }return Ok(None);
         }Err(io::Error::other("TCP owner table kept changing"))
     }

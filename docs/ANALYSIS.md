@@ -14,7 +14,7 @@ Static inventory does not establish runtime behavior, complete equivalence or pe
 
 ## Architecture
 
-Safe Rust core (`forbid(unsafe_code)`) separates packets/expressions, crypto, transport, SOCKS, packet identifiers, extensions, settings, rules and scheduling. RustCrypto supplies standard HKDF/SHA256/ChaCha20; num-bigint supplies the original Origins DH arithmetic; ureq supplies verified HTTPS lookup. The optional eframe desktop consumes the same core.
+Safe Rust core (`forbid(unsafe_code)`) separates packets/expressions, crypto, transport, SOCKS, packet identifiers, extensions, settings, rules and scheduling. RustCrypto supplies standard HKDF/SHA256/ChaCha20; num-bigint supplies the original Origins DH arithmetic; ureq supplies verified HTTPS lookup. The optional eframe desktop consumes the same core. A separate gearth-platform crate isolates the small unsafe Win32 FFI boundary; protocol and UI code remain safe Rust. Native access requests read/query permissions only, validates the selected Habbo/Flash process, closes owned handles and bounds memory reads, time and retained candidates.
 
 One nonblocking relay loop handles both directions and injected frames. Output queues are bounded to 64 MiB per direction, with retained partial-write offsets. Independent RC4 input/output state accounts for blocked and injected traffic. Origins keeps separate client/server and header/data channels and preserves partial encrypted headers without advancing the nonce twice.
 
@@ -22,13 +22,21 @@ The extension host binds only loopback, bounds pending peers and queues, uses ra
 
 The UI caches expression/search strings and virtualizes log rows, with configurable row and byte budgets. Settings use bounded reads and atomic same-directory replacement. SOCKS passwords and RC4 keys are not saved.
 
+## Flash discovery and redirection
+
+The first Flash hello supplies revision/identifier; the server handshake selects outgoing and optional incoming encryption. The native helper scans private writable pages of the connecting process for shuffled 256-u32 states, with a 1 GiB/5 second scan bound and at most 8,192 distinct candidates. Prefix rejection keeps candidate validation cheap. Fresh states are preferred; reversing snapshots is accepted only when the result is unambiguous. Ambiguity waits for further evidence or ends the session rather than silently corrupting a payload.
+
+The hostname is resolved before redirection and the listener is bound first. Only token-marked lines are added to the hosts file, guarded by a file lock; cleanup rereads the current contents and preserves unrelated later edits. Setup refuses pre-existing entries and other active/stale Rust leases. Explicit recovery removes only Rust-owned lines.
+
+The test executable is copied as Habbo.exe inside an isolated temporary test directory and supplies word-state tables in its own heap. The integration test actually calls Windows process enumeration, VirtualQueryEx/ReadProcessMemory and TCP ownership APIs. It verifies blocking, replacement and injection through negotiated encryption; it does not touch the real system hosts file.
+
 ## Known limits
 
-- No official Habbo session has been exercised; automatic client attachment and Flash key discovery are absent.
+- No official Habbo session has been exercised. The implemented Windows discovery/hosts attachment path is validated with a separate controlled process, not a production AIR client.
 - Nitro/Unity connection providers, system certificate/proxy lifecycle, extension store and complete UI parity are absent.
 - Log delivery may drop observations under backpressure; displayed counts are not authoritative network counts.
-- Remote DNS/connection setup is synchronous during relay setup; UI responsiveness during that setup needs improvement.
-- The asynchronous Sulek lookup has bounded time and size but has only offline schema tests here.
+- Hosts attachment prepares DNS and listeners on a worker. Explicit relay setup can still resolve DNS synchronously; shutdown may wait for bounded connection or identifier lookup timeouts.
+- Sulek lookup is bounded and revision-cached; malformed, wrong-version and truncated caches are rejected. Tests use offline schemas and cache fixtures, not the live service.
 - Nine original language resources are present; individual added controls remain partly English.
 - Finite simulated and Java-oracle tests do not establish compatibility with arbitrary extensions.
 - No benchmark demonstrates a gain over the original Java application.

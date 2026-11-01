@@ -12,9 +12,9 @@ pub struct ScanResult {
     pub bytes_read: usize,
     pub complete: bool,
 }
-pub fn tcp_owner(local:std::net::SocketAddr)->io::Result<Option<u32>> {
-    #[cfg(windows)] {windows::tcp_owner(local)}
-    #[cfg(not(windows))] {let _=local;Ok(None)}
+pub fn tcp_owner(local:std::net::SocketAddr,remote:std::net::SocketAddr)->io::Result<Option<u32>> {
+    #[cfg(windows)] {windows::tcp_owner(local,remote)}
+    #[cfg(not(windows))] {let _=(local,remote);Ok(None)}
 }
 pub fn find_tables(bytes: &[u8], address: usize) -> Vec<[u8; 256]> {
     let mut result = Vec::new();
