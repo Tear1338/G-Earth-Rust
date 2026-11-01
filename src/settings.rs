@@ -65,7 +65,8 @@ impl Settings {
         let outcome=(||{let mut file=OpenOptions::new().write(true).create_new(true).open(&temporary)?;file.write_all(&bytes)?;file.sync_all()?;drop(file);fs::rename(&temporary,path)})();
         if outcome.is_err(){let _=fs::remove_file(&temporary);}outcome
     }
-    pub fn compiled_rules(&self)->io::Result<Vec<Rule>> {self.rules.iter().map(|(enabled,direction,header,replacement)|Ok(Rule {enabled:*enabled,direction:*direction,header:*header,action:match replacement {Some(s)=>Action::Replace(expression::parse(s).map_err(io::Error::other)?),None=>Action::Block}})).collect()}
+    pub fn compiled_rules(&self)->io::Result<Vec<Rule>> {self.compiled_rules_for(false)}
+    pub fn compiled_rules_for(&self,origins:bool)->io::Result<Vec<Rule>> {self.rules.iter().map(|(enabled,direction,header,replacement)|{let format=if origins{if *direction==Direction::ToServer{crate::packet::PacketFormat::WedgieOutgoing}else{crate::packet::PacketFormat::WedgieIncoming}}else{crate::packet::PacketFormat::EvaWire};Ok(Rule {enabled:*enabled,direction:*direction,header:*header,action:match replacement {Some(s)=>Action::Replace(expression::parse_with_format(s,format,None).map_err(io::Error::other)?),None=>Action::Block}})}).collect()}
     pub fn import_java_cache(&mut self,value:Value)->io::Result<()> {
         if !value.is_object(){return Err(io::Error::other("Java cache must be a JSON object"));}
         if let (Some(host),Some(port))=(value["last_connection_settings"]["host"].as_str(),value["last_connection_settings"]["port"].as_u64()) {if port<=65535 {self.values.insert("remote".into(),format!("{host}:{port}"));}}

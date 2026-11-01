@@ -148,7 +148,7 @@ fn invalid_expressions_rejected() {
         "{h:1}{s:\"unterminated}",
         "{h:1}{hex:0}",
         "{h:1}{x:1}",
-        "{h:1}garbage",
+        "{h:1}[256]",
     ] {
         assert!(expression::parse(s).is_err(), "{s}");
     }
@@ -254,7 +254,7 @@ fn extension_send_and_intercept_vectors() {
 fn extension_rejects_unsupported_format() {
     let mut p = extension::send(Direction::ToServer, &Packet::new(1)).unwrap();
     let n = p.bytes().len();
-    p.replace(n - 4, 4, &1i32.to_be_bytes()).unwrap();
+    p.replace(n - 4, 4, &99i32.to_be_bytes()).unwrap();
     assert!(extension::decode(p).is_err());
 }
 #[test]

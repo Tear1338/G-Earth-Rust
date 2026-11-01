@@ -1,12 +1,13 @@
-use crate::{packet::{error,latin1_encode,Packet,Result,Direction,MAX_FRAME},packet_info::PacketInfoManager};
+use crate::{packet::{error,latin1_encode,Packet,Result,Direction,PacketFormat,MAX_FRAME},packet_info::PacketInfoManager};
 
 /// Parse EVA_WIRE expressions or G-Earth's lossless [byte] display notation.
-pub fn parse(expression:&str)->Result<Packet> {parse_inner(expression,None)}
+pub fn parse(expression:&str)->Result<Packet> {parse_inner(expression,PacketFormat::EvaWire,None)}
 pub fn parse_with_info(expression:&str,direction:Direction,database:&PacketInfoManager)->Result<Packet> {
-    parse_inner(expression,Some((direction,database)))
+    parse_inner(expression,PacketFormat::EvaWire,Some((direction,database)))
 }
-fn parse_inner(expression:&str,context:Option<(Direction,&PacketInfoManager)>)->Result<Packet> {
-    let mut rest=expression.trim();let mut bytes=Vec::new();let mut implicit_length=false;
+pub fn parse_with_format(expression:&str,format:PacketFormat,context:Option<(Direction,&PacketInfoManager)>)->Result<Packet>{parse_inner(expression,format,context)}
+fn parse_inner(expression:&str,format:PacketFormat,context:Option<(Direction,&PacketInfoManager)>)->Result<Packet> {
+    let mut rest=expression;let mut bytes=Vec::new();let mut implicit_length=false;
     while !rest.is_empty() {
         if rest.starts_with('{') {
             let mut quoted=false;let mut escaped=false;let mut end=None;
@@ -20,7 +21,7 @@ fn parse_inner(expression:&str,context:Option<(Direction,&PacketInfoManager)>)->
             let (kind,value)=rest[1..end].split_once(':').ok_or_else(||error("missing ':'"))?;
             let value=value.trim();
             if bytes.is_empty()&&matches!(kind,"h"|"in"|"out") {
-                bytes.extend_from_slice(&[0;4]);implicit_length=true;
+                implicit_length=format==PacketFormat::EvaWire;
                 let header=if kind=="h" {
                     let n:i32=value.parse().map_err(|_|error("invalid header"))?;
                     if !(-32768..=65535).contains(&n){return Err(error("header outside 16-bit range"));}
@@ -31,9 +32,9 @@ fn parse_inner(expression:&str,context:Option<(Direction,&PacketInfoManager)>)->
                     if direction!=expected{return Err(error("named packet direction differs from selected destination"));}
                     database.by_name(direction,value).ok_or_else(||error("packet identifier not found"))?.header
                 };
-                bytes.extend_from_slice(&header.to_be_bytes());
+                bytes.extend_from_slice(Packet::new_with_format(format,header)?.bytes());
             }else{
-                let mut field=Packet::new(0);append_field(&mut field,kind,value)?;bytes.extend_from_slice(field.body());
+                let mut field=Packet::new_with_format(format,0)?;append_field(&mut field,kind,value)?;bytes.extend_from_slice(field.body());
             }
             rest=&rest[end+1..];
         }else if rest.starts_with('['){
@@ -47,7 +48,7 @@ fn parse_inner(expression:&str,context:Option<(Direction,&PacketInfoManager)>)->
         if bytes.len()>MAX_FRAME+4{return Err(error("packet too large"));}
     }
     if implicit_length {let length=u32::try_from(bytes.len()-4).map_err(|_|error("packet too large"))?;bytes[..4].copy_from_slice(&length.to_be_bytes());}
-    Packet::from_bytes(bytes)
+    Packet::from_bytes_with_format(format,bytes)
 }
 fn append_field(p:&mut Packet,kind:&str,value:&str)->Result<()> {
     match kind {

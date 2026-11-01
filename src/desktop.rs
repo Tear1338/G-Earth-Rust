@@ -2,7 +2,7 @@
 use eframe::egui;
 use gearth_rust::{
     expression,
-    packet::{Direction, Message},
+    packet::{Direction, Message,PacketFormat},
     relay::{Config, Event, Relay},
     rules::{Action, Rule, Rules},
     scheduler::Scheduler,
@@ -95,6 +95,7 @@ struct Desktop {
     notepad:String,
     logs_bytes:usize,
     replacement_expression:String,
+    origins:bool,
 }
 struct LogRow {message:Message,expression:String,search:String,bytes:usize}
 impl Default for Desktop {
@@ -129,15 +130,15 @@ impl Default for Desktop {
             extension_host,extension_events,extension_runtime:find_java().to_string_lossy().into_owned(),extension_path:String::new(),extension_processes:Vec::new(),extension_console:VecDeque::new(),
             hotel_version:String::new(),client_identifier:String::new(),packet_database:String::new(),packet_info:PacketInfoManager::default(),
             socks_proxy:String::new(),socks_user:String::new(),socks_password:String::new(),outgoing_key:String::new(),incoming_key:String::new(),
-            settings:Settings::default(),settings_path:Settings::default_path(),settings_loaded:false,legacy_cache_path:String::new(),dark_mode:false,language:"en".into(),i18n:I18n::new("en"),notepad:String::new(),logs_bytes:0,replacement_expression:String::new(),
+            settings:Settings::default(),settings_path:Settings::default_path(),settings_loaded:false,legacy_cache_path:String::new(),dark_mode:false,language:"en".into(),i18n:I18n::new("en"),notepad:String::new(),logs_bytes:0,replacement_expression:String::new(),origins:false,
         };
         desktop.load_settings();desktop
     }
 }
 impl Desktop {
     fn update_rules(&mut self) {
-        let mut entries=match self.settings.compiled_rules(){Ok(entries)=>entries,Err(e)=>{self.status=e.to_string();return;}};
-        let action=if self.replacement_expression.trim().is_empty(){Action::Block}else{match expression::parse_with_info(&self.replacement_expression,self.block_direction,&self.packet_info){Ok(p)=>Action::Replace(p),Err(e)=>{self.status=e.to_string();return;}}};
+        let mut entries=match self.settings.compiled_rules_for(self.origins){Ok(entries)=>entries,Err(e)=>{self.status=e.to_string();return;}};
+        let action=if self.replacement_expression.trim().is_empty(){Action::Block}else{match expression::parse_with_format(&self.replacement_expression,self.packet_format(self.block_direction),Some((self.block_direction,&self.packet_info))){Ok(p)=>Action::Replace(p),Err(e)=>{self.status=e.to_string();return;}}};
         entries.push(Rule {enabled:self.block_enabled,direction:self.block_direction,header:self.block_header,action});
         if let Some(relay) = &self.relay {
             if let Err(e) = relay.set_rules(Rules { entries }) {
@@ -196,7 +197,8 @@ impl Desktop {
     }
     fn connection(&mut self, ui: &mut egui::Ui) {
         ui.heading("Connection");
-        ui.label("Explicit TCP relay · unencrypted EVA_WIRE");
+        ui.label(if self.origins{"Origins TCP · negotiated Bobba encryption"}else{"EVA_WIRE TCP relay"});
+        ui.add_enabled(self.relay.is_none(),egui::Checkbox::new(&mut self.origins,"Origins / Shockwave"));
         ui.add_space(12.0);
         egui::Grid::new("connection-grid")
             .spacing([18.0, 12.0])
@@ -348,7 +350,7 @@ impl Desktop {
                 .desired_rows(5)
                 .desired_width(f32::INFINITY),
         );
-        match expression::parse_with_info(&self.expression,self.direction,&self.packet_info) {
+        match expression::parse_with_format(&self.expression,self.packet_format(self.direction),Some((self.direction,&self.packet_info))) {
             Ok(p) => {
                 ui.label(format!("Header {} · {} bytes", p.header(), p.bytes().len()));
                 ui.monospace(expression::hex(p.bytes()));
@@ -368,7 +370,7 @@ impl Desktop {
             )
             .clicked()
         {
-            self.status = match expression::parse_with_info(&self.expression,self.direction,&self.packet_info) {
+            self.status = match expression::parse_with_format(&self.expression,self.packet_format(self.direction),Some((self.direction,&self.packet_info))) {
                 Ok(packet) => match self.relay.as_ref().unwrap().inject(self.direction, packet) {
                     Ok(()) => "Packet queued".into(),
                     Err(e) => e.to_string(),
@@ -394,7 +396,7 @@ impl Desktop {
         ui.label("Replacement expression (empty = block)");
         if ui.text_edit_singleline(&mut self.replacement_expression).changed(){self.update_rules();}
         if ui.button("Add saved rule").clicked(){
-            let replacement=if self.replacement_expression.trim().is_empty(){Ok(None)}else{expression::parse_with_info(&self.replacement_expression,self.block_direction,&self.packet_info).map(|p|Some(expression::to_lossless_expression(&p)))};
+            let replacement=if self.replacement_expression.trim().is_empty(){Ok(None)}else{expression::parse_with_format(&self.replacement_expression,self.packet_format(self.block_direction),Some((self.block_direction,&self.packet_info))).map(|p|Some(expression::to_lossless_expression(&p)))};
             match replacement{Ok(replacement)=>{self.settings.rules.push((true,self.block_direction,self.block_header,replacement));self.block_enabled=false;self.update_rules();},Err(e)=>self.status=e.to_string()}
         }
         let mut remove=None;let mut changed=false;
@@ -423,7 +425,7 @@ impl Desktop {
             )
             .clicked()
         {
-            self.status = match expression::parse_with_info(&self.expression,self.direction,&self.packet_info).and_then(|p| {
+            self.status = match expression::parse_with_format(&self.expression,self.packet_format(self.direction),Some((self.direction,&self.packet_info))).and_then(|p| {
                 self.scheduler.add(
                     p,
                     self.direction,
@@ -440,7 +442,7 @@ impl Desktop {
             self.scheduler.jobs.clear();
         }
         ui.label(format!("{} active schedules", self.scheduler.jobs.len()));
-        if ui.add_enabled(self.relay.as_ref().is_some_and(Relay::connected),egui::Button::new("Run saved schedules")).clicked(){for template in &self.settings.schedules{match expression::parse_with_info(&template.expression,template.direction,&self.packet_info).and_then(|p|self.scheduler.add(p,template.direction,Duration::from_millis(template.interval_ms),Some(template.repeat),Instant::now())){Ok(())=>{},Err(e)=>{self.status=e.to_string();break;}}}}
+        if ui.add_enabled(self.relay.as_ref().is_some_and(Relay::connected),egui::Button::new("Run saved schedules")).clicked(){for template in &self.settings.schedules{match expression::parse_with_format(&template.expression,self.packet_format(template.direction),Some((template.direction,&self.packet_info))).and_then(|p|self.scheduler.add(p,template.direction,Duration::from_millis(template.interval_ms),Some(template.repeat),Instant::now())){Ok(())=>{},Err(e)=>{self.status=e.to_string();break;}}}}
         if ui.button("Clear saved schedules").clicked(){self.settings.schedules.clear();}
         for (i, job) in self.scheduler.jobs.iter().enumerate() {
             ui.monospace(format!(
@@ -553,19 +555,20 @@ impl Desktop {
     }
     fn apply_settings(&mut self) {
         for (key,target) in [("listen",&mut self.listen),("remote",&mut self.remote),("hotel_version",&mut self.hotel_version),("client_identifier",&mut self.client_identifier),("packet_database",&mut self.packet_database),("socks_proxy",&mut self.socks_proxy),("socks_user",&mut self.socks_user),("extension_runtime",&mut self.extension_runtime),("notepad",&mut self.notepad),("language",&mut self.language)] {if let Some(value)=self.settings.values.get(key){*target=value.clone();}}
-        self.dark_mode=self.settings.booleans.get("dark_mode").copied().unwrap_or(false);self.outgoing=self.settings.booleans.get("outgoing").copied().unwrap_or(true);self.incoming=self.settings.booleans.get("incoming").copied().unwrap_or(true);self.i18n=I18n::new(&self.language);self.update_rules();
+        self.origins=self.settings.booleans.get("origins").copied().unwrap_or_else(||self.settings.get("client_type")=="SHOCKWAVE");self.dark_mode=self.settings.booleans.get("dark_mode").copied().unwrap_or(false);self.outgoing=self.settings.booleans.get("outgoing").copied().unwrap_or(true);self.incoming=self.settings.booleans.get("incoming").copied().unwrap_or(true);self.i18n=I18n::new(&self.language);self.update_rules();
     }
     fn save_settings(&mut self) {
         for (key,value) in [("listen",&self.listen),("remote",&self.remote),("hotel_version",&self.hotel_version),("client_identifier",&self.client_identifier),("packet_database",&self.packet_database),("socks_proxy",&self.socks_proxy),("socks_user",&self.socks_user),("extension_runtime",&self.extension_runtime),("notepad",&self.notepad),("language",&self.language)] {self.settings.values.insert(key.into(),value.clone());}
-        self.settings.booleans.extend([("dark_mode".into(),self.dark_mode),("outgoing".into(),self.outgoing),("incoming".into(),self.incoming)]);
+        self.settings.booleans.extend([("origins".into(),self.origins),("dark_mode".into(),self.dark_mode),("outgoing".into(),self.outgoing),("incoming".into(),self.incoming)]);
         match self.settings.save(&self.settings_path){Ok(())=>{self.settings_loaded=true;self.status="Settings saved".into();},Err(e)=>self.status=e.to_string()}
     }
+    fn packet_format(&self,direction:Direction)->PacketFormat {if self.origins{if direction==Direction::ToServer{PacketFormat::WedgieOutgoing}else{PacketFormat::WedgieIncoming}}else{PacketFormat::EvaWire}}
     fn relay_options(&mut self)->std::io::Result<RelayOptions> {
         self.packet_info=if self.packet_database.trim().is_empty(){PacketInfoManager::default()}else{PacketInfoManager::from_tsv(&self.hotel_version,&std::fs::read_to_string(&self.packet_database)?).map_err(std::io::Error::other)?};
         let cipher=|key:&str|->std::io::Result<Option<Rc4>>{if key.trim().is_empty(){Ok(None)}else{Rc4::new(&expression::parse_hex(key).map_err(std::io::Error::other)?).map(Some).map_err(std::io::Error::other)}};
         let (host,port)=self.remote.rsplit_once(':').ok_or_else(||std::io::Error::other("Remote address requires host:port"))?;
-        let connection=ConnectionDetails {host:host.trim_start_matches('[').trim_end_matches(']').into(),port:port.parse().map_err(std::io::Error::other)?,version:self.hotel_version.clone(),identifier:self.client_identifier.clone(),client_type:"FLASH".into(),packets:self.packet_info.clone()};
-        Ok(RelayOptions {extensions:self.extension_host.clone(),connection:Some(connection),socks:if self.socks_proxy.trim().is_empty(){None}else{Some(SocksConfig {proxy:self.socks_proxy.clone(),credentials:if self.socks_user.is_empty(){None}else{Some((self.socks_user.clone(),self.socks_password.clone()))}})},outgoing_rc4:cipher(&self.outgoing_key)?,incoming_rc4:cipher(&self.incoming_key)?})
+        let connection=ConnectionDetails {host:host.trim_start_matches('[').trim_end_matches(']').into(),port:port.parse().map_err(std::io::Error::other)?,version:self.hotel_version.clone(),identifier:self.client_identifier.clone(),client_type:if self.origins{"SHOCKWAVE".into()}else{"FLASH".into()},packets:self.packet_info.clone()};
+        Ok(RelayOptions {shockwave:self.origins,extensions:self.extension_host.clone(),connection:Some(connection),socks:if self.socks_proxy.trim().is_empty(){None}else{Some(SocksConfig {proxy:self.socks_proxy.clone(),credentials:if self.socks_user.is_empty(){None}else{Some((self.socks_user.clone(),self.socks_password.clone()))}})},outgoing_rc4:cipher(&self.outgoing_key)?,incoming_rc4:cipher(&self.incoming_key)?})
     }
     fn extensions(&mut self,ui:&mut egui::Ui) {
         ui.heading("Extensions");

@@ -67,6 +67,16 @@ fn compare_against_actual_beta29_java_api() {
         expected.insert(format!("vl64_{n}"), encoding::encode_vl64(n));
     }
     expected.insert("b64_123".into(), encoding::encode_b64(123, 2).unwrap());
+    for format in [PacketFormat::WedgieIncoming,PacketFormat::WedgieOutgoing] {
+        let mut packet=Packet::new_with_format(format,123).unwrap();packet.put_i32(-256).unwrap().put_string("é").unwrap().put_bool(true).unwrap().put_u16(1000).unwrap();
+        expected.insert(format!("shock_{}",format.id()),packet.bytes().to_vec());
+        let direction=if format==PacketFormat::WedgieIncoming{Direction::ToClient}else{Direction::ToServer};
+        expected.insert(format!("shock_message_{}",format.id()),latin1_encode(&Message {packet,direction,index:7,blocked:false}.stringify()).unwrap());
+    }
+    let mut a=gearth_rust::shockwave::BobbaCrypto::with_private(12345).unwrap();let b=gearth_rust::shockwave::BobbaCrypto::with_private(67890).unwrap();
+    expected.insert("bobba_public_a".into(),a.public_key().into_bytes());expected.insert("bobba_public_b".into(),b.public_key().into_bytes());a.set_peer(&b.public_key()).unwrap();
+    let keys=a.keys().unwrap();for (i,key) in [&keys.c2s_data,&keys.c2s_header,&keys.s2c_data,&keys.s2c_header].iter().enumerate(){expected.insert(format!("bobba_key_{i}"),key.key.to_vec());expected.insert(format!("bobba_nonce_{i}"),key.nonce.to_vec());}
+    let keys=a.keys_mut().unwrap();for i in 0..2{let mut bytes=vec![1,2,3,4,5];keys.c2s_data.apply(&mut bytes);expected.insert(format!("bobba_cipher_{i}"),bytes);}let mut header=vec![1,64,64,100];keys.c2s_header.apply(&mut header);expected.insert("bobba_header".into(),header);
     assert_eq!(
         observed, expected,
         "Rust wire bytes differ from upstream Java API"

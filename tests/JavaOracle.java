@@ -1,5 +1,6 @@
 import gearth.protocol.HPacket;
 import gearth.protocol.HMessage;
+import gearth.protocol.HPacketFormat;
 import gearth.encoding.VL64Encoding;
 import gearth.encoding.Base64Encoding;
 import java.util.HexFormat;
@@ -16,5 +17,10 @@ public class JavaOracle {
         emit("message",message.stringify().getBytes(java.nio.charset.StandardCharsets.ISO_8859_1));
         for(int n:new int[]{-1000000,-256,-4,-1,0,1,3,4,63,64,256,1000000,Integer.MAX_VALUE})emit("vl64_"+n,VL64Encoding.encode(n));
         emit("b64_123",Base64Encoding.encode(123,2));
+        for(HPacketFormat format:new HPacketFormat[]{HPacketFormat.WEDGIE_INCOMING,HPacketFormat.WEDGIE_OUTGOING}) {
+            HPacket shock=format.createPacket(123);shock.appendInt(-256).appendString("é").appendBoolean(true).appendUShort(1000);
+            emit("shock_"+format.getId(),shock.toBytes());
+            emit("shock_message_"+format.getId(),new HMessage(shock,format==HPacketFormat.WEDGIE_INCOMING?HMessage.Direction.TOCLIENT:HMessage.Direction.TOSERVER,7).stringify().getBytes(java.nio.charset.StandardCharsets.ISO_8859_1));
+        }
     }
 }

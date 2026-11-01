@@ -13,3 +13,4 @@ pub mod scheduler;
 pub mod socks;
 pub mod settings;
 pub mod i18n;
+pub mod shockwave;

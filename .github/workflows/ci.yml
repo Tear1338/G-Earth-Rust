@@ -73,8 +73,15 @@ jobs:
         run: |
           api_jar=$(find /tmp/upstream-gearth -name 'G-Earth-Api-1.5.4-beta-29.jar' -print -quit)
           test -n "$api_jar"
-          javac -cp "$api_jar" tests/JavaOracle.java tests/JavaExtensionFixture.java
+          bcprov=$(find /tmp/upstream-gearth -name 'bcprov-*.jar' -print -quit)
+          mkdir -p /tmp/original-crypto /tmp/original-classes
+          for source in BobbaCrypto BobbaChaChaKey BobbaCryptoUtils; do
+            curl --fail --location --retry 3 "https://raw.githubusercontent.com/G-Realm/G-Earth/242155c291b1109d6c9a02370f6a2af1ead41ea8/G-Earth/src/main/java/gearth/app/protocol/crypto/$source.java" -o "/tmp/original-crypto/$source.java"
+          done
+          javac -cp "$bcprov" -d /tmp/original-classes /tmp/original-crypto/*.java
+          javac -cp "$api_jar:$bcprov:/tmp/original-classes" tests/JavaOracle.java tests/JavaExtensionFixture.java tests/BobbaOracle.java
           java -cp "$api_jar:tests" JavaOracle > /tmp/java-oracle.txt
+          java -cp "$bcprov:/tmp/original-classes:tests" BobbaOracle >> /tmp/java-oracle.txt
           cat /tmp/java-oracle.txt
           echo "GEARTH_EXTENSION_CLASSPATH=$api_jar:tests" >> "$GITHUB_ENV"
       - name: Compare Rust output byte for byte
