@@ -1,8 +1,12 @@
 //! Explicit plaintext EVA_WIRE relay. One cancellable nonblocking transport loop.
 use crate::packet::{Direction, FrameDecoder, Message, Packet};
 use crate::rules::Rules;
-use crate::{crypto::Rc4,extension_host::{ExtensionHost,ConnectionDetails},socks::SocksConfig};
-use crate::{shockwave::ShockwaveTransport,packet::PacketFormat};
+use crate::{
+    crypto::Rc4,
+    extension_host::{ConnectionDetails, ExtensionHost},
+    socks::SocksConfig,
+};
+use crate::{packet::PacketFormat, shockwave::ShockwaveTransport};
 use std::collections::VecDeque;
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
@@ -27,14 +31,14 @@ pub struct Config {
     pub listen: SocketAddr,
     pub remote: String,
 }
-#[derive(Clone,Default)]
+#[derive(Clone, Default)]
 pub struct RelayOptions {
-    pub shockwave:bool,
-    pub extensions:Option<Arc<ExtensionHost>>,
-    pub connection:Option<ConnectionDetails>,
-    pub socks:Option<SocksConfig>,
-    pub outgoing_rc4:Option<Rc4>,
-    pub incoming_rc4:Option<Rc4>,
+    pub shockwave: bool,
+    pub extensions: Option<Arc<ExtensionHost>>,
+    pub connection: Option<ConnectionDetails>,
+    pub socks: Option<SocksConfig>,
+    pub outgoing_rc4: Option<Rc4>,
+    pub incoming_rc4: Option<Rc4>,
 }
 struct Session {
     injections: SyncSender<(Direction, Packet)>,
@@ -49,18 +53,30 @@ pub struct Relay {
 }
 impl Relay {
     pub fn start(config: Config) -> io::Result<(Self, Receiver<Event>)> {
-        Self::start_with_options(config,RelayOptions::default())
+        Self::start_with_options(config, RelayOptions::default())
     }
-    pub fn start_with_options(config:Config,options:RelayOptions)->io::Result<(Self,Receiver<Event>)> {
-        if options.shockwave&&(options.outgoing_rc4.is_some()||options.incoming_rc4.is_some()){return Err(io::Error::new(io::ErrorKind::InvalidInput,"Origins negotiates its own crypto; remove explicit RC4 keys"));}
+    pub fn start_with_options(
+        config: Config,
+        options: RelayOptions,
+    ) -> io::Result<(Self, Receiver<Event>)> {
+        if options.shockwave && (options.outgoing_rc4.is_some() || options.incoming_rc4.is_some()) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Origins negotiates its own crypto; remove explicit RC4 keys",
+            ));
+        }
         if !config.listen.ip().is_loopback() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "listen address must be loopback",
             ));
         }
-        let remote: Vec<SocketAddr> = if options.socks.is_some(){Vec::new()}else{config.remote.to_socket_addrs()?.collect()};
-        if remote.is_empty()&&options.socks.is_none() {
+        let remote: Vec<SocketAddr> = if options.socks.is_some() {
+            Vec::new()
+        } else {
+            config.remote.to_socket_addrs()?.collect()
+        };
+        if remote.is_empty() && options.socks.is_none() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "remote has no addresses",
@@ -81,12 +97,16 @@ impl Relay {
             while !worker_stop.load(Ordering::Acquire) {
                 match listener.accept() {
                     Ok((client, _)) => {
-                        let server = if let Some(socks)=&options.socks {socks.connect(&config.remote).ok()}else{remote.iter().find_map(|addr| {
-                            if worker_stop.load(Ordering::Acquire) {
-                                return None;
-                            }
-                            TcpStream::connect_timeout(addr, Duration::from_secs(2)).ok()
-                        })};
+                        let server = if let Some(socks) = &options.socks {
+                            socks.connect(&config.remote).ok()
+                        } else {
+                            remote.iter().find_map(|addr| {
+                                if worker_stop.load(Ordering::Acquire) {
+                                    return None;
+                                }
+                                TcpStream::connect_timeout(addr, Duration::from_secs(2)).ok()
+                            })
+                        };
                         let Some(server) = server else {
                             let _ =
                                 events.try_send(Event::Error("remote connection failed".into()));
@@ -112,8 +132,12 @@ impl Relay {
                                 .map(|v| v.to_string())
                                 .unwrap_or_default(),
                         ));
-                        if let (Some(host),Some(details))=(&options.extensions,&options.connection) {
-                            if let Err(e)=host.start_connection(details.clone()){let _=events.try_send(Event::Error(e.to_string()));}
+                        if let (Some(host), Some(details)) =
+                            (&options.extensions, &options.connection)
+                        {
+                            if let Err(e) = host.start_connection(details.clone()) {
+                                let _ = events.try_send(Event::Error(e.to_string()));
+                            }
                         }
                         let result = run_session(
                             client,
@@ -126,7 +150,9 @@ impl Relay {
                             &mut index,
                             &options,
                         );
-                        if let Some(host)=&options.extensions {host.end_connection();}
+                        if let Some(host) = &options.extensions {
+                            host.end_connection();
+                        }
                         closed.store(true, Ordering::Release);
                         if let Err(e) = result {
                             let _ = events.try_send(Event::Error(e.to_string()));
@@ -220,18 +246,20 @@ struct Pending {
 struct Output {
     queue: VecDeque<Pending>,
     bytes: usize,
-    cipher:Option<Rc4>,
+    cipher: Option<Rc4>,
 }
 impl Output {
     fn push(&mut self, packet: Packet) -> io::Result<()> {
         self.push_wire(packet.bytes().to_vec())
     }
-    fn push_wire(&mut self,mut bytes:Vec<u8>)->io::Result<()> {
+    fn push_wire(&mut self, mut bytes: Vec<u8>) -> io::Result<()> {
         if self.bytes + bytes.len() > MAX_PENDING_BYTES {
             return Err(io::Error::other("peer output queue limit exceeded"));
         }
         self.bytes += bytes.len();
-        if let Some(cipher)=&mut self.cipher {cipher.apply(&mut bytes);}
+        if let Some(cipher) = &mut self.cipher {
+            cipher.apply(&mut bytes);
+        }
         self.queue.push_back(Pending { bytes, offset: 0 });
         Ok(())
     }
@@ -274,23 +302,36 @@ fn run_session(
     events: &SyncSender<Event>,
     commands: Receiver<(Direction, Packet)>,
     index: &mut i32,
-    options:&RelayOptions,
+    options: &RelayOptions,
 ) -> io::Result<()> {
     client.set_nonblocking(true)?;
     server.set_nonblocking(true)?;
     client.set_nodelay(true)?;
     server.set_nodelay(true)?;
-    let mut to_server = Output {cipher:options.outgoing_rc4.clone(),..Default::default()};
-    let mut to_client = Output {cipher:options.incoming_rc4.clone(),..Default::default()};
-    let mut decrypt_outgoing=options.outgoing_rc4.clone();let mut decrypt_incoming=options.incoming_rc4.clone();
+    let mut to_server = Output {
+        cipher: options.outgoing_rc4.clone(),
+        ..Default::default()
+    };
+    let mut to_client = Output {
+        cipher: options.incoming_rc4.clone(),
+        ..Default::default()
+    };
+    let mut decrypt_outgoing = options.outgoing_rc4.clone();
+    let mut decrypt_incoming = options.incoming_rc4.clone();
     let mut from_client = FrameDecoder::default();
     let mut from_server = FrameDecoder::default();
     let mut buffer = [0u8; 8192];
-    let mut shockwave=if options.shockwave{Some(ShockwaveTransport::new()?)}else{None};
+    let mut shockwave = if options.shockwave {
+        Some(ShockwaveTransport::new()?)
+    } else {
+        None
+    };
     while !stop.load(Ordering::Acquire) && !closed.load(Ordering::Acquire) {
         let mut progress = false;
-        let mut injected:Vec<_>=commands.try_iter().take(64).collect();
-        if let Some(host)=&options.extensions {injected.extend(host.take_injections());}
+        let mut injected: Vec<_> = commands.try_iter().take(64).collect();
+        if let Some(host) = &options.extensions {
+            injected.extend(host.take_injections());
+        }
         for (direction, packet) in injected {
             let message = Message {
                 packet,
@@ -299,15 +340,35 @@ fn run_session(
                 blocked: false,
             };
             *index = index.wrapping_add(1);
-            let expected=if options.shockwave{if direction==Direction::ToServer{PacketFormat::WedgieOutgoing}else{PacketFormat::WedgieIncoming}}else{PacketFormat::EvaWire};
-            if message.packet.format()!=expected{return Err(io::Error::new(io::ErrorKind::InvalidInput,"injected packet format does not match active client"));}
-            if let Some(shock)=&mut shockwave {
-                match direction{Direction::ToServer=>to_server.push_wire(shock.encode_to_server(&message.packet)?)?,Direction::ToClient=>to_client.push_wire(shock.encode_to_client(&message.packet)?)?}
-            }else{
-            match direction {
-                Direction::ToServer => to_server.push(message.packet.clone())?,
-                Direction::ToClient => to_client.push(message.packet.clone())?,
+            let expected = if options.shockwave {
+                if direction == Direction::ToServer {
+                    PacketFormat::WedgieOutgoing
+                } else {
+                    PacketFormat::WedgieIncoming
+                }
+            } else {
+                PacketFormat::EvaWire
+            };
+            if message.packet.format() != expected {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "injected packet format does not match active client",
+                ));
             }
+            if let Some(shock) = &mut shockwave {
+                match direction {
+                    Direction::ToServer => {
+                        to_server.push_wire(shock.encode_to_server(&message.packet)?)?
+                    }
+                    Direction::ToClient => {
+                        to_client.push_wire(shock.encode_to_client(&message.packet)?)?
+                    }
+                }
+            } else {
+                match direction {
+                    Direction::ToServer => to_server.push(message.packet.clone())?,
+                    Direction::ToClient => to_client.push(message.packet.clone())?,
+                }
             }
             let _ = events.try_send(Event::Packet(message));
             progress = true;
@@ -321,9 +382,28 @@ fn run_session(
                 Ok(0) => return Ok(()),
                 Ok(n) => {
                     progress = true;
-                    let decrypt=if direction==Direction::ToServer {&mut decrypt_outgoing}else{&mut decrypt_incoming};
-                    if let Some(cipher)=decrypt {cipher.apply(&mut buffer[..n]);}
-                    let packets=if let Some(shock)=&mut shockwave {if direction==Direction::ToServer{shock.client_packets(&buffer[..n])?}else{shock.server_packets(&buffer[..n])?}}else{decoder.push(&buffer[..n]).map_err(io::Error::other)?;let mut packets=Vec::new();while let Some(p)=decoder.next_packet().map_err(io::Error::other)?{packets.push(p);}packets};
+                    let decrypt = if direction == Direction::ToServer {
+                        &mut decrypt_outgoing
+                    } else {
+                        &mut decrypt_incoming
+                    };
+                    if let Some(cipher) = decrypt {
+                        cipher.apply(&mut buffer[..n]);
+                    }
+                    let packets = if let Some(shock) = &mut shockwave {
+                        if direction == Direction::ToServer {
+                            shock.client_packets(&buffer[..n])?
+                        } else {
+                            shock.server_packets(&buffer[..n])?
+                        }
+                    } else {
+                        decoder.push(&buffer[..n]).map_err(io::Error::other)?;
+                        let mut packets = Vec::new();
+                        while let Some(p) = decoder.next_packet().map_err(io::Error::other)? {
+                            packets.push(p);
+                        }
+                        packets
+                    };
                     for packet in packets {
                         let mut message = Message {
                             packet,
@@ -336,9 +416,20 @@ fn run_session(
                             .lock()
                             .map_err(|_| io::Error::other("rules lock poisoned"))?
                             .apply(&mut message);
-                        if let Some(host)=&options.extensions {host.intercept(&mut message)?;}
+                        if let Some(host) = &options.extensions {
+                            host.intercept(&mut message)?;
+                        }
                         if !message.blocked {
-                            if let Some(shock)=&mut shockwave{let bytes=if direction==Direction::ToServer{shock.encode_to_server(&message.packet)?}else{shock.encode_to_client(&message.packet)?};output.push_wire(bytes)?;}else{output.push(message.packet.clone())?;}
+                            if let Some(shock) = &mut shockwave {
+                                let bytes = if direction == Direction::ToServer {
+                                    shock.encode_to_server(&message.packet)?
+                                } else {
+                                    shock.encode_to_client(&message.packet)?
+                                };
+                                output.push_wire(bytes)?;
+                            } else {
+                                output.push(message.packet.clone())?;
+                            }
                         }
                         let _ = events.try_send(Event::Packet(message));
                     }

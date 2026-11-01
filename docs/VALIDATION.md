@@ -24,9 +24,10 @@ The Java fixture extends the actual beta-29 Extension class. It is launched with
 
 Additional tests cover fragmented/coalesced framing, cancellation, reconnect, logging backpressure, independent RC4 counters after block/injection, complete simulated encrypted Origins negotiation, byte-by-byte encrypted input fragmentation, SOCKS authentication/remote DNS, extension approval/replay/timeouts, expression syntax, atomic settings/migration and language resources.
 
-Packet-provider parsing and extension language-update tests were added after the run above; their results must be checked in the latest Actions run before use:
-https://github.com/Tear1338/G-Earth-Rust/actions
+Packet-provider parsing and extension language-update tests passed on Windows and Ubuntu in run 41256195145. The allocation optimization passed the Java oracle and Java extension fixture in run 41257089100; all core tests, Clippy and desktop compilation passed in that run as well.
 
-Ordinary core runs skip the two environment-dependent Java tests; the dedicated Java job runs them explicitly. CI generates development artifacts. Temporary bootstrap CI generates Cargo.lock and formatted source; after importing those artifacts, validation is switched back to locked dependencies and formatting checks.
+A finite packet-construction microbenchmark is recorded in PERFORMANCE.md. Its result does not establish application-wide performance.
+
+Ordinary core runs skip the two environment-dependent Java tests; the dedicated Java job runs them explicitly. CI generates development artifacts. The validated Cargo.lock and rustfmt output have been imported directly. CI now checks formatting and uses locked dependencies.
 
 Passing these checks is finite protocol evidence, not a complete application port.

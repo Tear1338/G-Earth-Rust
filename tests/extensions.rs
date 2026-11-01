@@ -1,44 +1,214 @@
-use gearth_rust::{extension::{self,ExtensionInfo},extension_host::{ConnectionDetails,ExtensionHost,HostEvent},packet::{read_frame,write_frame,Direction,Message,Packet},packet_info::{PacketInfo,PacketInfoManager}};
-use std::{net::TcpStream,thread,time::{Duration,Instant}};
-fn info()->ExtensionInfo {ExtensionInfo {title:"fixture".into(),author:"test".into(),version:"1".into(),description:"fixture".into(),on_click:true,file:None,cookie:String::new(),can_leave:true,can_delete:true}}
-fn details()->ConnectionDetails {ConnectionDetails {host:"test.example".into(),port:30000,version:"TEST".into(),identifier:"test".into(),client_type:"FLASH".into(),packets:PacketInfoManager::new("TEST",vec![PacketInfo {header:77,name:Some("TestOutgoing".into()),hash:None,structure:Some("i".into()),direction:Direction::ToServer,source:"test".into()}])}}
-fn connect(host:&ExtensionHost,events:&std::sync::mpsc::Receiver<HostEvent>)->(TcpStream,u64) {
-    let mut stream=TcpStream::connect(host.address).unwrap();stream.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
-    assert_eq!(read_frame(&mut stream).unwrap().header(),2);write_frame(&mut stream,&extension::info_response(&info()).unwrap()).unwrap();
-    let id=match events.recv_timeout(Duration::from_secs(3)).unwrap(){HostEvent::Pending {id,..}=>id,e=>panic!("{e:?}")};
-    host.approve(id).unwrap();assert_eq!(read_frame(&mut stream).unwrap().header(),7);(stream,id)
+use gearth_rust::{
+    extension::{self, ExtensionInfo},
+    extension_host::{ConnectionDetails, ExtensionHost, HostEvent},
+    packet::{read_frame, write_frame, Direction, Message, Packet},
+    packet_info::{PacketInfo, PacketInfoManager},
+};
+use std::{
+    net::TcpStream,
+    thread,
+    time::{Duration, Instant},
+};
+fn info() -> ExtensionInfo {
+    ExtensionInfo {
+        title: "fixture".into(),
+        author: "test".into(),
+        version: "1".into(),
+        description: "fixture".into(),
+        on_click: true,
+        file: None,
+        cookie: String::new(),
+        can_leave: true,
+        can_delete: true,
+    }
 }
-#[test] fn requires_approval_and_supports_flags_click_injection_and_interception() {
-    let (host,events)=ExtensionHost::start("127.0.0.1:0".parse().unwrap(),vec!["-test".into()]).unwrap();
-    host.start_connection(details()).unwrap();let (mut stream,id)=connect(&host,&events);
-    let mut start=read_frame(&mut stream).unwrap();assert_eq!(start.header(),5);assert_eq!(start.read_string().unwrap(),"test.example");assert_eq!(start.read_i32().unwrap(),30000);let version=start.read_string().unwrap();start.read_string().unwrap();start.read_string().unwrap();assert_eq!(PacketInfoManager::read_from(version,&mut start).unwrap().by_name(Direction::ToServer,"TestOutgoing").unwrap().header,77);
-    write_frame(&mut stream,&Packet::new(3)).unwrap();let mut flags=read_frame(&mut stream).unwrap();assert_eq!(flags.header(),4);assert_eq!(flags.read_i32().unwrap(),1);assert_eq!(flags.read_string().unwrap(),"-test");
-    host.click(id).unwrap();assert_eq!(read_frame(&mut stream).unwrap().header(),1);
-    write_frame(&mut stream,&extension::send(Direction::ToServer,&Packet::new(91)).unwrap()).unwrap();
-    let deadline=Instant::now()+Duration::from_secs(2);loop{let injections=host.take_injections();if !injections.is_empty(){assert_eq!(injections[0].1.header(),91);break;}assert!(Instant::now()<deadline);thread::sleep(Duration::from_millis(5));}
-    let reply=thread::spawn(move || {let mut p=read_frame(&mut stream).unwrap();assert_eq!(p.header(),3);let mut message=Message::parse(&p.read_long_string().unwrap()).unwrap();message.packet.set_header(88);message.blocked=true;write_frame(&mut stream,&extension::manipulated(&message).unwrap()).unwrap();stream});
-    let mut m=Message {packet:Packet::new(77),direction:Direction::ToServer,index:42,blocked:false};host.intercept(&mut m).unwrap();assert_eq!(m.packet.header(),88);assert!(m.blocked);drop(reply.join().unwrap());host.stop();
+fn details() -> ConnectionDetails {
+    ConnectionDetails {
+        host: "test.example".into(),
+        port: 30000,
+        version: "TEST".into(),
+        identifier: "test".into(),
+        client_type: "FLASH".into(),
+        packets: PacketInfoManager::new(
+            "TEST",
+            vec![PacketInfo {
+                header: 77,
+                name: Some("TestOutgoing".into()),
+                hash: None,
+                structure: Some("i".into()),
+                direction: Direction::ToServer,
+                source: "test".into(),
+            }],
+        ),
+    }
 }
-#[test] fn launch_token_is_bound_to_filename_and_one_use() {
-    let (host,events)=ExtensionHost::start("127.0.0.1:0".parse().unwrap(),Vec::new()).unwrap();let token=host.register_launch("fixture.jar").unwrap();
-    let mut metadata=info();metadata.file=Some("fixture.jar".into());metadata.cookie=token.clone();
-    let mut stream=TcpStream::connect(host.address).unwrap();stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();read_frame(&mut stream).unwrap();write_frame(&mut stream,&extension::info_response(&metadata).unwrap()).unwrap();assert_eq!(read_frame(&mut stream).unwrap().header(),7);
-    assert!(matches!(events.recv_timeout(Duration::from_secs(2)).unwrap(),HostEvent::Connected {..}));
-    let mut replay=TcpStream::connect(host.address).unwrap();replay.set_read_timeout(Some(Duration::from_secs(2))).unwrap();read_frame(&mut replay).unwrap();write_frame(&mut replay,&extension::info_response(&metadata).unwrap()).unwrap();assert!(read_frame(&mut replay).is_err());host.stop();
+fn connect(
+    host: &ExtensionHost,
+    events: &std::sync::mpsc::Receiver<HostEvent>,
+) -> (TcpStream, u64) {
+    let mut stream = TcpStream::connect(host.address).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 2);
+    write_frame(&mut stream, &extension::info_response(&info()).unwrap()).unwrap();
+    let id = match events.recv_timeout(Duration::from_secs(3)).unwrap() {
+        HostEvent::Pending { id, .. } => id,
+        e => panic!("{e:?}"),
+    };
+    host.approve(id).unwrap();
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 7);
+    (stream, id)
 }
-#[test] fn unresponsive_extension_has_bounded_timeout() {
-    let (host,events)=ExtensionHost::start("127.0.0.1:0".parse().unwrap(),Vec::new()).unwrap();let (_stream,_)=connect(&host,&events);let start=Instant::now();
-    let result=host.intercept(&mut Message {packet:Packet::new(77),direction:Direction::ToServer,index:1,blocked:false});assert_eq!(result.unwrap_err().kind(),std::io::ErrorKind::TimedOut);assert!(start.elapsed()<Duration::from_secs(2));host.stop();
+#[test]
+fn requires_approval_and_supports_flags_click_injection_and_interception() {
+    let (host, events) =
+        ExtensionHost::start("127.0.0.1:0".parse().unwrap(), vec!["-test".into()]).unwrap();
+    host.start_connection(details()).unwrap();
+    let (mut stream, id) = connect(&host, &events);
+    let mut start = read_frame(&mut stream).unwrap();
+    assert_eq!(start.header(), 5);
+    assert_eq!(start.read_string().unwrap(), "test.example");
+    assert_eq!(start.read_i32().unwrap(), 30000);
+    let version = start.read_string().unwrap();
+    start.read_string().unwrap();
+    start.read_string().unwrap();
+    assert_eq!(
+        PacketInfoManager::read_from(version, &mut start)
+            .unwrap()
+            .by_name(Direction::ToServer, "TestOutgoing")
+            .unwrap()
+            .header,
+        77
+    );
+    write_frame(&mut stream, &Packet::new(3)).unwrap();
+    let mut flags = read_frame(&mut stream).unwrap();
+    assert_eq!(flags.header(), 4);
+    assert_eq!(flags.read_i32().unwrap(), 1);
+    assert_eq!(flags.read_string().unwrap(), "-test");
+    host.click(id).unwrap();
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 1);
+    write_frame(
+        &mut stream,
+        &extension::send(Direction::ToServer, &Packet::new(91)).unwrap(),
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        let injections = host.take_injections();
+        if !injections.is_empty() {
+            assert_eq!(injections[0].1.header(), 91);
+            break;
+        }
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(5));
+    }
+    let reply = thread::spawn(move || {
+        let mut p = read_frame(&mut stream).unwrap();
+        assert_eq!(p.header(), 3);
+        let mut message = Message::parse(&p.read_long_string().unwrap()).unwrap();
+        message.packet.set_header(88);
+        message.blocked = true;
+        write_frame(&mut stream, &extension::manipulated(&message).unwrap()).unwrap();
+        stream
+    });
+    let mut m = Message {
+        packet: Packet::new(77),
+        direction: Direction::ToServer,
+        index: 42,
+        blocked: false,
+    };
+    host.intercept(&mut m).unwrap();
+    assert_eq!(m.packet.header(), 88);
+    assert!(m.blocked);
+    drop(reply.join().unwrap());
+    host.stop();
 }
-#[test] fn identifier_database_roundtrip_and_duplicate_directions() {
-    let text="TOSERVER\t77\tSameName\thash1\ti\ttest\nTOCLIENT\t78\tSameName\thash2\ts\ttest\n";
-    let db=PacketInfoManager::from_tsv("TEST",text).unwrap();assert_eq!(db.by_name(Direction::ToClient,"SameName").unwrap().header,78);let mut packet=Packet::new(0);db.append_to(&mut packet).unwrap();let decoded=PacketInfoManager::read_from("TEST",&mut packet).unwrap();assert_eq!(decoded.entries(),db.entries());
+#[test]
+fn launch_token_is_bound_to_filename_and_one_use() {
+    let (host, events) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+    let token = host.register_launch("fixture.jar").unwrap();
+    let mut metadata = info();
+    metadata.file = Some("fixture.jar".into());
+    metadata.cookie = token.clone();
+    let mut stream = TcpStream::connect(host.address).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    read_frame(&mut stream).unwrap();
+    write_frame(&mut stream, &extension::info_response(&metadata).unwrap()).unwrap();
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 7);
+    assert!(matches!(
+        events.recv_timeout(Duration::from_secs(2)).unwrap(),
+        HostEvent::Connected { .. }
+    ));
+    let mut replay = TcpStream::connect(host.address).unwrap();
+    replay
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    read_frame(&mut replay).unwrap();
+    write_frame(&mut replay, &extension::info_response(&metadata).unwrap()).unwrap();
+    assert!(read_frame(&mut replay).is_err());
+    host.stop();
 }
-#[test] fn language_is_in_host_info_and_updates_existing_extensions() {
-    let (host,events)=ExtensionHost::start("127.0.0.1:0".parse().unwrap(),Vec::new()).unwrap();host.set_language("fr").unwrap();
-    let mut stream=TcpStream::connect(host.address).unwrap();stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
-    read_frame(&mut stream).unwrap();write_frame(&mut stream,&extension::info_response(&info()).unwrap()).unwrap();
-    let id=match events.recv_timeout(Duration::from_secs(2)).unwrap(){HostEvent::Pending {id,..}=>id,e=>panic!("{e:?}")};host.approve(id).unwrap();
-    let mut init=read_frame(&mut stream).unwrap();assert_eq!(init.header(),7);assert!(!init.read_bool().unwrap());init.read_string().unwrap();init.read_string().unwrap();assert_eq!(init.read_i32().unwrap(),1);assert_eq!(init.read_string().unwrap(),"language");assert_eq!(init.read_string().unwrap(),"fr");
-    host.set_language("de").unwrap();let mut update=read_frame(&mut stream).unwrap();assert_eq!(update.header(),10);update.read_string().unwrap();update.read_string().unwrap();assert_eq!(update.read_i32().unwrap(),1);assert_eq!(update.read_string().unwrap(),"language");assert_eq!(update.read_string().unwrap(),"de");host.stop();
+#[test]
+fn unresponsive_extension_has_bounded_timeout() {
+    let (host, events) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+    let (_stream, _) = connect(&host, &events);
+    let start = Instant::now();
+    let result = host.intercept(&mut Message {
+        packet: Packet::new(77),
+        direction: Direction::ToServer,
+        index: 1,
+        blocked: false,
+    });
+    assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::TimedOut);
+    assert!(start.elapsed() < Duration::from_secs(2));
+    host.stop();
+}
+#[test]
+fn identifier_database_roundtrip_and_duplicate_directions() {
+    let text = "TOSERVER\t77\tSameName\thash1\ti\ttest\nTOCLIENT\t78\tSameName\thash2\ts\ttest\n";
+    let db = PacketInfoManager::from_tsv("TEST", text).unwrap();
+    assert_eq!(
+        db.by_name(Direction::ToClient, "SameName").unwrap().header,
+        78
+    );
+    let mut packet = Packet::new(0);
+    db.append_to(&mut packet).unwrap();
+    let decoded = PacketInfoManager::read_from("TEST", &mut packet).unwrap();
+    assert_eq!(decoded.entries(), db.entries());
+}
+#[test]
+fn language_is_in_host_info_and_updates_existing_extensions() {
+    let (host, events) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+    host.set_language("fr").unwrap();
+    let mut stream = TcpStream::connect(host.address).unwrap();
+    stream
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    read_frame(&mut stream).unwrap();
+    write_frame(&mut stream, &extension::info_response(&info()).unwrap()).unwrap();
+    let id = match events.recv_timeout(Duration::from_secs(2)).unwrap() {
+        HostEvent::Pending { id, .. } => id,
+        e => panic!("{e:?}"),
+    };
+    host.approve(id).unwrap();
+    let mut init = read_frame(&mut stream).unwrap();
+    assert_eq!(init.header(), 7);
+    assert!(!init.read_bool().unwrap());
+    init.read_string().unwrap();
+    init.read_string().unwrap();
+    assert_eq!(init.read_i32().unwrap(), 1);
+    assert_eq!(init.read_string().unwrap(), "language");
+    assert_eq!(init.read_string().unwrap(), "fr");
+    host.set_language("de").unwrap();
+    let mut update = read_frame(&mut stream).unwrap();
+    assert_eq!(update.header(), 10);
+    update.read_string().unwrap();
+    update.read_string().unwrap();
+    assert_eq!(update.read_i32().unwrap(), 1);
+    assert_eq!(update.read_string().unwrap(), "language");
+    assert_eq!(update.read_string().unwrap(), "de");
+    host.stop();
 }

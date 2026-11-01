@@ -1,128 +1,463 @@
 use std::fmt;
-use std::io::{self,Read,Write};
-pub const MAX_FRAME:usize=16*1024*1024;
-#[derive(Debug,Clone,PartialEq,Eq)]
+use std::io::{self, Read, Write};
+pub const MAX_FRAME: usize = 16 * 1024 * 1024;
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PacketError(pub String);
-impl fmt::Display for PacketError {fn fmt(&self,f:&mut fmt::Formatter<'_>)->fmt::Result{f.write_str(&self.0)}}
+impl fmt::Display for PacketError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
 impl std::error::Error for PacketError {}
-pub type Result<T>=std::result::Result<T,PacketError>;
-pub fn error(message:&str)->PacketError {PacketError(message.to_owned())}
-#[derive(Debug,Clone,Copy,PartialEq,Eq,Hash)]
-pub enum Direction {ToServer,ToClient}
+pub type Result<T> = std::result::Result<T, PacketError>;
+pub fn error(message: &str) -> PacketError {
+    PacketError(message.to_owned())
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Direction {
+    ToServer,
+    ToClient,
+}
 impl Direction {
-    pub fn name(self)->&'static str {match self{Self::ToServer=>"TOSERVER",Self::ToClient=>"TOCLIENT"}}
-    pub fn parse(s:&str)->Result<Self>{match s{"TOSERVER"=>Ok(Self::ToServer),"TOCLIENT"=>Ok(Self::ToClient),_=>Err(error("invalid direction"))}}
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::ToServer => "TOSERVER",
+            Self::ToClient => "TOCLIENT",
+        }
+    }
+    pub fn parse(s: &str) -> Result<Self> {
+        match s {
+            "TOSERVER" => Ok(Self::ToServer),
+            "TOCLIENT" => Ok(Self::ToClient),
+            _ => Err(error("invalid direction")),
+        }
+    }
 }
-#[derive(Debug,Clone,Copy,PartialEq,Eq,Default)]
-pub enum PacketFormat {#[default] EvaWire,WedgieIncoming,WedgieOutgoing}
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PacketFormat {
+    #[default]
+    EvaWire,
+    WedgieIncoming,
+    WedgieOutgoing,
+}
 impl PacketFormat {
-    pub fn id(self)->i32 {match self{Self::EvaWire=>0,Self::WedgieIncoming=>1,Self::WedgieOutgoing=>2}}
-    pub fn from_id(id:i32)->Result<Self>{match id{0=>Ok(Self::EvaWire),1=>Ok(Self::WedgieIncoming),2=>Ok(Self::WedgieOutgoing),_=>Err(error("unknown packet format"))}}
-    pub fn body_offset(self)->usize{if self==Self::EvaWire{6}else{2}}
+    pub fn id(self) -> i32 {
+        match self {
+            Self::EvaWire => 0,
+            Self::WedgieIncoming => 1,
+            Self::WedgieOutgoing => 2,
+        }
+    }
+    pub fn from_id(id: i32) -> Result<Self> {
+        match id {
+            0 => Ok(Self::EvaWire),
+            1 => Ok(Self::WedgieIncoming),
+            2 => Ok(Self::WedgieOutgoing),
+            _ => Err(error("unknown packet format")),
+        }
+    }
+    pub fn body_offset(self) -> usize {
+        if self == Self::EvaWire {
+            6
+        } else {
+            2
+        }
+    }
 }
-#[derive(Debug,Clone,PartialEq,Eq)]
-pub struct Packet {format:PacketFormat,bytes:Vec<u8>,cursor:usize,pub edited:bool}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Packet {
+    format: PacketFormat,
+    bytes: Vec<u8>,
+    cursor: usize,
+    pub edited: bool,
+}
 impl Packet {
-    pub fn new(header:u16)->Self {let mut bytes=Vec::with_capacity(64);bytes.extend_from_slice(&[0,0,0,2]);bytes.extend_from_slice(&header.to_be_bytes());Self {format:PacketFormat::EvaWire,bytes,cursor:6,edited:false}}
-    pub fn new_with_format(format:PacketFormat,header:u16)->Result<Self>{
-        if format==PacketFormat::EvaWire{return Ok(Self::new(header));}
-        Ok(Self {format,bytes:crate::encoding::encode_b64(u32::from(header),2)?,cursor:2,edited:false})
-    }
-    pub fn from_bytes(bytes:Vec<u8>)->Result<Self>{Self::from_bytes_with_format(PacketFormat::EvaWire,bytes)}
-    pub fn from_bytes_with_format(format:PacketFormat,bytes:Vec<u8>)->Result<Self>{
-        if bytes.len()<format.body_offset()||bytes.len()>MAX_FRAME+4{return Err(error("invalid packet size"));}
-        if format==PacketFormat::EvaWire{
-            if u32::from_be_bytes(bytes[..4].try_into().unwrap()) as usize!=bytes.len()-4{return Err(error("packet length mismatch"));}
-        }else{crate::encoding::decode_b64(&bytes[..2])?;}
-        Ok(Self {format,bytes,cursor:format.body_offset(),edited:false})
-    }
-    pub fn format(&self)->PacketFormat{self.format}
-    pub fn bytes(&self)->&[u8]{&self.bytes}
-    pub fn body(&self)->&[u8]{&self.bytes[self.format.body_offset()..]}
-    pub fn header(&self)->u16{if self.format==PacketFormat::EvaWire{u16::from_be_bytes(self.bytes[4..6].try_into().unwrap())}else{u16::from(self.bytes[0]-64)*64+u16::from(self.bytes[1]-64)}}
-    pub fn cursor(&self)->usize{self.cursor}
-    pub fn remaining(&self)->usize{self.bytes.len()-self.cursor}
-    pub fn reset(&mut self){self.cursor=self.format.body_offset();}
-    pub fn set_cursor(&mut self,cursor:usize)->Result<()>{if !(self.format.body_offset()..=self.bytes.len()).contains(&cursor){return Err(error("cursor outside body"));}self.cursor=cursor;Ok(())}
-    pub fn set_header(&mut self,header:u16){if self.format==PacketFormat::EvaWire{self.bytes[4..6].copy_from_slice(&header.to_be_bytes());}else{self.bytes[0]=64+((header>>6)&63) as u8;self.bytes[1]=64+(header&63) as u8;}self.edited=true;}
-    pub fn read_bytes(&mut self,n:usize)->Result<&[u8]>{let end=self.cursor.checked_add(n).ok_or_else(||error("length overflow"))?;if end>self.bytes.len(){return Err(error("truncated packet field"));}let start=self.cursor;self.cursor=end;Ok(&self.bytes[start..end])}
-    pub fn read_u8(&mut self)->Result<u8>{Ok(self.read_bytes(1)?[0])}
-    pub fn read_bool(&mut self)->Result<bool>{if self.format==PacketFormat::EvaWire{Ok(self.read_u8()?!=0)}else{Ok(self.read_i32()?==1)}}
-    pub fn read_u16(&mut self)->Result<u16>{
-        match self.format{
-            PacketFormat::EvaWire=>Ok(u16::from_be_bytes(self.read_bytes(2)?.try_into().unwrap())),
-            PacketFormat::WedgieIncoming=>u16::try_from(self.read_i32()?).map_err(|_|error("WEDGIE ushort outside range")),
-            PacketFormat::WedgieOutgoing=>Ok(crate::encoding::decode_b64(self.read_bytes(2)?)? as u16),
+    pub fn new(header: u16) -> Self {
+        let mut bytes = Vec::with_capacity(64);
+        bytes.extend_from_slice(&[0, 0, 0, 2]);
+        bytes.extend_from_slice(&header.to_be_bytes());
+        Self {
+            format: PacketFormat::EvaWire,
+            bytes,
+            cursor: 6,
+            edited: false,
         }
     }
-    pub fn read_i32(&mut self)->Result<i32>{if self.format==PacketFormat::EvaWire{Ok(i32::from_be_bytes(self.read_bytes(4)?.try_into().unwrap()))}else{let (value,n)=crate::encoding::decode_vl64(&self.bytes[self.cursor..])?;self.cursor+=n;Ok(value)}}
-    pub fn read_i64(&mut self)->Result<i64>{self.ensure_eva()?;Ok(i64::from_be_bytes(self.read_bytes(8)?.try_into().unwrap()))}
-    pub fn read_f32(&mut self)->Result<f32>{self.ensure_eva()?;Ok(f32::from_be_bytes(self.read_bytes(4)?.try_into().unwrap()))}
-    pub fn read_f64(&mut self)->Result<f64>{self.ensure_eva()?;Ok(f64::from_be_bytes(self.read_bytes(8)?.try_into().unwrap()))}
-    pub fn read_string(&mut self)->Result<String>{
-        let start=self.cursor;
-        let result=(||{
-            if self.format==PacketFormat::WedgieIncoming{
-                let n=self.bytes[self.cursor..].iter().position(|b|*b==2).ok_or_else(||error("unterminated WEDGIE string"))?;
-                let value=latin1_decode(self.read_bytes(n)?);self.cursor+=1;return Ok(value);
+    pub fn new_with_format(format: PacketFormat, header: u16) -> Result<Self> {
+        if format == PacketFormat::EvaWire {
+            return Ok(Self::new(header));
+        }
+        Ok(Self {
+            format,
+            bytes: crate::encoding::encode_b64(u32::from(header), 2)?,
+            cursor: 2,
+            edited: false,
+        })
+    }
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<Self> {
+        Self::from_bytes_with_format(PacketFormat::EvaWire, bytes)
+    }
+    pub fn from_bytes_with_format(format: PacketFormat, bytes: Vec<u8>) -> Result<Self> {
+        if bytes.len() < format.body_offset() || bytes.len() > MAX_FRAME + 4 {
+            return Err(error("invalid packet size"));
+        }
+        if format == PacketFormat::EvaWire {
+            if u32::from_be_bytes(bytes[..4].try_into().unwrap()) as usize != bytes.len() - 4 {
+                return Err(error("packet length mismatch"));
             }
-            let n=self.read_u16()? as usize;Ok(latin1_decode(self.read_bytes(n)?))
-        })();
-        if result.is_err(){self.cursor=start;}result
-    }
-    pub fn read_long_string(&mut self)->Result<String>{self.ensure_eva()?;let start=self.cursor;let result=(||{let n=self.read_i32()?;if n<0{return Err(error("negative string length"));}Ok(latin1_decode(self.read_bytes(n as usize)?))})();if result.is_err(){self.cursor=start;}result}
-    pub fn read_utf8_long(&mut self)->Result<String>{self.ensure_eva()?;let start=self.cursor;let result=(||{let n=self.read_i32()?;if n<0{return Err(error("negative string length"));}String::from_utf8(self.read_bytes(n as usize)?.to_vec()).map_err(|_|error("invalid UTF-8"))})();if result.is_err(){self.cursor=start;}result}
-    pub fn append(&mut self,bytes:&[u8])->Result<&mut Self>{let n=self.bytes.len().checked_add(bytes.len()).ok_or_else(||error("length overflow"))?;if n>MAX_FRAME+4{return Err(error("packet too large"));}self.bytes.extend_from_slice(bytes);self.fix_length();self.edited=true;Ok(self)}
-    fn fix_length(&mut self){if self.format==PacketFormat::EvaWire{let n=(self.bytes.len()-4) as u32;self.bytes[..4].copy_from_slice(&n.to_be_bytes());}}
-    pub fn put_u8(&mut self,v:u8)->Result<&mut Self>{self.append(&[v])}
-    pub fn put_bool(&mut self,v:bool)->Result<&mut Self>{if self.format==PacketFormat::EvaWire{self.put_u8(u8::from(v))}else{self.put_i32(i32::from(v))}}
-    pub fn put_u16(&mut self,v:u16)->Result<&mut Self>{match self.format{PacketFormat::EvaWire=>self.append(&v.to_be_bytes()),PacketFormat::WedgieIncoming=>self.append(&crate::encoding::encode_vl64(i32::from(v))),PacketFormat::WedgieOutgoing=>self.append(&crate::encoding::encode_b64(u32::from(v),2)?)}}
-    pub fn put_i32(&mut self,v:i32)->Result<&mut Self>{if self.format==PacketFormat::EvaWire{self.append(&v.to_be_bytes())}else{self.append(&crate::encoding::encode_vl64(v))}}
-    pub fn put_i64(&mut self,v:i64)->Result<&mut Self>{self.ensure_eva()?;self.append(&v.to_be_bytes())}
-    pub fn put_f32(&mut self,v:f32)->Result<&mut Self>{self.ensure_eva()?;self.append(&v.to_be_bytes())}
-    pub fn put_f64(&mut self,v:f64)->Result<&mut Self>{self.ensure_eva()?;self.append(&v.to_be_bytes())}
-    pub fn put_string(&mut self,s:&str)->Result<&mut Self>{
-        if self.format==PacketFormat::EvaWire&&s.is_ascii(){
-            let length=u16::try_from(s.len()).map_err(|_|error("short string too long"))?;
-            if self.bytes.len()+2+s.len()>MAX_FRAME+4{return Err(error("packet too large"));}
-            self.bytes.reserve(2+s.len());self.bytes.extend_from_slice(&length.to_be_bytes());self.bytes.extend_from_slice(s.as_bytes());self.fix_length();self.edited=true;return Ok(self);
+        } else {
+            crate::encoding::decode_b64(&bytes[..2])?;
         }
-        let bytes=latin1_encode(s)?;
-        let mut field=match self.format{
-            PacketFormat::EvaWire=>u16::try_from(bytes.len()).map_err(|_|error("short string too long"))?.to_be_bytes().to_vec(),
-            PacketFormat::WedgieOutgoing=>crate::encoding::encode_b64(u32::try_from(bytes.len()).map_err(|_|error("WEDGIE string too long"))?,2)?,
-            PacketFormat::WedgieIncoming=>{if bytes.contains(&2){return Err(error("WEDGIE string contains terminator"));}Vec::new()},
+        Ok(Self {
+            format,
+            bytes,
+            cursor: format.body_offset(),
+            edited: false,
+        })
+    }
+    pub fn format(&self) -> PacketFormat {
+        self.format
+    }
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+    pub fn body(&self) -> &[u8] {
+        &self.bytes[self.format.body_offset()..]
+    }
+    pub fn header(&self) -> u16 {
+        if self.format == PacketFormat::EvaWire {
+            u16::from_be_bytes(self.bytes[4..6].try_into().unwrap())
+        } else {
+            u16::from(self.bytes[0] - 64) * 64 + u16::from(self.bytes[1] - 64)
+        }
+    }
+    pub fn cursor(&self) -> usize {
+        self.cursor
+    }
+    pub fn remaining(&self) -> usize {
+        self.bytes.len() - self.cursor
+    }
+    pub fn reset(&mut self) {
+        self.cursor = self.format.body_offset();
+    }
+    pub fn set_cursor(&mut self, cursor: usize) -> Result<()> {
+        if !(self.format.body_offset()..=self.bytes.len()).contains(&cursor) {
+            return Err(error("cursor outside body"));
+        }
+        self.cursor = cursor;
+        Ok(())
+    }
+    pub fn set_header(&mut self, header: u16) {
+        if self.format == PacketFormat::EvaWire {
+            self.bytes[4..6].copy_from_slice(&header.to_be_bytes());
+        } else {
+            self.bytes[0] = 64 + ((header >> 6) & 63) as u8;
+            self.bytes[1] = 64 + (header & 63) as u8;
+        }
+        self.edited = true;
+    }
+    pub fn read_bytes(&mut self, n: usize) -> Result<&[u8]> {
+        let end = self
+            .cursor
+            .checked_add(n)
+            .ok_or_else(|| error("length overflow"))?;
+        if end > self.bytes.len() {
+            return Err(error("truncated packet field"));
+        }
+        let start = self.cursor;
+        self.cursor = end;
+        Ok(&self.bytes[start..end])
+    }
+    pub fn read_u8(&mut self) -> Result<u8> {
+        Ok(self.read_bytes(1)?[0])
+    }
+    pub fn read_bool(&mut self) -> Result<bool> {
+        if self.format == PacketFormat::EvaWire {
+            Ok(self.read_u8()? != 0)
+        } else {
+            Ok(self.read_i32()? == 1)
+        }
+    }
+    pub fn read_u16(&mut self) -> Result<u16> {
+        match self.format {
+            PacketFormat::EvaWire => {
+                Ok(u16::from_be_bytes(self.read_bytes(2)?.try_into().unwrap()))
+            }
+            PacketFormat::WedgieIncoming => {
+                u16::try_from(self.read_i32()?).map_err(|_| error("WEDGIE ushort outside range"))
+            }
+            PacketFormat::WedgieOutgoing => {
+                Ok(crate::encoding::decode_b64(self.read_bytes(2)?)? as u16)
+            }
+        }
+    }
+    pub fn read_i32(&mut self) -> Result<i32> {
+        if self.format == PacketFormat::EvaWire {
+            Ok(i32::from_be_bytes(self.read_bytes(4)?.try_into().unwrap()))
+        } else {
+            let (value, n) = crate::encoding::decode_vl64(&self.bytes[self.cursor..])?;
+            self.cursor += n;
+            Ok(value)
+        }
+    }
+    pub fn read_i64(&mut self) -> Result<i64> {
+        self.ensure_eva()?;
+        Ok(i64::from_be_bytes(self.read_bytes(8)?.try_into().unwrap()))
+    }
+    pub fn read_f32(&mut self) -> Result<f32> {
+        self.ensure_eva()?;
+        Ok(f32::from_be_bytes(self.read_bytes(4)?.try_into().unwrap()))
+    }
+    pub fn read_f64(&mut self) -> Result<f64> {
+        self.ensure_eva()?;
+        Ok(f64::from_be_bytes(self.read_bytes(8)?.try_into().unwrap()))
+    }
+    pub fn read_string(&mut self) -> Result<String> {
+        let start = self.cursor;
+        let result = (|| {
+            if self.format == PacketFormat::WedgieIncoming {
+                let n = self.bytes[self.cursor..]
+                    .iter()
+                    .position(|b| *b == 2)
+                    .ok_or_else(|| error("unterminated WEDGIE string"))?;
+                let value = latin1_decode(self.read_bytes(n)?);
+                self.cursor += 1;
+                return Ok(value);
+            }
+            let n = self.read_u16()? as usize;
+            Ok(latin1_decode(self.read_bytes(n)?))
+        })();
+        if result.is_err() {
+            self.cursor = start;
+        }
+        result
+    }
+    pub fn read_long_string(&mut self) -> Result<String> {
+        self.ensure_eva()?;
+        let start = self.cursor;
+        let result = (|| {
+            let n = self.read_i32()?;
+            if n < 0 {
+                return Err(error("negative string length"));
+            }
+            Ok(latin1_decode(self.read_bytes(n as usize)?))
+        })();
+        if result.is_err() {
+            self.cursor = start;
+        }
+        result
+    }
+    pub fn read_utf8_long(&mut self) -> Result<String> {
+        self.ensure_eva()?;
+        let start = self.cursor;
+        let result = (|| {
+            let n = self.read_i32()?;
+            if n < 0 {
+                return Err(error("negative string length"));
+            }
+            String::from_utf8(self.read_bytes(n as usize)?.to_vec())
+                .map_err(|_| error("invalid UTF-8"))
+        })();
+        if result.is_err() {
+            self.cursor = start;
+        }
+        result
+    }
+    pub fn append(&mut self, bytes: &[u8]) -> Result<&mut Self> {
+        let n = self
+            .bytes
+            .len()
+            .checked_add(bytes.len())
+            .ok_or_else(|| error("length overflow"))?;
+        if n > MAX_FRAME + 4 {
+            return Err(error("packet too large"));
+        }
+        self.bytes.extend_from_slice(bytes);
+        self.fix_length();
+        self.edited = true;
+        Ok(self)
+    }
+    fn fix_length(&mut self) {
+        if self.format == PacketFormat::EvaWire {
+            let n = (self.bytes.len() - 4) as u32;
+            self.bytes[..4].copy_from_slice(&n.to_be_bytes());
+        }
+    }
+    pub fn put_u8(&mut self, v: u8) -> Result<&mut Self> {
+        self.append(&[v])
+    }
+    pub fn put_bool(&mut self, v: bool) -> Result<&mut Self> {
+        if self.format == PacketFormat::EvaWire {
+            self.put_u8(u8::from(v))
+        } else {
+            self.put_i32(i32::from(v))
+        }
+    }
+    pub fn put_u16(&mut self, v: u16) -> Result<&mut Self> {
+        match self.format {
+            PacketFormat::EvaWire => self.append(&v.to_be_bytes()),
+            PacketFormat::WedgieIncoming => {
+                self.append(&crate::encoding::encode_vl64(i32::from(v)))
+            }
+            PacketFormat::WedgieOutgoing => {
+                self.append(&crate::encoding::encode_b64(u32::from(v), 2)?)
+            }
+        }
+    }
+    pub fn put_i32(&mut self, v: i32) -> Result<&mut Self> {
+        if self.format == PacketFormat::EvaWire {
+            self.append(&v.to_be_bytes())
+        } else {
+            self.append(&crate::encoding::encode_vl64(v))
+        }
+    }
+    pub fn put_i64(&mut self, v: i64) -> Result<&mut Self> {
+        self.ensure_eva()?;
+        self.append(&v.to_be_bytes())
+    }
+    pub fn put_f32(&mut self, v: f32) -> Result<&mut Self> {
+        self.ensure_eva()?;
+        self.append(&v.to_be_bytes())
+    }
+    pub fn put_f64(&mut self, v: f64) -> Result<&mut Self> {
+        self.ensure_eva()?;
+        self.append(&v.to_be_bytes())
+    }
+    pub fn put_string(&mut self, s: &str) -> Result<&mut Self> {
+        if self.format == PacketFormat::EvaWire && s.is_ascii() {
+            let length = u16::try_from(s.len()).map_err(|_| error("short string too long"))?;
+            if self.bytes.len() + 2 + s.len() > MAX_FRAME + 4 {
+                return Err(error("packet too large"));
+            }
+            self.bytes.reserve(2 + s.len());
+            self.bytes.extend_from_slice(&length.to_be_bytes());
+            self.bytes.extend_from_slice(s.as_bytes());
+            self.fix_length();
+            self.edited = true;
+            return Ok(self);
+        }
+        let bytes = latin1_encode(s)?;
+        let mut field = match self.format {
+            PacketFormat::EvaWire => u16::try_from(bytes.len())
+                .map_err(|_| error("short string too long"))?
+                .to_be_bytes()
+                .to_vec(),
+            PacketFormat::WedgieOutgoing => crate::encoding::encode_b64(
+                u32::try_from(bytes.len()).map_err(|_| error("WEDGIE string too long"))?,
+                2,
+            )?,
+            PacketFormat::WedgieIncoming => {
+                if bytes.contains(&2) {
+                    return Err(error("WEDGIE string contains terminator"));
+                }
+                Vec::new()
+            }
         };
-        field.extend(bytes);if self.format==PacketFormat::WedgieIncoming{field.push(2);}self.append(&field)
+        field.extend(bytes);
+        if self.format == PacketFormat::WedgieIncoming {
+            field.push(2);
+        }
+        self.append(&field)
     }
-    pub fn put_long_string(&mut self,s:&str)->Result<&mut Self>{self.put_long_bytes(&latin1_encode(s)?)}
-    pub fn put_long_bytes(&mut self,bytes:&[u8])->Result<&mut Self>{self.ensure_eva()?;let n=i32::try_from(bytes.len()).map_err(|_|error("string too long"))?;let mut field=n.to_be_bytes().to_vec();field.extend_from_slice(bytes);self.append(&field)}
-    pub fn replace(&mut self,offset:usize,count:usize,replacement:&[u8])->Result<()>{
-        let end=offset.checked_add(count).ok_or_else(||error("offset overflow"))?;
-        if offset<self.format.body_offset()||end>self.bytes.len(){return Err(error("replacement outside body"));}
-        if self.bytes.len()-count+replacement.len()>MAX_FRAME+4{return Err(error("packet too large"));}
-        self.bytes.splice(offset..end,replacement.iter().copied());self.fix_length();self.reset();self.edited=true;Ok(())
+    pub fn put_long_string(&mut self, s: &str) -> Result<&mut Self> {
+        self.put_long_bytes(&latin1_encode(s)?)
     }
-    pub fn stringify(&self)->String{format!("{}{}",if self.edited{'1'}else{'0'},latin1_decode(&self.bytes))}
-    pub fn from_stringified(s:&str)->Result<Self>{Self::from_stringified_with_format(s,PacketFormat::EvaWire)}
-    pub fn from_stringified_with_format(s:&str,format:PacketFormat)->Result<Self>{
-        let flag=*s.as_bytes().first().ok_or_else(||error("empty serialized packet"))?;
-        if flag!=b'0'&&flag!=b'1'{return Err(error("invalid edited flag"));}
-        let mut p=Self::from_bytes_with_format(format,latin1_encode(&s[1..])?)?;p.edited=flag==b'1';Ok(p)
+    pub fn put_long_bytes(&mut self, bytes: &[u8]) -> Result<&mut Self> {
+        self.ensure_eva()?;
+        let n = i32::try_from(bytes.len()).map_err(|_| error("string too long"))?;
+        let mut field = n.to_be_bytes().to_vec();
+        field.extend_from_slice(bytes);
+        self.append(&field)
     }
-    fn ensure_eva(&self)->Result<()>{if self.format==PacketFormat::EvaWire{Ok(())}else{Err(error("field is not supported by WEDGIE packets"))}}
+    pub fn replace(&mut self, offset: usize, count: usize, replacement: &[u8]) -> Result<()> {
+        let end = offset
+            .checked_add(count)
+            .ok_or_else(|| error("offset overflow"))?;
+        if offset < self.format.body_offset() || end > self.bytes.len() {
+            return Err(error("replacement outside body"));
+        }
+        if self.bytes.len() - count + replacement.len() > MAX_FRAME + 4 {
+            return Err(error("packet too large"));
+        }
+        self.bytes.splice(offset..end, replacement.iter().copied());
+        self.fix_length();
+        self.reset();
+        self.edited = true;
+        Ok(())
+    }
+    pub fn stringify(&self) -> String {
+        format!(
+            "{}{}",
+            if self.edited { '1' } else { '0' },
+            latin1_decode(&self.bytes)
+        )
+    }
+    pub fn from_stringified(s: &str) -> Result<Self> {
+        Self::from_stringified_with_format(s, PacketFormat::EvaWire)
+    }
+    pub fn from_stringified_with_format(s: &str, format: PacketFormat) -> Result<Self> {
+        let flag = *s
+            .as_bytes()
+            .first()
+            .ok_or_else(|| error("empty serialized packet"))?;
+        if flag != b'0' && flag != b'1' {
+            return Err(error("invalid edited flag"));
+        }
+        let mut p = Self::from_bytes_with_format(format, latin1_encode(&s[1..])?)?;
+        p.edited = flag == b'1';
+        Ok(p)
+    }
+    fn ensure_eva(&self) -> Result<()> {
+        if self.format == PacketFormat::EvaWire {
+            Ok(())
+        } else {
+            Err(error("field is not supported by WEDGIE packets"))
+        }
+    }
 }
-#[derive(Debug,Clone)]
-pub struct Message {pub packet:Packet,pub direction:Direction,pub index:i32,pub blocked:bool}
+#[derive(Debug, Clone)]
+pub struct Message {
+    pub packet: Packet,
+    pub direction: Direction,
+    pub index: i32,
+    pub blocked: bool,
+}
 impl Message {
-    pub fn stringify(&self)->String{format!("{}\t{}\t{}\t{}",u8::from(self.blocked),self.index,self.direction.name(),self.packet.stringify())}
-    pub fn parse(s:&str)->Result<Self>{Self::parse_with_format(s,PacketFormat::EvaWire)}
-    pub fn parse_with_format(s:&str,format:PacketFormat)->Result<Self>{
-        let mut fields=s.splitn(4,'\t');let blocked=match fields.next(){Some("1")=>true,Some("0")=>false,_=>return Err(error("invalid blocked flag"))};
-        let index=fields.next().ok_or_else(||error("missing index"))?.parse().map_err(|_|error("invalid index"))?;
-        let direction=Direction::parse(fields.next().ok_or_else(||error("missing direction"))?)?;
-        let packet=Packet::from_stringified_with_format(fields.next().ok_or_else(||error("missing packet"))?,format)?;
-        Ok(Self {packet,direction,index,blocked})
+    pub fn stringify(&self) -> String {
+        format!(
+            "{}\t{}\t{}\t{}",
+            u8::from(self.blocked),
+            self.index,
+            self.direction.name(),
+            self.packet.stringify()
+        )
+    }
+    pub fn parse(s: &str) -> Result<Self> {
+        Self::parse_with_format(s, PacketFormat::EvaWire)
+    }
+    pub fn parse_with_format(s: &str, format: PacketFormat) -> Result<Self> {
+        let mut fields = s.splitn(4, '\t');
+        let blocked = match fields.next() {
+            Some("1") => true,
+            Some("0") => false,
+            _ => return Err(error("invalid blocked flag")),
+        };
+        let index = fields
+            .next()
+            .ok_or_else(|| error("missing index"))?
+            .parse()
+            .map_err(|_| error("invalid index"))?;
+        let direction = Direction::parse(fields.next().ok_or_else(|| error("missing direction"))?)?;
+        let packet = Packet::from_stringified_with_format(
+            fields.next().ok_or_else(|| error("missing packet"))?,
+            format,
+        )?;
+        Ok(Self {
+            packet,
+            direction,
+            index,
+            blocked,
+        })
     }
 }
 pub fn latin1_decode(bytes: &[u8]) -> String {
