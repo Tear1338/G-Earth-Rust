@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use eframe::egui;
+mod store_ui;
 use gearth_rust::{
     connection::Connection,
     crypto::Rc4,
@@ -116,6 +117,7 @@ struct Desktop {
     attachment_worker: Option<std::thread::JoinHandle<()>>,
     redirect: Option<gearth_rust::attachment::HostsRedirect>,
     packet_download: Option<Receiver<std::io::Result<PacketInfoManager>>>,
+    store: store_ui::StoreUi,
 }
 struct LogRow {
     message: Message,
@@ -204,6 +206,7 @@ impl Default for Desktop {
             attachment_worker: None,
             redirect: None,
             packet_download: None,
+            store: store_ui::StoreUi::new(Settings::default_path().parent().unwrap_or_else(||Path::new(".")).join("extensions")),
         };
         desktop.load_settings();
         desktop
@@ -1496,6 +1499,7 @@ impl Desktop {
         })
     }
     fn extensions(&mut self, ui: &mut egui::Ui) {
+        self.store.show(ui,self.extension_host.as_ref(),Path::new(&self.extension_runtime),&mut self.status,&mut self.extension_processes);
         ui.heading("Extensions");
         let Some(host) = &self.extension_host else {
             ui.label("Unable to bind the extension server on ports 9092–9107.");
