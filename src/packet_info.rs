@@ -20,7 +20,7 @@ pub struct PacketInfoManager {
 impl PacketInfoManager {
     /// Read the upstream Sulek response or G-Earth's Unity messages.json schema.
     pub fn from_json(version:impl Into<String>,bytes:&[u8])->Result<Self> {
-        let json:serde_json::Value=serde_json::from_slice(bytes).map_err(|e|error(e.to_string()))?;
+        let json:serde_json::Value=serde_json::from_slice(bytes).map_err(|e|error(&e.to_string()))?;
         let sulek=json.get("messages").is_some();let root=if sulek{&json["messages"]}else{&json};
         let mut entries=Vec::new();
         for (key,direction) in [(if sulek{"incoming"}else{"Incoming"},Direction::ToClient),(if sulek{"outgoing"}else{"Outgoing"},Direction::ToServer)] {

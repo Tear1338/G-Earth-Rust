@@ -97,7 +97,7 @@ impl ExtensionHost {
                 if remaining.is_zero(){peer.closed.store(true,Ordering::Release);return Err(io::Error::new(io::ErrorKind::TimedOut,"extension interception timed out; session stopped"));}
                 match response.recv_timeout(remaining.min(Duration::from_millis(20))) {
                     Ok(mut updated)=>{
-                        if updated.index!=message.index||updated.direction!=message.direction {peer.closed.store(true,Ordering::Release);return Err(io::Error::new(io::ErrorKind::InvalidData,"extension response transaction mismatch"));}
+                        if updated.index!=message.index||updated.direction!=message.direction||updated.packet.format()!=message.packet.format() {peer.closed.store(true,Ordering::Release);return Err(io::Error::new(io::ErrorKind::InvalidData,"extension response transaction or packet format mismatch"));}
                         updated.packet.reset();*message=updated;break;
                     }
                     Err(mpsc::RecvTimeoutError::Timeout)=>{if self.shared.stop.load(Ordering::Acquire)||peer.closed.load(Ordering::Acquire){return Err(io::Error::new(io::ErrorKind::Interrupted,"extension disconnected during interception"));}},
