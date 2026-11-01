@@ -10,13 +10,13 @@ pub struct WebOptions {pub listen:SocketAddr,pub identity_directory:PathBuf,pub 
 impl WebOptions {pub fn new(listen:SocketAddr,identity_directory:PathBuf)->Self{Self {listen,identity_directory,packet_info:PacketInfoManager::default(),extensions:None,extra_roots:Vec::new(),websocket_urls:Vec::new()}}}
 #[derive(Clone,PartialEq,Eq,Hash)]
 struct PeerKey {client:SocketAddr,uri:String}
-struct Peer {key:PeerKey,active:AtomicBool,ready:AtomicBool,closed:AtomicBool,notify:Notify,queued:AtomicUsize,senders:[asynchronous::Sender<Packet>;2],receivers:Mutex<[Option<asynchronous::Receiver<Packet>>;2]>,stop:watch::Sender<bool>}
+struct Peer {key:PeerKey,active:AtomicBool,ready:AtomicBool,closed:AtomicBool,notify:Notify,queued:AtomicUsize,finished:AtomicUsize,senders:[asynchronous::Sender<Packet>;2],receivers:Mutex<[Option<asynchronous::Receiver<Packet>>;2]>,stop:watch::Sender<bool>}
 impl Peer {
-    fn new(key:PeerKey)->Self{let (out,out_rx)=asynchronous::channel(128);let (incoming,in_rx)=asynchronous::channel(128);let (stop,_)=watch::channel(false);Self {key,active:AtomicBool::new(false),ready:AtomicBool::new(false),closed:AtomicBool::new(false),notify:Notify::new(),queued:AtomicUsize::new(0),senders:[out,incoming],receivers:Mutex::new([Some(out_rx),Some(in_rx)]),stop}}
+    fn new(key:PeerKey)->Self{let (out,out_rx)=asynchronous::channel(128);let (incoming,in_rx)=asynchronous::channel(128);let (stop,_)=watch::channel(false);Self {key,active:AtomicBool::new(false),ready:AtomicBool::new(false),closed:AtomicBool::new(false),notify:Notify::new(),queued:AtomicUsize::new(0),finished:AtomicUsize::new(0),senders:[out,incoming],receivers:Mutex::new([Some(out_rx),Some(in_rx)]),stop}}
     fn enqueue(&self,direction:Direction,packet:Packet)->io::Result<()> {
         if !self.active.load(Ordering::Acquire)||self.closed.load(Ordering::Acquire){return Err(io::Error::new(io::ErrorKind::NotConnected,"no active Nitro client"));}
         if packet.format()!=PacketFormat::EvaWire{return Err(io::Error::other("Nitro injection requires EVA_WIRE"));}
-        let bytes=packet.bytes().len();self.queued.fetch_update(Ordering::AcqRel,Ordering::Acquire,|n|n.checked_add(bytes).filter(|n|*n<=MAX_QUEUED)).map_err(|_|io::Error::new(io::ErrorKind::WouldBlock,"Nitro injection byte budget exceeded"))?;
+        let bytes=packet.bytes().len();self.queued.try_update(Ordering::AcqRel,Ordering::Acquire,|n|n.checked_add(bytes).filter(|n|*n<=MAX_QUEUED)).map_err(|_|io::Error::new(io::ErrorKind::WouldBlock,"Nitro injection byte budget exceeded"))?;
         if self.senders[side(direction)].try_send(packet).is_err(){self.queued.fetch_sub(bytes,Ordering::AcqRel);return Err(io::Error::new(io::ErrorKind::WouldBlock,"Nitro injection queue unavailable"));}Ok(())
     }
 }
@@ -24,11 +24,12 @@ fn side(direction:Direction)->usize{if direction==Direction::ToServer{0}else{1}}
 struct Shared {options:WebOptions,peers:Mutex<HashMap<PeerKey,Arc<Peer>>>,active:Mutex<Option<Arc<Peer>>>,rules:Mutex<Rules>,pipeline:Mutex<()>,events:SyncSender<Event>,index:AtomicI32,stop:AtomicBool}
 impl Shared {
     fn peer(&self,key:PeerKey)->io::Result<Arc<Peer>>{let mut peers=self.peers.lock().map_err(|_|io::Error::other("web peer lock poisoned"))?;if let Some(peer)=peers.get(&key){return Ok(peer.clone());}if peers.len()>=128{return Err(io::Error::other("too many pending WebSocket connections"));}let peer=Arc::new(Peer::new(key.clone()));peers.insert(key,peer.clone());Ok(peer)}
-    fn close(&self,peer:&Peer){if peer.closed.swap(true,Ordering::AcqRel){return;}peer.stop.send_replace(true);peer.notify.notify_waiters();if let Ok(mut peers)=self.peers.lock(){peers.remove(&peer.key);}if let Ok(mut active)=self.active.lock(){if active.as_ref().is_some_and(|p|p.key==peer.key){*active=None;if let Some(host)=&self.options.extensions{host.end_connection();}let _=self.events.try_send(Event::Disconnected);}}}
+    fn close(&self,peer:&Peer){if peer.closed.swap(true,Ordering::AcqRel){return;}peer.stop.send_replace(true);peer.notify.notify_waiters();if let Ok(mut active)=self.active.lock(){if active.as_ref().is_some_and(|p|p.key==peer.key){*active=None;if let Some(host)=&self.options.extensions{host.end_connection();}let _=self.events.try_send(Event::Disconnected);}}}
+    fn finish(&self,peer:&Peer){self.close(peer);if peer.finished.fetch_add(1,Ordering::AcqRel)==1{if let Ok(mut peers)=self.peers.lock(){peers.remove(&peer.key);}}}
     fn close_all(&self){let peers=self.peers.lock().map(|p|p.values().cloned().collect::<Vec<_>>()).unwrap_or_default();for peer in peers{self.close(&peer);}}
     fn active(&self)->Option<Arc<Peer>>{self.active.lock().ok()?.clone().filter(|p|p.ready.load(Ordering::Acquire)&&!p.closed.load(Ordering::Acquire))}
     async fn activate(self:&Arc<Self>,peer:&Arc<Peer>,uri:&Uri)->io::Result<()> {
-        {let mut active=self.active.lock().map_err(|_|io::Error::other("web active lock poisoned"))?;if active.as_ref().is_some_and(|p|p.key!=peer.key){return Err(io::Error::other("another Nitro client is already active"));}*active=Some(peer.clone());peer.active.store(true,Ordering::Release);}
+        {let mut active=self.active.lock().map_err(|_|io::Error::other("web active lock poisoned"))?;if peer.closed.load(Ordering::Acquire)||self.stop.load(Ordering::Acquire){return Err(io::Error::new(io::ErrorKind::Interrupted,"Nitro connection already closed"));}if active.as_ref().is_some_and(|p|p.key!=peer.key){return Err(io::Error::other("another Nitro client is already active"));}*active=Some(peer.clone());peer.active.store(true,Ordering::Release);}
         let mut database=self.options.packet_info.clone();
         if database.entries().is_empty()&&self.options.extensions.is_some(){
             let _=self.events.try_send(Event::Status("Loading Nitro packet identifiers...".into()));
@@ -87,7 +88,7 @@ impl WebSocketHandler for Handler {
                 }
             }Ok(())
         }.await;
-        if let Err(e)=result{let _=self.0.events.try_send(Event::Error(e.to_string()));}self.0.close(&peer);let _=sink.close().await;
+        if let Err(e)=result{if !self.0.stop.load(Ordering::Acquire)&&!peer.closed.load(Ordering::Acquire){let _=self.0.events.try_send(Event::Error(e.to_string()));}}self.0.finish(&peer);let _=sink.close().await;
     }
 }
 pub struct WebProxy {state:Arc<Shared>,stop:Option<oneshot::Sender<()>>,worker:Option<JoinHandle<()>>,pub address:SocketAddr,pub certificate_path:PathBuf,pub certificate_der:Vec<u8>}

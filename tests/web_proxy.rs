@@ -3,9 +3,24 @@ use gearth_rust::{packet::{Direction,Packet},relay::Event,rules::{Rules,Rule,Act
 use hudsucker::{futures::{SinkExt,StreamExt},hyper::header::SEC_WEBSOCKET_KEY,tokio_tungstenite::{accept_async,client_async,tungstenite::{client::IntoClientRequest,Message as WsMessage}}};
 use std::{io::{Read,Write},net::{TcpListener,TcpStream},path::PathBuf,time::{Duration,Instant}};
 struct Directory(PathBuf);
+async fn connect_tunnel(proxy:std::net::SocketAddr,remote:&str)->tokio::net::TcpStream{
+    use tokio::io::{AsyncReadExt,AsyncWriteExt};
+    let mut stream=tokio::net::TcpStream::connect(proxy).await.unwrap();stream.write_all(format!("CONNECT {remote} HTTP/1.1\r\nHost: {remote}\r\n\r\n").as_bytes()).await.unwrap();let mut response=Vec::new();tokio::time::timeout(Duration::from_secs(5),async{while !response.ends_with(b"\r\n\r\n"){assert!(response.len()<8192);let mut byte=[0];stream.read_exact(&mut byte).await.unwrap();response.push(byte[0]);}}).await.unwrap();assert!(String::from_utf8(response).unwrap().starts_with("HTTP/1.1 200"));stream
+}
 impl Directory{fn new()->Self{let mut bytes=[0;8];getrandom::fill(&mut bytes).unwrap();let path=std::env::temp_dir().join(format!("gearth-web-test-{}",u64::from_ne_bytes(bytes)));std::fs::create_dir(&path).unwrap();Self(path)}}
 impl Drop for Directory{fn drop(&mut self){if let (Ok(path),Ok(temp))=(self.0.canonicalize(),std::env::temp_dir().canonicalize()){if path.starts_with(temp)&&path.file_name().is_some_and(|n|n.to_string_lossy().starts_with("gearth-web-test-")){let _=std::fs::remove_dir_all(path);}}}}
 fn packet(header:u16,value:i32)->Packet{let mut p=Packet::new(header);p.put_i32(value).unwrap();p}
+#[test] fn validates_both_tls_legs_and_routes_nitro_over_wss_without_changing_system_trust(){
+    use hudsucker::{certificate_authority::CertificateAuthority,rustls::{self,crypto::aws_lc_rs,pki_types::CertificateDer},tokio_tungstenite::{client_async_tls_with_config,Connector}};
+    let directory=Directory::new();let upstream_identity=ProxyIdentity::ensure(&directory.0.join("upstream-ca")).unwrap();let authority=upstream_identity.authority().unwrap();let mut options=WebOptions::new("127.0.0.1:0".parse().unwrap(),directory.0.join("proxy-ca"));options.extra_roots.push(upstream_identity.certificate_der.clone());let (mut proxy,_)=WebProxy::start(options).unwrap();
+    let mut roots=rustls::RootCertStore::empty();roots.add(CertificateDer::from(proxy.certificate_der.clone())).unwrap();let client_tls=rustls::ClientConfig::builder_with_provider(std::sync::Arc::new(aws_lc_rs::default_provider())).with_safe_default_protocol_versions().unwrap().with_root_certificates(roots).with_no_client_auth();
+    let runtime=tokio::runtime::Runtime::new().unwrap();runtime.block_on(async{
+        let server=tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();let port=server.local_addr().unwrap().port();let address=format!("localhost:{port}");let tls=authority.gen_server_config(&address.parse().unwrap()).await;
+        let server=tokio::spawn(async move{let (stream,_)=server.accept().await.unwrap();let stream=tokio_rustls::TlsAcceptor::from(tls).accept(stream).await.unwrap();let mut socket=accept_async(stream).await.unwrap();let message=socket.next().await.unwrap().unwrap();assert_eq!(Packet::from_bytes(message.into_data().to_vec()).unwrap().header(),4000);socket.send(WsMessage::Binary(packet(88,17).bytes().to_vec().into())).await.unwrap();let _=socket.next().await;});
+        let stream=connect_tunnel(proxy.address,&address).await;let (mut client,_)=client_async_tls_with_config(format!("wss://{address}/game"),stream,None,Some(Connector::Rustls(std::sync::Arc::new(client_tls)))).await.unwrap();
+        client.send(WsMessage::Binary(packet(4000,0).bytes().to_vec().into())).await.unwrap();let message=tokio::time::timeout(Duration::from_secs(5),client.next()).await.unwrap().unwrap().unwrap();assert_eq!(Packet::from_bytes(message.into_data().to_vec()).unwrap().header(),88);client.close(None).await.unwrap();server.await.unwrap();
+    });proxy.stop();
+}
 #[test] fn identity_is_private_persistent_and_never_requires_global_trust(){let dir=Directory::new();let path=dir.0.join("ca");let first=ProxyIdentity::ensure(&path).unwrap();let second=ProxyIdentity::ensure(&path).unwrap();assert_eq!(first.certificate_der,second.certificate_der);assert!(first.authority().is_ok());assert_eq!(std::fs::read_dir(path).unwrap().count(),2);}
 #[test] fn forwards_plain_http_and_stops_without_external_network(){
     let dir=Directory::new();let server=TcpListener::bind("127.0.0.1:0").unwrap();let remote=server.local_addr().unwrap();let worker=std::thread::spawn(move||{let (mut stream,_)=server.accept().unwrap();stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();let mut bytes=[0;4096];stream.read(&mut bytes).unwrap();stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello").unwrap();});
