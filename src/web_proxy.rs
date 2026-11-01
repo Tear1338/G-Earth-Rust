@@ -258,6 +258,12 @@ impl Shared {
                 Err(e) => return Err(io::Error::other(e.to_string())),
             }
         }
+        // Serialize extension initialization with close(), so stopping during a
+        // packet-name lookup cannot leave extensions attached to a closed game.
+        let _connection = self
+            .active
+            .lock()
+            .map_err(|_| io::Error::other("web active lock poisoned"))?;
         if peer.closed.load(Ordering::Acquire) || self.stop.load(Ordering::Acquire) {
             return Err(io::Error::new(
                 io::ErrorKind::Interrupted,
@@ -351,6 +357,9 @@ impl HttpHandler for Handler {
             for name in ["if-none-match", "if-modified-since", "accept-encoding"] {
                 request.headers_mut().remove(name);
             }
+            request
+                .headers_mut()
+                .insert("accept-encoding", "identity".parse().unwrap());
         }
         request.into()
     }
