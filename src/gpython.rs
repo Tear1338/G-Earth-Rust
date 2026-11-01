@@ -96,7 +96,11 @@ pub fn probe(python: &Path) -> io::Result<Dependencies> {
     let packages = serde_json::from_value(value["packages"].clone()).map_err(io::Error::other)?;
     let issues = serde_json::from_value(value["issues"].clone()).map_err(io::Error::other)?;
     drop(tree);
-    Ok(Dependencies { python, packages, issues })
+    Ok(Dependencies {
+        python,
+        packages,
+        issues,
+    })
 }
 fn init_script(port: u16, filename: &str, cookie: &str, title: &str) -> String {
     let info = serde_json::json!({"title":title,"description":"G-Python scripting console","version":"1.0","author":""});
@@ -108,7 +112,7 @@ fn init_script(port: u16, filename: &str, cookie: &str, title: &str) -> String {
         "--auth-token",
         cookie
     ]);
-    format!("from g_python.gextension import Extension\nfrom g_python.hmessage import Direction, HMessage\nfrom g_python.hpacket import HPacket\nfrom g_python import hparsers, hunityparsers, htools, hunitytools\next = Extension({info}, {args}, {{'can_leave': False}}, silent=True)\next.start()\nHPacket.default_extension = ext\nsend_to_client = ext.send_to_client\nsend_to_server = ext.send_to_server\non_event = ext.on_event\nintercept = ext.intercept\nstart = ext.start\nstop = ext.stop\nis_closed = ext.is_closed\nwrite_to_console = ext.write_to_console\nrequest_flags = ext.request_flags\n")
+    format!("from time import sleep\nfrom g_python.gextension import Extension\nfrom g_python.hmessage import Direction, HMessage\nfrom g_python.hpacket import HPacket\nfrom g_python import hparsers, hunityparsers, htools, hunitytools\next = Extension({info}, {args}, {{'can_leave': False}}, silent=True)\next.start()\nHPacket.default_extension = ext\nsend_to_client = ext.send_to_client\nsend_to_server = ext.send_to_server\non_event = ext.on_event\nintercept = ext.intercept\nstart = ext.start\nstop = ext.stop\nis_closed = ext.is_closed\nwrite_to_console = ext.write_to_console\nrequest_flags = ext.request_flags\n")
 }
 pub struct PythonConsole {
     child: Option<Child>,
@@ -116,10 +120,11 @@ pub struct PythonConsole {
     tree: Option<ProcessTree>,
     events: Receiver<String>,
     pub ready: bool,
+    pub window_running: bool,
 }
 impl PythonConsole {
     pub fn launch(python: &Path, host: &Arc<ExtensionHost>, title: &str) -> io::Result<Self> {
-        Self::launch_inner(python, host, title, None)
+        Self::launch_inner(python, host, title, None, false)
     }
     /// Controlled fixture mode exercises the real kernel/API without opening a GUI.
     pub fn launch_fixture(
@@ -127,13 +132,18 @@ impl PythonConsole {
         host: &Arc<ExtensionHost>,
         script: &str,
     ) -> io::Result<Self> {
-        Self::launch_inner(python, host, "G-Python fixture", Some(script))
+        Self::launch_inner(python, host, "G-Python fixture", Some(script), false)
+    }
+    /// Runs the actual Qt process with Qt's offscreen platform for CI smoke checks.
+    pub fn launch_offscreen_fixture(python:&Path,host:&Arc<ExtensionHost>)->io::Result<Self> {
+        Self::launch_inner(python,host,"G-Python Qt fixture",None,true)
     }
     fn launch_inner(
         python: &Path,
         host: &Arc<ExtensionHost>,
         title: &str,
         fixture: Option<&str>,
+        offscreen: bool,
     ) -> io::Result<Self> {
         if title.len() > 256 || title.contains('\0') {
             return Err(io::Error::other("invalid console title"));
@@ -147,6 +157,9 @@ impl PythonConsole {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
+        if offscreen {
+            command.env("QT_QPA_PLATFORM","offscreen");
+        }
         ProcessTree::prepare(&mut command);
         let mut child = command.spawn()?;
         let tree = match ProcessTree::attach(&child) {
@@ -189,6 +202,7 @@ impl PythonConsole {
             tree: Some(tree),
             events,
             ready: false,
+            window_running: false,
         })
     }
     pub fn poll(&mut self) -> Vec<String> {
@@ -198,28 +212,34 @@ impl PythonConsole {
                 if line == "GEARTH_PYTHON_READY" {
                     self.ready = true;
                 }
+                if line == "GEARTH_QT_RUNNING" {
+                    self.window_running = true;
+                }
                 line
             })
             .collect()
     }
     pub fn exited(&mut self) -> io::Result<Option<std::process::ExitStatus>> {
-        self.child.as_mut().ok_or_else(||io::Error::new(io::ErrorKind::BrokenPipe,"Python console is stopped"))?.try_wait()
+        self.child
+            .as_mut()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::BrokenPipe, "Python console is stopped"))?
+            .try_wait()
     }
     pub fn stop(&mut self) {
         if let Some(mut input) = self.input.take() {
             let _ = writeln!(input, "stop");
         }
-        if let Some(mut child)=self.child.take() {
-            let tree=self.tree.take();
+        if let Some(mut child) = self.child.take() {
+            let tree = self.tree.take();
             // Keep the UI responsive while Jupyter closes sockets and removes its connection file.
-            thread::spawn(move||{
-                let deadline=Instant::now()+Duration::from_secs(3);
-                while matches!(child.try_wait(),Ok(None)) && Instant::now()<deadline {
+            thread::spawn(move || {
+                let deadline = Instant::now() + Duration::from_secs(3);
+                while matches!(child.try_wait(), Ok(None)) && Instant::now() < deadline {
                     thread::sleep(Duration::from_millis(20));
                 }
                 drop(tree);
-                let _=child.kill();
-                let _=child.wait();
+                let _ = child.kill();
+                let _ = child.wait();
             });
         }
     }

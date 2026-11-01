@@ -2,7 +2,7 @@
 
 The requested goal is a complete Rust replacement for G-Earth 1.5.4-beta-29, with original functionality and a GitHub project. The repository is Tear1338/G-Earth-Rust. It remains a development port; do not describe a passing component test as whole-application parity.
 
-The upstream reference remains commit `242155c291b1109d6c9a02370f6a2af1ead41ea8`. Read PARITY.md, UNITY.md, STORE.md, ATTACHMENT.md, FLASH_VALIDATION.md and VALIDATION.md, then inspect the current working tree and latest Actions run before changing code. External edits may have occurred since this note.
+The upstream reference remains commit `242155c291b1109d6c9a02370f6a2af1ead41ea8`. Read PARITY.md, UNITY.md, STORE.md, GPYTHON.md, ATTACHMENT.md, FLASH_VALIDATION.md and VALIDATION.md, then inspect the current working tree and latest Actions run before changing code. External edits may have occurred since this note.
 
 Implemented foundations include EVA/WEDGIE packets, expressions, RC4/Origins crypto, bounded relay, rules/schedules, settings/languages, packet providers/cache, a Java-compatible extension host, Windows Flash negotiation and read-only memory discovery, TCP-owner process selection and scoped hosts routing. Native memory and proxy tests use a controlled child process, isolated test registry keys and temporary files. No real system hosts entries were changed during development tests.
 
@@ -12,7 +12,9 @@ Unity now has the communicator, TLS/session authentication, HTTP asset intercept
 
 The native extension store now implements catalogue search/filter/order, bounded ZIP installation, side-by-side updates, authenticated commands and managed uninstall. Read STORE.md. Full Maven comparator edge cases and store presentation details remain. The host launcher captures bounded runtime output.
 
-Other missing areas include raw-IP redirection, non-Windows privileged helpers, the live Python console, exact UI/shortcuts/tray behavior, full localization and validation with real client sessions and G-Presets. Whole-application performance remains unmeasured; PERFORMANCE.md covers only packet construction.
+The live Python console now has a Rust launcher, native dependency controls, Jupyter kernel setup, QtConsole launch and bounded process ownership. Real published G-Python 0.1.6 fixtures pass authentication, named injection, bidirectional modification/blocking and kernel shutdown on Linux and Windows. Read GPYTHON.md. Do not use the upstream main archive as the oracle: its circular imports fail before connection.
+
+Other missing areas include raw-IP redirection, non-Windows privileged helpers, integrated Python package installation, QtConsole visual validation, exact UI/shortcuts/tray behavior, full localization and validation with real client sessions and G-Presets. Whole-application performance remains unmeasured; PERFORMANCE.md covers only packet construction.
 
 REA artifact inspection supplied provenance. JEB/Ghidra were unavailable in this environment; the public pinned source and Java behavioral oracles supply semantic evidence. Do not claim unavailable decompilation or native replay succeeded.
 

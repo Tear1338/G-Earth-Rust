@@ -18,6 +18,7 @@ Rust port in progress of [G-Realm/G-Earth](https://github.com/G-Realm/G-Earth), 
 - Sulek HTTPS packet-name lookup, upstream Unity messages.json import and portable TSV databases, with direction-aware expression lookup.
 - Saved block/replace rules and finite schedule templates, atomic settings, legacy cache import, notepad, light/dark themes and nine upstream language resources. Individual controls are not fully localized yet.
 - Unity WebGL: authenticated local TLS communicator, gzip asset interception, four validated WASM hooks and browser reinjection, with an original-Java-patcher oracle. See [Unity setup](docs/UNITY.md).
+- G-Python console: native dependency checks, authenticated Jupyter kernel and QtConsole launcher; existing scripting helpers are exposed. See [Python setup](docs/GPYTHON.md). Python and Qt are external runtimes.
 - Native extension store: search/filter/order, bounded installation, separate-version updates, authenticated launch and uninstall. See [Store behavior](docs/STORE.md).
 - Native Rust desktop application: Connection, Logger, Injection, Scheduler, Tools, Extensions and Info. Logger rows are virtualized and bounded by row count and byte budget.
 - CLI and Windows desktop builds through GitHub Actions.

@@ -12,7 +12,7 @@ Status describes source implementation and finite tests, not successful producti
 | Origins crypto | DH substitution, HKDF-SHA256, ChaCha20 channels, encrypted framing and hosts attachment | Official client end-to-end live validation |
 | Network extensions | Loopback host, one-use launch tokens, approval, flags, interception, injection, click, console, connection details, language changes | Full extension corpus, store and lifecycle parity |
 | Existing Java API | Actual beta-29 Java extension fixture passes auth, name lookup, bidirectional mutation/blocking/injection | G-Presets and other existing extension binaries untested |
-| Python/Node extensions | External runtime launcher and common IPC | G-Python live console, package installation and live regression |
+| Python/Node extensions | External runtimes, authenticated IPC and native G-Python/Jupyter console controls; real G-Python kernel fixtures on Windows/Linux | QtConsole visual workflow, integrated package installation and real sessions |
 | Packet identifiers | Direction-aware database, beta-29 IPC, Sulek HTTPS lookup/cache, detected Flash revision, Unity JSON and TSV import | Unity client integration and broader remote-provider coverage |
 | SOCKS5 | CONNECT, remote DNS, optional RFC1929 credentials | Wider interoperability tests |
 | Rules/scheduler | Saved ordered rules and finite schedule templates | Every original scheduler and rule-editor option |

@@ -17,6 +17,11 @@ if len(sys.argv) > 1 and sys.argv[1] == "probe":
             importlib.import_module("g_python.gextension")
         except Exception as error:
             issues.append("g-python cannot be imported: " + str(error)[:500])
+    if packages["qtconsole"] is not None and packages["PyQt5"] is not None:
+        try:
+            importlib.import_module("qtconsole.qtconsoleapp")
+        except Exception as error:
+            issues.append("qtconsole cannot be imported: " + str(error)[:500])
     print(json.dumps({"python": list(sys.version_info[:3]), "packages": packages, "issues": issues}))
     raise SystemExit(0)
 
@@ -72,13 +77,18 @@ try:
         if config.get("headless"):
             execute(config["fixture"])
         else:
-            command = [sys.executable, "-m", "jupyter", "qtconsole", "--ConsoleWidget.include_other_output=True",
+            command = [sys.executable, "-c", "from qtconsole.qtconsoleapp import main; main()", "--ConsoleWidget.include_other_output=True",
                        "--ConsoleWidget.gui_completion=droplist", "--KernelManager.autorestart=False",
                        "--JupyterConsoleApp.confirm_exit=False", "--existing", manager.connection_file]
             options = {"stdin": subprocess.DEVNULL, "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL}
             if sys.platform == "win32":
                 options["creationflags"] = subprocess.CREATE_NO_WINDOW
             window = subprocess.Popen(command, **options)
+            startup_deadline = time.monotonic() + 2
+            while time.monotonic() < startup_deadline and window.poll() is None and not stop.wait(0.05):
+                pass
+            if window.poll() is None and not stop.is_set():
+                print("GEARTH_QT_RUNNING", flush=True)
             while not stop.wait(0.1) and window.poll() is None:
                 pass
             if window.poll() not in (None, 0):
