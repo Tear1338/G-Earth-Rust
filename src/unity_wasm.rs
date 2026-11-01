@@ -55,7 +55,7 @@ impl Reencode for Hooks {
     fn parse_function_section(&mut self,section:&mut FunctionSection,reader:wasmparser::FunctionSectionReader<'_>)->EncodeResult {reencode::utils::parse_function_section(self,section,reader)?;for (_,ty) in &self.targets[1..]{section.function(*ty);}Ok(())}
     fn parse_export_section(&mut self,section:&mut ExportSection,reader:wasmparser::ExportSectionReader<'_>)->EncodeResult {reencode::utils::parse_export_section(self,section,reader)?;for (index,name) in EXPORTS.iter().enumerate(){section.export(name,ExportKind::Func,self.imports+self.total+4+index as u32);}Ok(())}
     fn parse_code_section(&mut self,section:&mut CodeSection,reader:wasmparser::CodeSectionReader<'_>)->EncodeResult {
-        let bodies=reader.into_iter().collect::<Result<Vec<_>,_>>()?;for body in &bodies{self.parse_function_body(section,body.clone())?;}for (function,_) in self.targets[1..].to_vec(){reencode::utils::parse_function_body(self,section,bodies[function as usize].clone())?;}Ok(())
+        let bodies=reader.into_iter().collect::<Result<Vec<_>,_>>()?;for body in &bodies{self.parse_function_body(section,body.clone())?;}let targets=self.targets;for (function,_) in targets[1..].iter().copied(){reencode::utils::parse_function_body(self,section,bodies[function as usize].clone())?;}Ok(())
     }
     fn parse_function_body(&mut self,section:&mut CodeSection,body:FunctionBody<'_>)->EncodeResult {
         let index=self.body;self.body+=1;let Some(hook)=self.targets.iter().position(|(function,_)|*function==index)else{return reencode::utils::parse_function_body(self,section,body);};

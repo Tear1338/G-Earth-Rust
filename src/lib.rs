@@ -32,3 +32,4 @@ pub mod nitro_assets;
 pub mod nitro_city;
 
 #[cfg(feature="web")] pub mod unity_wasm;
+#[cfg(feature="web")] pub mod unity_server;
