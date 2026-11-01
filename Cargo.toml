@@ -8,7 +8,7 @@ description = "Work-in-progress Rust port of G-Realm/G-Earth 1.5.4-beta-29"
 [features]
 default = []
 desktop = ["dep:eframe", "web"]
-web = ["dep:hudsucker", "dep:tokio", "dep:hyper-rustls", "dep:webpki-roots", "dep:tokio-rustls", "dep:md-5", "dep:des", "dep:cbc", "dep:png", "dep:http-body-util", "dep:aes", "dep:aes-gcm", "dep:ctr"]
+web = ["dep:hudsucker", "dep:tokio", "dep:hyper-rustls", "dep:webpki-roots", "dep:tokio-rustls", "dep:md-5", "dep:des", "dep:cbc", "dep:png", "dep:http-body-util", "dep:aes", "dep:aes-gcm", "dep:ctr", "dep:wasmparser", "dep:wasm-encoder", "dep:flate2"]
 
 [dependencies]
 gearth-platform = { path = "crates/gearth-platform" }
@@ -25,6 +25,9 @@ tokio = { version = "1", optional = true, features = ["rt-multi-thread", "macros
 hyper-rustls = { version = "0.27", optional = true, features = ["http1", "webpki-tokio"] }
 webpki-roots = { version = "0.26", optional = true }
 tokio-rustls = { version = "0.26", optional = true }
+wasmparser = { version = "=0.240.0", optional = true }
+wasm-encoder = { version = "=0.240.0", optional = true, features = ["wasmparser"] }
+flate2 = { version = "1", optional = true }
 aes = { version = "0.8", optional = true }
 aes-gcm = { version = "0.10", optional = true }
 ctr = { version = "0.9", optional = true }
@@ -61,3 +64,6 @@ strip = true
 members = ["crates/gearth-platform"]
 resolver = "2"
 
+
+[dev-dependencies]
+wat = "=1.240.0"
