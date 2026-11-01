@@ -1,5 +1,7 @@
 //! Read-only native process access, isolated from the safe protocol core.
 use std::{io, sync::atomic::AtomicBool};
+mod process_tree;
+pub use process_tree::ProcessTree;
 #[derive(Clone, Debug)]
 pub struct ClientProcess {
     pub pid: u32,

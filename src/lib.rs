@@ -7,6 +7,7 @@ pub mod encoding;
 pub mod expression;
 pub mod extension;
 pub mod extension_host;
+pub mod gpython;
 pub mod extension_store;
 pub mod flash;
 pub mod i18n;

@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use eframe::egui;
 mod store_ui;
+mod gpython_ui;
 use gearth_rust::{
     connection::Connection,
     crypto::Rc4,
@@ -118,6 +119,7 @@ struct Desktop {
     redirect: Option<gearth_rust::attachment::HostsRedirect>,
     packet_download: Option<Receiver<std::io::Result<PacketInfoManager>>>,
     store: store_ui::StoreUi,
+    python_console: gpython_ui::PythonUi,
 }
 struct LogRow {
     message: Message,
@@ -140,6 +142,7 @@ impl Default for Desktop {
         };
         let mut desktop = Self {
             tab: Tab::Connection,
+            python_console: gpython_ui::PythonUi::default(),
             listen: "127.0.0.1:1234".into(),
             remote: "".into(),
             status: "Disconnected".into(),
@@ -282,248 +285,7 @@ impl Desktop {
                         Err(e) => self.status = format!("Attachment failed: {e}"),
                     };
                     self.attachment_pending = None;
-                    if let Some(worker) = self.attachment_worker.take() {
-                        let _ = worker.join();
-                    }
-                }
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    self.attachment_pending = None;
-                    self.status = "Attachment worker stopped".into();
-                }
-                Err(std::sync::mpsc::TryRecvError::Empty) => {}
-            }
-        }
-
-        if let Some(download) = &self.packet_download {
-            match download.try_recv() {
-                Ok(result) => {
-                    match result {
-                        Ok(database) => {
-                            self.hotel_version = database.version.clone();
-                            self.status =
-                                format!("Loaded {} packet identifiers", database.entries().len());
-                            self.packet_info = database;
-                            self.packet_database.clear();
-                        }
-                        Err(e) => self.status = format!("Packet lookup failed: {e}"),
-                    };
-                    self.packet_download = None;
-                }
-                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
-                    self.status = "Packet lookup worker stopped".into();
-                    self.packet_download = None;
-                }
-                Err(std::sync::mpsc::TryRecvError::Empty) => {}
-            }
-        }
-        if let Some(events) = &self.extension_events {
-            for event in events.try_iter().take(256) {
-                let line = match event {
-                    HostEvent::Console { id, text } => format!("#{id} {text}"),
-                    HostEvent::Error { id, text } => format!("#{id} ERROR: {text}"),
-                    HostEvent::Pending { id, info } => {
-                        format!("#{id} {} is waiting for approval", info.title)
-                    }
-                    HostEvent::Connected { id, info } => format!("#{id} {} connected", info.title),
-                    HostEvent::Disconnected(id) => format!("#{id} disconnected"),
-                };
-                if self.extension_console.len() == 512 {
-                    self.extension_console.pop_front();
-                }
-                self.extension_console.push_back(line);
-            }
-        }
-        self.extension_processes
-            .retain_mut(|p| !matches!(p.try_wait(), Ok(Some(_))));
-        if let Some(events) = &self.events {
-            for event in events.try_iter().take(512) {
-                match event {
-                    Event::Status(status) => self.status = status,
-                    Event::PacketIdentifiers(database) => self.packet_info = database,
-                    Event::Packet(message) => {
-                        self.total += 1;
-                        if !self.paused {
-                            let expression = expression::to_lossless_expression(&message.packet);
-                            let search = format!(
-                                "{} {}",
-                                message.packet.header(),
-                                expression.to_lowercase()
-                            );
-                            let bytes =
-                                message.packet.bytes().len() + expression.len() + search.len();
-                            if bytes > self.settings.log_bytes {
-                                self.display_dropped += 1;
-                                continue;
-                            }
-                            while self.logs.len() >= self.settings.log_limit
-                                || self.logs_bytes + bytes > self.settings.log_bytes
-                            {
-                                if let Some(old) = self.logs.pop_front() {
-                                    self.logs_bytes -= old.bytes;
-                                } else {
-                                    break;
-                                }
-                                self.display_dropped += 1;
-                            }
-                            self.logs_bytes += bytes;
-                            self.logs.push_back(LogRow {
-                                message,
-                                expression,
-                                search,
-                                bytes,
-                            });
-                        }
-                    }
-                    Event::Listening(a) => self.status = format!("Listening on {a}"),
-                    Event::Connected(a) => {
-                        self.status = format!("Connected to {a}");
-                        if let Some(guard) = &mut self.proxy_guard {
-                            match guard.restore() {
-                                Ok(()) => self.proxy_guard = None,
-                                Err(e) => {
-                                    self.status =
-                                        format!("Connected; proxy restoration failed: {e}")
-                                }
-                            }
-                        }
-                        if let Some(redirect) = &mut self.redirect {
-                            match redirect.restore() {
-                                Ok(()) => {
-                                    self.redirect = None;
-                                }
-                                Err(e) => {
-                                    self.status =
-                                        format!("Connected; hosts restoration failed: {e}")
-                                }
-                            }
-                        }
-                    }
-                    Event::Identified {
-                        version,
-                        identifier,
-                    } => {
-                        self.hotel_version = version;
-                        self.client_identifier = identifier;
-                    }
-                    Event::Disconnected => {
-                        self.status = "Client disconnected; listening".into();
-                        self.scheduler.jobs.clear();
-                    }
-                    Event::Error(e) => self.status = e,
-                }
-            }
-        }
-        if let Some(relay) = &self.relay {
-            for (direction, packet) in self.scheduler.tick(Instant::now()) {
-                if let Err(e) = relay.inject(direction, packet) {
-                    self.status = e.to_string();
-                    self.scheduler.jobs.clear();
-                    break;
-                }
-            }
-        }
-    }
-    fn connection(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Connection");
-        if ui
-            .add_enabled(
-                self.relay.is_none() && self.attachment_pending.is_none(),
-                egui::Checkbox::new(&mut self.nitro, "Browser client (Nitro / Unity)"),
-            )
-            .changed()
-            && self.nitro
-        {
-            self.origins = false;
-        }
-        if self.nitro {
-            ui.add_enabled_ui(self.relay.is_none(), |ui| {
-                egui::ComboBox::from_id_salt("browser-client")
-                    .selected_text(if self.unity {
-                        "Unity WebGL"
-                    } else {
-                        "Nitro / HTML5"
-                    })
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.unity, false, "Nitro / HTML5");
-                        ui.selectable_value(&mut self.unity, true, "Unity WebGL");
-                    });
-            });
-            self.nitro_connection(ui);
-            return;
-        }
-        ui.label(if self.origins {
-            "Origins TCP · negotiated Bobba encryption"
-        } else {
-            "EVA_WIRE TCP relay"
-        });
-        if ui
-            .add_enabled(
-                self.relay.is_none() && self.attachment_pending.is_none(),
-                egui::Checkbox::new(&mut self.origins, "Origins / Shockwave"),
-            )
-            .changed()
-        {
-            let known = gearth_rust::attachment::FLASH_HOTELS
-                .contains(&self.attachment_host.as_str())
-                || gearth_rust::attachment::ORIGINS_HOTELS.contains(&self.attachment_host.as_str());
-            if known {
-                self.attachment_host = if self.origins {
-                    "game-od.habbo.com".into()
-                } else {
-                    "game-fr.habbo.com".into()
-                };
-            }
-        }
-        egui::CollapsingHeader::new("Official client attachment").default_open(true).show(ui,|ui|{
-            let hotels=if self.origins{gearth_rust::attachment::ORIGINS_HOTELS}else{gearth_rust::attachment::FLASH_HOTELS};
-            egui::ComboBox::from_id_salt("attach-hotel").selected_text(&self.attachment_host).show_ui(ui,|ui|{for host in hotels{ui.selectable_value(&mut self.attachment_host,(*host).into(),*host);}});
-            ui.text_edit_singleline(&mut self.attachment_host);
-            ui.checkbox(&mut self.flash_auto,"Negotiate Flash encryption and discover client RC4 state (Windows)");
-            ui.horizontal(|ui|{
-                if ui.button("Refresh Habbo processes").clicked(){match gearth_platform::habbo_processes(){Ok(processes)=>self.client_processes=processes,Err(e)=>self.status=e.to_string()}}
-                egui::ComboBox::from_id_salt("flash-process").selected_text(if self.flash_pid==0{"Automatic (detect connecting client)".into()}else{format!("PID {}",self.flash_pid)}).show_ui(ui,|ui|{ui.selectable_value(&mut self.flash_pid,0,"Automatic (detect connecting client)");for p in &self.client_processes{ui.selectable_value(&mut self.flash_pid,p.pid,format!("{} - PID {}",p.executable,p.pid));}});
-            });
-            if ui.add_enabled(self.relay.is_none()&&self.attachment_pending.is_none(),egui::Button::new("Attach official client")).clicked(){
-                let port=if self.origins{40001}else{30000};self.remote=format!("{}:{port}",self.attachment_host);self.flash_auto = !self.origins;
-                match self.relay_options(){Ok(options)=>{let host=self.attachment_host.clone();let path=gearth_rust::attachment::HostsRedirect::system_path();let (send,receive)=std::sync::mpsc::channel();self.attachment_pending=Some(receive);self.status="Resolving hotel and preparing the local listener...".into();self.attachment_worker=Some(std::thread::spawn(move||{let _=send.send(gearth_rust::attachment::Attachment::start(&host,port,options,&path));}));},Err(e)=>self.status=e.to_string()}
-            }
-            ui.label("Hosts-file access requires administrator rights. Start listening before reconnecting the client. Raw-IP clients are not supported yet.");
-            if ui.add_enabled(self.relay.is_none()&&self.attachment_pending.is_none(),egui::Button::new("Recover redirects after closing other G-Earth Rust instances")).clicked(){self.status=match gearth_rust::attachment::HostsRedirect::recover_stale(&gearth_rust::attachment::HostsRedirect::system_path()){Ok(())=>"Owned redirects removed".into(),Err(e)=>e.to_string()};}
-        });
-        ui.add_space(12.0);
-        egui::Grid::new("connection-grid")
-            .spacing([18.0, 12.0])
-            .show(ui, |ui| {
-                ui.label("Local address");
-                ui.add_enabled(
-                    self.relay.is_none(),
-                    egui::TextEdit::singleline(&mut self.listen).desired_width(400.0),
-                );
-                ui.end_row();
-                ui.label("Remote host:port");
-                ui.add_enabled(
-                    self.relay.is_none(),
-                    egui::TextEdit::singleline(&mut self.remote).desired_width(400.0),
-                );
-                ui.end_row();
-            });
-        egui::CollapsingHeader::new("Connection options").show(ui,|ui|{
-            egui::Grid::new("connection-options").show(ui,|ui|{
-                for (label,value) in [("Hotel version",&mut self.hotel_version),("Client identifier",&mut self.client_identifier),("Packet identifiers (.tsv / .json)",&mut self.packet_database),("SOCKS5 proxy",&mut self.socks_proxy),("SOCKS username",&mut self.socks_user)] {ui.label(label);ui.text_edit_singleline(value);ui.end_row();}
-                ui.label("SOCKS password");ui.add(egui::TextEdit::singleline(&mut self.socks_password).password(true));ui.end_row();
-                ui.label("Outgoing RC4 key (hex)");ui.add(egui::TextEdit::singleline(&mut self.outgoing_key).password(true));ui.end_row();
-                ui.label("Incoming RC4 key (hex)");ui.add(egui::TextEdit::singleline(&mut self.incoming_key).password(true));ui.end_row();
-            });
-            ui.label("Leave keys blank for plaintext. Explicit keys apply from the first byte of the TCP stream.");
-        });
-        ui.add_space(14.0);
-        ui.horizontal(|ui| {
-            if ui
-                .add_enabled(
-                    self.relay.is_none() && self.packet_download.is_none(),
-                    egui::Button::new("Load packet names from Sulek"),
-                )
-                .clicked()
+                    if let Some(w…3352 tokens truncated…   .clicked()
             {
                 let version = self.hotel_version.clone();
                 let origins = self.origins;
@@ -1574,6 +1336,7 @@ impl Desktop {
         })
     }
     fn extensions(&mut self, ui: &mut egui::Ui) {
+        self.python_console.show(ui,self.extension_host.as_ref(),&mut self.status);
         self.store.show(
             ui,
             self.extension_host.as_ref(),
