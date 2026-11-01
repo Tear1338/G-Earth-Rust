@@ -21,3 +21,5 @@ pub mod socks;
 #[cfg(feature="web")] pub mod web_proxy;
 
 #[cfg(feature="web")] pub mod nitro;
+
+#[cfg(feature="web")] pub mod nitro_assets;

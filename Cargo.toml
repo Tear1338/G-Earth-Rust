@@ -8,7 +8,7 @@ description = "Work-in-progress Rust port of G-Realm/G-Earth 1.5.4-beta-29"
 [features]
 default = []
 desktop = ["dep:eframe", "web"]
-web = ["dep:hudsucker", "dep:tokio", "dep:hyper-rustls", "dep:webpki-roots", "dep:tokio-rustls", "dep:md-5"]
+web = ["dep:hudsucker", "dep:tokio", "dep:hyper-rustls", "dep:webpki-roots", "dep:tokio-rustls", "dep:md-5", "dep:des", "dep:cbc", "dep:png", "dep:http-body-util"]
 
 [dependencies]
 gearth-platform = { path = "crates/gearth-platform" }
@@ -25,6 +25,10 @@ tokio = { version = "1", optional = true, features = ["rt-multi-thread", "macros
 hyper-rustls = { version = "0.27", optional = true, features = ["http1", "webpki-tokio"] }
 webpki-roots = { version = "0.26", optional = true }
 tokio-rustls = { version = "0.26", optional = true }
+des = { version = "0.8", optional = true }
+cbc = { version = "0.1", optional = true, features = ["alloc"] }
+png = { version = "0.17", optional = true }
+http-body-util = { version = "0.1", optional = true }
 md-5 = { version = "0.10", optional = true }
 eframe = { version = "0.29.1", optional = true, default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
 

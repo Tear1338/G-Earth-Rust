@@ -1,6 +1,6 @@
 //! HTTP/TLS proxy and Nitro WebSocket packet pipeline. No OS proxy/trust changes.
 use crate::{nitro::{Hotels,Modifier,Decoded},extension_host::{ConnectionDetails,ExtensionHost},packet::{Direction,FrameDecoder,Message,Packet,PacketFormat},packet_info::PacketInfoManager,relay::Event,rules::Rules,web_ca::ProxyIdentity};
-use hudsucker::{futures::{Sink,SinkExt,Stream,StreamExt},hyper::{Request,Uri},rustls::{self,crypto::aws_lc_rs,pki_types::CertificateDer},tokio_tungstenite::{Connector,tungstenite::{Message as WsMessage,Error as WsError}},Body,HttpContext,HttpHandler,Proxy,WebSocketContext,WebSocketHandler};
+use hudsucker::{futures::{Sink,SinkExt,Stream,StreamExt},hyper::{Request,Response,Uri,StatusCode},rustls::{self,crypto::aws_lc_rs,pki_types::CertificateDer},tokio_tungstenite::{Connector,tungstenite::{Message as WsMessage,Error as WsError}},Body,HttpContext,HttpHandler,RequestOrResponse,Proxy,WebSocketContext,WebSocketHandler};
 use std::{collections::HashMap,io,net::{SocketAddr,TcpListener},path::PathBuf,sync::{Arc,Mutex,atomic::{AtomicBool,AtomicI32,AtomicUsize,Ordering},mpsc::{self,Receiver,SyncSender}},thread::{self,JoinHandle},time::Duration};
 use tokio::sync::{mpsc as asynchronous,oneshot,watch,Notify};
 pub const NITRO_REVISION:&str="PRODUCTION-201611291003-338511768";
@@ -21,9 +21,9 @@ impl Peer {
     }
 }
 fn side(direction:Direction)->usize{if direction==Direction::ToServer{0}else{1}}
-struct Shared {options:WebOptions,peers:Mutex<HashMap<PeerKey,Arc<Peer>>>,active:Mutex<Option<Arc<Peer>>>,rules:Mutex<Rules>,pipeline:Mutex<()>,events:SyncSender<Event>,index:AtomicI32,stop:AtomicBool}
+struct Shared {options:WebOptions,hartico_key:Mutex<Option<[u8;24]>>,peers:Mutex<HashMap<PeerKey,Arc<Peer>>>,active:Mutex<Option<Arc<Peer>>>,rules:Mutex<Rules>,pipeline:Mutex<()>,events:SyncSender<Event>,index:AtomicI32,stop:AtomicBool}
 impl Shared {
-    fn peer(&self,key:PeerKey)->io::Result<Arc<Peer>>{let mut peers=self.peers.lock().map_err(|_|io::Error::other("web peer lock poisoned"))?;if let Some(peer)=peers.get(&key){return Ok(peer.clone());}if peers.len()>=128{return Err(io::Error::other("too many pending WebSocket connections"));}let kind=self.options.hotels.find(&key.uri).map(|h|h.kind.clone()).unwrap_or(crate::nitro::HotelKind::Plain);let peer=Arc::new(Peer::new(key.clone(),Modifier::new(&kind)?));peers.insert(key,peer.clone());Ok(peer)}
+    fn peer(&self,key:PeerKey)->io::Result<Arc<Peer>>{let mut peers=self.peers.lock().map_err(|_|io::Error::other("web peer lock poisoned"))?;if let Some(peer)=peers.get(&key){return Ok(peer.clone());}if peers.len()>=128{return Err(io::Error::other("too many pending WebSocket connections"));}let kind=self.options.hotels.find(&key.uri).map(|h|h.kind.clone()).unwrap_or(crate::nitro::HotelKind::Plain);let modifier=if kind==crate::nitro::HotelKind::Hartico{Modifier::Hartico(crate::nitro_assets::Hartico::new(self.hartico_key.lock().map_err(|_|io::Error::other("Hartico asset lock poisoned"))?.ok_or_else(||io::Error::other("Hartico logo key is unavailable; reload the hotel assets before connecting"))?))}else{Modifier::new(&kind)?};let peer=Arc::new(Peer::new(key.clone(),modifier));peers.insert(key,peer.clone());Ok(peer)}
     fn close(&self,peer:&Peer){if peer.closed.swap(true,Ordering::AcqRel){return;}peer.stop.send_replace(true);peer.notify.notify_waiters();if let Ok(mut active)=self.active.lock(){if active.as_ref().is_some_and(|p|p.key==peer.key){*active=None;if let Some(host)=&self.options.extensions{host.end_connection();}let _=self.events.try_send(Event::Disconnected);}}}
     fn finish(&self,peer:&Peer){self.close(peer);if peer.finished.fetch_add(1,Ordering::AcqRel)==1{if let Ok(mut peers)=self.peers.lock(){peers.remove(&peer.key);}}}
     fn close_all(&self){let peers=self.peers.lock().map(|p|p.values().cloned().collect::<Vec<_>>()).unwrap_or_default();for peer in peers{self.close(&peer);}}
@@ -52,8 +52,22 @@ impl Shared {
         }).await.map_err(|e|io::Error::other(e.to_string()))?
     }
 }
-#[derive(Clone)] struct Handler(Arc<Shared>);
+#[derive(Clone)] struct Handler(Arc<Shared>,bool);
 impl HttpHandler for Handler {
+    async fn handle_request(&mut self,_ctx:&HttpContext,mut request:Request<Body>)->RequestOrResponse {
+        self.1=request.uri().host()==Some("images.hartico.tv")&&request.uri().path()=="/cosmos/img/logos/logo.png";
+        if self.1 {for name in ["if-none-match","if-modified-since","accept-encoding"]{request.headers_mut().remove(name);}}
+        request.into()
+    }
+    async fn handle_response(&mut self,_ctx:&HttpContext,response:Response<Body>)->Response<Body> {
+        if !self.1||response.status()!=StatusCode::OK{return response;}
+        use http_body_util::BodyExt;
+        let (parts,mut body)=response.into_parts();let mut bytes=Vec::new();let result:io::Result<()>=async {while let Some(frame)=body.frame().await {let frame=frame.map_err(io::Error::other)?;if let Ok(data)=frame.into_data(){if bytes.len()+data.len()>16*1024*1024{return Err(io::Error::other("Hartico logo response exceeds 16 MiB"));}bytes.extend_from_slice(&data);}}Ok(())}.await;
+        if let Err(e)=result {let _=self.0.events.try_send(Event::Error(e.to_string()));return Response::builder().status(StatusCode::BAD_GATEWAY).body(Body::from("Hotel asset could not be read")).unwrap();}
+        match crate::nitro_assets::hartico_key(&bytes){Ok(key)=>{if let Ok(mut target)=self.0.hartico_key.lock(){*target=Some(key);}},Err(e)=>{let _=self.0.events.try_send(Event::Error(format!("Hartico key extraction failed: {e}")));}}
+        Response::from_parts(parts,Body::from(bytes))
+    }
+
     async fn should_intercept_connect(&mut self,_ctx:&HttpContext,_request:&Request<Body>)->bool{!self.0.stop.load(Ordering::Acquire)}
 }
 impl WebSocketHandler for Handler {
@@ -100,13 +114,13 @@ impl WebProxy {
     pub fn start(options:WebOptions)->io::Result<(Self,Receiver<Event>)>{
         if !options.listen.ip().is_loopback(){return Err(io::Error::other("HTTP proxy must bind loopback"));}
         let identity=ProxyIdentity::ensure(&options.identity_directory)?;let ca=identity.authority()?;let listener=TcpListener::bind(options.listen)?;let address=listener.local_addr()?;listener.set_nonblocking(true)?;
-        let (events,receiver)=mpsc::sync_channel(2048);let state=Arc::new(Shared {options,peers:Mutex::new(HashMap::new()),active:Mutex::new(None),rules:Mutex::new(Rules::default()),pipeline:Mutex::new(()),events,index:AtomicI32::new(0),stop:AtomicBool::new(false)});
+        let (events,receiver)=mpsc::sync_channel(2048);let state=Arc::new(Shared {options,hartico_key:Mutex::new(None),peers:Mutex::new(HashMap::new()),active:Mutex::new(None),rules:Mutex::new(Rules::default()),pipeline:Mutex::new(()),events,index:AtomicI32::new(0),stop:AtomicBool::new(false)});
         let actor=state.clone();let (stop,shutdown)=oneshot::channel();let (ready,started)=mpsc::sync_channel(1);
         let worker=thread::spawn(move||{let result=(||->io::Result<()>{let runtime=tokio::runtime::Builder::new_multi_thread().worker_threads(2).enable_all().build()?;runtime.block_on(async{
             let provider=aws_lc_rs::default_provider();let _=provider.clone().install_default();let mut roots=rustls::RootCertStore::empty();roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());for der in &actor.options.extra_roots{roots.add(CertificateDer::from(der.clone())).map_err(io::Error::other)?;}
             let tls=rustls::ClientConfig::builder_with_provider(Arc::new(provider)).with_safe_default_protocol_versions().map_err(io::Error::other)?.with_root_certificates(roots).with_no_client_auth();
             let connector=hyper_rustls::HttpsConnectorBuilder::new().with_tls_config(tls.clone()).https_or_http().enable_http1().build();let listener=tokio::net::TcpListener::from_std(listener)?;
-            let proxy=Proxy::builder().with_listener(listener).with_ca(ca).with_http_connector(connector).with_websocket_connector(Connector::Rustls(Arc::new(tls))).with_http_handler(Handler(actor.clone())).with_websocket_handler(Handler(actor.clone())).build().map_err(io::Error::other)?;
+            let proxy=Proxy::builder().with_listener(listener).with_ca(ca).with_http_connector(connector).with_websocket_connector(Connector::Rustls(Arc::new(tls))).with_http_handler(Handler(actor.clone(),false)).with_websocket_handler(Handler(actor.clone(),false)).build().map_err(io::Error::other)?;
             let _=ready.send(());let _=actor.events.try_send(Event::Listening(address));tokio::select!{result=proxy.start()=>result.map_err(io::Error::other),_=shutdown=>Ok(())}
         })})();if let Err(e)=result{let _=actor.events.try_send(Event::Error(e.to_string()));}actor.close_all();});
         let mut proxy=Self {state,stop:Some(stop),worker:Some(worker),address,certificate_path:identity.certificate_path,certificate_der:identity.certificate_der};
