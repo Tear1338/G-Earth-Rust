@@ -768,7 +768,7 @@ mod unity_http_tests {
                     .iter()
                     .map(|b| format!("{b:02x}"))
                     .collect::<String>()
-        )));
+            )));
         std::fs::create_dir(&directory.0).unwrap();
         let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), directory.0.join("ca"));
         options.unity = Some(UnityAssets {

@@ -90,7 +90,7 @@ fn cache_is_bound_to_source_bytes_and_rejects_corrupted_entries() {
                 .iter()
                 .map(|b| format!("{b:02x}"))
                 .collect::<String>()
-    )));
+        )));
     std::fs::create_dir(&directory.0).unwrap();
     let mut settings = settings();
     settings.cache_directory = directory.0.clone();
