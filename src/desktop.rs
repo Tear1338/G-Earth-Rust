@@ -100,6 +100,7 @@ struct Desktop {
     replacement_expression: String,
     origins: bool,
     nitro: bool,
+    unity: bool,
     system_proxy: bool,
     proxy_guard: Option<gearth_platform::SystemProxyGuard>,
     public_certificate: Option<(PathBuf, Vec<u8>)>,
@@ -187,6 +188,7 @@ impl Default for Desktop {
             replacement_expression: String::new(),
             origins: false,
             nitro: false,
+            unity: false,
             system_proxy: cfg!(windows),
             proxy_guard: None,
             public_certificate: None,
@@ -418,7 +420,7 @@ impl Desktop {
         if ui
             .add_enabled(
                 self.relay.is_none() && self.attachment_pending.is_none(),
-                egui::Checkbox::new(&mut self.nitro, "Nitro / HTML5 browser"),
+                egui::Checkbox::new(&mut self.nitro, "Browser client (Nitro / Unity)"),
             )
             .changed()
             && self.nitro
@@ -426,6 +428,7 @@ impl Desktop {
             self.origins = false;
         }
         if self.nitro {
+            ui.add_enabled_ui(self.relay.is_none(),|ui|{egui::ComboBox::from_id_salt("browser-client").selected_text(if self.unity {"Unity WebGL"}else{"Nitro / HTML5"}).show_ui(ui,|ui|{ui.selectable_value(&mut self.unity,false,"Nitro / HTML5");ui.selectable_value(&mut self.unity,true,"Unity WebGL");});});
             self.nitro_connection(ui);
             return;
         }
@@ -578,7 +581,19 @@ impl Desktop {
         self.public_certificate = Some((identity.certificate_path, identity.certificate_der));
         Ok(())
     }
+    fn start_unity(&mut self)->std::io::Result<()> {
+        if !self.socks_proxy.trim().is_empty(){return Err(std::io::Error::other("Unity upstream SOCKS5 routing is not ported yet; clear the SOCKS setting before using a direct connection"));}
+        self.prepare_certificate()?;
+        if self.system_proxy&&!gearth_platform::certificate_trusted(&self.public_certificate.as_ref().unwrap().1)? {return Err(std::io::Error::other("Install the displayed public certificate before enabling the Windows proxy"));}
+        self.hotel_version.clear();self.client_identifier.clear();self.load_packet_database()?;
+        if self.packet_info.entries().is_empty(){self.packet_info=PacketInfoManager::from_json("",include_bytes!("../resources/unity/messages.json")).map_err(std::io::Error::other)?;}
+        let http=WebOptions::new(self.listen.parse().map_err(std::io::Error::other)?,self.identity_directory());let mut communicator=gearth_rust::unity_server::UnityOptions::new("127.0.0.1:0".parse().unwrap(),self.identity_directory());communicator.extensions=self.extension_host.clone();communicator.packet_info=self.packet_info.clone();
+        let cache=self.settings_path.parent().unwrap_or_else(||Path::new(".")).join("unity-cache");let (connection,events)=gearth_rust::unity_connection::UnityConnection::start(http,communicator,cache)?;
+        if self.system_proxy {self.proxy_guard=Some(gearth_platform::SystemProxyGuard::activate(connection.address)?);}
+        self.status=format!("Unity asset proxy listening on {}; reload the WebGL client",connection.address);self.relay=Some(Connection::Unity(connection));self.events=Some(events);self.update_rules();Ok(())
+    }
     fn start_nitro(&mut self) -> std::io::Result<()> {
+        if self.unity {return self.start_unity();}
         if !self.socks_proxy.trim().is_empty() {
             return Err(std::io::Error::other("Nitro upstream SOCKS5 support is not implemented; clear the SOCKS setting to use a direct connection"));
         }
@@ -637,7 +652,7 @@ impl Desktop {
         Ok(())
     }
     fn nitro_connection(&mut self, ui: &mut egui::Ui) {
-        ui.label("Nitro browser connection");
+        ui.label(if self.unity {"Unity WebGL browser connection"}else{"Nitro browser connection"});
         ui.horizontal(|ui| {
             ui.label("Local address");
             ui.add_enabled(
@@ -649,7 +664,7 @@ impl Desktop {
             self.relay.is_none(),
             egui::Checkbox::new(
                 &mut self.system_proxy,
-                "Configure Windows browser proxy while waiting for Nitro",
+                "Configure Windows browser proxy while waiting for the game",
             ),
         );
         ui.label("Start the proxy, then reload your hotel. The previous Windows proxy is restored when the game connects or when you stop.");
@@ -723,6 +738,11 @@ impl Desktop {
                 }
             });
         }
+        if self.unity {
+            ui.label("Unity packet identifiers (.json / .tsv); leave blank to use beta-29 messages.json");ui.add_enabled(self.relay.is_none(),egui::TextEdit::singleline(&mut self.packet_database));
+            ui.label("Reload the official WebGL client with the browser proxy enabled. Its framework, loader and WebAssembly hooks are patched for this session. Unsupported client layouts stop with a patch error.");
+            ui.label("With automatic Windows setup disabled, configure your test browser to use the local address and trust the displayed public certificate.");
+        } else {
         egui::CollapsingHeader::new("Nitro options").show(ui,|ui|{
             ui.label("Packet identifiers (.tsv / .json)");ui.text_edit_singleline(&mut self.packet_database);
             ui.label("Optional game WebSocket URLs (final * accepts a prefix), one per line. Otherwise the game is recognized by its first outgoing packet (4000).");ui.add(egui::TextEdit::multiline(&mut self.nitro_urls).desired_rows(3));
@@ -750,6 +770,7 @@ impl Desktop {
                 self.packet_info.entries().len()
             ));
         });
+        }
         if self.relay.is_none() {
             if ui
                 .add_enabled(
@@ -766,7 +787,7 @@ impl Desktop {
             self.stop_connection();
         }
         ui.separator();
-        ui.label("Nitro transport and beta-29 hotel adapters are implemented with finite fixture tests. Real hotel sessions and Chrome TLS emulation still need validation and work.");
+        ui.label(if self.unity {"Unity WebGL hooks and communicator are validated on controlled fixtures; official client sessions still need regression testing."}else{"Nitro transport and beta-29 hotel adapters are implemented with finite fixture tests. Real hotel sessions and Chrome TLS emulation still need validation and work."});
     }
     fn logger(&mut self, ui: &mut egui::Ui) {
         ui.heading("Packet logger");
@@ -1314,6 +1335,7 @@ impl Desktop {
             .get("nitro")
             .copied()
             .unwrap_or(false);
+        self.unity=self.settings.booleans.get("unity").copied().unwrap_or(false);
         if self.nitro {
             self.origins = false;
         }
@@ -1361,6 +1383,7 @@ impl Desktop {
         self.settings.booleans.extend([
             ("origins".into(), self.origins),
             ("nitro".into(), self.nitro),
+            ("unity".into(), self.unity),
             ("dark_mode".into(), self.dark_mode),
             ("outgoing".into(), self.outgoing),
             ("incoming".into(), self.incoming),

@@ -36,6 +36,8 @@ pub const NITRO_REVISION: &str = "PRODUCTION-201611291003-338511768";
 const MAX_QUEUED: usize = 32 * 1024 * 1024;
 #[derive(Clone)]
 pub struct WebOptions {
+    pub unity: Option<crate::unity_assets::UnityAssets>,
+    pub detect_nitro: bool,
     pub listen: SocketAddr,
     pub identity_directory: PathBuf,
     pub packet_info: PacketInfoManager,
@@ -51,6 +53,8 @@ impl WebOptions {
         Self {
             listen,
             identity_directory,
+            unity: None,
+            detect_nitro: true,
             packet_info: PacketInfoManager::default(),
             extensions: None,
             extra_roots: Vec::new(),
@@ -335,7 +339,7 @@ impl Shared {
     }
 }
 #[derive(Clone)]
-struct Handler(Arc<Shared>, u8);
+struct Handler(Arc<Shared>, u8, Option<crate::unity_assets::UnityAsset>);
 impl HttpHandler for Handler {
     async fn handle_request(
         &mut self,
@@ -353,8 +357,10 @@ impl HttpHandler for Handler {
         } else {
             0
         };
+        self.2=self.0.options.unity.as_ref().and_then(|_|crate::unity_assets::UnityAsset::from_url(request.uri().host().unwrap_or(""),request.uri().path()));
+        if self.2.is_some(){self.1=3;}
         if self.1 != 0 {
-            for name in ["if-none-match", "if-modified-since", "accept-encoding"] {
+            for name in ["if-none-match", "if-modified-since", "accept-encoding", "cache-control", "age", "etag", "last-modified", "date", "expires"] {
                 request.headers_mut().remove(name);
             }
             request
@@ -372,13 +378,20 @@ impl HttpHandler for Handler {
             return response;
         }
         use http_body_util::BodyExt;
-        let (parts, mut body) = response.into_parts();
+        let (mut parts, mut body) = response.into_parts();
+        if self.1==3 {
+            for name in ["age","cache-control","etag","if-none-match","if-modified-since","last-modified","date","expires"] {parts.headers.remove(name);}
+            parts.headers.insert("cache-control","no-store".parse().unwrap());
+            parts.headers.insert("x-modified-by","G-Earth-Rust".parse().unwrap());
+            if self.2.as_ref().is_some_and(|asset|asset.kind==crate::unity_assets::AssetKind::Data){return Response::from_parts(parts,body);}
+        }
+        let maximum=if self.1==3 {crate::unity_wasm::MAX_WASM}else{16*1024*1024};
         let mut bytes = Vec::new();
         let result = tokio::time::timeout(Duration::from_secs(20), async {
             while let Some(frame) = body.frame().await {
                 let frame = frame.map_err(io::Error::other)?;
                 if let Ok(data) = frame.into_data() {
-                    if bytes.len() + data.len() > 16 * 1024 * 1024 {
+                    if bytes.len() + data.len() > maximum {
                         return Err(io::Error::other("Nitro asset response exceeds 16 MiB"));
                     }
                     bytes.extend_from_slice(&data);
@@ -399,6 +412,11 @@ impl HttpHandler for Handler {
                 .status(StatusCode::BAD_GATEWAY)
                 .body(Body::from("Hotel asset could not be read"))
                 .unwrap();
+        }
+        if self.1==3 {
+            let asset=self.2.clone().unwrap();let settings=self.0.options.unity.clone().unwrap();
+            let result=tokio::task::spawn_blocking(move||crate::unity_assets::modify(&asset,&bytes,&settings)).await.map_err(io::Error::other).and_then(|result|result);
+            return match result {Ok(bytes)=>{parts.headers.remove("transfer-encoding");parts.headers.remove("content-md5");parts.headers.remove("digest");parts.headers.insert("content-length",bytes.len().to_string().parse().unwrap());Response::from_parts(parts,Body::from(bytes))},Err(error)=>{let _=self.0.events.try_send(Event::Error(format!("Unity asset patch failed: {error}")));Response::builder().status(StatusCode::BAD_GATEWAY).body(Body::from("Unity asset patch failed; see G-Earth Rust status")).unwrap()}};
         }
         if self.1 == 1 {
             match crate::nitro_assets::hartico_key(&bytes) {
@@ -512,7 +530,7 @@ impl WebSocketHandler for Handler {
                             if direction==Direction::ToServer&&!decided {
                                 decided=true;let url=uri.to_string();let configured=self.0.options.hotels.find(&url).is_some()||self.0.options.websocket_urls.iter().any(|u|{let url=url.split('?').next().unwrap_or(&url);match u.strip_suffix('*'){Some(prefix)=>url.starts_with(prefix),None=>u==url}});
                                 let hello=Packet::from_bytes(bytes.to_vec()).is_ok_and(|p|p.header()==4000);
-                                if configured||hello{self.0.activate(&peer,&uri).await?;}
+                                if self.0.options.detect_nitro&&(configured||hello){self.0.activate(&peer,&uri).await?;}
                             }
                             if peer.active.load(Ordering::Acquire){
                                 while !peer.ready.load(Ordering::Acquire)&&!peer.closed.load(Ordering::Acquire){let notified=peer.notify.notified();if peer.ready.load(Ordering::Acquire)||peer.closed.load(Ordering::Acquire){break;}notified.await;}
@@ -581,7 +599,7 @@ impl WebProxy {
             let provider=aws_lc_rs::default_provider();let _=provider.clone().install_default();let mut roots=rustls::RootCertStore::empty();roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());for der in &actor.options.extra_roots{roots.add(CertificateDer::from(der.clone())).map_err(io::Error::other)?;}
             let tls=rustls::ClientConfig::builder_with_provider(Arc::new(provider)).with_safe_default_protocol_versions().map_err(io::Error::other)?.with_root_certificates(roots).with_no_client_auth();
             let connector=hyper_rustls::HttpsConnectorBuilder::new().with_tls_config(tls.clone()).https_or_http().enable_http1().build();let listener=tokio::net::TcpListener::from_std(listener)?;
-            let proxy=Proxy::builder().with_listener(listener).with_ca(ca).with_http_connector(connector).with_websocket_connector(Connector::Rustls(Arc::new(tls))).with_http_handler(Handler(actor.clone(),0)).with_websocket_handler(Handler(actor.clone(),0)).build().map_err(io::Error::other)?;
+            let proxy=Proxy::builder().with_listener(listener).with_ca(ca).with_http_connector(connector).with_websocket_connector(Connector::Rustls(Arc::new(tls))).with_http_handler(Handler(actor.clone(),0,None)).with_websocket_handler(Handler(actor.clone(),0,None)).build().map_err(io::Error::other)?;
             let _=ready.send(());let _=actor.events.try_send(Event::Listening(address));tokio::select!{result=proxy.start()=>result.map_err(io::Error::other),_=shutdown=>Ok(())}
         });
                 runtime.shutdown_timeout(Duration::from_secs(1));
