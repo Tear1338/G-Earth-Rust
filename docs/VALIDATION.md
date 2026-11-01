@@ -35,3 +35,5 @@ Nitro validation is documented in [NITRO.md](NITRO.md). Run [41334348534](https:
 Ordinary runs skip environment-dependent Java tests; the dedicated Java job runs them explicitly. CI generates development artifacts. The validated Cargo.lock and rustfmt output have been imported directly. CI now checks formatting and uses locked dependencies.
 
 Passing these checks is finite protocol evidence, not a complete application port.
+
+G-Python validation is documented in [GPYTHON.md](GPYTHON.md). The dedicated Windows/Linux jobs run published G-Python 0.1.6 inside a real Jupyter kernel, verify named interception, bidirectional injection/modification and blocking, check the kernel PID after stop, and start the real QtConsole with Qt in offscreen mode. Interactive visual parity and real hotel scripts remain untested.

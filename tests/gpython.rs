@@ -148,14 +148,21 @@ fn stopping_a_console_terminates_its_kernel() {
 #[test]
 #[ignore = "requires Python/Jupyter/PyQt5; executed in gpython CI"]
 fn actual_qtconsole_starts_in_the_selected_python_environment() {
-    let (host,_)=ExtensionHost::start("127.0.0.1:0".parse().unwrap(),Vec::new()).unwrap();
-    let mut console=PythonConsole::launch_offscreen_fixture(Path::new("python"),&host).unwrap();
-    let deadline=Instant::now()+Duration::from_secs(40);
+    let (host, _) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+    let mut console = PythonConsole::launch_offscreen_fixture(Path::new("python"), &host).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(40);
     while !console.window_running {
-        for line in console.poll(){assert!(!line.starts_with("GEARTH_PYTHON_ERROR"),"{line}");}
-        assert!(console.exited().unwrap().is_none(),"QtConsole exited during startup");
-        assert!(Instant::now()<deadline,"QtConsole startup timed out");
+        for line in console.poll() {
+            assert!(!line.starts_with("GEARTH_PYTHON_ERROR"), "{line}");
+        }
+        assert!(
+            console.exited().unwrap().is_none(),
+            "QtConsole exited during startup"
+        );
+        assert!(Instant::now() < deadline, "QtConsole startup timed out");
         std::thread::sleep(Duration::from_millis(20));
     }
-    assert!(console.ready);console.stop();host.stop();
+    assert!(console.ready);
+    console.stop();
+    host.stop();
 }

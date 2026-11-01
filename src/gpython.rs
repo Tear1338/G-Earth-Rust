@@ -135,8 +135,8 @@ impl PythonConsole {
         Self::launch_inner(python, host, "G-Python fixture", Some(script), false)
     }
     /// Runs the actual Qt process with Qt's offscreen platform for CI smoke checks.
-    pub fn launch_offscreen_fixture(python:&Path,host:&Arc<ExtensionHost>)->io::Result<Self> {
-        Self::launch_inner(python,host,"G-Python Qt fixture",None,true)
+    pub fn launch_offscreen_fixture(python: &Path, host: &Arc<ExtensionHost>) -> io::Result<Self> {
+        Self::launch_inner(python, host, "G-Python Qt fixture", None, true)
     }
     fn launch_inner(
         python: &Path,
@@ -158,7 +158,7 @@ impl PythonConsole {
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
         if offscreen {
-            command.env("QT_QPA_PLATFORM","offscreen");
+            command.env("QT_QPA_PLATFORM", "offscreen");
         }
         ProcessTree::prepare(&mut command);
         let mut child = command.spawn()?;

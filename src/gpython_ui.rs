@@ -29,6 +29,22 @@ impl Default for PythonUi {
     }
 }
 impl PythonUi {
+    pub fn restore_settings(&mut self, settings: &gearth_rust::settings::Settings) {
+        if let Some(runtime) = settings.values.get("python_runtime") {
+            self.runtime = runtime.clone();
+        }
+        if let Some(title) = settings.values.get("python_title") {
+            self.title = title.clone();
+        }
+        self.report = None;
+        self.pending = None;
+    }
+    pub fn save_settings(&self, settings: &mut gearth_rust::settings::Settings) {
+        settings.values.extend([
+            ("python_runtime".into(), self.runtime.clone()),
+            ("python_title".into(), self.title.clone()),
+        ]);
+    }
     pub fn show(
         &mut self,
         ui: &mut egui::Ui,

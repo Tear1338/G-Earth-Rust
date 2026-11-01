@@ -1383,6 +1383,7 @@ impl Desktop {
         }
     }
     fn apply_settings(&mut self) {
+        self.python_console.restore_settings(&self.settings);
         for (key, target) in [
             ("listen", &mut self.listen),
             ("remote", &mut self.remote),
@@ -1447,6 +1448,7 @@ impl Desktop {
         self.update_rules();
     }
     fn save_settings(&mut self) {
+        self.python_console.save_settings(&mut self.settings);
         for (key, value) in [
             ("listen", &self.listen),
             ("remote", &self.remote),
