@@ -121,6 +121,15 @@ jobs:
         run: cargo test --locked --features web --test java_extension -- --ignored
       - name: Exercise the original Java extension through Unity
         run: cargo test --locked --features web --test java_unity_extension -- --ignored
+      - name: Validate store launch and original catalogue
+        env:
+          GEARTH_STORE_CONFIG: /tmp/store-config.json
+          GEARTH_STORE_EXTENSIONS: /tmp/store-extensions.json
+        run: |
+          curl --fail --location --retry 3 'https://raw.githubusercontent.com/sirjonasxx/G-ExtensionStore/e1d69194395c038bd1ee6a34239fbb45bb424e97/store/config.json' -o /tmp/store-config.json
+          curl --fail --location --retry 3 'https://raw.githubusercontent.com/sirjonasxx/G-ExtensionStore/e1d69194395c038bd1ee6a34239fbb45bb424e97/.auto-generated/extensions.json' -o /tmp/store-extensions.json
+          cargo test --locked --test extension_store -- --ignored
+          cargo test --locked --test java_store_command -- --ignored
       - name: Validate hotel crypto against Java JCE
         run: |
           javac tests/JavaNitroCryptoOracle.java
