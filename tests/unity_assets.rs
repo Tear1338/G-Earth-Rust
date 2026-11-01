@@ -84,15 +84,13 @@ fn cache_is_bound_to_source_bytes_and_rejects_corrupted_entries() {
     }
     let mut random = [0; 16];
     getrandom::fill(&mut random).unwrap();
-    let directory = Directory(
-        std::env::temp_dir().join(format!(
+    let directory = Directory(std::env::temp_dir().join(format!(
             "gearth-unity-cache-{}",
             random
                 .iter()
                 .map(|b| format!("{b:02x}"))
                 .collect::<String>()
-        )),
-    );
+    )));
     std::fs::create_dir(&directory.0).unwrap();
     let mut settings = settings();
     settings.cache_directory = directory.0.clone();

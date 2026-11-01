@@ -762,15 +762,13 @@ mod unity_http_tests {
     fn proxy_asset_handler_preserves_gzip_and_updates_headers_without_changing_system_settings() {
         let mut random = [0; 16];
         getrandom::fill(&mut random).unwrap();
-        let directory = Directory(
-            std::env::temp_dir().join(format!(
+        let directory = Directory(std::env::temp_dir().join(format!(
                 "gearth-unity-http-{}",
                 random
                     .iter()
                     .map(|b| format!("{b:02x}"))
                     .collect::<String>()
-            )),
-        );
+        )));
         std::fs::create_dir(&directory.0).unwrap();
         let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), directory.0.join("ca"));
         options.unity = Some(UnityAssets {

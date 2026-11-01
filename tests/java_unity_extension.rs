@@ -86,15 +86,13 @@ fn actual_beta29_java_extension_resolves_injects_and_intercepts_unity_packets() 
     }
     let mut random = [0; 16];
     getrandom::fill(&mut random).unwrap();
-    let directory = Directory(
-        std::env::temp_dir().join(format!(
+    let directory = Directory(std::env::temp_dir().join(format!(
             "gearth-java-unity-{}",
             random
                 .iter()
                 .map(|b| format!("{b:02x}"))
                 .collect::<String>()
-        )),
-    );
+    )));
     std::fs::create_dir(&directory.0).unwrap();
     let mut options = UnityOptions::new("127.0.0.1:0".parse().unwrap(), directory.0.join("ca"));
     options.extensions = Some(host.clone());
