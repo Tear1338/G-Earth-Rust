@@ -1,28 +1,34 @@
 # Source and REA analysis
 
-Reference repository: https://github.com/G-Realm/G-Earth
+Reference: https://github.com/G-Realm/G-Earth
 
-Pinned tag: `1.5.4-beta-29`; commit: `242155c291b1109d6c9a02370f6a2af1ead41ea8`.
+Pinned tag: `1.5.4-beta-29`; commit `242155c291b1109d6c9a02370f6a2af1ead41ea8`.
 
-The GitHub tree at that tag has 675 entries and 347 Java source files. The full path inventory is retained in `UPSTREAM_FILES.tsv` to support continued porting. The protocol work was informed by HPacket.java, HMessage.java, HPacketFormat.java, NetworkExtensionCodec.java, NetworkExtensionMessage.java, HostInfo.java and PacketInfoManager.java at that exact tag.
+The pinned tree contains 675 entries and 347 Java source files. `UPSTREAM_FILES.tsv` retains the path inventory. Protocol and integration work uses the exact upstream HPacket, HMessage, HPacketFormat, NetworkExtensionCodec, NetworkExtensionMessage, HostInfo, PacketInfoManager, network extension authenticator/runner, packet handlers, Shockwave buffers/modifiers, BobbaCrypto classes, packet providers and Cacher/UI settings.
 
-REA was used to open the released `G-Earth-Api-1.5.4-beta-29.jar` and inspect its ZIP inventory. SHA-256: `7f318b32a793269eabb1afe2962887ede7d274f6da43b86323ce84d806ef3a51`. Inventory: 181 files, 40 directories, no reported integrity contradictions.
+REA opened the released `G-Earth-Api-1.5.4-beta-29.jar` and inspected its ZIP inventory: 181 files, 40 directories, no reported integrity contradictions. SHA-256: `7f318b32a793269eabb1afe2962887ede7d274f6da43b86323ce84d806ef3a51`.
 
-REA inventory is bounded static artifact evidence. It neither decompiles Java semantics nor establishes runtime behavior, whole-program equivalence or performance. The local evidence export is excluded from Git because it includes machine-specific paths. This repository publishes only the portable summary and source identity.
+REA's Java decompiler requires a running JEB MCP service, unavailable in this environment. Its native Windows PTY capture also reports unsupported descendant cleanup. These unavailable capabilities were not treated as successful reconstruction evidence. The source is public, so reviewed original source and executable Java oracles provide semantic evidence instead.
 
-The Java compatibility CI job supplies behavioral evidence for a finite packet/encoding vector set by executing the actual upstream API JAR. The full application and its external native dependencies have not been exercised.
+Static inventory does not establish runtime behavior, complete equivalence or performance. Local machine-specific evidence exports are excluded from Git. The portable source identity and limitations are recorded here.
 
 ## Architecture
 
-The standard-library-only core separates protocol, expressions, crypto, rules, scheduling and transport. The optional eframe desktop depends on the core. One nonblocking transport loop processes both directions and queues injected frames. Partial writes retain their byte offset; each output queue is bounded to 64 MiB and the injection queue to 256 packets. Bounded nonblocking log delivery prevents a slow UI from holding up network traffic. Cancellation does not depend on interrupting a blocking Windows socket read.
+Safe Rust core (`forbid(unsafe_code)`) separates packets/expressions, crypto, transport, SOCKS, packet identifiers, extensions, settings, rules and scheduling. RustCrypto supplies standard HKDF/SHA256/ChaCha20; num-bigint supplies the original Origins DH arithmetic; ureq supplies verified HTTPS lookup. The optional eframe desktop consumes the same core.
 
-The relay deliberately exposes only its implemented unencrypted protocol. Unsupported packet formats are rejected in the extension codec. Provider integration is outstanding.
+One nonblocking relay loop handles both directions and injected frames. Output queues are bounded to 64 MiB per direction, with retained partial-write offsets. Independent RC4 input/output state accounts for blocked and injected traffic. Origins keeps separate client/server and header/data channels and preserves partial encrypted headers without advancing the nonce twice.
+
+The extension host binds only loopback, bounds pending peers and queues, uses random one-use file-bound launch tokens, and requires approval for external debug extensions. Interception has a 500 ms transaction deadline; a missing or invalid response stops the session. Java extensions run in their own JVM and retain the upstream Java API/parser library; Rust does not pretend to reimplement every Java API class.
+
+The UI caches expression/search strings and virtualizes log rows, with configurable row and byte budgets. Settings use bounded reads and atomic same-directory replacement. SOCKS passwords and RC4 keys are not saved.
 
 ## Known limits
 
-- A saturated logging queue drops observations; the UI observed count is not a network packet count.
-- DNS resolution and connection setup are synchronous at relay creation. Stop may wait for an in-progress connection attempt's bounded timeout.
-- Extension messages have codecs but no extension server or Java launcher.
-- The desktop interface follows familiar G-Earth areas but is not pixel-identical or functionally complete.
-- RC4 is provided only for compatibility work; it is not used automatically by the relay.
-- Build and test outcomes are available in Actions; source inspection alone does not prove they pass.
+- No official Habbo session has been exercised; automatic client attachment and Flash key discovery are absent.
+- Nitro/Unity connection providers, system certificate/proxy lifecycle, extension store and complete UI parity are absent.
+- Log delivery may drop observations under backpressure; displayed counts are not authoritative network counts.
+- Remote DNS/connection setup is synchronous during relay setup; UI responsiveness during that setup needs improvement.
+- The asynchronous Sulek lookup has bounded time and size but has only offline schema tests here.
+- Nine original language resources are present; individual added controls remain partly English.
+- Finite simulated and Java-oracle tests do not establish compatibility with arbitrary extensions.
+- No benchmark demonstrates a gain over the original Java application.

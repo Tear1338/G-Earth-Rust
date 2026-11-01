@@ -2,17 +2,19 @@
 
 Rust port in progress of [G-Realm/G-Earth](https://github.com/G-Realm/G-Earth), based on **1.5.4-beta-29**, commit `242155c291b1109d6c9a02370f6a2af1ead41ea8`.
 
-**Development version. This does not yet replace the original G-Earth.** Automatic attachment to official Habbo clients and execution of existing Java extensions are not implemented. Do not use this version expecting G-Presets to work. [Feature-by-feature status](docs/PARITY.md).
+**Development version. This does not yet replace the original G-Earth.** Automatic attachment to official Habbo clients, automatic Flash key discovery, Nitro and Unity connection providers remain outstanding. The Rust host now runs external Java extensions, verified with a fixture built against the actual beta-29 API; G-Presets itself has not been tested. [Feature-by-feature status](docs/PARITY.md).
 
 ## Implemented
 
 - Bounded EVA_WIRE frame codec and packet readers/writers: byte, boolean, unsigned short, integer, long, float, double, ISO-8859-1 strings, long strings.
-- Numeric packet expressions, strict validation, lossless hexadecimal representation and conversion tools.
-- HPacket/HMessage serialization and EVA_WIRE network-extension message codec based on beta-29.
-- Explicit plaintext TCP relay with bidirectional logging, packet injection, ordered block/replace rules, reconnect and cancellation.
-- Scheduler with finite repetitions and no burst of catch-up packets after a delayed tick.
-- Independent RC4 implementation with state import/export and rewind; Shockwave B64/VL64 integer codecs. These are library components, not working client attachment.
-- Native Rust desktop application: Connection, Logger, Injection, Scheduler, Tools, Extensions status and Info. The logger keeps at most 5,000 rows and virtualizes visible rows.
+- Typed, named and raw packet expressions, upstream byte-display notation and lossless hexadecimal representation.
+- EVA_WIRE, WEDGIE incoming/outgoing packet formats and their beta-29 extension IPC serialization.
+- Explicit TCP relay with bidirectional logging, injection, ordered block/replace rules, reconnect and cancellation; authenticated SOCKS5 upstream routing and manual independent RC4 keys.
+- Origins transport: bidirectional plaintext framing, Diffie-Hellman substitution, HKDF-SHA256 keys and independent ChaCha20 header/data channels. Tested against original Java crypto vectors and simulated client/server sessions; official client attachment remains absent.
+- Authenticated loopback extension host, one-use launch tokens, Java/Python/Node external processes, connection details, packet names, interception, injection, click callbacks, language updates and console output. Java extensions still need a Java runtime.
+- Sulek HTTPS packet-name lookup, upstream Unity messages.json import and portable TSV databases, with direction-aware expression lookup.
+- Saved block/replace rules and finite schedule templates, atomic settings, legacy cache import, notepad, light/dark themes and nine upstream language resources. Individual controls are not fully localized yet.
+- Native Rust desktop application: Connection, Logger, Injection, Scheduler, Tools, Extensions and Info. Logger rows are virtualized and bounded by row count and byte budget.
 - CLI and Windows desktop builds through GitHub Actions.
 
 ## Run
@@ -25,7 +27,7 @@ cargo run --release --bin gearth-rust -- encode '{h:123}{i:42}{s:"hello"}'
 cargo run --release --features desktop --bin gearth-desktop
 ```
 
-For a compatible **unencrypted test client**, explicitly configure its endpoint as the local relay address:
+For a compatible **unencrypted test client**, explicitly configure its endpoint as the local relay address (CLI defaults to EVA_WIRE; Origins, SOCKS and manual RC4 configuration are exposed in the desktop):
 
 ```powershell
 cargo run --release --bin gearth-rust -- relay 127.0.0.1:1234 test-server.example:30000
@@ -37,7 +39,9 @@ CLI relay commands: `server EXPR`, `client EXPR`, `quit`. Binding is restricted 
 
 CI runs core and TCP loopback tests on Windows and Linux and builds the Windows desktop executable. A separate Java compatibility job downloads the pinned upstream beta-29 release, verifies its published SHA-256, invokes its actual API JAR and compares wire vectors against Rust. These finite checks cover only the declared vectors, not all G-Earth behavior.
 
-The source tree was inspected through GitHub and the released API JAR inventoried using [REA](https://rea.tools/). [Analysis notes](docs/ANALYSIS.md). No benchmark against the original application has established a performance gain yet.
+The source tree was inspected through GitHub and the released API JAR inventoried using [REA](https://rea.tools/). REA's Java decompiler service is unavailable in this environment; source review and executable Java oracles supply the semantic checks. [Analysis notes](docs/ANALYSIS.md). No benchmark against the original application has established a performance gain yet.
+
+Tested development executables are published as prereleases on [GitHub Releases](https://github.com/Tear1338/G-Earth-Rust/releases). They do not install certificates, change system proxies or redirect an official client automatically.
 
 ## Credits
 

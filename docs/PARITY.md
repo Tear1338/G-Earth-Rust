@@ -1,41 +1,36 @@
 # Compatibility with 1.5.4-beta-29
 
-Status describes source implementation, not successful production use. CI results are separate evidence. No official Habbo client has been tested with this port.
+Status describes source implementation and finite tests, not successful production use. No official Habbo client or G-Presets session has been tested with this port.
 
 | Area | Rust status | Remaining work |
 |---|---|---|
-| EVA_WIRE packet framing | Implemented | More malformed-input and differential coverage |
-| Primitive fields and ISO-8859-1 strings | Implemented | Full HPacket mutation API and named placeholders |
-| HPacket/HMessage serialization | Implemented | Broader extension corpus tests |
-| Packet expressions | Numeric subset | Named headers, upstream display syntax and structure prediction |
-| RC4 | Library implementation | Key discovery, negotiated state and per-direction client integration |
-| Shockwave B64/VL64 integers | Library implementation | WEDGIE incoming/outgoing packet formats and connection support |
-| Explicit plaintext TCP relay | Implemented | Encrypted session providers and SOCKS integration |
-| Logging, bounded display and export | Implemented | Original highlighting, search options and extension logger |
-| Inject/block/replace | Core implemented | Full original rule editor, expressions, packet name database |
-| Scheduler | Basic implementation | Save/load, all original scheduling options and disconnect policy |
-| Network extension protocol | EVA_WIRE codec implemented | TCP host, authentication, interception transactions, timeouts, store |
-| Java extensions / G-Presets | Not supported | Java launcher or compatible external bridge and live regression tests |
-| G-Python live console | Not implemented | Host API, Python console integration and package lifecycle |
-| Flash connection | Not implemented | Client discovery, redirection and encryption bootstrap |
-| Origins / Shockwave connection | Not implemented | WEDGIE framing, cipher variants and attachment |
-| Nitro | Not implemented | HTTP/TLS/WebSocket proxy, assets, certificates, OS integration |
-| Unity | Not implemented | WebSocket communicator, WASM patching, local file service |
-| SOCKS upstream proxy | Not implemented | Authentication, routing, provider configuration |
+| EVA_WIRE | Framing, primitive fields, Latin-1, HPacket/HMessage serialization | Full upstream mutation and structure-prediction API |
+| WEDGIE | Incoming/outgoing packet formats, fixed B64, VL64 and format-aware expressions | Wider parser corpus and official client regression |
+| Packet expressions | Typed/numeric/named expressions, mixed raw display notation, lossless hex | Structure prediction and all editor conveniences |
+| Explicit TCP relay | Nonblocking bidirectional relay, bounded output, injection, ordered block/replace, reconnect | Automatic official client attachment |
+| RC4 | State import/export/rewind, manual independent per-direction stream keys | Automatic client-memory discovery and negotiated bootstrap |
+| Origins crypto | DH substitution, HKDF-SHA256, ChaCha20 channels, encrypted framing | Official attachment and end-to-end live validation |
+| Network extensions | Loopback host, one-use launch tokens, approval, flags, interception, injection, click, console, connection details, language changes | Full extension corpus, store and lifecycle parity |
+| Existing Java API | Actual beta-29 Java extension fixture passes auth, name lookup, bidirectional mutation/blocking/injection | G-Presets and other existing extension binaries untested |
+| Python/Node extensions | External runtime launcher and common IPC | G-Python live console, package installation and live regression |
+| Packet identifiers | Direction-aware database, beta-29 IPC, Sulek HTTPS lookup, Unity JSON and TSV import | Automatic version detection, remote cache, Unity client integration |
+| SOCKS5 | CONNECT, remote DNS, optional RFC1929 credentials | Wider interoperability tests |
+| Rules/scheduler | Saved ordered rules and finite schedule templates | Every original scheduler and rule-editor option |
+| Logging | Cached search/display strings, virtualized rows, count/byte budget, export | Original highlighting and complete filtering options |
+| Settings | Atomic save/load, unknown-field preservation, original cache import, notepad | Migration of every original setting |
+| UI/theme/languages | Rust eframe desktop, light/dark theme, nine original resource files, localized tabs | Exact UI/layout, all controls translated, shortcuts, tray |
+| Flash | Manual relay only | Official attachment, redirection and RC4 discovery |
+| Origins attachment | Transport implemented, explicit endpoint required | Automatic official client routing |
+| Nitro | Not implemented | HTTP/TLS/WebSocket proxy, assets, certificates, system proxy cleanup |
+| Unity connection | Not implemented | WebSocket communicator, WASM patching, local file server |
 | Hotel detection | Not implemented | Provider-specific discovery and supported hotels |
-| Packet identifiers / sulek.dev | Not implemented | Providers, cache, hashes, schema and direction mapping |
-| Room/catalog/inventory/entity parsers | Not implemented | Port G-Earth-Api parser classes and fixtures |
-| Native desktop interface | Initial Rust interface | Match every original control, hotkeys, translations and layouts |
-| Themes, translations, tray, shortcuts | Not implemented | OS lifecycle and original behavior |
-| Settings persistence / migration | Not implemented | Atomic configuration storage and import from Java version |
-| Extension store / updates | Not implemented | Distribution metadata, downloads, validation and lifecycle |
-| Windows packaging | CI development artifact | Signed installer, upgrade/uninstall and release QA |
-| Linux/macOS parity | Core tests only | Desktop packaging, proxy helpers and platform support matrix |
-| beta-29 TLS fingerprint fixes | Not implemented | Equivalent TLS provider behavior and regression tests |
-| Performance superiority | Unmeasured | Equivalent workload benchmarks against the Java version |
+| Room/catalog/inventory/entity API | Existing Java extensions retain their original Java parsers | Native Rust parser API parity |
+| Extension store/updater | Not implemented | Metadata, downloads, validation and lifecycle |
+| Windows packaging | Tested development EXE and CLI via Actions/prereleases | Installer, signing and release QA |
+| Linux/macOS | Core tests on Linux; Windows desktop compiled | Desktop distribution and platform proxy helpers |
+| beta-29 integration fixes | Not ported completely | leet/habblet, Chrome TLS fingerprint, privileged macOS helper, tray cropping |
+| Performance gain | Unmeasured | Equivalent end-to-end workload benchmark against Java |
 
 ## Completion criteria
 
-The port is complete only after the missing rows above are implemented and tested, including a real Flash/Origins/Unity/Nitro connection where supported upstream, an existing Java extension such as G-Presets, reconnection, encrypted traffic, certificate/proxy cleanup, settings migration and the full UI workflow. A working compiler or a passing packet test is insufficient.
-
-The beta-29 fixes must be preserved: leet/habblet support, Chrome-compatible TLS behavior, macOS privileged helper, tray icon cropping and Unity header naming. They are tracked as outstanding, not silently omitted.
+A complete port requires the remaining functionality above, tested through real supported Flash/Origins/Unity/Nitro connections, existing Java extensions including G-Presets, reconnect, encrypted traffic, certificate/proxy cleanup, settings migration and the complete UI workflow. Passing a finite protocol oracle or compiling an executable does not establish whole-application parity.

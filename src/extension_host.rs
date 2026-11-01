@@ -24,6 +24,7 @@ struct Peer {
     id:u64,info:ExtensionInfo,approved:AtomicBool,closed:Arc<AtomicBool>,output:SyncSender<Packet>,responses:Mutex<Receiver<Message>>,
 }
 struct Shared {
+    language:Mutex<String>,
     peers:Mutex<BTreeMap<u64,Arc<Peer>>>,tokens:Mutex<HashMap<String,(String,Instant)>>,connection:Mutex<Option<ConnectionDetails>>,
     injections:SyncSender<(Direction,Packet)>,events:SyncSender<HostEvent>,stop:AtomicBool,next_id:AtomicU64,flags:Vec<String>,
 }
@@ -35,7 +36,7 @@ impl ExtensionHost {
         if !address.ip().is_loopback(){return Err(io::Error::new(io::ErrorKind::InvalidInput,"extension host must bind loopback"));}
         let listener=TcpListener::bind(address)?;listener.set_nonblocking(true)?;let address=listener.local_addr()?;
         let (events,event_rx)=mpsc::sync_channel(1024);let (injections,injection_rx)=mpsc::sync_channel(256);
-        let shared=Arc::new(Shared {peers:Mutex::new(BTreeMap::new()),tokens:Mutex::new(HashMap::new()),connection:Mutex::new(None),injections,events,stop:AtomicBool::new(false),next_id:AtomicU64::new(1),flags});
+        let shared=Arc::new(Shared {language:Mutex::new("en".into()),peers:Mutex::new(BTreeMap::new()),tokens:Mutex::new(HashMap::new()),connection:Mutex::new(None),injections,events,stop:AtomicBool::new(false),next_id:AtomicU64::new(1),flags});
         let actor=shared.clone();
         let worker=thread::spawn(move || {
             let mut children=Vec::new();
@@ -58,6 +59,11 @@ impl ExtensionHost {
     }
     pub fn extensions(&self)->Vec<ExtensionView> {
         self.shared.peers.lock().map(|p|p.values().map(|p|ExtensionView {id:p.id,info:p.info.clone(),approved:p.approved.load(Ordering::Acquire)}).collect()).unwrap_or_default()
+    }
+    pub fn set_language(&self,language:&str)->io::Result<()> {
+        if !crate::i18n::LANGUAGES.iter().any(|(code,_)|*code==language){return Err(io::Error::new(io::ErrorKind::InvalidInput,"unsupported language"));}
+        *self.shared.language.lock().map_err(|_|io::Error::other("language lock poisoned"))?=language.into();
+        self.broadcast(extension::update_host_info(language).map_err(io::Error::other)?);Ok(())
     }
     pub fn approve(&self,id:u64)->io::Result<()> {
         let peer=self.peer(id)?;initialize(&self.shared,&peer)
@@ -134,7 +140,8 @@ fn send(sender:&SyncSender<Packet>,packet:Packet)->io::Result<()> {sender.try_se
 fn initialize(shared:&Shared,peer:&Peer)->io::Result<()> {
     if peer.approved.swap(true,Ordering::AcqRel){return Ok(());}
     let connection=shared.connection.lock().map_err(|_|io::Error::other("connection lock poisoned"))?.clone();
-    send(&peer.output,extension::init(connection.is_some()).map_err(io::Error::other)?)?;
+    let language=shared.language.lock().map_err(|_|io::Error::other("language lock poisoned"))?.clone();
+    send(&peer.output,extension::init_with_language(connection.is_some(),&language).map_err(io::Error::other)?)?;
     if let Some(c)=connection {send(&peer.output,c.packet()?)?;}
     let _=shared.events.try_send(HostEvent::Connected {id:peer.id,info:peer.info.clone()});Ok(())
 }

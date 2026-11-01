@@ -34,3 +34,11 @@ fn connect(host:&ExtensionHost,events:&std::sync::mpsc::Receiver<HostEvent>)->(T
     let text="TOSERVER\t77\tSameName\thash1\ti\ttest\nTOCLIENT\t78\tSameName\thash2\ts\ttest\n";
     let db=PacketInfoManager::from_tsv("TEST",text).unwrap();assert_eq!(db.by_name(Direction::ToClient,"SameName").unwrap().header,78);let mut packet=Packet::new(0);db.append_to(&mut packet).unwrap();let decoded=PacketInfoManager::read_from("TEST",&mut packet).unwrap();assert_eq!(decoded.entries(),db.entries());
 }
+#[test] fn language_is_in_host_info_and_updates_existing_extensions() {
+    let (host,events)=ExtensionHost::start("127.0.0.1:0".parse().unwrap(),Vec::new()).unwrap();host.set_language("fr").unwrap();
+    let mut stream=TcpStream::connect(host.address).unwrap();stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
+    read_frame(&mut stream).unwrap();write_frame(&mut stream,&extension::info_response(&info()).unwrap()).unwrap();
+    let id=match events.recv_timeout(Duration::from_secs(2)).unwrap(){HostEvent::Pending {id,..}=>id,e=>panic!("{e:?}")};host.approve(id).unwrap();
+    let mut init=read_frame(&mut stream).unwrap();assert_eq!(init.header(),7);assert!(!init.read_bool().unwrap());init.read_string().unwrap();init.read_string().unwrap();assert_eq!(init.read_i32().unwrap(),1);assert_eq!(init.read_string().unwrap(),"language");assert_eq!(init.read_string().unwrap(),"fr");
+    host.set_language("de").unwrap();let mut update=read_frame(&mut stream).unwrap();assert_eq!(update.header(),10);update.read_string().unwrap();update.read_string().unwrap();assert_eq!(update.read_i32().unwrap(),1);assert_eq!(update.read_string().unwrap(),"language");assert_eq!(update.read_string().unwrap(),"de");host.stop();
+}

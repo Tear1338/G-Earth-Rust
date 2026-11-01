@@ -23,7 +23,8 @@ impl Settings {
     }
     pub fn get(&self,key:&str)->&str {self.values.get(key).map(String::as_str).unwrap_or("")}
     pub fn read(path:&Path)->io::Result<Self> {
-        let bytes=fs::read(path)?;if bytes.len()>MAX_SETTINGS{return Err(io::Error::new(io::ErrorKind::InvalidData,"settings file too large"));}
+        use std::io::Read;
+        let mut bytes=Vec::new();fs::File::open(path)?.take(MAX_SETTINGS as u64+1).read_to_end(&mut bytes)?;if bytes.len()>MAX_SETTINGS{return Err(io::Error::new(io::ErrorKind::InvalidData,"settings file too large"));}
         let value:Value=serde_json::from_slice(&bytes).map_err(io::Error::other)?;Self::from_json(value)
     }
     fn from_json(value:Value)->io::Result<Self> {

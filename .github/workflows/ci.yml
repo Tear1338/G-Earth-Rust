@@ -90,3 +90,29 @@ jobs:
           GEARTH_JAVA_ORACLE: /tmp/java-oracle.txt
       - name: Exercise an actual beta-29 Java extension against Rust
         run: cargo test --locked --test java_extension -- --ignored
+  publish-development:
+    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[build]')
+    needs: [core, desktop, java-compatibility]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Publish tested development downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BUILD_TAG: development-${{ github.run_number }}
+          BUILD_COMMIT: ${{ github.sha }}
+        run: |
+          cd artifacts/formatted-source-and-lockfile
+          zip -qr ../../formatted-source-and-lockfile.zip .
+          cd ../..
+          cp artifacts/G-Earth-Rust-Windows-development/gearth-desktop.exe G-Earth-Rust-Windows.exe
+          cp artifacts/gearth-cli-windows-latest/gearth-rust.exe G-Earth-Rust-CLI-Windows.exe
+          cp artifacts/gearth-cli-ubuntu-latest/gearth-rust gearth-cli-linux
+          sha256sum G-Earth-Rust-Windows.exe G-Earth-Rust-CLI-Windows.exe gearth-cli-linux formatted-source-and-lockfile.zip > SHA256SUMS.txt
+          printf '%s\n' 'Development build of the incomplete Rust port. Read docs/PARITY.md before use. This is not a complete replacement for G-Earth beta-29; official client attachment and Nitro/Unity integration are outstanding. No performance superiority has been established.' > release-notes.txt
+          gh release create "$BUILD_TAG" --target "$BUILD_COMMIT" --title "Rust development build $BUILD_TAG" --prerelease --notes-file release-notes.txt G-Earth-Rust-Windows.exe G-Earth-Rust-CLI-Windows.exe gearth-cli-linux formatted-source-and-lockfile.zip SHA256SUMS.txt

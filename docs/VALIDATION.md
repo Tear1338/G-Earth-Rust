@@ -1,27 +1,32 @@
 # Validation record
 
-Run: https://github.com/Tear1338/G-Earth-Rust/actions/runs/41251832791
-
-Tested implementation commit: `ee66c4fe8455d3e596d2621ec2e18f9b4a8f00e5`.
+Expanded transport and extension implementation validated at commit `1ece5611c846c04c919ce8ffc272df316115f8a2`:
+https://github.com/Tear1338/G-Earth-Rust/actions/runs/41255104561
 
 | Check | Result |
 |---|---|
-| Core on Ubuntu | Passed |
-| Core on Windows | Passed |
-| Clippy on both core builds, warnings rejected | Passed |
-| Optimized CLI builds on Windows/Linux | Passed |
-| Windows desktop release compilation | Passed |
-| Byte comparison against actual beta-29 Java API | Passed for the finite oracle vector set |
+| Core tests on Ubuntu and Windows | Passed |
+| Core Clippy, warnings rejected | Passed |
+| Optimized CLI on Ubuntu and Windows | Compiled |
+| Windows desktop | Compiled |
+| Actual beta-29 Java API wire oracle | Passed |
+| Original Java Bobba crypto oracle | Passed |
+| Actual beta-29 Java extension fixture | Passed |
 | Native desktop visual test | Not performed |
-| Official Habbo client connection | Not performed; providers missing |
-| Existing Java extension / G-Presets | Not performed; host missing |
-| Whole-application parity | Incomplete; see PARITY.md |
-| Performance versus the Java application | Not measured |
+| Official client/hotel connection | Not performed |
+| Existing G-Presets binary | Not performed |
+| Complete application equivalence | Incomplete; see PARITY.md |
+| Java-versus-Rust performance | Not measured |
 
-Core coverage includes 22 packet/encoding/crypto/rules/scheduler tests and five TCP loopback tests. The Java oracle is a separate CI job and is explicitly ignored in ordinary core test runs. It checks 18 emitted vectors covering packets, Latin-1, numeric fields, HMessage serialization, VL64 values and a B64 value.
+The differential oracle compares 35 vectors: 18 original EVA/encoding vectors, four WEDGIE packet/message vectors and 13 Origins DH/HKDF/nonce/ChaCha vectors. The Java API comes from the pinned upstream Windows release, whose SHA-256 is verified before execution. BobbaCrypto classes are compiled from the pinned upstream commit and use the upstream release's Bouncy Castle dependency.
 
-The TCP tests exercise both directions, concurrent injection, blocking, replacement, reconnection, truncated frames, cancellation and logging backpressure. The Windows blocking-reader failures were corrected by using a nonblocking event loop with bounded output queues and explicit partial-write offsets.
+The Java fixture extends the actual beta-29 Extension class. It is launched with an authenticated file-bound token, receives the packet identifier database, injects a named packet, blocks a selected value and mutates traffic in both directions through an actual loopback TCP relay.
 
-The source was formatted with rustfmt, and Cargo.lock records the dependency resolution used by the build. Subsequent CI runs enforce formatting and use locked dependencies.
+Additional tests cover fragmented/coalesced framing, cancellation, reconnect, logging backpressure, independent RC4 counters after block/injection, complete simulated encrypted Origins negotiation, byte-by-byte encrypted input fragmentation, SOCKS authentication/remote DNS, extension approval/replay/timeouts, expression syntax, atomic settings/migration and language resources.
 
-Passing these tests does not establish complete equivalence with G-Earth beta-29. The Windows executable is a development build.
+Packet-provider parsing and extension language-update tests were added after the run above; their results must be checked in the latest Actions run before use:
+https://github.com/Tear1338/G-Earth-Rust/actions
+
+Ordinary core runs skip the two environment-dependent Java tests; the dedicated Java job runs them explicitly. CI generates development artifacts. Temporary bootstrap CI generates Cargo.lock and formatted source; after importing those artifacts, validation is switched back to locked dependencies and formatting checks.
+
+Passing these checks is finite protocol evidence, not a complete application port.

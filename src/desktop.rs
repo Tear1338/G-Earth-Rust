@@ -96,6 +96,7 @@ struct Desktop {
     logs_bytes:usize,
     replacement_expression:String,
     origins:bool,
+    packet_download:Option<Receiver<std::io::Result<PacketInfoManager>>>,
 }
 struct LogRow {message:Message,expression:String,search:String,bytes:usize}
 impl Default for Desktop {
@@ -130,7 +131,7 @@ impl Default for Desktop {
             extension_host,extension_events,extension_runtime:find_java().to_string_lossy().into_owned(),extension_path:String::new(),extension_processes:Vec::new(),extension_console:VecDeque::new(),
             hotel_version:String::new(),client_identifier:String::new(),packet_database:String::new(),packet_info:PacketInfoManager::default(),
             socks_proxy:String::new(),socks_user:String::new(),socks_password:String::new(),outgoing_key:String::new(),incoming_key:String::new(),
-            settings:Settings::default(),settings_path:Settings::default_path(),settings_loaded:false,legacy_cache_path:String::new(),dark_mode:false,language:"en".into(),i18n:I18n::new("en"),notepad:String::new(),logs_bytes:0,replacement_expression:String::new(),origins:false,
+            settings:Settings::default(),settings_path:Settings::default_path(),settings_loaded:false,legacy_cache_path:String::new(),dark_mode:false,language:"en".into(),i18n:I18n::new("en"),notepad:String::new(),logs_bytes:0,replacement_expression:String::new(),origins:false,packet_download:None,
         };
         desktop.load_settings();desktop
     }
@@ -147,6 +148,13 @@ impl Desktop {
         }
     }
     fn poll(&mut self) {
+        if let Some(download)=&self.packet_download {
+            match download.try_recv(){
+                Ok(result)=>{match result{Ok(database)=>{self.hotel_version=database.version.clone();self.status=format!("Loaded {} packet identifiers",database.entries().len());self.packet_info=database;self.packet_database.clear();},Err(e)=>self.status=format!("Packet lookup failed: {e}")};self.packet_download=None;},
+                Err(std::sync::mpsc::TryRecvError::Disconnected)=>{self.status="Packet lookup worker stopped".into();self.packet_download=None;},
+                Err(std::sync::mpsc::TryRecvError::Empty)=>{},
+            }
+        }
         if let Some(events)=&self.extension_events {
             for event in events.try_iter().take(256) {
                 let line=match event {
@@ -218,7 +226,7 @@ impl Desktop {
             });
         egui::CollapsingHeader::new("Connection options").show(ui,|ui|{
             egui::Grid::new("connection-options").show(ui,|ui|{
-                for (label,value) in [("Hotel version",&mut self.hotel_version),("Client identifier",&mut self.client_identifier),("Packet identifiers (.tsv)",&mut self.packet_database),("SOCKS5 proxy",&mut self.socks_proxy),("SOCKS username",&mut self.socks_user)] {ui.label(label);ui.text_edit_singleline(value);ui.end_row();}
+                for (label,value) in [("Hotel version",&mut self.hotel_version),("Client identifier",&mut self.client_identifier),("Packet identifiers (.tsv / .json)",&mut self.packet_database),("SOCKS5 proxy",&mut self.socks_proxy),("SOCKS username",&mut self.socks_user)] {ui.label(label);ui.text_edit_singleline(value);ui.end_row();}
                 ui.label("SOCKS password");ui.add(egui::TextEdit::singleline(&mut self.socks_password).password(true));ui.end_row();
                 ui.label("Outgoing RC4 key (hex)");ui.add(egui::TextEdit::singleline(&mut self.outgoing_key).password(true));ui.end_row();
                 ui.label("Incoming RC4 key (hex)");ui.add(egui::TextEdit::singleline(&mut self.incoming_key).password(true));ui.end_row();
@@ -226,6 +234,13 @@ impl Desktop {
             ui.label("Leave keys blank for plaintext. Explicit keys apply from the first byte of the TCP stream.");
         });
         ui.add_space(14.0);
+        ui.horizontal(|ui|{
+            if ui.add_enabled(self.relay.is_none()&&self.packet_download.is_none(),egui::Button::new("Load packet names from Sulek")).clicked(){
+                let version=self.hotel_version.clone();let origins=self.origins;let (send,receive)=std::sync::mpsc::channel();self.packet_download=Some(receive);self.status="Loading packet identifiers...".into();
+                std::thread::spawn(move ||{let _=send.send(PacketInfoManager::fetch_sulek(&version,origins));});
+            }
+            ui.label(format!("{} packet identifiers",self.packet_info.entries().len()));
+        });
         if self.relay.is_none() {
             if ui.button("Start listening").clicked() {
                 match self.listen.parse() {
@@ -505,7 +520,7 @@ impl eframe::App for Desktop {
                 if ui.button("Save settings").clicked(){self.save_settings();}
                 if ui.button("Reload settings").clicked(){self.load_settings();}
                 ui.checkbox(&mut self.dark_mode,"Dark theme");
-                let before=self.language.clone();egui::ComboBox::from_id_salt("language").selected_text(&self.language).show_ui(ui,|ui|{for (code,name) in LANGUAGES{ui.selectable_value(&mut self.language,(*code).into(),*name);}});if before!=self.language{self.i18n=I18n::new(&self.language);}
+                let before=self.language.clone();egui::ComboBox::from_id_salt("language").selected_text(&self.language).show_ui(ui,|ui|{for (code,name) in LANGUAGES{ui.selectable_value(&mut self.language,(*code).into(),*name);}});if before!=self.language{self.i18n=I18n::new(&self.language);if let Some(host)=&self.extension_host{if let Err(e)=host.set_language(&self.language){self.status=e.to_string();}}}
             });
             ui.horizontal_wrapped(|ui| {
                 for (tab, name) in [
@@ -555,7 +570,7 @@ impl Desktop {
     }
     fn apply_settings(&mut self) {
         for (key,target) in [("listen",&mut self.listen),("remote",&mut self.remote),("hotel_version",&mut self.hotel_version),("client_identifier",&mut self.client_identifier),("packet_database",&mut self.packet_database),("socks_proxy",&mut self.socks_proxy),("socks_user",&mut self.socks_user),("extension_runtime",&mut self.extension_runtime),("notepad",&mut self.notepad),("language",&mut self.language)] {if let Some(value)=self.settings.values.get(key){*target=value.clone();}}
-        self.origins=self.settings.booleans.get("origins").copied().unwrap_or_else(||self.settings.get("client_type")=="SHOCKWAVE");self.dark_mode=self.settings.booleans.get("dark_mode").copied().unwrap_or(false);self.outgoing=self.settings.booleans.get("outgoing").copied().unwrap_or(true);self.incoming=self.settings.booleans.get("incoming").copied().unwrap_or(true);self.i18n=I18n::new(&self.language);self.update_rules();
+        self.origins=self.settings.booleans.get("origins").copied().unwrap_or_else(||self.settings.get("client_type")=="SHOCKWAVE");self.dark_mode=self.settings.booleans.get("dark_mode").copied().unwrap_or(false);self.outgoing=self.settings.booleans.get("outgoing").copied().unwrap_or(true);self.incoming=self.settings.booleans.get("incoming").copied().unwrap_or(true);self.i18n=I18n::new(&self.language);if let Some(host)=&self.extension_host{if let Err(e)=host.set_language(&self.language){self.status=e.to_string();}}self.update_rules();
     }
     fn save_settings(&mut self) {
         for (key,value) in [("listen",&self.listen),("remote",&self.remote),("hotel_version",&self.hotel_version),("client_identifier",&self.client_identifier),("packet_database",&self.packet_database),("socks_proxy",&self.socks_proxy),("socks_user",&self.socks_user),("extension_runtime",&self.extension_runtime),("notepad",&self.notepad),("language",&self.language)] {self.settings.values.insert(key.into(),value.clone());}
@@ -564,7 +579,12 @@ impl Desktop {
     }
     fn packet_format(&self,direction:Direction)->PacketFormat {if self.origins{if direction==Direction::ToServer{PacketFormat::WedgieOutgoing}else{PacketFormat::WedgieIncoming}}else{PacketFormat::EvaWire}}
     fn relay_options(&mut self)->std::io::Result<RelayOptions> {
-        self.packet_info=if self.packet_database.trim().is_empty(){PacketInfoManager::default()}else{PacketInfoManager::from_tsv(&self.hotel_version,&std::fs::read_to_string(&self.packet_database)?).map_err(std::io::Error::other)?};
+        if !self.packet_database.trim().is_empty(){
+            use std::io::Read;
+            let mut bytes=Vec::new();std::fs::File::open(&self.packet_database)?.take(8*1024*1024+1).read_to_end(&mut bytes)?;
+            if bytes.len()>8*1024*1024{return Err(std::io::Error::other("packet database exceeds 8 MiB"));}
+            self.packet_info=if Path::new(&self.packet_database).extension().is_some_and(|s|s.eq_ignore_ascii_case("json")){PacketInfoManager::from_json(&self.hotel_version,&bytes)}else{PacketInfoManager::from_tsv(&self.hotel_version,std::str::from_utf8(&bytes).map_err(std::io::Error::other)?)}.map_err(std::io::Error::other)?;
+        }else if self.packet_info.version!=self.hotel_version{self.packet_info=PacketInfoManager::default();}
         let cipher=|key:&str|->std::io::Result<Option<Rc4>>{if key.trim().is_empty(){Ok(None)}else{Rc4::new(&expression::parse_hex(key).map_err(std::io::Error::other)?).map(Some).map_err(std::io::Error::other)}};
         let (host,port)=self.remote.rsplit_once(':').ok_or_else(||std::io::Error::other("Remote address requires host:port"))?;
         let connection=ConnectionDetails {host:host.trim_start_matches('[').trim_end_matches(']').into(),port:port.parse().map_err(std::io::Error::other)?,version:self.hotel_version.clone(),identifier:self.client_identifier.clone(),client_type:if self.origins{"SHOCKWAVE".into()}else{"FLASH".into()},packets:self.packet_info.clone()};

@@ -1,5 +1,4 @@
 //! Network-extension codec matching beta-29's NetworkExtensionCodec.java.
-//! This is a codec, not a claim that existing Java extensions can be hosted yet.
 use crate::packet::{error, Direction, Message, Packet, Result, PacketFormat};
 
 pub const EVA_WIRE: i32 = 0;
@@ -107,13 +106,18 @@ pub fn info_response(info: &ExtensionInfo) -> Result<Packet> {
     Ok(p)
 }
 pub fn init(connected: bool) -> Result<Packet> {
+    init_with_language(connected,"en")
+}
+pub fn init_with_language(connected:bool,language:&str)->Result<Packet> {
     let mut p = Packet::new(7);
-    p.put_bool(connected)?
-        .put_string("G-Earth-Rust")?
-        .put_string(env!("CARGO_PKG_VERSION"))?
-        .put_i32(0)?;
+    p.put_bool(connected)?;
+    append_host_info(&mut p,language)?;
     Ok(p)
 }
+fn append_host_info(p:&mut Packet,language:&str)->Result<()> {
+    p.put_string("G-Earth-Rust")?.put_string(env!("CARGO_PKG_VERSION"))?.put_i32(1)?.put_string("language")?.put_string(language)?;Ok(())
+}
+pub fn update_host_info(language:&str)->Result<Packet> {let mut p=Packet::new(10);append_host_info(&mut p,language)?;Ok(p)}
 pub fn intercept(message: &Message) -> Result<Packet> {
     let mut p = Packet::new(3);
     p.put_long_string(&message.stringify())?.put_i32(message.packet.format().id())?;
