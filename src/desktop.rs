@@ -462,7 +462,7 @@ impl Desktop {
                 egui::ComboBox::from_id_salt("flash-process").selected_text(if self.flash_pid==0{"Automatic (detect connecting client)".into()}else{format!("PID {}",self.flash_pid)}).show_ui(ui,|ui|{ui.selectable_value(&mut self.flash_pid,0,"Automatic (detect connecting client)");for p in &self.client_processes{ui.selectable_value(&mut self.flash_pid,p.pid,format!("{} - PID {}",p.executable,p.pid));}});
             });
             if ui.add_enabled(self.relay.is_none()&&self.attachment_pending.is_none(),egui::Button::new("Attach official client")).clicked(){
-                let port=if self.origins{40001}else{30000};self.remote=format!("{}:{port}",self.attachment_host);self.flash_auto=!self.origins;
+                let port=if self.origins{40001}else{30000};self.remote=format!("{}:{port}",self.attachment_host);self.flash_auto = !self.origins;
                 match self.relay_options(){Ok(options)=>{let host=self.attachment_host.clone();let path=gearth_rust::attachment::HostsRedirect::system_path();let (send,receive)=std::sync::mpsc::channel();self.attachment_pending=Some(receive);self.status="Resolving hotel and preparing the local listener...".into();self.attachment_worker=Some(std::thread::spawn(move||{let _=send.send(gearth_rust::attachment::Attachment::start(&host,port,options,&path));}));},Err(e)=>self.status=e.to_string()}
             }
             ui.label("Hosts-file access requires administrator rights. Start listening before reconnecting the client. Raw-IP clients are not supported yet.");
