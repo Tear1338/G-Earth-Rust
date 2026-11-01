@@ -543,6 +543,7 @@ impl Desktop {
         if self.system_proxy&&!gearth_platform::certificate_trusted(&self.public_certificate.as_ref().unwrap().1)? {return Err(std::io::Error::other("Install the displayed public certificate before enabling the Windows proxy"));}
         let mut options=WebOptions::new(self.listen.parse().map_err(std::io::Error::other)?,self.identity_directory());
         options.packet_info=self.packet_info.clone();options.extensions=self.extension_host.clone();
+        options.hotels=gearth_rust::nitro::Hotels::load(&self.settings_path.parent().unwrap_or_else(||Path::new(".")).join("nitro.json"))?.with_defaults();
         options.websocket_urls=self.nitro_urls.lines().map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect();
         let (proxy,events)=WebProxy::start(options)?;
         if self.system_proxy {self.proxy_guard=Some(gearth_platform::SystemProxyGuard::activate(proxy.address)?);}
@@ -566,7 +567,7 @@ impl Desktop {
         }
         egui::CollapsingHeader::new("Nitro options").show(ui,|ui|{
             ui.label("Packet identifiers (.tsv / .json)");ui.text_edit_singleline(&mut self.packet_database);
-            ui.label("Optional exact game WebSocket URLs, one per line. Otherwise the game is recognized by its first outgoing packet (4000).");ui.add(egui::TextEdit::multiline(&mut self.nitro_urls).desired_rows(3));
+            ui.label("Optional game WebSocket URLs (final * accepts a prefix), one per line. Otherwise the game is recognized by its first outgoing packet (4000).");ui.add(egui::TextEdit::multiline(&mut self.nitro_urls).desired_rows(3));
             ui.label("With the Windows proxy disabled, configure your test browser to use the local address and trust the public certificate in that browser.");
         });
         ui.horizontal(|ui|{

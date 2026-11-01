@@ -19,3 +19,5 @@ pub mod shockwave;
 pub mod socks;
 #[cfg(feature="web")] pub mod web_ca;
 #[cfg(feature="web")] pub mod web_proxy;
+
+#[cfg(feature="web")] pub mod nitro;

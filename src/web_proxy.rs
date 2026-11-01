@@ -1,18 +1,18 @@
 //! HTTP/TLS proxy and Nitro WebSocket packet pipeline. No OS proxy/trust changes.
-use crate::{extension_host::{ConnectionDetails,ExtensionHost},packet::{Direction,FrameDecoder,Message,Packet,PacketFormat},packet_info::PacketInfoManager,relay::Event,rules::Rules,web_ca::ProxyIdentity};
+use crate::{nitro::{Hotels,Modifier,Decoded},extension_host::{ConnectionDetails,ExtensionHost},packet::{Direction,FrameDecoder,Message,Packet,PacketFormat},packet_info::PacketInfoManager,relay::Event,rules::Rules,web_ca::ProxyIdentity};
 use hudsucker::{futures::{Sink,SinkExt,Stream,StreamExt},hyper::{Request,Uri},rustls::{self,crypto::aws_lc_rs,pki_types::CertificateDer},tokio_tungstenite::{Connector,tungstenite::{Message as WsMessage,Error as WsError}},Body,HttpContext,HttpHandler,Proxy,WebSocketContext,WebSocketHandler};
 use std::{collections::HashMap,io,net::{SocketAddr,TcpListener},path::PathBuf,sync::{Arc,Mutex,atomic::{AtomicBool,AtomicI32,AtomicUsize,Ordering},mpsc::{self,Receiver,SyncSender}},thread::{self,JoinHandle},time::Duration};
 use tokio::sync::{mpsc as asynchronous,oneshot,watch,Notify};
 pub const NITRO_REVISION:&str="PRODUCTION-201611291003-338511768";
 const MAX_QUEUED:usize=32*1024*1024;
 #[derive(Clone)]
-pub struct WebOptions {pub listen:SocketAddr,pub identity_directory:PathBuf,pub packet_info:PacketInfoManager,pub extensions:Option<Arc<ExtensionHost>>,pub extra_roots:Vec<Vec<u8>>,pub websocket_urls:Vec<String>}
-impl WebOptions {pub fn new(listen:SocketAddr,identity_directory:PathBuf)->Self{Self {listen,identity_directory,packet_info:PacketInfoManager::default(),extensions:None,extra_roots:Vec::new(),websocket_urls:Vec::new()}}}
+pub struct WebOptions {pub listen:SocketAddr,pub identity_directory:PathBuf,pub packet_info:PacketInfoManager,pub extensions:Option<Arc<ExtensionHost>>,pub extra_roots:Vec<Vec<u8>>,pub websocket_urls:Vec<String>,pub hotels:Hotels}
+impl WebOptions {pub fn new(listen:SocketAddr,identity_directory:PathBuf)->Self{Self {listen,identity_directory,packet_info:PacketInfoManager::default(),extensions:None,extra_roots:Vec::new(),websocket_urls:Vec::new(),hotels:Hotels::beta29()}}}
 #[derive(Clone,PartialEq,Eq,Hash)]
 struct PeerKey {client:SocketAddr,uri:String}
-struct Peer {key:PeerKey,active:AtomicBool,ready:AtomicBool,closed:AtomicBool,notify:Notify,queued:AtomicUsize,finished:AtomicUsize,senders:[asynchronous::Sender<Packet>;2],receivers:Mutex<[Option<asynchronous::Receiver<Packet>>;2]>,stop:watch::Sender<bool>}
+struct Peer {key:PeerKey,modifier:tokio::sync::Mutex<Modifier>,active:AtomicBool,ready:AtomicBool,closed:AtomicBool,notify:Notify,queued:AtomicUsize,finished:AtomicUsize,senders:[asynchronous::Sender<Packet>;2],receivers:Mutex<[Option<asynchronous::Receiver<Packet>>;2]>,stop:watch::Sender<bool>}
 impl Peer {
-    fn new(key:PeerKey)->Self{let (out,out_rx)=asynchronous::channel(128);let (incoming,in_rx)=asynchronous::channel(128);let (stop,_)=watch::channel(false);Self {key,active:AtomicBool::new(false),ready:AtomicBool::new(false),closed:AtomicBool::new(false),notify:Notify::new(),queued:AtomicUsize::new(0),finished:AtomicUsize::new(0),senders:[out,incoming],receivers:Mutex::new([Some(out_rx),Some(in_rx)]),stop}}
+    fn new(key:PeerKey,modifier:Modifier)->Self{let (out,out_rx)=asynchronous::channel(128);let (incoming,in_rx)=asynchronous::channel(128);let (stop,_)=watch::channel(false);Self {key,modifier:tokio::sync::Mutex::new(modifier),active:AtomicBool::new(false),ready:AtomicBool::new(false),closed:AtomicBool::new(false),notify:Notify::new(),queued:AtomicUsize::new(0),finished:AtomicUsize::new(0),senders:[out,incoming],receivers:Mutex::new([Some(out_rx),Some(in_rx)]),stop}}
     fn enqueue(&self,direction:Direction,packet:Packet)->io::Result<()> {
         if !self.active.load(Ordering::Acquire)||self.closed.load(Ordering::Acquire){return Err(io::Error::new(io::ErrorKind::NotConnected,"no active Nitro client"));}
         if packet.format()!=PacketFormat::EvaWire{return Err(io::Error::other("Nitro injection requires EVA_WIRE"));}
@@ -23,7 +23,7 @@ impl Peer {
 fn side(direction:Direction)->usize{if direction==Direction::ToServer{0}else{1}}
 struct Shared {options:WebOptions,peers:Mutex<HashMap<PeerKey,Arc<Peer>>>,active:Mutex<Option<Arc<Peer>>>,rules:Mutex<Rules>,pipeline:Mutex<()>,events:SyncSender<Event>,index:AtomicI32,stop:AtomicBool}
 impl Shared {
-    fn peer(&self,key:PeerKey)->io::Result<Arc<Peer>>{let mut peers=self.peers.lock().map_err(|_|io::Error::other("web peer lock poisoned"))?;if let Some(peer)=peers.get(&key){return Ok(peer.clone());}if peers.len()>=128{return Err(io::Error::other("too many pending WebSocket connections"));}let peer=Arc::new(Peer::new(key.clone()));peers.insert(key,peer.clone());Ok(peer)}
+    fn peer(&self,key:PeerKey)->io::Result<Arc<Peer>>{let mut peers=self.peers.lock().map_err(|_|io::Error::other("web peer lock poisoned"))?;if let Some(peer)=peers.get(&key){return Ok(peer.clone());}if peers.len()>=128{return Err(io::Error::other("too many pending WebSocket connections"));}let kind=self.options.hotels.find(&key.uri).map(|h|h.kind.clone()).unwrap_or(crate::nitro::HotelKind::Plain);let peer=Arc::new(Peer::new(key.clone(),Modifier::new(&kind)?));peers.insert(key,peer.clone());Ok(peer)}
     fn close(&self,peer:&Peer){if peer.closed.swap(true,Ordering::AcqRel){return;}peer.stop.send_replace(true);peer.notify.notify_waiters();if let Ok(mut active)=self.active.lock(){if active.as_ref().is_some_and(|p|p.key==peer.key){*active=None;if let Some(host)=&self.options.extensions{host.end_connection();}let _=self.events.try_send(Event::Disconnected);}}}
     fn finish(&self,peer:&Peer){self.close(peer);if peer.finished.fetch_add(1,Ordering::AcqRel)==1{if let Ok(mut peers)=self.peers.lock(){peers.remove(&peer.key);}}}
     fn close_all(&self){let peers=self.peers.lock().map(|p|p.values().cloned().collect::<Vec<_>>()).unwrap_or_default();for peer in peers{self.close(&peer);}}
@@ -69,19 +69,23 @@ impl WebSocketHandler for Handler {
                     _=tick.tick(), if direction==Direction::ToServer&&peer.ready.load(Ordering::Acquire)=>{
                         if direction==Direction::ToServer&&peer.ready.load(Ordering::Acquire){if let Some(host)=&self.0.options.extensions{for (direction,packet) in host.take_injections(){peer.enqueue(direction,packet)?;}}}
                     },
-                    packet=injections.recv()=>{let Some(packet)=packet else{break;};peer.queued.fetch_sub(packet.bytes().len(),Ordering::AcqRel);if let Some(packet)=self.0.packet(direction,packet,true).await?{sink.send(WsMessage::Binary(packet.bytes().to_vec().into())).await.map_err(io::Error::other)?;}},
+                    packet=injections.recv()=>{let Some(packet)=packet else{break;};peer.queued.fetch_sub(packet.bytes().len(),Ordering::AcqRel);let mut modifier=peer.modifier.lock().await;if let Some(packet)=self.0.packet(direction,packet,true).await?{let bytes=modifier.encode(direction,packet.bytes().to_vec())?;sink.send(WsMessage::Binary(bytes.into())).await.map_err(io::Error::other)?;}},
                     message=stream.next()=>{
                         let Some(message)=message else{break;};let message=message.map_err(io::Error::other)?;
                         if let WsMessage::Binary(bytes)=message {
                             if direction==Direction::ToServer&&!decided {
-                                decided=true;let configured=self.0.options.websocket_urls.iter().any(|u|u==&uri.to_string());
+                                decided=true;let url=uri.to_string();let configured=self.0.options.hotels.find(&url).is_some()||self.0.options.websocket_urls.iter().any(|u|{let url=url.split('?').next().unwrap_or(&url);match u.strip_suffix('*'){Some(prefix)=>url.starts_with(prefix),None=>u==url}});
                                 let hello=Packet::from_bytes(bytes.to_vec()).is_ok_and(|p|p.header()==4000);
                                 if configured||hello{self.0.activate(&peer,&uri).await?;}
                             }
                             if peer.active.load(Ordering::Acquire){
                                 while !peer.ready.load(Ordering::Acquire)&&!peer.closed.load(Ordering::Acquire){let notified=peer.notify.notified();if peer.ready.load(Ordering::Acquire)||peer.closed.load(Ordering::Acquire){break;}notified.await;}
                                 if peer.closed.load(Ordering::Acquire){break;}
-                                for chunk in bytes.chunks(65536){decoder.push(chunk).map_err(io::Error::other)?;while let Some(packet)=decoder.next_packet().map_err(io::Error::other)?{if let Some(packet)=self.0.packet(direction,packet,false).await?{sink.send(WsMessage::Binary(packet.bytes().to_vec().into())).await.map_err(io::Error::other)?;}}}
+                                let mut modifier=peer.modifier.lock().await;
+                                match modifier.decode(direction,bytes.to_vec())? {
+                                    Decoded::Bypass(bytes)=>sink.send(WsMessage::Binary(bytes.into())).await.map_err(io::Error::other)?,
+                                    Decoded::PacketBytes(bytes)=>for chunk in bytes.chunks(65536){decoder.push(chunk).map_err(io::Error::other)?;while let Some(packet)=decoder.next_packet().map_err(io::Error::other)?{if let Some(packet)=self.0.packet(direction,packet,false).await?{let bytes=modifier.encode(direction,packet.bytes().to_vec())?;sink.send(WsMessage::Binary(bytes.into())).await.map_err(io::Error::other)?;}}},
+                                }
                             }else{sink.send(WsMessage::Binary(bytes)).await.map_err(io::Error::other)?;}
                         }else{let close=message.is_close();sink.send(message).await.map_err(io::Error::other)?;if close{break;}}
                     },

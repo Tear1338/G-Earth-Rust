@@ -163,6 +163,6 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo generate-lockfile
       - run: cargo fmt --all
-      - run: cargo test --locked --features web --test web_proxy -- --nocapture
+      - run: cargo test --locked --features web --all-targets -- --nocapture
         timeout-minutes: 8
       - run: cargo clippy --locked --features web --all-targets -- -D warnings
