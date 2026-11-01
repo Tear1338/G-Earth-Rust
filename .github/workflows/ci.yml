@@ -178,5 +178,6 @@ jobs:
       - run: cargo fmt --all
       - run: cargo test --locked --features web --all-targets -- --nocapture
         timeout-minutes: 8
+      - run: cargo test --locked --features web --test unity_browser -- --ignored --nocapture
       - run: node tests/unity_wasm_runtime.mjs "$GEARTH_UNITY_FIXTURE_DIR"
       - run: cargo clippy --locked --features web --all-targets -- -D warnings

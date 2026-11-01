@@ -590,7 +590,7 @@ impl Desktop {
         let http=WebOptions::new(self.listen.parse().map_err(std::io::Error::other)?,self.identity_directory());let mut communicator=gearth_rust::unity_server::UnityOptions::new("127.0.0.1:0".parse().unwrap(),self.identity_directory());communicator.extensions=self.extension_host.clone();communicator.packet_info=self.packet_info.clone();
         let cache=self.settings_path.parent().unwrap_or_else(||Path::new(".")).join("unity-cache");let (connection,events)=gearth_rust::unity_connection::UnityConnection::start(http,communicator,cache)?;
         if self.system_proxy {self.proxy_guard=Some(gearth_platform::SystemProxyGuard::activate(connection.address)?);}
-        self.status=format!("Unity asset proxy listening on {}; reload the WebGL client",connection.address);self.relay=Some(Connection::Unity(connection));self.events=Some(events);self.update_rules();Ok(())
+        self.status=format!("Unity asset proxy listening on {}; reload the WebGL client",connection.address);self.relay=Some(Connection::Unity(Box::new(connection)));self.events=Some(events);self.update_rules();Ok(())
     }
     fn start_nitro(&mut self) -> std::io::Result<()> {
         if self.unity {return self.start_unity();}

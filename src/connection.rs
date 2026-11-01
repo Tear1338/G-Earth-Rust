@@ -10,7 +10,7 @@ pub enum Connection {
     #[cfg(feature = "web")]
     Web(crate::web_proxy::WebProxy),
     #[cfg(feature = "web")]
-    Unity(crate::unity_connection::UnityConnection),
+    Unity(Box<crate::unity_connection::UnityConnection>),
 }
 impl Connection {
     pub fn connected(&self) -> bool {

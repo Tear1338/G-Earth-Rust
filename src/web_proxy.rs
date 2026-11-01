@@ -387,12 +387,13 @@ impl HttpHandler for Handler {
         }
         let maximum=if self.1==3 {crate::unity_wasm::MAX_WASM}else{16*1024*1024};
         let mut bytes = Vec::new();
-        let result = tokio::time::timeout(Duration::from_secs(20), async {
+        let download_timeout=if self.1==3 {Duration::from_secs(180)}else{Duration::from_secs(20)};
+        let result = tokio::time::timeout(download_timeout, async {
             while let Some(frame) = body.frame().await {
                 let frame = frame.map_err(io::Error::other)?;
                 if let Ok(data) = frame.into_data() {
                     if bytes.len() + data.len() > maximum {
-                        return Err(io::Error::other("Nitro asset response exceeds 16 MiB"));
+                        return Err(io::Error::other("Browser asset exceeds its size limit"));
                     }
                     bytes.extend_from_slice(&data);
                 }
@@ -403,7 +404,7 @@ impl HttpHandler for Handler {
         .unwrap_or_else(|_| {
             Err(io::Error::new(
                 io::ErrorKind::TimedOut,
-                "Nitro asset download timed out",
+                "Browser asset download timed out",
             ))
         });
         if let Err(e) = result {

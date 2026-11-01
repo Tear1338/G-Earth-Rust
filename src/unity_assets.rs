@@ -6,7 +6,7 @@ use std::{fs,io::{self,Read,Write},path::{Path,PathBuf}};
 #[derive(Clone)] pub struct UnityAssets {pub websocket_port:u16,pub token:String,pub cache_directory:PathBuf}
 impl UnityAsset {
     pub fn from_url(host:&str,path:&str)->Option<Self> {
-        if host!="images.habbo.com"{return None;}let path=path.split('?').next()?;let parts=path.split('/').collect::<Vec<_>>();if parts.len()!=7||parts[0]!=""||parts[1]!="habbo-webgl-clients"||parts[3]!="WebGL"||parts[4]!="habbo2020-global-prod"{return None;}let revision=parts[2];if revision.is_empty()||revision.len()>200||!revision.bytes().all(|byte|byte.is_ascii_alphanumeric()||b"._-".contains(&byte)){return None;}
+        if host!="images.habbo.com"{return None;}let path=path.split('?').next()?;let parts=path.split('/').collect::<Vec<_>>();if parts.len()!=7||!parts[0].is_empty()||parts[1]!="habbo-webgl-clients"||parts[3]!="WebGL"||parts[4]!="habbo2020-global-prod"{return None;}let revision=parts[2];if revision.is_empty()||revision.len()>200||!revision.bytes().all(|byte|byte.is_ascii_alphanumeric()||b"._-".contains(&byte)){return None;}
         let kind=match (parts[5],parts[6]){("StreamingAssets","Version.txt")=>AssetKind::Version,("Build","habbo2020-global-prod.data.gz")=>AssetKind::Data,("Build","habbo2020-global-prod.wasm.gz")=>AssetKind::Wasm,("Build","habbo2020-global-prod.framework.js.gz")=>AssetKind::Framework,("Build","habbo2020-global-prod.loader.js")=>AssetKind::Loader,_=>return None};Some(Self {revision:revision.into(),kind})
     }
 }
