@@ -16,9 +16,9 @@ enum Outcome {
     Changed(String),
 }
 enum Action {
-    Install(StoreExtension),
-    Remove(Installed),
-    Launch(Installed),
+    Install(Box<StoreExtension>),
+    Remove(Box<Installed>),
+    Launch(Box<Installed>),
 }
 pub struct StoreUi {
     root: PathBuf,
@@ -116,7 +116,7 @@ impl StoreUi {
                 egui::ScrollArea::vertical().id_salt("store-catalogue").max_height(250.0).show(ui,|ui|{
                     for extension in matches {ui.group(|ui|{
                         let exact=self.installed.iter().any(|record|record.title==extension.title&&record.version==extension.version);let older=self.installed.iter().any(|record|record.title==extension.title&&extension_store::compare_versions(&record.version,&extension.version).is_lt());
-                        ui.horizontal(|ui|{ui.strong(format!("{} {}",extension.title,extension.version));ui.label(format!("{} · {} · rating {}",extension.framework.name,extension.language,extension.rating));if ui.add_enabled(ready&&!exact,egui::Button::new(if exact{"Installed"}else if older{"Install update"}else{"Install"})).clicked(){action=Some(Action::Install(extension.clone()));}});
+                        ui.horizontal(|ui|{ui.strong(format!("{} {}",extension.title,extension.version));ui.label(format!("{} · {} · rating {}",extension.framework.name,extension.language,extension.rating));if ui.add_enabled(ready&&!exact,egui::Button::new(if exact{"Installed"}else if older{"Install update"}else{"Install"})).clicked(){action=Some(Action::Install(Box::new(extension.clone())));}});
                         ui.label(&extension.description);ui.label(format!("By {} · {}",extension.authors.iter().map(|author|author.name.as_str()).collect::<Vec<_>>().join(", "),extension.compatibility.clients.join(", ")));
                         ui.horizontal(|ui|{for (label,url) in [("Source",Some(&extension.source)),("Readme",extension.readme.as_ref()),("Releases",extension.releases.as_ref())]{if let Some(url)=url.filter(|url|url.starts_with("https://")){ui.hyperlink_to(label,url);}}});
                         if let Some(framework)=catalog.config.frameworks.iter().find(|framework|framework.name==extension.framework.name){if framework.installation.required{if let Some(instructions)=framework.installation.instructions.as_ref().filter(|url|url.starts_with("https://")){ui.hyperlink_to(format!("{} runtime setup",framework.name),instructions);}}}
@@ -124,7 +124,8 @@ impl StoreUi {
                 });
             }
             ui.separator();ui.strong("Installed versions");ui.label("Updates keep older versions available. Launch and uninstall apply to the selected version.");
-            egui::ScrollArea::vertical().id_salt("store-installed").max_height(150.0).show(ui,|ui|{for record in &self.installed{ui.horizontal(|ui|{ui.label(format!("{} {}",record.title,record.version));if ui.add_enabled(host.is_some(),egui::Button::new("Launch")).clicked(){action=Some(Action::Launch(record.clone()));}if ui.add_enabled(ready,egui::Button::new("Uninstall")).clicked(){action=Some(Action::Remove(record.clone()));}});}});
+            egui::ScrollArea::vertical().id_salt("store-installed").max_height(150.0).show(ui,|ui|{for record in &self.installed{ui.horizontal(|ui|{ui.label(format!("{} {}",record.title,record.version));if ui.add_enabled(host.is_some(),egui::Button::new("Launch")).clicked(){action=Some(Action::Launch(Box::new(record.clone())));}
+if ui.add_enabled(ready,egui::Button::new("Uninstall")).clicked(){action=Some(Action::Remove(Box::new(record.clone())));}});}});
             match action {
                 Some(Action::Install(extension))=>{if let Some(catalog)=self.catalog.clone(){let root=self.root.clone();let (sender,receiver)=mpsc::channel();self.worker=Some(receiver);*status=format!("Installing {} {}...",extension.title,extension.version);std::thread::spawn(move||{let result=extension_store::install(&catalog,&extension,&root).map(|record|Outcome::Changed(format!("Installed {} {}",record.title,record.version))).map_err(|error|error.to_string());let _=sender.send(result);});}},
                 Some(Action::Remove(record))=>{let root=self.root.clone();let (sender,receiver)=mpsc::channel();self.worker=Some(receiver);std::thread::spawn(move||{let result=extension_store::uninstall(&root,&record).map(|()|Outcome::Changed(format!("Uninstalled {} {}",record.title,record.version))).map_err(|error|error.to_string());let _=sender.send(result);});},
