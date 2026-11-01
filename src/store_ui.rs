@@ -1,15 +1,100 @@
 use eframe::egui;
-use gearth_rust::{extension_host::ExtensionHost,extension_store::{self,Catalog,Installed,Query,Sort,StoreExtension}};
-use std::{path::{Path,PathBuf},process::Child,sync::{Arc,mpsc::{self,Receiver}}};
-enum Outcome {Catalog(Catalog),Changed(String)}
-enum Action {Install(StoreExtension),Remove(Installed),Launch(Installed)}
-pub struct StoreUi {root:PathBuf,catalog:Option<Catalog>,installed:Vec<Installed>,worker:Option<Receiver<Result<Outcome,String>>>,initialized:bool,search:String,sort:Sort,outdated:bool,reverse:bool,os:String,client:String,framework:String,category:String}
+use gearth_rust::{
+    extension_host::ExtensionHost,
+    extension_store::{self, Catalog, Installed, Query, Sort, StoreExtension},
+};
+use std::{
+    path::{Path, PathBuf},
+    process::Child,
+    sync::{
+        mpsc::{self, Receiver},
+        Arc,
+    },
+};
+enum Outcome {
+    Catalog(Catalog),
+    Changed(String),
+}
+enum Action {
+    Install(StoreExtension),
+    Remove(Installed),
+    Launch(Installed),
+}
+pub struct StoreUi {
+    root: PathBuf,
+    catalog: Option<Catalog>,
+    installed: Vec<Installed>,
+    worker: Option<Receiver<Result<Outcome, String>>>,
+    initialized: bool,
+    search: String,
+    sort: Sort,
+    outdated: bool,
+    reverse: bool,
+    os: String,
+    client: String,
+    framework: String,
+    category: String,
+}
 impl StoreUi {
-    pub fn new(root:PathBuf)->Self {Self {root,catalog:None,installed:Vec::new(),worker:None,initialized:false,search:String::new(),sort:Sort::Rating,outdated:false,reverse:false,os:String::new(),client:String::new(),framework:String::new(),category:String::new()}}
-    fn refresh(&mut self,status:&mut String){match extension_store::installed(&self.root){Ok(entries)=>self.installed=entries,Err(error)=>*status=error.to_string()}}
-    pub fn show(&mut self,ui:&mut egui::Ui,host:Option<&Arc<ExtensionHost>>,java:&Path,status:&mut String,processes:&mut Vec<Child>){
-        if !self.initialized{self.refresh(status);self.initialized=true;}
-        if let Some(worker)=&self.worker{match worker.try_recv(){Ok(result)=>{match result{Ok(Outcome::Catalog(catalog))=>{*status=format!("Loaded {} store extensions",catalog.extensions.len());self.catalog=Some(catalog);},Ok(Outcome::Changed(message))=>{*status=message;self.refresh(status);},Err(error)=>*status=error}self.worker=None;},Err(mpsc::TryRecvError::Disconnected)=>{*status="Extension store worker stopped".into();self.worker=None;},Err(mpsc::TryRecvError::Empty)=>{}}}
+    pub fn new(root: PathBuf) -> Self {
+        Self {
+            root,
+            catalog: None,
+            installed: Vec::new(),
+            worker: None,
+            initialized: false,
+            search: String::new(),
+            sort: Sort::Rating,
+            outdated: false,
+            reverse: false,
+            os: String::new(),
+            client: String::new(),
+            framework: String::new(),
+            category: String::new(),
+        }
+    }
+    fn refresh(&mut self, status: &mut String) {
+        match extension_store::installed(&self.root) {
+            Ok(entries) => self.installed = entries,
+            Err(error) => *status = error.to_string(),
+        }
+    }
+    pub fn show(
+        &mut self,
+        ui: &mut egui::Ui,
+        host: Option<&Arc<ExtensionHost>>,
+        java: &Path,
+        status: &mut String,
+        processes: &mut Vec<Child>,
+    ) {
+        if !self.initialized {
+            self.refresh(status);
+            self.initialized = true;
+        }
+        if let Some(worker) = &self.worker {
+            match worker.try_recv() {
+                Ok(result) => {
+                    match result {
+                        Ok(Outcome::Catalog(catalog)) => {
+                            *status =
+                                format!("Loaded {} store extensions", catalog.extensions.len());
+                            self.catalog = Some(catalog);
+                        }
+                        Ok(Outcome::Changed(message)) => {
+                            *status = message;
+                            self.refresh(status);
+                        }
+                        Err(error) => *status = error,
+                    }
+                    self.worker = None;
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    *status = "Extension store worker stopped".into();
+                    self.worker = None;
+                }
+                Err(mpsc::TryRecvError::Empty) => {}
+            }
+        }
         egui::CollapsingHeader::new("Extension store").default_open(true).show(ui,|ui|{
             let ready=self.worker.is_none();ui.horizontal(|ui|{
                 if ui.add_enabled(ready,egui::Button::new("Load / refresh catalogue")).clicked(){let (sender,receiver)=mpsc::channel();self.worker=Some(receiver);*status="Loading extension catalogue...".into();std::thread::spawn(move||{let result=Catalog::fetch(extension_store::STORE_SOURCE,extension_store::STORE_VERSION).map(Outcome::Catalog).map_err(|error|error.to_string());let _=sender.send(result);});}

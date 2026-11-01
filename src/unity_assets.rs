@@ -1,32 +1,275 @@
 //! Exact beta-29 Unity asset routes, JS bootstrap and bounded gzip/WASM rewriting.
-use crate::unity_wasm::{self,MAX_WASM};
-use std::{fs,io::{self,Read,Write},path::{Path,PathBuf}};
-#[derive(Clone,Copy,Debug,PartialEq,Eq)] pub enum AssetKind {Version,Data,Wasm,Framework,Loader}
-#[derive(Clone,Debug)] pub struct UnityAsset {pub revision:String,pub kind:AssetKind}
-#[derive(Clone)] pub struct UnityAssets {pub websocket_port:u16,pub token:String,pub cache_directory:PathBuf}
+use crate::unity_wasm::{self, MAX_WASM};
+use std::{
+    fs,
+    io::{self, Read, Write},
+    path::{Path, PathBuf},
+};
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AssetKind {
+    Version,
+    Data,
+    Wasm,
+    Framework,
+    Loader,
+}
+#[derive(Clone, Debug)]
+pub struct UnityAsset {
+    pub revision: String,
+    pub kind: AssetKind,
+}
+#[derive(Clone)]
+pub struct UnityAssets {
+    pub websocket_port: u16,
+    pub token: String,
+    pub cache_directory: PathBuf,
+}
 impl UnityAsset {
-    pub fn from_url(host:&str,path:&str)->Option<Self> {
-        if host!="images.habbo.com"{return None;}let path=path.split('?').next()?;let parts=path.split('/').collect::<Vec<_>>();if parts.len()!=7||!parts[0].is_empty()||parts[1]!="habbo-webgl-clients"||parts[3]!="WebGL"||parts[4]!="habbo2020-global-prod"{return None;}let revision=parts[2];if revision.is_empty()||revision.len()>200||!revision.bytes().all(|byte|byte.is_ascii_alphanumeric()||b"._-".contains(&byte)){return None;}
-        let kind=match (parts[5],parts[6]){("StreamingAssets","Version.txt")=>AssetKind::Version,("Build","habbo2020-global-prod.data.gz")=>AssetKind::Data,("Build","habbo2020-global-prod.wasm.gz")=>AssetKind::Wasm,("Build","habbo2020-global-prod.framework.js.gz")=>AssetKind::Framework,("Build","habbo2020-global-prod.loader.js")=>AssetKind::Loader,_=>return None};Some(Self {revision:revision.into(),kind})
+    pub fn from_url(host: &str, path: &str) -> Option<Self> {
+        if host != "images.habbo.com" {
+            return None;
+        }
+        let path = path.split('?').next()?;
+        let parts = path.split('/').collect::<Vec<_>>();
+        if parts.len() != 7
+            || !parts[0].is_empty()
+            || parts[1] != "habbo-webgl-clients"
+            || parts[3] != "WebGL"
+            || parts[4] != "habbo2020-global-prod"
+        {
+            return None;
+        }
+        let revision = parts[2];
+        if revision.is_empty()
+            || revision.len() > 200
+            || !revision
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+        {
+            return None;
+        }
+        let kind = match (parts[5], parts[6]) {
+            ("StreamingAssets", "Version.txt") => AssetKind::Version,
+            ("Build", "habbo2020-global-prod.data.gz") => AssetKind::Data,
+            ("Build", "habbo2020-global-prod.wasm.gz") => AssetKind::Wasm,
+            ("Build", "habbo2020-global-prod.framework.js.gz") => AssetKind::Framework,
+            ("Build", "habbo2020-global-prod.loader.js") => AssetKind::Loader,
+            _ => return None,
+        };
+        Some(Self {
+            revision: revision.into(),
+            kind,
+        })
     }
 }
-fn replace_required(text:&str,needle:&str,value:&str)->io::Result<String>{if !text.contains(needle){return Err(io::Error::other(format!("Unity client marker is missing: {needle}")));}Ok(text.replace(needle,value))}
-fn insert_after(text:&str,needle:&str,code:&str)->io::Result<String>{let mut matches=text.match_indices(needle);let (index,_)=matches.next().ok_or_else(||io::Error::other(format!("Unity client marker is missing: {needle}")))?;if matches.next().is_some(){return Err(io::Error::other(format!("Unity client marker is ambiguous: {needle}")));}let position=index+needle.len();Ok(format!("{}\n{code}\n{}",&text[..position],&text[position..]))}
-pub fn framework(revision:&str,settings:&UnityAssets,source:&str)->io::Result<String> {
-    if settings.websocket_port==0||settings.token.len()!=64||!settings.token.bytes().all(|byte|byte.is_ascii_hexdigit()){return Err(io::Error::other("invalid Unity communicator settings"));}
-    let source=format!("{}\n{source}",include_str!("../resources/unity/unity_code.js"));let source=insert_after(&source,"var asm=createWasm();",include_str!("../resources/unity/unity_exports.js"))?;let source=insert_after(&source,"function createWasm(){",include_str!("../resources/unity/unity_imports.js"))?;let source=replace_required(&source,"var _free","_free")?;let source=replace_required(&source,"var _malloc","_malloc")?;let source=replace_required(&source,"var Module=typeof unityFramework!=\"undefined\"?unityFramework:{};","var Module=typeof unityFramework!=\"undefined\"?unityFramework:{}; _module = Module;")?;
-    let source=replace_required(&source,"\"{{RevisionName}}\"",&serde_json::to_string(revision).map_err(io::Error::other)?)?;let source=replace_required(&source,"{{WebsocketPort}}",&settings.websocket_port.to_string())?;replace_required(&source,"{{CommunicatorToken}}",&settings.token)
+fn replace_required(text: &str, needle: &str, value: &str) -> io::Result<String> {
+    if !text.contains(needle) {
+        return Err(io::Error::other(format!(
+            "Unity client marker is missing: {needle}"
+        )));
+    }
+    Ok(text.replace(needle, value))
 }
-pub fn loader(source:&str)->io::Result<String>{let source=replace_required(source,"\"Last-Modified\"","\"G-Last-Modified\"")?;replace_required(&source,"\"ETag\"","\"G-ETag\"")}
-fn valid_cached(bytes:&[u8])->bool {
-    if wasmparser::Validator::new().validate_all(bytes).is_err(){return false;}let mut imports=[false;4];let mut exports=[false;3];for payload in wasmparser::Parser::new(0).parse_all(bytes){match payload {Ok(wasmparser::Payload::ImportSection(section))=>for item in section{let Ok(item)=item else{return false;};if item.module=="env"{if let Some(index)=unity_wasm::IMPORTS.iter().position(|name|*name==item.name){imports[index]=true;}}},Ok(wasmparser::Payload::ExportSection(section))=>for item in section{let Ok(item)=item else{return false;};if let Some(index)=unity_wasm::EXPORTS.iter().position(|name|*name==item.name){exports[index]=true;}},Err(_)=>return false,_=>{}}}imports.into_iter().all(|found|found)&&exports.into_iter().all(|found|found)
+fn insert_after(text: &str, needle: &str, code: &str) -> io::Result<String> {
+    let mut matches = text.match_indices(needle);
+    let (index, _) = matches
+        .next()
+        .ok_or_else(|| io::Error::other(format!("Unity client marker is missing: {needle}")))?;
+    if matches.next().is_some() {
+        return Err(io::Error::other(format!(
+            "Unity client marker is ambiguous: {needle}"
+        )));
+    }
+    let position = index + needle.len();
+    Ok(format!(
+        "{}\n{code}\n{}",
+        &text[..position],
+        &text[position..]
+    ))
 }
-fn code(bytes:&[u8],directory:&Path)->io::Result<Vec<u8>> {
-    use sha2::{Digest,Sha256};let digest=Sha256::digest(bytes).iter().map(|byte|format!("{byte:02x}")).collect::<String>();let path=directory.join(format!("unity-hooks-v1-{digest}.wasm"));if let Ok(file)=fs::File::open(&path){let mut cached=Vec::new();if file.take((MAX_WASM+1) as u64).read_to_end(&mut cached).is_ok()&&cached.len()<=MAX_WASM&&valid_cached(&cached){return Ok(cached);}}
-    let patched=unity_wasm::patch(bytes)?.bytes;fs::create_dir_all(directory)?;let mut random=[0;16];getrandom::fill(&mut random).map_err(|error|io::Error::other(error.to_string()))?;let temporary=directory.join(format!(".unity-{}.tmp",random.iter().map(|byte|format!("{byte:02x}")).collect::<String>()));let result=(||->io::Result<()> {let mut file=fs::OpenOptions::new().create_new(true).write(true).open(&temporary)?;file.write_all(&patched)?;file.sync_all()?;drop(file);if path.exists(){fs::remove_file(&path)?;}fs::rename(&temporary,&path)})();if result.is_err(){let _=fs::remove_file(&temporary);}result?;Ok(patched)
+pub fn framework(revision: &str, settings: &UnityAssets, source: &str) -> io::Result<String> {
+    if settings.websocket_port == 0
+        || settings.token.len() != 64
+        || !settings.token.bytes().all(|byte| byte.is_ascii_hexdigit())
+    {
+        return Err(io::Error::other("invalid Unity communicator settings"));
+    }
+    let source = format!(
+        "{}\n{source}",
+        include_str!("../resources/unity/unity_code.js")
+    );
+    let source = insert_after(
+        &source,
+        "var asm=createWasm();",
+        include_str!("../resources/unity/unity_exports.js"),
+    )?;
+    let source = insert_after(
+        &source,
+        "function createWasm(){",
+        include_str!("../resources/unity/unity_imports.js"),
+    )?;
+    let source = replace_required(&source, "var _free", "_free")?;
+    let source = replace_required(&source, "var _malloc", "_malloc")?;
+    let source = replace_required(
+        &source,
+        "var Module=typeof unityFramework!=\"undefined\"?unityFramework:{};",
+        "var Module=typeof unityFramework!=\"undefined\"?unityFramework:{}; _module = Module;",
+    )?;
+    let source = replace_required(
+        &source,
+        "\"{{RevisionName}}\"",
+        &serde_json::to_string(revision).map_err(io::Error::other)?,
+    )?;
+    let source = replace_required(
+        &source,
+        "{{WebsocketPort}}",
+        &settings.websocket_port.to_string(),
+    )?;
+    replace_required(&source, "{{CommunicatorToken}}", &settings.token)
 }
-pub fn modify(asset:&UnityAsset,bytes:&[u8],settings:&UnityAssets)->io::Result<Vec<u8>> {
-    if bytes.len()>MAX_WASM{return Err(io::Error::other("Unity asset exceeds 100 MiB"));}if asset.kind==AssetKind::Data{return Ok(bytes.to_vec());}let compressed=bytes.starts_with(&[0x1f,0x8b]);let raw=if compressed {let mut raw=Vec::new();flate2::read::GzDecoder::new(bytes).take((MAX_WASM+1) as u64).read_to_end(&mut raw)?;if raw.len()>MAX_WASM{return Err(io::Error::other("decompressed Unity asset exceeds 100 MiB"));}raw}else{bytes.to_vec()};
-    let result=match asset.kind {AssetKind::Wasm=>code(&raw,&settings.cache_directory)?,AssetKind::Framework=>framework(&asset.revision,settings,std::str::from_utf8(&raw).map_err(io::Error::other)?)?.into_bytes(),AssetKind::Loader=>loader(std::str::from_utf8(&raw).map_err(io::Error::other)?)?.into_bytes(),AssetKind::Version=>{let mut version=std::str::from_utf8(&raw).map_err(io::Error::other)?.to_owned();version.push_str(" - G-Earth Rust");version.into_bytes()},AssetKind::Data=>raw};if result.len()>MAX_WASM{return Err(io::Error::other("modified Unity asset exceeds limit"));}
-    if compressed {let mut encoder=flate2::write::GzEncoder::new(Vec::new(),flate2::Compression::fast());encoder.write_all(&result)?;encoder.finish()}else{Ok(result)}
+pub fn loader(source: &str) -> io::Result<String> {
+    let source = replace_required(source, "\"Last-Modified\"", "\"G-Last-Modified\"")?;
+    replace_required(&source, "\"ETag\"", "\"G-ETag\"")
+}
+fn valid_cached(bytes: &[u8]) -> bool {
+    if wasmparser::Validator::new().validate_all(bytes).is_err() {
+        return false;
+    }
+    let mut imports = [false; 4];
+    let mut exports = [false; 3];
+    for payload in wasmparser::Parser::new(0).parse_all(bytes) {
+        match payload {
+            Ok(wasmparser::Payload::ImportSection(section)) => {
+                for item in section {
+                    let Ok(item) = item else {
+                        return false;
+                    };
+                    if item.module == "env" {
+                        if let Some(index) = unity_wasm::IMPORTS
+                            .iter()
+                            .position(|name| *name == item.name)
+                        {
+                            imports[index] = true;
+                        }
+                    }
+                }
+            }
+            Ok(wasmparser::Payload::ExportSection(section)) => {
+                for item in section {
+                    let Ok(item) = item else {
+                        return false;
+                    };
+                    if let Some(index) = unity_wasm::EXPORTS
+                        .iter()
+                        .position(|name| *name == item.name)
+                    {
+                        exports[index] = true;
+                    }
+                }
+            }
+            Err(_) => return false,
+            _ => {}
+        }
+    }
+    imports.into_iter().all(|found| found) && exports.into_iter().all(|found| found)
+}
+fn code(bytes: &[u8], directory: &Path) -> io::Result<Vec<u8>> {
+    use sha2::{Digest, Sha256};
+    let digest = Sha256::digest(bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let path = directory.join(format!("unity-hooks-v1-{digest}.wasm"));
+    if let Ok(file) = fs::File::open(&path) {
+        let mut cached = Vec::new();
+        if file
+            .take((MAX_WASM + 1) as u64)
+            .read_to_end(&mut cached)
+            .is_ok()
+            && cached.len() <= MAX_WASM
+            && valid_cached(&cached)
+        {
+            return Ok(cached);
+        }
+    }
+    let patched = unity_wasm::patch(bytes)?.bytes;
+    fs::create_dir_all(directory)?;
+    let mut random = [0; 16];
+    getrandom::fill(&mut random).map_err(|error| io::Error::other(error.to_string()))?;
+    let temporary = directory.join(format!(
+        ".unity-{}.tmp",
+        random
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    ));
+    let result = (|| -> io::Result<()> {
+        let mut file = fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temporary)?;
+        file.write_all(&patched)?;
+        file.sync_all()?;
+        drop(file);
+        if path.exists() {
+            fs::remove_file(&path)?;
+        }
+        fs::rename(&temporary, &path)
+    })();
+    if result.is_err() {
+        let _ = fs::remove_file(&temporary);
+    }
+    result?;
+    Ok(patched)
+}
+pub fn modify(asset: &UnityAsset, bytes: &[u8], settings: &UnityAssets) -> io::Result<Vec<u8>> {
+    if bytes.len() > MAX_WASM {
+        return Err(io::Error::other("Unity asset exceeds 100 MiB"));
+    }
+    if asset.kind == AssetKind::Data {
+        return Ok(bytes.to_vec());
+    }
+    let compressed = bytes.starts_with(&[0x1f, 0x8b]);
+    let raw = if compressed {
+        let mut raw = Vec::new();
+        flate2::read::GzDecoder::new(bytes)
+            .take((MAX_WASM + 1) as u64)
+            .read_to_end(&mut raw)?;
+        if raw.len() > MAX_WASM {
+            return Err(io::Error::other("decompressed Unity asset exceeds 100 MiB"));
+        }
+        raw
+    } else {
+        bytes.to_vec()
+    };
+    let result = match asset.kind {
+        AssetKind::Wasm => code(&raw, &settings.cache_directory)?,
+        AssetKind::Framework => framework(
+            &asset.revision,
+            settings,
+            std::str::from_utf8(&raw).map_err(io::Error::other)?,
+        )?
+        .into_bytes(),
+        AssetKind::Loader => {
+            loader(std::str::from_utf8(&raw).map_err(io::Error::other)?)?.into_bytes()
+        }
+        AssetKind::Version => {
+            let mut version = std::str::from_utf8(&raw)
+                .map_err(io::Error::other)?
+                .to_owned();
+            version.push_str(" - G-Earth Rust");
+            version.into_bytes()
+        }
+        AssetKind::Data => raw,
+    };
+    if result.len() > MAX_WASM {
+        return Err(io::Error::other("modified Unity asset exceeds limit"));
+    }
+    if compressed {
+        let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+        encoder.write_all(&result)?;
+        encoder.finish()
+    } else {
+        Ok(result)
+    }
 }

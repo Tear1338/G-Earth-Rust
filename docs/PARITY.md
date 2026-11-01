@@ -22,10 +22,10 @@ Status describes source implementation and finite tests, not successful producti
 | Flash | Negotiation, Windows client memory discovery, socket owner detection, hosts attachment, independent counters | Official client validation, raw-IP attachment and non-Windows discovery |
 | Origins attachment | Scoped hosts routing to the original port | Official client validation and non-Windows privileged helpers |
 | Nitro | HTTP/TLS/WebSocket backend, beta-29 hotel matching/config, RC4/TripleDES/GCM/CTR adapters, assets, shared rules/injection/extensions, explicit current-user certificates and journaled Windows proxy cleanup | Real hotel sessions, Chrome TLS fingerprint, SOCKS upstream, non-Windows OS helpers |
-| Unity connection | Not implemented | WebSocket communicator, WASM patching, local file server |
+| Unity connection | Authenticated TLS communicator, exact asset routes, gzip and cache handling, validated WASM hooks, browser reinjection and Java extensions | Official client revisions, G-Presets and non-Windows system helpers |
 | Hotel detection | Flash/Origins lists, custom domain/revision, Nitro hello fallback, dynamic nitro.json, beta-29 hotel URL/prefixes and adapters | Live hotel regression and Unity discovery |
 | Room/catalog/inventory/entity API | Existing Java extensions retain their original Java parsers | Native Rust parser API parity |
-| Extension store/updater | Not implemented | Metadata, downloads, validation and lifecycle |
+| Extension store/updater | Original catalogue, native search/filter/order, bounded archive install, separate-version updates, authenticated launch and managed uninstall | Full Maven version edge cases, thumbnails/readme presentation and broader package corpus |
 | Windows packaging | Tested development EXE and CLI via Actions/prereleases | Installer, signing and release QA |
 | Linux/macOS | Core tests on Linux; Windows desktop compiled | Desktop distribution and platform proxy helpers |
 | beta-29 integration fixes | leet/habblet prefix matching and dynamic nitro.json ported | Chrome TLS fingerprint, privileged macOS helper, tray cropping |

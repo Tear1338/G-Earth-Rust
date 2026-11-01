@@ -341,10 +341,7 @@ impl Shared {
 #[derive(Clone)]
 struct Handler(Arc<Shared>, u8, Option<crate::unity_assets::UnityAsset>);
 impl Handler {
-    async fn handle_asset_request(
-        &mut self,
-        mut request: Request<Body>,
-    ) -> RequestOrResponse {
+    async fn handle_asset_request(&mut self, mut request: Request<Body>) -> RequestOrResponse {
         self.1 = if request.uri().host() == Some("images.hartico.tv")
             && request.uri().path() == "/cosmos/img/logos/logo.png"
         {
@@ -356,10 +353,27 @@ impl Handler {
         } else {
             0
         };
-        self.2=self.0.options.unity.as_ref().and_then(|_|crate::unity_assets::UnityAsset::from_url(request.uri().host().unwrap_or(""),request.uri().path()));
-        if self.2.is_some(){self.1=3;}
+        self.2 = self.0.options.unity.as_ref().and_then(|_| {
+            crate::unity_assets::UnityAsset::from_url(
+                request.uri().host().unwrap_or(""),
+                request.uri().path(),
+            )
+        });
+        if self.2.is_some() {
+            self.1 = 3;
+        }
         if self.1 != 0 {
-            for name in ["if-none-match", "if-modified-since", "accept-encoding", "cache-control", "age", "etag", "last-modified", "date", "expires"] {
+            for name in [
+                "if-none-match",
+                "if-modified-since",
+                "accept-encoding",
+                "cache-control",
+                "age",
+                "etag",
+                "last-modified",
+                "date",
+                "expires",
+            ] {
                 request.headers_mut().remove(name);
             }
             request
@@ -368,24 +382,50 @@ impl Handler {
         }
         request.into()
     }
-    async fn handle_asset_response(
-        &mut self,
-        response: Response<Body>,
-    ) -> Response<Body> {
+    async fn handle_asset_response(&mut self, response: Response<Body>) -> Response<Body> {
         if self.1 == 0 || response.status() != StatusCode::OK {
             return response;
         }
         use http_body_util::BodyExt;
         let (mut parts, mut body) = response.into_parts();
-        if self.1==3 {
-            for name in ["age","cache-control","etag","if-none-match","if-modified-since","last-modified","date","expires"] {parts.headers.remove(name);}
-            parts.headers.insert("cache-control","no-store".parse().unwrap());
-            parts.headers.insert("x-modified-by","G-Earth-Rust".parse().unwrap());
-            if self.2.as_ref().is_some_and(|asset|asset.kind==crate::unity_assets::AssetKind::Data){return Response::from_parts(parts,body);}
+        if self.1 == 3 {
+            for name in [
+                "age",
+                "cache-control",
+                "etag",
+                "if-none-match",
+                "if-modified-since",
+                "last-modified",
+                "date",
+                "expires",
+            ] {
+                parts.headers.remove(name);
+            }
+            parts
+                .headers
+                .insert("cache-control", "no-store".parse().unwrap());
+            parts
+                .headers
+                .insert("x-modified-by", "G-Earth-Rust".parse().unwrap());
+            if self
+                .2
+                .as_ref()
+                .is_some_and(|asset| asset.kind == crate::unity_assets::AssetKind::Data)
+            {
+                return Response::from_parts(parts, body);
+            }
         }
-        let maximum=if self.1==3 {crate::unity_wasm::MAX_WASM}else{16*1024*1024};
+        let maximum = if self.1 == 3 {
+            crate::unity_wasm::MAX_WASM
+        } else {
+            16 * 1024 * 1024
+        };
         let mut bytes = Vec::new();
-        let download_timeout=if self.1==3 {Duration::from_secs(180)}else{Duration::from_secs(20)};
+        let download_timeout = if self.1 == 3 {
+            Duration::from_secs(180)
+        } else {
+            Duration::from_secs(20)
+        };
         let result = tokio::time::timeout(download_timeout, async {
             while let Some(frame) = body.frame().await {
                 let frame = frame.map_err(io::Error::other)?;
@@ -412,10 +452,38 @@ impl Handler {
                 .body(Body::from("Hotel asset could not be read"))
                 .unwrap();
         }
-        if self.1==3 {
-            let asset=self.2.clone().unwrap();let settings=self.0.options.unity.clone().unwrap();
-            let result=tokio::task::spawn_blocking(move||crate::unity_assets::modify(&asset,&bytes,&settings)).await.map_err(io::Error::other).and_then(|result|result);
-            return match result {Ok(bytes)=>{parts.headers.remove("transfer-encoding");parts.headers.remove("content-md5");parts.headers.remove("digest");parts.headers.insert("content-length",bytes.len().to_string().parse().unwrap());Response::from_parts(parts,Body::from(bytes))},Err(error)=>{let _=self.0.events.try_send(Event::Error(format!("Unity asset patch failed: {error}")));Response::builder().status(StatusCode::BAD_GATEWAY).body(Body::from("Unity asset patch failed; see G-Earth Rust status")).unwrap()}};
+        if self.1 == 3 {
+            let asset = self.2.clone().unwrap();
+            let settings = self.0.options.unity.clone().unwrap();
+            let result = tokio::task::spawn_blocking(move || {
+                crate::unity_assets::modify(&asset, &bytes, &settings)
+            })
+            .await
+            .map_err(io::Error::other)
+            .and_then(|result| result);
+            return match result {
+                Ok(bytes) => {
+                    parts.headers.remove("transfer-encoding");
+                    parts.headers.remove("content-md5");
+                    parts.headers.remove("digest");
+                    parts
+                        .headers
+                        .insert("content-length", bytes.len().to_string().parse().unwrap());
+                    Response::from_parts(parts, Body::from(bytes))
+                }
+                Err(error) => {
+                    let _ = self
+                        .0
+                        .events
+                        .try_send(Event::Error(format!("Unity asset patch failed: {error}")));
+                    Response::builder()
+                        .status(StatusCode::BAD_GATEWAY)
+                        .body(Body::from(
+                            "Unity asset patch failed; see G-Earth Rust status",
+                        ))
+                        .unwrap()
+                }
+            };
         }
         if self.1 == 1 {
             match crate::nitro_assets::hartico_key(&bytes) {
@@ -459,11 +527,22 @@ impl Handler {
         }
         Response::from_parts(parts, Body::from(bytes))
     }
-
- }
+}
 impl HttpHandler for Handler {
-    async fn handle_request(&mut self,_ctx:&HttpContext,request:Request<Body>)->RequestOrResponse{self.handle_asset_request(request).await}
-    async fn handle_response(&mut self,_ctx:&HttpContext,response:Response<Body>)->Response<Body>{self.handle_asset_response(response).await}
+    async fn handle_request(
+        &mut self,
+        _ctx: &HttpContext,
+        request: Request<Body>,
+    ) -> RequestOrResponse {
+        self.handle_asset_request(request).await
+    }
+    async fn handle_response(
+        &mut self,
+        _ctx: &HttpContext,
+        response: Response<Body>,
+    ) -> Response<Body> {
+        self.handle_asset_response(response).await
+    }
     async fn should_intercept_connect(
         &mut self,
         _ctx: &HttpContext,
@@ -664,19 +743,52 @@ impl Drop for WebProxy {
         self.stop();
     }
 }
-#[cfg(test)] mod unity_http_tests {
+#[cfg(test)]
+mod unity_http_tests {
     use super::*;
     use crate::unity_assets::UnityAssets;
-    use std::io::{Read,Write};
+    use std::io::{Read, Write};
     struct Directory(PathBuf);
-    impl Drop for Directory {fn drop(&mut self){for file in ["ca/gearth-proxy-cert.pem","ca/gearth-proxy-key.pem"]{let _=std::fs::remove_file(self.0.join(file));}let _=std::fs::remove_dir(self.0.join("ca"));let _=std::fs::remove_dir(&self.0);}}
-    #[test] fn proxy_asset_handler_preserves_gzip_and_updates_headers_without_changing_system_settings(){
-        let mut random=[0;16];getrandom::fill(&mut random).unwrap();let directory=Directory(std::env::temp_dir().join(format!("gearth-unity-http-{}",random.iter().map(|b|format!("{b:02x}")).collect::<String>())));std::fs::create_dir(&directory.0).unwrap();let mut options=WebOptions::new("127.0.0.1:0".parse().unwrap(),directory.0.join("ca"));options.unity=Some(UnityAssets {websocket_port:12345,token:"a".repeat(64),cache_directory:directory.0.join("unused")});options.detect_nitro=false;let (mut proxy,_)=WebProxy::start(options).unwrap();let mut handler=Handler(proxy.state.clone(),0,None);let runtime=tokio::runtime::Runtime::new().unwrap();runtime.block_on(async{
+    impl Drop for Directory {
+        fn drop(&mut self) {
+            for file in ["ca/gearth-proxy-cert.pem", "ca/gearth-proxy-key.pem"] {
+                let _ = std::fs::remove_file(self.0.join(file));
+            }
+            let _ = std::fs::remove_dir(self.0.join("ca"));
+            let _ = std::fs::remove_dir(&self.0);
+        }
+    }
+    #[test]
+    fn proxy_asset_handler_preserves_gzip_and_updates_headers_without_changing_system_settings() {
+        let mut random = [0; 16];
+        getrandom::fill(&mut random).unwrap();
+        let directory = Directory(
+            std::env::temp_dir().join(format!(
+                "gearth-unity-http-{}",
+                random
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect::<String>()
+            )),
+        );
+        std::fs::create_dir(&directory.0).unwrap();
+        let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), directory.0.join("ca"));
+        options.unity = Some(UnityAssets {
+            websocket_port: 12345,
+            token: "a".repeat(64),
+            cache_directory: directory.0.join("unused"),
+        });
+        options.detect_nitro = false;
+        let (mut proxy, _) = WebProxy::start(options).unwrap();
+        let mut handler = Handler(proxy.state.clone(), 0, None);
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async{
             use http_body_util::BodyExt;
             let url="https://images.habbo.com/habbo-webgl-clients/TEST-1/WebGL/habbo2020-global-prod/StreamingAssets/Version.txt";let request=Request::builder().uri(url).header("if-none-match","old-tag").header("accept-encoding","gzip, br").body(Body::empty()).unwrap();let RequestOrResponse::Request(request)=handler.handle_asset_request(request).await else{panic!("asset request was not forwarded")};assert!(!request.headers().contains_key("if-none-match"));assert_eq!(request.headers()["accept-encoding"],"identity");
             let mut encoder=flate2::write::GzEncoder::new(Vec::new(),flate2::Compression::fast());encoder.write_all(b"fixture-version").unwrap();let bytes=encoder.finish().unwrap();let response=Response::builder().header("etag","old-tag").header("last-modified","old-date").header("content-encoding","gzip").header("content-length",bytes.len()).body(Body::from(bytes)).unwrap();let response=handler.handle_asset_response(response).await;assert_eq!(response.status(),StatusCode::OK);assert_eq!(response.headers()["cache-control"],"no-store");assert_eq!(response.headers()["x-modified-by"],"G-Earth-Rust");assert_eq!(response.headers()["content-encoding"],"gzip");assert!(!response.headers().contains_key("etag"));assert!(!response.headers().contains_key("last-modified"));let length=response.headers()["content-length"].to_str().unwrap().parse::<usize>().unwrap();let bytes=response.into_body().collect().await.unwrap().to_bytes();assert_eq!(bytes.len(),length);let mut text=String::new();flate2::read::GzDecoder::new(bytes.as_ref()).read_to_string(&mut text).unwrap();assert_eq!(text,"fixture-version - G-Earth Rust");
             let data_url=url.replace("StreamingAssets/Version.txt","Build/habbo2020-global-prod.data.gz");let request=Request::builder().uri(data_url).body(Body::empty()).unwrap();let _=handler.handle_asset_request(request).await;let response=Response::builder().header("etag","data-tag").body(Body::from("original-data")).unwrap();let response=handler.handle_asset_response(response).await;assert!(!response.headers().contains_key("etag"));assert_eq!(response.into_body().collect().await.unwrap().to_bytes(),"original-data");
             let request=Request::builder().uri(url).body(Body::empty()).unwrap();let _=handler.handle_asset_request(request).await;let response=Response::builder().status(404).header("etag","error-tag").body(Body::from("not found")).unwrap();let response=handler.handle_asset_response(response).await;assert_eq!(response.status(),StatusCode::NOT_FOUND);assert_eq!(response.headers()["etag"],"error-tag");
-        });proxy.stop();
+        });
+        proxy.stop();
     }
 }

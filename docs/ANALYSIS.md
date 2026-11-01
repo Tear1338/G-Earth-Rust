@@ -33,10 +33,14 @@ The test executable is copied as Habbo.exe inside an isolated temporary test dir
 ## Known limits
 
 - No official Habbo session has been exercised. The implemented Windows discovery/hosts attachment path is validated with a separate controlled process, not a production AIR client.
-- Nitro/Unity connection providers, system certificate/proxy lifecycle, extension store and complete UI parity are absent.
+- Nitro/Unity providers, Windows proxy/certificate controls and the native store now have controlled fixture evidence. Complete UI parity and production-session validation remain outstanding.
 - Log delivery may drop observations under backpressure; displayed counts are not authoritative network counts.
 - Hosts attachment prepares DNS and listeners on a worker. Explicit relay setup can still resolve DNS synchronously; shutdown may wait for bounded connection or identifier lookup timeouts.
 - Sulek lookup is bounded and revision-cached; malformed, wrong-version and truncated caches are rejected. Tests use offline schemas and cache fixtures, not the live service.
 - Nine original language resources are present; individual added controls remain partly English.
 - Finite simulated and Java-oracle tests do not establish compatibility with arbitrary extensions.
 - No benchmark demonstrates a gain over the original Java application.
+
+## Unity reference
+
+REA inventoried the released G-Wasm-Minimal-1.0.4.jar: SHA-256 81ede388f652652b5a7dd66cb111c3bdfb0526fd03ffa688fe8f8ea56c91e748, 107 files, 35 directories and no inventory integrity contradictions. Semantics come from the pinned Java patchers, the released JAR oracle and executable controlled WASM/browser fixtures, rather than inventory alone.

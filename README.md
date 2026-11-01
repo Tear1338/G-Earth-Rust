@@ -2,7 +2,7 @@
 
 Rust port in progress of [G-Realm/G-Earth](https://github.com/G-Realm/G-Earth), based on **1.5.4-beta-29**, commit `242155c291b1109d6c9a02370f6a2af1ead41ea8`.
 
-**Development version. This does not yet replace the original G-Earth.** Windows Flash state discovery and hosts-based Flash/Origins attachment are now implemented and tested with a controlled client process. The Nitro HTTP/TLS/WebSocket provider, beta-29 hotel adapters and Windows proxy/certificate controls are also implemented with fixture tests. Real hotel sessions, raw-IP attachment, Unity and exact UI parity remain outstanding. The Rust host now runs external Java extensions, verified with a fixture built against the actual beta-29 API; G-Presets itself has not been tested. [Feature-by-feature status](docs/PARITY.md).
+**Development version. This does not yet replace the original G-Earth.** Windows Flash state discovery and hosts-based Flash/Origins attachment are now implemented and tested with a controlled client process. The Nitro HTTP/TLS/WebSocket provider, beta-29 hotel adapters and Windows proxy/certificate controls are also implemented with fixture tests. Unity WebGL hooks/communicator and a native extension store are implemented and tested with controlled fixtures. Real hotel sessions, raw-IP attachment and exact UI parity remain outstanding. The Rust host now runs external Java extensions, verified with a fixture built against the actual beta-29 API; G-Presets itself has not been tested. [Feature-by-feature status](docs/PARITY.md).
 
 ## Implemented
 
@@ -17,6 +17,8 @@ Rust port in progress of [G-Realm/G-Earth](https://github.com/G-Realm/G-Earth), 
 - Authenticated loopback extension host, one-use launch tokens, Java/Python/Node external processes, connection details, packet names, interception, injection, click callbacks, language updates and console output. Java extensions still need a Java runtime.
 - Sulek HTTPS packet-name lookup, upstream Unity messages.json import and portable TSV databases, with direction-aware expression lookup.
 - Saved block/replace rules and finite schedule templates, atomic settings, legacy cache import, notepad, light/dark themes and nine upstream language resources. Individual controls are not fully localized yet.
+- Unity WebGL: authenticated local TLS communicator, gzip asset interception, four validated WASM hooks and browser reinjection, with an original-Java-patcher oracle. See [Unity setup](docs/UNITY.md).
+- Native extension store: search/filter/order, bounded installation, separate-version updates, authenticated launch and uninstall. See [Store behavior](docs/STORE.md).
 - Native Rust desktop application: Connection, Logger, Injection, Scheduler, Tools, Extensions and Info. Logger rows are virtualized and bounded by row count and byte budget.
 - CLI and Windows desktop builds through GitHub Actions.
 

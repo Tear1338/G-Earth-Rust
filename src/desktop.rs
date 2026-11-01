@@ -206,7 +206,12 @@ impl Default for Desktop {
             attachment_worker: None,
             redirect: None,
             packet_download: None,
-            store: store_ui::StoreUi::new(Settings::default_path().parent().unwrap_or_else(||Path::new(".")).join("extensions")),
+            store: store_ui::StoreUi::new(
+                Settings::default_path()
+                    .parent()
+                    .unwrap_or_else(|| Path::new("."))
+                    .join("extensions"),
+            ),
         };
         desktop.load_settings();
         desktop
@@ -431,7 +436,18 @@ impl Desktop {
             self.origins = false;
         }
         if self.nitro {
-            ui.add_enabled_ui(self.relay.is_none(),|ui|{egui::ComboBox::from_id_salt("browser-client").selected_text(if self.unity {"Unity WebGL"}else{"Nitro / HTML5"}).show_ui(ui,|ui|{ui.selectable_value(&mut self.unity,false,"Nitro / HTML5");ui.selectable_value(&mut self.unity,true,"Unity WebGL");});});
+            ui.add_enabled_ui(self.relay.is_none(), |ui| {
+                egui::ComboBox::from_id_salt("browser-client")
+                    .selected_text(if self.unity {
+                        "Unity WebGL"
+                    } else {
+                        "Nitro / HTML5"
+                    })
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut self.unity, false, "Nitro / HTML5");
+                        ui.selectable_value(&mut self.unity, true, "Unity WebGL");
+                    });
+            });
             self.nitro_connection(ui);
             return;
         }
@@ -584,19 +600,63 @@ impl Desktop {
         self.public_certificate = Some((identity.certificate_path, identity.certificate_der));
         Ok(())
     }
-    fn start_unity(&mut self)->std::io::Result<()> {
-        if !self.socks_proxy.trim().is_empty(){return Err(std::io::Error::other("Unity upstream SOCKS5 routing is not ported yet; clear the SOCKS setting before using a direct connection"));}
+    fn start_unity(&mut self) -> std::io::Result<()> {
+        if !self.socks_proxy.trim().is_empty() {
+            return Err(std::io::Error::other("Unity upstream SOCKS5 routing is not ported yet; clear the SOCKS setting before using a direct connection"));
+        }
         self.prepare_certificate()?;
-        if self.system_proxy&&!gearth_platform::certificate_trusted(&self.public_certificate.as_ref().unwrap().1)? {return Err(std::io::Error::other("Install the displayed public certificate before enabling the Windows proxy"));}
-        self.hotel_version.clear();self.client_identifier.clear();self.load_packet_database()?;
-        if self.packet_info.entries().is_empty(){self.packet_info=PacketInfoManager::from_json("",include_bytes!("../resources/unity/messages.json")).map_err(std::io::Error::other)?;}
-        let http=WebOptions::new(self.listen.parse().map_err(std::io::Error::other)?,self.identity_directory());let mut communicator=gearth_rust::unity_server::UnityOptions::new("127.0.0.1:0".parse().unwrap(),self.identity_directory());communicator.extensions=self.extension_host.clone();communicator.packet_info=self.packet_info.clone();
-        let cache=self.settings_path.parent().unwrap_or_else(||Path::new(".")).join("unity-cache");let (connection,events)=gearth_rust::unity_connection::UnityConnection::start(http,communicator,cache)?;
-        if self.system_proxy {self.proxy_guard=Some(gearth_platform::SystemProxyGuard::activate(connection.address)?);}
-        self.status=format!("Unity asset proxy listening on {}; reload the WebGL client",connection.address);self.relay=Some(Connection::Unity(Box::new(connection)));self.events=Some(events);self.update_rules();Ok(())
+        if self.system_proxy
+            && !gearth_platform::certificate_trusted(&self.public_certificate.as_ref().unwrap().1)?
+        {
+            return Err(std::io::Error::other(
+                "Install the displayed public certificate before enabling the Windows proxy",
+            ));
+        }
+        self.hotel_version.clear();
+        self.client_identifier.clear();
+        self.load_packet_database()?;
+        if self.packet_info.entries().is_empty() {
+            self.packet_info = PacketInfoManager::from_json(
+                "",
+                include_bytes!("../resources/unity/messages.json"),
+            )
+            .map_err(std::io::Error::other)?;
+        }
+        let http = WebOptions::new(
+            self.listen.parse().map_err(std::io::Error::other)?,
+            self.identity_directory(),
+        );
+        let mut communicator = gearth_rust::unity_server::UnityOptions::new(
+            "127.0.0.1:0".parse().unwrap(),
+            self.identity_directory(),
+        );
+        communicator.extensions = self.extension_host.clone();
+        communicator.packet_info = self.packet_info.clone();
+        let cache = self
+            .settings_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("unity-cache");
+        let (connection, events) =
+            gearth_rust::unity_connection::UnityConnection::start(http, communicator, cache)?;
+        if self.system_proxy {
+            self.proxy_guard = Some(gearth_platform::SystemProxyGuard::activate(
+                connection.address,
+            )?);
+        }
+        self.status = format!(
+            "Unity asset proxy listening on {}; reload the WebGL client",
+            connection.address
+        );
+        self.relay = Some(Connection::Unity(Box::new(connection)));
+        self.events = Some(events);
+        self.update_rules();
+        Ok(())
     }
     fn start_nitro(&mut self) -> std::io::Result<()> {
-        if self.unity {return self.start_unity();}
+        if self.unity {
+            return self.start_unity();
+        }
         if !self.socks_proxy.trim().is_empty() {
             return Err(std::io::Error::other("Nitro upstream SOCKS5 support is not implemented; clear the SOCKS setting to use a direct connection"));
         }
@@ -655,7 +715,11 @@ impl Desktop {
         Ok(())
     }
     fn nitro_connection(&mut self, ui: &mut egui::Ui) {
-        ui.label(if self.unity {"Unity WebGL browser connection"}else{"Nitro browser connection"});
+        ui.label(if self.unity {
+            "Unity WebGL browser connection"
+        } else {
+            "Nitro browser connection"
+        });
         ui.horizontal(|ui| {
             ui.label("Local address");
             ui.add_enabled(
@@ -742,37 +806,43 @@ impl Desktop {
             });
         }
         if self.unity {
-            ui.label("Unity packet identifiers (.json / .tsv); leave blank to use beta-29 messages.json");ui.add_enabled(self.relay.is_none(),egui::TextEdit::singleline(&mut self.packet_database));
+            ui.label(
+                "Unity packet identifiers (.json / .tsv); leave blank to use beta-29 messages.json",
+            );
+            ui.add_enabled(
+                self.relay.is_none(),
+                egui::TextEdit::singleline(&mut self.packet_database),
+            );
             ui.label("Reload the official WebGL client with the browser proxy enabled. Its framework, loader and WebAssembly hooks are patched for this session. Unsupported client layouts stop with a patch error.");
             ui.label("With automatic Windows setup disabled, configure your test browser to use the local address and trust the displayed public certificate.");
         } else {
-        egui::CollapsingHeader::new("Nitro options").show(ui,|ui|{
+            egui::CollapsingHeader::new("Nitro options").show(ui,|ui|{
             ui.label("Packet identifiers (.tsv / .json)");ui.text_edit_singleline(&mut self.packet_database);
             ui.label("Optional game WebSocket URLs (final * accepts a prefix), one per line. Otherwise the game is recognized by its first outgoing packet (4000).");ui.add(egui::TextEdit::multiline(&mut self.nitro_urls).desired_rows(3));
             ui.label("HabboCity key data file (optional Nitro Helper JSON response)");ui.text_edit_singleline(&mut self.city_key_path);
             ui.add_enabled(self.relay.is_none(),egui::Checkbox::new(&mut self.allow_city_helper,"For this session, allow sending HabboCity's crypto WASM file to https://nitro.sulek.dev/habbocity to obtain its protocol keys"));
             ui.label("With the Windows proxy disabled, configure your test browser to use the local address and trust the public certificate in that browser.");
         });
-        ui.horizontal(|ui| {
-            if ui
-                .add_enabled(
-                    self.relay.is_none() && self.packet_download.is_none(),
-                    egui::Button::new("Load Nitro packet identifiers"),
-                )
-                .clicked()
-            {
-                let (send, receive) = std::sync::mpsc::channel();
-                self.packet_download = Some(receive);
-                self.status = "Loading Nitro packet identifiers...".into();
-                std::thread::spawn(move || {
-                    let _ = send.send(PacketInfoManager::fetch_sulek(NITRO_REVISION, false));
-                });
-            }
-            ui.label(format!(
-                "{} packet identifiers",
-                self.packet_info.entries().len()
-            ));
-        });
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(
+                        self.relay.is_none() && self.packet_download.is_none(),
+                        egui::Button::new("Load Nitro packet identifiers"),
+                    )
+                    .clicked()
+                {
+                    let (send, receive) = std::sync::mpsc::channel();
+                    self.packet_download = Some(receive);
+                    self.status = "Loading Nitro packet identifiers...".into();
+                    std::thread::spawn(move || {
+                        let _ = send.send(PacketInfoManager::fetch_sulek(NITRO_REVISION, false));
+                    });
+                }
+                ui.label(format!(
+                    "{} packet identifiers",
+                    self.packet_info.entries().len()
+                ));
+            });
         }
         if self.relay.is_none() {
             if ui
@@ -1338,7 +1408,12 @@ impl Desktop {
             .get("nitro")
             .copied()
             .unwrap_or(false);
-        self.unity=self.settings.booleans.get("unity").copied().unwrap_or(false);
+        self.unity = self
+            .settings
+            .booleans
+            .get("unity")
+            .copied()
+            .unwrap_or(false);
         if self.nitro {
             self.origins = false;
         }
@@ -1499,7 +1574,13 @@ impl Desktop {
         })
     }
     fn extensions(&mut self, ui: &mut egui::Ui) {
-        self.store.show(ui,self.extension_host.as_ref(),Path::new(&self.extension_runtime),&mut self.status,&mut self.extension_processes);
+        self.store.show(
+            ui,
+            self.extension_host.as_ref(),
+            Path::new(&self.extension_runtime),
+            &mut self.status,
+            &mut self.extension_processes,
+        );
         ui.heading("Extensions");
         let Some(host) = &self.extension_host else {
             ui.label("Unable to bind the extension server on ports 9092–9107.");

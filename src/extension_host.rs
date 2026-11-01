@@ -397,14 +397,105 @@ impl ExtensionHost {
         Ok(token)
     }
     /// Launch an installed store command with the original file-bound IPC placeholders.
-    pub fn launch_command(&self,words:&[String],directory:&Path,filename:&str,label:&str,java_runtime:&Path)->io::Result<Child> {
-        if words.is_empty()||words.len()>128||words.iter().any(|word|word.contains('\0')||word.len()>16384)||filename.is_empty()||filename.len()>256||!filename.bytes().all(|byte|byte.is_ascii_alphanumeric()||b"._-".contains(&byte)){return Err(io::Error::other("invalid installed extension command"));}let directory=directory.canonicalize()?;if !directory.is_dir(){return Err(io::Error::other("extension working directory is unavailable"));}let token=self.register_launch(filename)?;
-        let command=words.iter().map(|word|word.replace("{port}",&self.address.port().to_string()).replace("{filename}",filename).replace("{cookie}",&token)).collect::<Vec<_>>();let program=if matches!(command[0].to_ascii_lowercase().as_str(),"java"|"java.exe"|"javaw"|"javaw.exe")&&!java_runtime.as_os_str().is_empty(){java_runtime.to_path_buf()}else{let program=std::path::PathBuf::from(&command[0]);if !program.is_absolute()&&(command[0].contains('/')||command[0].contains('\\')){let path=directory.join(program).canonicalize()?;if !path.starts_with(&directory){return Err(io::Error::other("relative extension entry point escapes its installation"));}path}else{program}};
-        let mut child=Command::new(program);child.args(&command[1..]).current_dir(directory).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::piped());
-        #[cfg(windows)] {use std::os::windows::process::CommandExt;child.creation_flags(0x08000000);}
-        let mut process=child.spawn()?;if let Some(output)=process.stdout.take(){self.capture_output(output,format!("{label} stdout"));}if let Some(output)=process.stderr.take(){self.capture_output(output,format!("{label} stderr"));}Ok(process)
+    pub fn launch_command(
+        &self,
+        words: &[String],
+        directory: &Path,
+        filename: &str,
+        label: &str,
+        java_runtime: &Path,
+    ) -> io::Result<Child> {
+        if words.is_empty()
+            || words.len() > 128
+            || words
+                .iter()
+                .any(|word| word.contains('\0') || word.len() > 16384)
+            || filename.is_empty()
+            || filename.len() > 256
+            || !filename
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
+        {
+            return Err(io::Error::other("invalid installed extension command"));
+        }
+        let directory = directory.canonicalize()?;
+        if !directory.is_dir() {
+            return Err(io::Error::other(
+                "extension working directory is unavailable",
+            ));
+        }
+        let token = self.register_launch(filename)?;
+        let command = words
+            .iter()
+            .map(|word| {
+                word.replace("{port}", &self.address.port().to_string())
+                    .replace("{filename}", filename)
+                    .replace("{cookie}", &token)
+            })
+            .collect::<Vec<_>>();
+        let program = if matches!(
+            command[0].to_ascii_lowercase().as_str(),
+            "java" | "java.exe" | "javaw" | "javaw.exe"
+        ) && !java_runtime.as_os_str().is_empty()
+        {
+            java_runtime.to_path_buf()
+        } else {
+            let program = std::path::PathBuf::from(&command[0]);
+            if !program.is_absolute() && (command[0].contains('/') || command[0].contains('\\')) {
+                let path = directory.join(program).canonicalize()?;
+                if !path.starts_with(&directory) {
+                    return Err(io::Error::other(
+                        "relative extension entry point escapes its installation",
+                    ));
+                }
+                path
+            } else {
+                program
+            }
+        };
+        let mut child = Command::new(program);
+        child
+            .args(&command[1..])
+            .current_dir(directory)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            child.creation_flags(0x08000000);
+        }
+        let mut process = child.spawn()?;
+        if let Some(output) = process.stdout.take() {
+            self.capture_output(output, format!("{label} stdout"));
+        }
+        if let Some(output) = process.stderr.take() {
+            self.capture_output(output, format!("{label} stderr"));
+        }
+        Ok(process)
     }
-    fn capture_output(&self,mut output:impl Read+Send+'static,label:String){let state=self.shared.clone();thread::spawn(move||{let mut buffer=[0;4096];loop {match output.read(&mut buffer){Ok(0)|Err(_)=>break,Ok(count)=>{for line in String::from_utf8_lossy(&buffer[..count]).lines(){let _=state.events.try_send(HostEvent::Console {id:0,text:format!("{label}: {line}")});}}}if state.stop.load(Ordering::Acquire){break;}}});}
+    fn capture_output(&self, mut output: impl Read + Send + 'static, label: String) {
+        let state = self.shared.clone();
+        thread::spawn(move || {
+            let mut buffer = [0; 4096];
+            loop {
+                match output.read(&mut buffer) {
+                    Ok(0) | Err(_) => break,
+                    Ok(count) => {
+                        for line in String::from_utf8_lossy(&buffer[..count]).lines() {
+                            let _ = state.events.try_send(HostEvent::Console {
+                                id: 0,
+                                text: format!("{label}: {line}"),
+                            });
+                        }
+                    }
+                }
+                if state.stop.load(Ordering::Acquire) {
+                    break;
+                }
+            }
+        });
+    }
     pub fn stop(&self) {
         self.shared.stop.store(true, Ordering::Release);
         if let Ok(peers) = self.shared.peers.lock() {
