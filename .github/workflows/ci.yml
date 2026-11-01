@@ -164,7 +164,7 @@ jobs:
 
   web:
     env:
-      GEARTH_UNITY_FIXTURE_DIR: ${{ runner.temp }}/unity-fixtures
+      GEARTH_UNITY_FIXTURE_DIR: /tmp/gearth-unity-fixtures
     timeout-minutes: 15
     runs-on: ubuntu-latest
     steps:
