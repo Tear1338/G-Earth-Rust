@@ -555,6 +555,7 @@ impl Desktop {
         ui.horizontal(|ui|{ui.label("Local address");ui.add_enabled(self.relay.is_none(),egui::TextEdit::singleline(&mut self.listen));});
         ui.add_enabled(self.relay.is_none(),egui::Checkbox::new(&mut self.system_proxy,"Configure Windows browser proxy while waiting for Nitro"));
         ui.label("Start the proxy, then reload your hotel. The previous Windows proxy is restored when the game connects or when you stop.");
+        if ui.add_enabled(self.relay.is_none(),egui::Button::new("Restore saved Windows proxy after an interrupted session")).clicked(){self.status=match gearth_platform::recover_system_proxy(){Ok(())=>"Saved proxy settings restored; later user changes preserved".into(),Err(e)=>e.to_string()};}
         if ui.add_enabled(self.relay.is_none()&&self.certificate_task.is_none(),egui::Button::new("Prepare public certificate")).clicked(){self.status=match self.prepare_certificate(){Ok(())=>"Public certificate ready".into(),Err(e)=>e.to_string()};}
         if let Some((path,der))=self.public_certificate.clone() {
             ui.label(format!("Public certificate: {}",path.display()));

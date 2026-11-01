@@ -76,6 +76,10 @@ pub fn find_tables(bytes: &[u8], address: usize) -> Vec<[u8; 256]> {
 mod windows;
 #[cfg(windows)] mod web_settings;
 pub struct SystemProxyGuard {#[cfg(windows)] inner:web_settings::ProxyGuard}
+pub fn recover_system_proxy()->io::Result<()> {
+    #[cfg(windows)] {web_settings::ProxyGuard::recover()}
+    #[cfg(not(windows))] {Err(io::Error::new(io::ErrorKind::Unsupported,"automatic system proxy restoration currently requires Windows"))}
+}
 impl SystemProxyGuard {
     pub fn activate(address:std::net::SocketAddr)->io::Result<Self>{
         #[cfg(windows)] {Ok(Self {inner:web_settings::ProxyGuard::activate(address)?})}
