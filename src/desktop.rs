@@ -379,17 +379,21 @@ impl Desktop {
         } else {
             "EVA_WIRE TCP relay"
         });
-        ui.add_enabled(
+        if ui.add_enabled(
             self.relay.is_none() && self.attachment_pending.is_none(),
             egui::Checkbox::new(&mut self.origins, "Origins / Shockwave"),
-        );
+        ).changed(){
+            let known=gearth_rust::attachment::FLASH_HOTELS.contains(&self.attachment_host.as_str())||gearth_rust::attachment::ORIGINS_HOTELS.contains(&self.attachment_host.as_str());
+            if known{self.attachment_host=if self.origins{"game-od.habbo.com".into()}else{"game-fr.habbo.com".into()};}
+        }
         egui::CollapsingHeader::new("Official client attachment").default_open(true).show(ui,|ui|{
             let hotels=if self.origins{gearth_rust::attachment::ORIGINS_HOTELS}else{gearth_rust::attachment::FLASH_HOTELS};
             egui::ComboBox::from_id_salt("attach-hotel").selected_text(&self.attachment_host).show_ui(ui,|ui|{for host in hotels{ui.selectable_value(&mut self.attachment_host,(*host).into(),*host);}});
+            ui.text_edit_singleline(&mut self.attachment_host);
             ui.checkbox(&mut self.flash_auto,"Negotiate Flash encryption and discover client RC4 state (Windows)");
             ui.horizontal(|ui|{
                 if ui.button("Refresh Habbo processes").clicked(){match gearth_platform::habbo_processes(){Ok(processes)=>self.client_processes=processes,Err(e)=>self.status=e.to_string()}}
-                egui::ComboBox::from_id_salt("flash-process").selected_text(if self.flash_pid==0{"Automatic (one client only)".into()}else{format!("PID {}",self.flash_pid)}).show_ui(ui,|ui|{ui.selectable_value(&mut self.flash_pid,0,"Automatic (one client only)");for p in &self.client_processes{ui.selectable_value(&mut self.flash_pid,p.pid,format!("{} - PID {}",p.executable,p.pid));}});
+                egui::ComboBox::from_id_salt("flash-process").selected_text(if self.flash_pid==0{"Automatic (detect connecting client)".into()}else{format!("PID {}",self.flash_pid)}).show_ui(ui,|ui|{ui.selectable_value(&mut self.flash_pid,0,"Automatic (detect connecting client)");for p in &self.client_processes{ui.selectable_value(&mut self.flash_pid,p.pid,format!("{} - PID {}",p.executable,p.pid));}});
             });
             if ui.add_enabled(self.relay.is_none()&&self.attachment_pending.is_none(),egui::Button::new("Attach official client")).clicked(){
                 let port=if self.origins{40001}else{30000};self.remote=format!("{}:{port}",self.attachment_host);self.flash_auto=!self.origins;
@@ -1145,23 +1149,10 @@ impl Desktop {
             packets: self.packet_info.clone(),
         };
         Ok(RelayOptions {
-            flash_process: if self.flash_auto && !self.origins {
-                let processes = gearth_platform::habbo_processes()?;
-                Some(if self.flash_pid != 0 {
-                    if !processes.iter().any(|p| p.pid == self.flash_pid) {
-                        return Err(std::io::Error::other(
-                            "Selected Habbo process is no longer running",
-                        ));
-                    }
-                    self.flash_pid
-                } else if processes.len() == 1 {
-                    processes[0].pid
-                } else {
-                    return Err(std::io::Error::other("Select the Habbo process to attach; automatic selection requires exactly one running client"));
-                })
-            } else {
-                None
-            },
+            flash_process: if self.flash_auto&&!self.origins {
+                if self.flash_pid!=0&&!gearth_platform::habbo_processes()?.iter().any(|p|p.pid==self.flash_pid){return Err(std::io::Error::other("Selected Habbo process is no longer running"));}
+                Some(self.flash_pid)
+            }else{None},
             shockwave: self.origins,
             extensions: self.extension_host.clone(),
             connection: Some(connection),

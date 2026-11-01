@@ -111,6 +111,12 @@ impl Relay {
             while !worker_stop.load(Ordering::Acquire) {
                 match listener.accept() {
                     Ok((client, _)) => {
+                        let mut session_options=options.clone();
+                        if session_options.flash_process==Some(0){
+                            if let Some(pid)=client.peer_addr().ok().and_then(|address|gearth_platform::tcp_owner(address).ok().flatten()){
+                                session_options.flash_process=Some(pid);let _=events.try_send(Event::Status(format!("Flash client process: {pid}")));
+                            }
+                        }
                         let server = if let Some(socks) = &options.socks {
                             socks.connect(&config.remote).ok()
                         } else {
@@ -164,7 +170,7 @@ impl Relay {
                             &events,
                             commands,
                             &mut index,
-                            &options,
+                            &session_options,
                         );
                         if let Some(host) = &options.extensions {
                             host.end_connection();
