@@ -1,6 +1,8 @@
 //! Rust implementation of the EVA_WIRE packet core. See docs/PARITY.md for scope.
 #![forbid(unsafe_code)]
 pub mod crypto;
+pub mod attachment;
+pub mod flash;
 pub mod encoding;
 pub mod expression;
 pub mod extension;

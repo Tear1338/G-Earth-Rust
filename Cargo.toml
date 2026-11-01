@@ -10,6 +10,7 @@ default = []
 desktop = ["dep:eframe"]
 
 [dependencies]
+gearth-platform = { path = "crates/gearth-platform" }
 getrandom = "0.3.4"
 serde_json = "1.0"
 num-bigint = "0.4"
@@ -37,4 +38,8 @@ required-features = ["desktop"]
 lto = "thin"
 codegen-units = 1
 strip = true
+
+[workspace]
+members = ["crates/gearth-platform"]
+resolver = "2"
 

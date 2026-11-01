@@ -96,6 +96,13 @@ struct Desktop {
     logs_bytes: usize,
     replacement_expression: String,
     origins: bool,
+    flash_auto: bool,
+    flash_pid: u32,
+    client_processes: Vec<gearth_platform::ClientProcess>,
+    attachment_host: String,
+    attachment_pending: Option<Receiver<std::io::Result<gearth_rust::attachment::Attachment>>>,
+    attachment_worker: Option<std::thread::JoinHandle<()>>,
+    redirect: Option<gearth_rust::attachment::HostsRedirect>,
     packet_download: Option<Receiver<std::io::Result<PacketInfoManager>>>,
 }
 struct LogRow {
@@ -168,6 +175,8 @@ impl Default for Desktop {
             logs_bytes: 0,
             replacement_expression: String::new(),
             origins: false,
+            flash_auto: false, flash_pid: 0, client_processes: gearth_platform::habbo_processes().unwrap_or_default(),
+            attachment_host: "game-fr.habbo.com".into(), attachment_pending: None, attachment_worker: None, redirect: None,
             packet_download: None,
         };
         desktop.load_settings();
@@ -211,6 +220,14 @@ impl Desktop {
         }
     }
     fn poll(&mut self) {
+        if let Some(pending)=&self.attachment_pending {
+            match pending.try_recv(){
+                Ok(result)=>{match result{Ok(attachment)=>{self.relay=Some(attachment.relay);self.events=Some(attachment.events);self.redirect=Some(attachment.redirect);self.status="Waiting for the official client; reconnect Habbo now".into();self.update_rules();},Err(e)=>self.status=format!("Attachment failed: {e}")};self.attachment_pending=None;if let Some(worker)=self.attachment_worker.take(){let _=worker.join();}},
+                Err(std::sync::mpsc::TryRecvError::Disconnected)=>{self.attachment_pending=None;self.status="Attachment worker stopped".into();},
+                Err(std::sync::mpsc::TryRecvError::Empty)=>{},
+            }
+        }
+
         if let Some(download) = &self.packet_download {
             match download.try_recv() {
                 Ok(result) => {
@@ -290,7 +307,11 @@ impl Desktop {
                         }
                     }
                     Event::Listening(a) => self.status = format!("Listening on {a}"),
-                    Event::Connected(a) => self.status = format!("Connected to {a}"),
+                    Event::Connected(a) => {
+                        self.status=format!("Connected to {a}");
+                        if let Some(redirect)=&mut self.redirect{match redirect.restore(){Ok(())=>{self.redirect=None;},Err(e)=>self.status=format!("Connected; hosts restoration failed: {e}")}}
+                    },
+                    Event::Identified {version,identifier}=>{self.hotel_version=version;self.client_identifier=identifier;},
                     Event::Disconnected => {
                         self.status = "Client disconnected; listening".into();
                         self.scheduler.jobs.clear();
@@ -317,9 +338,24 @@ impl Desktop {
             "EVA_WIRE TCP relay"
         });
         ui.add_enabled(
-            self.relay.is_none(),
+            self.relay.is_none()&&self.attachment_pending.is_none(),
             egui::Checkbox::new(&mut self.origins, "Origins / Shockwave"),
         );
+        egui::CollapsingHeader::new("Official client attachment").default_open(true).show(ui,|ui|{
+            let hotels=if self.origins{gearth_rust::attachment::ORIGINS_HOTELS}else{gearth_rust::attachment::FLASH_HOTELS};
+            egui::ComboBox::from_id_salt("attach-hotel").selected_text(&self.attachment_host).show_ui(ui,|ui|{for host in hotels{ui.selectable_value(&mut self.attachment_host,(*host).into(),*host);}});
+            ui.checkbox(&mut self.flash_auto,"Negotiate Flash encryption and discover client RC4 state (Windows)");
+            ui.horizontal(|ui|{
+                if ui.button("Refresh Habbo processes").clicked(){match gearth_platform::habbo_processes(){Ok(processes)=>self.client_processes=processes,Err(e)=>self.status=e.to_string()}}
+                egui::ComboBox::from_id_salt("flash-process").selected_text(if self.flash_pid==0{"Automatic (one client only)".into()}else{format!("PID {}",self.flash_pid)}).show_ui(ui,|ui|{ui.selectable_value(&mut self.flash_pid,0,"Automatic (one client only)");for p in &self.client_processes{ui.selectable_value(&mut self.flash_pid,p.pid,format!("{} - PID {}",p.executable,p.pid));}});
+            });
+            if ui.add_enabled(self.relay.is_none()&&self.attachment_pending.is_none(),egui::Button::new("Attach official client")).clicked(){
+                let port=if self.origins{40001}else{30000};self.remote=format!("{}:{port}",self.attachment_host);self.flash_auto=!self.origins;
+                match self.relay_options(){Ok(options)=>{let host=self.attachment_host.clone();let path=gearth_rust::attachment::HostsRedirect::system_path();let (send,receive)=std::sync::mpsc::channel();self.attachment_pending=Some(receive);self.status="Resolving hotel and preparing the local listener...".into();self.attachment_worker=Some(std::thread::spawn(move||{let _=send.send(gearth_rust::attachment::Attachment::start(&host,port,options,&path));}));},Err(e)=>self.status=e.to_string()}
+            }
+            ui.label("Hosts-file access requires administrator rights. Start listening before reconnecting the client. Raw-IP clients are not supported yet.");
+            if ui.add_enabled(self.relay.is_none()&&self.attachment_pending.is_none(),egui::Button::new("Recover redirects after closing other G-Earth Rust instances")).clicked(){self.status=match gearth_rust::attachment::HostsRedirect::recover_stale(&gearth_rust::attachment::HostsRedirect::system_path()){Ok(())=>"Owned redirects removed".into(),Err(e)=>e.to_string()};}
+        });
         ui.add_space(12.0);
         egui::Grid::new("connection-grid")
             .spacing([18.0, 12.0])
@@ -369,7 +405,7 @@ impl Desktop {
                 self.packet_info.entries().len()
             ));
         });
-        if self.relay.is_none() {
+        if self.relay.is_none()&&self.attachment_pending.is_none() {
             if ui.button("Start listening").clicked() {
                 match self.listen.parse() {
                     Ok(listen) => match self.relay_options().and_then(|options| {
@@ -391,17 +427,18 @@ impl Desktop {
                     Err(e) => self.status = format!("Invalid local address: {e}"),
                 }
             }
-        } else if ui.button("Stop").clicked() {
+        } else if self.relay.is_some()&&ui.button("Stop").clicked() {
             self.relay.take();
             self.events = None;
             self.scheduler.jobs.clear();
             self.status = "Disconnected".into();
+            if let Some(redirect)=&mut self.redirect{match redirect.restore(){Ok(())=>self.redirect=None,Err(e)=>self.status=format!("Hosts restoration failed: {e}")}}
         }
         ui.add_space(20.0);
         ui.group(|ui|{
             ui.label("Development scope");
             ui.label("Point a compatible test client at the local address. The relay forwards framed packets to the explicit remote address.");
-            ui.label("Automatic Flash/Origins attachment, RC4 key discovery, Nitro TLS/WebSocket and Unity integration are not implemented yet.");
+            ui.label("Hosts-based Flash/Origins attachment is implemented. Raw-IP attachment, Nitro TLS/WebSocket and Unity integration are still outstanding.");
         });
     }
     fn logger(&mut self, ui: &mut egui::Ui) {
@@ -877,7 +914,7 @@ impl eframe::App for Desktop {
                 );
             }
         });
-        if self.relay.is_some() || self.extension_host.is_some() {
+        if self.relay.is_some() || self.attachment_pending.is_some() || self.extension_host.is_some() {
             ctx.request_repaint_after(Duration::from_millis(50));
         }
     }
@@ -1058,6 +1095,10 @@ impl Desktop {
             packets: self.packet_info.clone(),
         };
         Ok(RelayOptions {
+            flash_process: if self.flash_auto&&!self.origins {
+                let processes=gearth_platform::habbo_processes()?;
+                Some(if self.flash_pid!=0{if !processes.iter().any(|p|p.pid==self.flash_pid){return Err(std::io::Error::other("Selected Habbo process is no longer running"));}self.flash_pid}else if processes.len()==1{processes[0].pid}else{return Err(std::io::Error::other("Select the Habbo process to attach; automatic selection requires exactly one running client"));})
+            }else{None},
             shockwave: self.origins,
             extensions: self.extension_host.clone(),
             connection: Some(connection),
@@ -1141,6 +1182,8 @@ impl Desktop {
 }
 impl Drop for Desktop {
     fn drop(&mut self) {
+        if let Some(worker)=self.attachment_worker.take(){let _=worker.join();}
+        if let Some(redirect)=&mut self.redirect{let _=redirect.restore();}
         if self.settings_loaded {
             self.save_settings();
         }
