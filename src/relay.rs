@@ -63,6 +63,20 @@ impl Relay {
         config: Config,
         options: RelayOptions,
     ) -> io::Result<(Self, Receiver<Event>)> {
+        Self::start_inner(config, options, None)
+    }
+    pub(crate) fn start_raw(
+        config: Config,
+        options: RelayOptions,
+        upstream: VecDeque<TcpStream>,
+    ) -> io::Result<(Self, Receiver<Event>)> {
+        Self::start_inner(config, options, Some(upstream))
+    }
+    fn start_inner(
+        config: Config,
+        options: RelayOptions,
+        raw_upstream: Option<VecDeque<TcpStream>>,
+    ) -> io::Result<(Self, Receiver<Event>)> {
         if options.flash_process.is_some()
             && (options.shockwave
                 || options.outgoing_rc4.is_some()
@@ -79,18 +93,36 @@ impl Relay {
                 "Origins negotiates its own crypto; remove explicit RC4 keys",
             ));
         }
-        if !config.listen.ip().is_loopback() {
+        let raw = raw_upstream.is_some();
+        if raw {
+            if !config.listen.is_ipv4() || !config.listen.ip().is_unspecified() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "Raw-IP listen address must be 0.0.0.0",
+                ));
+            }
+            if options.socks.is_none()
+                && raw_upstream
+                    .as_ref()
+                    .is_none_or(|upstream| upstream.is_empty())
+            {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "direct Raw-IP relay requires preconnected server sockets",
+                ));
+            }
+        } else if !config.listen.ip().is_loopback() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "listen address must be loopback",
             ));
         }
-        let remote: Vec<SocketAddr> = if options.socks.is_some() {
+        let remote: Vec<SocketAddr> = if raw || options.socks.is_some() {
             Vec::new()
         } else {
             config.remote.to_socket_addrs()?.collect()
         };
-        if remote.is_empty() && options.socks.is_none() {
+        if !raw && remote.is_empty() && options.socks.is_none() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "remote has no addresses",
@@ -106,6 +138,7 @@ impl Relay {
         let (worker_stop, worker_active, worker_rules) =
             (stop.clone(), active.clone(), rules.clone());
         let worker = thread::spawn(move || {
+            let mut raw_upstream = raw_upstream;
             let _ = events.try_send(Event::Listening(address));
             let mut index = 0i32;
             while !worker_stop.load(Ordering::Acquire) {
@@ -126,6 +159,8 @@ impl Relay {
                         }
                         let server = if let Some(socks) = &options.socks {
                             socks.connect(&config.remote).ok()
+                        } else if let Some(upstream) = &mut raw_upstream {
+                            upstream.pop_front()
                         } else {
                             remote.iter().find_map(|addr| {
                                 if worker_stop.load(Ordering::Acquire) {
@@ -552,4 +587,61 @@ fn run_session(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::packet::{read_frame, write_frame};
+    use std::net::Shutdown;
+
+    fn wait_for(events: &Receiver<Event>, predicate: impl Fn(&Event) -> bool) {
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        while std::time::Instant::now() < deadline {
+            if let Ok(event) = events.recv_timeout(Duration::from_millis(50)) {
+                if predicate(&event) {
+                    return;
+                }
+            }
+        }
+        panic!("timed out waiting for Raw-IP relay event");
+    }
+    #[test]
+    fn raw_relay_consumes_preconnected_sockets_without_direct_fallback() {
+        let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+        let upstream = TcpStream::connect(remote.local_addr().unwrap()).unwrap();
+        let (mut server, _) = remote.accept().unwrap();
+        server
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        let (mut relay, events) = Relay::start_raw(
+            Config {
+                listen: "0.0.0.0:0".parse().unwrap(),
+                remote: remote.local_addr().unwrap().to_string(),
+            },
+            RelayOptions::default(),
+            VecDeque::from([upstream]),
+        )
+        .unwrap();
+        let address = SocketAddr::from(([127, 0, 0, 1], relay.address.port()));
+        let mut client = TcpStream::connect(address).unwrap();
+        wait_for(&events, |event| matches!(event, Event::Connected(_)));
+        write_frame(&mut client, &Packet::new(711)).unwrap();
+        assert_eq!(read_frame(&mut server).unwrap().header(), 711);
+        client.shutdown(Shutdown::Both).unwrap();
+        wait_for(&events, |event| matches!(event, Event::Disconnected));
+        drop(server);
+
+        remote.set_nonblocking(true).unwrap();
+        let _second_client = TcpStream::connect(address).unwrap();
+        wait_for(
+            &events,
+            |event| matches!(event, Event::Error(error) if error == "remote connection failed"),
+        );
+        assert!(matches!(
+            remote.accept(),
+            Err(error) if error.kind() == io::ErrorKind::WouldBlock
+        ));
+        relay.stop();
+    }
 }

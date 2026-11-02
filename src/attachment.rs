@@ -1,11 +1,15 @@
 //! Scoped hosts-file attachment. Only this application's marked lines are restored.
 use crate::relay::{Config, Event, Relay, RelayOptions};
+use gearth_platform::IpMapper;
 use std::{
+    collections::VecDeque,
     fs::OpenOptions,
     io::{self, Read, Seek, SeekFrom, Write},
-    net::{Ipv4Addr, SocketAddr, ToSocketAddrs},
+    net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream, ToSocketAddrs},
     path::{Path, PathBuf},
     sync::mpsc::Receiver,
+    thread,
+    time::Duration,
 };
 const MARKER: &str = " # G-Earth-Rust:";
 pub const FLASH_HOTELS: &[&str] = &[
@@ -147,21 +151,98 @@ impl Drop for HostsRedirect {
         let _ = self.restore();
     }
 }
+pub struct RawIpRedirect {
+    mapper: Box<dyn IpMapper>,
+    ip: Ipv4Addr,
+    port: u16,
+    active: bool,
+    keep_on_connect: bool,
+}
+impl RawIpRedirect {
+    fn install(ip: Ipv4Addr, port: u16) -> io::Result<Self> {
+        Self::with_mapper(
+            ip,
+            port,
+            gearth_platform::system_ip_mapper()?,
+            cfg!(windows),
+        )
+    }
+    fn with_mapper(
+        ip: Ipv4Addr,
+        port: u16,
+        mut mapper: Box<dyn IpMapper>,
+        keep_on_connect: bool,
+    ) -> io::Result<Self> {
+        mapper.enable()?;
+        mapper.add_mapping(ip, port, port)?;
+        Ok(Self {
+            mapper,
+            ip,
+            port,
+            active: true,
+            keep_on_connect,
+        })
+    }
+    pub fn restore(&mut self) -> io::Result<()> {
+        if self.active {
+            self.mapper.delete_mapping(self.ip, self.port, self.port)?;
+            self.active = false;
+        }
+        Ok(())
+    }
+    pub fn restore_on_connect(&self) -> bool {
+        !self.keep_on_connect
+    }
+}
+impl Drop for RawIpRedirect {
+    fn drop(&mut self) {
+        let _ = self.restore();
+    }
+}
+pub enum AttachmentRedirect {
+    Hosts(HostsRedirect),
+    RawIp(RawIpRedirect),
+}
+impl AttachmentRedirect {
+    pub fn restore(&mut self) -> io::Result<()> {
+        match self {
+            Self::Hosts(redirect) => redirect.restore(),
+            Self::RawIp(redirect) => redirect.restore(),
+        }
+    }
+    pub fn restore_on_connect(&self) -> bool {
+        match self {
+            Self::Hosts(_) => true,
+            Self::RawIp(redirect) => redirect.restore_on_connect(),
+        }
+    }
+}
 pub struct Attachment {
     pub relay: Relay,
     pub events: Receiver<Event>,
-    pub redirect: HostsRedirect,
+    pub redirect: AttachmentRedirect,
 }
 impl Attachment {
-    pub fn start(
+    pub fn start(host: &str, port: u16, options: RelayOptions, path: &Path) -> io::Result<Self> {
+        match host.parse::<IpAddr>() {
+            Ok(IpAddr::V4(ip)) => Self::start_raw(ip, port, options),
+            Ok(IpAddr::V6(_)) => Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "Raw-IP attachment currently requires an IPv4 hotel address",
+            )),
+            Err(_) => Self::start_hosts(host, port, options, path),
+        }
+    }
+    fn start_hosts(
         host: &str,
         port: u16,
         mut options: RelayOptions,
         path: &Path,
     ) -> io::Result<Self> {
-        if !valid_domain(host) || host.parse::<std::net::IpAddr>().is_ok() {
-            return Err(io::Error::other(
-                "automatic attachment requires a hostname; raw-IP interception is not implemented",
+        if !valid_domain(host) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "automatic attachment requires a valid hostname or IPv4 address",
             ));
         }
         let remote=(host,port).to_socket_addrs()?.find(|a|a.is_ipv4()&&!a.ip().is_loopback()).ok_or_else(||io::Error::other("hotel did not resolve to a non-loopback IPv4 address; check other running proxies"))?;
@@ -181,7 +262,138 @@ impl Attachment {
         Ok(Self {
             relay,
             events,
-            redirect,
+            redirect: AttachmentRedirect::Hosts(redirect),
         })
+    }
+    fn start_raw(ip: Ipv4Addr, port: u16, mut options: RelayOptions) -> io::Result<Self> {
+        if options.shockwave {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "Raw-IP attachment is only available for Flash/EVA_WIRE",
+            ));
+        }
+        if port == 0 || ip.is_loopback() || ip.is_unspecified() || ip.is_multicast() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "Raw-IP attachment requires a non-loopback hotel IPv4 address and fixed port",
+            ));
+        }
+        let remote = SocketAddr::from((ip, port));
+        let mut upstream = VecDeque::new();
+        if options.socks.is_none() {
+            // The mapping would otherwise intercept our own upstream connections.
+            for _ in 0..3 {
+                upstream.push_back(TcpStream::connect_timeout(
+                    &remote,
+                    Duration::from_millis(1200),
+                )?);
+                thread::sleep(Duration::from_millis(50));
+            }
+        }
+        if let Some(details) = &mut options.connection {
+            details.host = ip.to_string();
+            details.port = port;
+        }
+        let (relay, events) = Relay::start_raw(
+            Config {
+                listen: SocketAddr::from(([0, 0, 0, 0], port)),
+                remote: remote.to_string(),
+            },
+            options,
+            upstream,
+        )?;
+        let redirect = RawIpRedirect::install(ip, port)?;
+        Ok(Self {
+            relay,
+            events,
+            redirect: AttachmentRedirect::RawIp(redirect),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    };
+
+    #[derive(Clone, Default)]
+    struct FakeMapper {
+        calls: Arc<Mutex<Vec<String>>>,
+        fail_delete: Arc<AtomicBool>,
+    }
+    impl IpMapper for FakeMapper {
+        fn enable(&mut self) -> io::Result<()> {
+            self.calls.lock().unwrap().push("enable".into());
+            Ok(())
+        }
+        fn add_mapping(&mut self, ip: Ipv4Addr, _: u16, _: u16) -> io::Result<()> {
+            self.calls.lock().unwrap().push(format!("add:{ip}"));
+            Ok(())
+        }
+        fn delete_mapping(&mut self, ip: Ipv4Addr, _: u16, _: u16) -> io::Result<()> {
+            self.calls.lock().unwrap().push(format!("delete:{ip}"));
+            if self.fail_delete.load(Ordering::Relaxed) {
+                Err(io::Error::other("fixture delete failure"))
+            } else {
+                Ok(())
+            }
+        }
+    }
+    fn ip() -> Ipv4Addr {
+        Ipv4Addr::new(192, 0, 2, 40)
+    }
+    #[test]
+    fn raw_redirect_restores_exactly_once_and_honours_windows_policy() {
+        let mapper = FakeMapper::default();
+        let calls = mapper.calls.clone();
+        let mut redirect = RawIpRedirect::with_mapper(ip(), 30000, Box::new(mapper), true).unwrap();
+        assert!(!redirect.restore_on_connect());
+        redirect.restore().unwrap();
+        redirect.restore().unwrap();
+        drop(redirect);
+        assert_eq!(
+            *calls.lock().unwrap(),
+            ["enable", "add:192.0.2.40", "delete:192.0.2.40"]
+        );
+    }
+    #[test]
+    fn raw_redirect_drop_cleans_up_and_non_windows_restores_on_connect() {
+        let mapper = FakeMapper::default();
+        let calls = mapper.calls.clone();
+        {
+            let redirect =
+                RawIpRedirect::with_mapper(ip(), 30000, Box::new(mapper), false).unwrap();
+            assert!(redirect.restore_on_connect());
+        }
+        assert_eq!(
+            *calls.lock().unwrap(),
+            ["enable", "add:192.0.2.40", "delete:192.0.2.40"]
+        );
+    }
+    #[test]
+    fn failed_raw_cleanup_remains_active_for_retry() {
+        let mapper = FakeMapper::default();
+        mapper.fail_delete.store(true, Ordering::Relaxed);
+        let fail_delete = mapper.fail_delete.clone();
+        let calls = mapper.calls.clone();
+        let mut redirect =
+            RawIpRedirect::with_mapper(ip(), 30000, Box::new(mapper), false).unwrap();
+        assert!(redirect.restore().is_err());
+        assert!(redirect.active);
+        fail_delete.store(false, Ordering::Relaxed);
+        redirect.restore().unwrap();
+        assert!(!redirect.active);
+        assert_eq!(
+            calls
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|call| call.starts_with("delete"))
+                .count(),
+            2
+        );
     }
 }

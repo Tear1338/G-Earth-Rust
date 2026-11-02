@@ -183,7 +183,7 @@ jobs:
           cp artifacts/gearth-cli-ubuntu-latest/gearth-rust gearth-cli-linux
           cp artifacts/packet-microbenchmark/*-benchmark.csv .
           sha256sum G-Earth-Rust-Windows.exe G-Earth-Rust-CLI-Windows.exe gearth-cli-linux formatted-source-and-lockfile.zip > SHA256SUMS.txt
-          printf '%s\n' 'Development build of the incomplete Rust port. Read docs/PARITY.md before use. This is not a complete replacement for G-Earth beta-29; real client validation, raw-IP attachment, Chrome TLS emulation and exact UI parity remain outstanding. No performance superiority has been established.' > release-notes.txt
+          printf '%s\n' 'Development build of the incomplete Rust port. Read docs/PARITY.md before use. This is not a complete replacement for G-Earth beta-29; real client/firewall validation, Chrome TLS emulation and exact UI parity remain outstanding. No performance superiority has been established.' > release-notes.txt
           gh release create "$BUILD_TAG" --target "$BUILD_COMMIT" --title "Rust development build $BUILD_TAG" --prerelease --notes-file release-notes.txt G-Earth-Rust-Windows.exe G-Earth-Rust-CLI-Windows.exe gearth-cli-linux formatted-source-and-lockfile.zip SHA256SUMS.txt java-benchmark.csv rust-benchmark.csv
 
   web:

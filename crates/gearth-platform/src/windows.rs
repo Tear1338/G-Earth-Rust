@@ -173,11 +173,7 @@ pub(super) fn tcp_owner(
         },
         Networking::WinSock::AF_INET,
     };
-    if !local.is_ipv4()
-        || !local.ip().is_loopback()
-        || !remote.is_ipv4()
-        || !remote.ip().is_loopback()
-    {
+    if !local.is_ipv4() || !remote.is_ipv4() {
         return Ok(None);
     }
     // SAFETY: Windows writes into an aligned, bounded allocation. Row counts and

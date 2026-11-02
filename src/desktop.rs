@@ -116,7 +116,7 @@ struct Desktop {
     attachment_host: String,
     attachment_pending: Option<Receiver<std::io::Result<gearth_rust::attachment::Attachment>>>,
     attachment_worker: Option<std::thread::JoinHandle<()>>,
-    redirect: Option<gearth_rust::attachment::HostsRedirect>,
+    redirect: Option<gearth_rust::attachment::AttachmentRedirect>,
     packet_download: Option<Receiver<std::io::Result<PacketInfoManager>>>,
     store: store_ui::StoreUi,
     python_console: gpython_ui::PythonUi,
@@ -390,13 +390,15 @@ impl Desktop {
                             }
                         }
                         if let Some(redirect) = &mut self.redirect {
-                            match redirect.restore() {
-                                Ok(()) => {
-                                    self.redirect = None;
-                                }
-                                Err(e) => {
-                                    self.status =
-                                        format!("Connected; hosts restoration failed: {e}")
+                            if redirect.restore_on_connect() {
+                                match redirect.restore() {
+                                    Ok(()) => {
+                                        self.redirect = None;
+                                    }
+                                    Err(e) => {
+                                        self.status =
+                                            format!("Connected; redirect restoration failed: {e}")
+                                    }
                                 }
                             }
                         }
@@ -490,7 +492,7 @@ impl Desktop {
                 let port=if self.origins{40001}else{30000};self.remote=format!("{}:{port}",self.attachment_host);self.flash_auto = !self.origins;
                 match self.relay_options(){Ok(options)=>{let host=self.attachment_host.clone();let path=gearth_rust::attachment::HostsRedirect::system_path();let (send,receive)=std::sync::mpsc::channel();self.attachment_pending=Some(receive);self.status="Resolving hotel and preparing the local listener...".into();self.attachment_worker=Some(std::thread::spawn(move||{let _=send.send(gearth_rust::attachment::Attachment::start(&host,port,options,&path));}));},Err(e)=>self.status=e.to_string()}
             }
-            ui.label("Hosts-file access requires administrator rights. Start listening before reconnecting the client. Raw-IP clients are not supported yet.");
+            ui.label("Enter a hotel hostname for hosts attachment or its IPv4 address for Raw IP. Both require administrator/root privileges; Raw IP is Flash-only and preconnects three direct upstream sockets.");
             if ui.add_enabled(self.relay.is_none()&&self.attachment_pending.is_none(),egui::Button::new("Recover redirects after closing other G-Earth Rust instances")).clicked(){self.status=match gearth_rust::attachment::HostsRedirect::recover_stale(&gearth_rust::attachment::HostsRedirect::system_path()){Ok(())=>"Owned redirects removed".into(),Err(e)=>e.to_string()};}
         });
         ui.add_space(12.0);
@@ -1341,6 +1343,7 @@ impl eframe::App for Desktop {
         if self.relay.is_some()
             || self.attachment_pending.is_some()
             || self.extension_host.is_some()
+            || self.python_console.is_pending()
         {
             ctx.request_repaint_after(Duration::from_millis(50));
         }

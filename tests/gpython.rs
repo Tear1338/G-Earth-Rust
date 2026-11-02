@@ -5,10 +5,81 @@ use gearth_rust::{
     packet_info::{PacketInfo, PacketInfoManager},
 };
 use std::{
-    path::Path,
+    path::{Path, PathBuf},
     process::Command,
+    sync::atomic::AtomicBool,
     time::{Duration, Instant},
 };
+struct Directory(PathBuf);
+impl Directory {
+    fn new() -> Self {
+        let mut random = [0; 16];
+        getrandom::fill(&mut random).unwrap();
+        let path = std::env::temp_dir().join(format!(
+            "gearth-gpython-install-{}",
+            random
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        ));
+        std::fs::create_dir(&path).unwrap();
+        Self(path)
+    }
+}
+impl Drop for Directory {
+    fn drop(&mut self) {
+        if let (Ok(path), Ok(temp)) = (self.0.canonicalize(), std::env::temp_dir().canonicalize()) {
+            if path.parent() == Some(temp.as_path())
+                && path.file_name().is_some_and(|name| {
+                    name.to_string_lossy()
+                        .starts_with("gearth-gpython-install-")
+                })
+            {
+                let _ = std::fs::remove_dir_all(path);
+            }
+        }
+    }
+}
+fn isolated_python(directory: &Path) -> PathBuf {
+    directory.join(if cfg!(windows) {
+        "Scripts/python.exe"
+    } else {
+        "bin/python"
+    })
+}
+fn create_isolated_python(directory: &Path) -> PathBuf {
+    assert!(Command::new("python")
+        .args(["-m", "venv"])
+        .arg(directory)
+        .status()
+        .unwrap()
+        .success());
+    isolated_python(directory)
+}
+#[test]
+#[ignore = "creates an isolated venv; executed in gpython CI"]
+fn pre_cancelled_installer_does_not_modify_the_environment() {
+    let directory = Directory::new();
+    let python = create_isolated_python(&directory.0);
+    let error = gpython::install_dependencies(&python, &AtomicBool::new(true)).unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::Interrupted);
+    assert_eq!(
+        gpython::probe(&python).unwrap().packages.get("g-python"),
+        Some(&None)
+    );
+}
+#[test]
+#[ignore = "creates an isolated venv and downloads the validated package set; executed in gpython CI"]
+fn installer_repairs_an_isolated_python_environment() {
+    let directory = Directory::new();
+    let python = create_isolated_python(&directory.0);
+    let report = gpython::install_dependencies(&python, &AtomicBool::new(false)).unwrap();
+    assert!(report.missing().is_empty(), "{:?}", report.missing());
+    assert_eq!(
+        report.packages.get("g-python").and_then(Option::as_deref),
+        Some("0.1.6")
+    );
+}
 #[test]
 #[ignore = "requires the pinned G-Python package and Jupyter kernel; executed in gpython CI"]
 fn original_gpython_kernel_authenticates_and_injects_through_the_rust_host() {

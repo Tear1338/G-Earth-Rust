@@ -4,7 +4,7 @@ Reference: https://github.com/G-Realm/G-Earth
 
 Pinned tag: `1.5.4-beta-29`; commit `242155c291b1109d6c9a02370f6a2af1ead41ea8`.
 
-The pinned tree contains 675 entries and 347 Java source files. `UPSTREAM_FILES.tsv` retains the path inventory. Protocol and integration work uses the exact upstream HPacket, HMessage, HPacketFormat, NetworkExtensionCodec, NetworkExtensionMessage, HostInfo, PacketInfoManager, network extension authenticator/runner, packet handlers, Shockwave buffers/modifiers, BobbaCrypto classes, packet providers and Cacher/UI settings.
+The pinned tree contains 675 entries and 347 Java source files. `UPSTREAM_FILES.tsv` retains the path inventory. Protocol and integration work uses the exact upstream HPacket, HMessage, HPacketFormat, NetworkExtensionCodec, NetworkExtensionMessage, HostInfo, PacketInfoManager, network extension authenticator/runner, packet handlers, Shockwave buffers/modifiers, BobbaCrypto classes, packet providers, Raw-IP providers/mappers and Cacher/UI settings.
 
 REA opened the released `G-Earth-Api-1.5.4-beta-29.jar` and inspected its ZIP inventory: 181 files, 40 directories, no reported integrity contradictions. SHA-256: `7f318b32a793269eabb1afe2962887ede7d274f6da43b86323ce84d806ef3a51`.
 

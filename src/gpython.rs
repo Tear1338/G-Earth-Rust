@@ -7,6 +7,7 @@ use std::{
     path::Path,
     process::{Child, ChildStdin, Command, Stdio},
     sync::{
+        atomic::{AtomicBool, Ordering},
         mpsc::{self, Receiver},
         Arc,
     },
@@ -101,6 +102,101 @@ pub fn probe(python: &Path) -> io::Result<Dependencies> {
         packages,
         issues,
     })
+}
+/// Installs the validated package set only after an explicit UI action.
+/// The selected environment can be partially modified if pip is interrupted.
+pub fn install_dependencies(python: &Path, cancel: &AtomicBool) -> io::Result<Dependencies> {
+    if cancel.load(Ordering::Relaxed) {
+        return Err(io::Error::new(
+            io::ErrorKind::Interrupted,
+            "Python package installation cancelled; the selected environment was not changed",
+        ));
+    }
+    let before = probe(python)?;
+    if before.python.as_slice() < [3, 11].as_slice() {
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Python >= 3.11 is required; the selected environment was not changed",
+        ));
+    }
+    if cancel.load(Ordering::Relaxed) {
+        return Err(io::Error::new(
+            io::ErrorKind::Interrupted,
+            "Python package installation cancelled; the selected environment was not changed",
+        ));
+    }
+    let mut command = Command::new(python);
+    command
+        .args([
+            "-I",
+            "-m",
+            "pip",
+            "--isolated",
+            "--disable-pip-version-check",
+            "install",
+            "--no-input",
+            "--only-binary=:all:",
+        ])
+        .args([
+            "g-python==0.1.6",
+            "qtconsole",
+            "PyQt5",
+            "jupyter-console",
+            "jupyter-client",
+            "ipykernel",
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    ProcessTree::prepare(&mut command);
+    let mut child = command.spawn()?;
+    let tree = match ProcessTree::attach(&child) {
+        Ok(tree) => tree,
+        Err(error) => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(error);
+        }
+    };
+    let deadline = Instant::now() + Duration::from_secs(300);
+    let status = loop {
+        if cancel.load(Ordering::Relaxed) {
+            drop(tree);
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "Python package installation cancelled; run the dependency check before retrying",
+            ));
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => {}
+            Err(error) => {
+                drop(tree);
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error);
+            }
+        }
+        if Instant::now() >= deadline {
+            drop(tree);
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "Python package installation timed out; run the dependency check before retrying",
+            ));
+        }
+        thread::sleep(Duration::from_millis(50));
+    };
+    drop(tree);
+    if !status.success() {
+        return Err(io::Error::other(format!(
+            "Python package installation failed with status {status}; use the displayed terminal command for detailed logs"
+        )));
+    }
+    probe(python)
 }
 fn init_script(port: u16, filename: &str, cookie: &str, title: &str) -> String {
     let info = serde_json::json!({"title":title,"description":"G-Python scripting console","version":"1.0","author":""});
