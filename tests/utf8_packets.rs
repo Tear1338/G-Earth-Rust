@@ -91,3 +91,26 @@ fn raw_short_fields_round_trip_custom_encodings_without_cursor_loss() {
     assert!(truncated.replace_short_bytes(6, &replacement).is_err());
     assert_eq!(truncated, before);
 }
+
+#[test]
+fn raw_long_fields_reject_invalid_lengths_without_consuming_data() {
+    for body in [
+        &[0xff, 0xff, 0xff, 0xff][..],
+        &[0, 0, 0, 3, 1][..],
+        &[0, 0][..],
+    ] {
+        let mut packet = Packet::new(1);
+        packet.append(body).unwrap();
+        assert!(packet.read_long_bytes().is_err());
+        assert_eq!(packet.cursor(), 6);
+    }
+    let mut packet = Packet::new(9);
+    packet
+        .put_long_bytes(&[0, 65, 0x6c, 0x34])
+        .unwrap()
+        .put_i32(123)
+        .unwrap();
+    packet.reset();
+    assert_eq!(packet.read_long_bytes().unwrap(), [0, 65, 0x6c, 0x34]);
+    assert_eq!(packet.read_i32().unwrap(), 123);
+}

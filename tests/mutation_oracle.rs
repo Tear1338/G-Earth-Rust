@@ -137,6 +137,17 @@ fn mutations_match_original_java_packets_and_cursor() {
     utf16.set_cursor(7).unwrap();
     utf16.replace_short_bytes(6, &encode_utf16("Z猫")).unwrap();
     check("utf16_replacement", &utf16);
+    let mut utf16_long = Packet::new(9);
+    let encoded = encode_utf16("水🐱");
+    utf16_long
+        .put_long_bytes(&encoded)
+        .unwrap()
+        .put_i32(123)
+        .unwrap();
+    check("utf16_long", &utf16_long);
+    utf16_long.reset();
+    assert_eq!(utf16_long.read_long_bytes().unwrap(), encoded);
+    assert_eq!(utf16_long.read_i32().unwrap(), 123);
     let values = ["", "a", "abc", "é"];
     let old_values = ["a", "abc", "é"];
     let limits = [Some(0), Some(1), Some(2), None];

@@ -268,30 +268,39 @@ impl Packet {
         }
         result
     }
-    pub fn read_long_string(&mut self) -> Result<String> {
+    /// Read an EVA four-byte-length-prefixed field without copying its bytes.
+    /// Invalid or truncated fields leave the cursor unchanged.
+    pub fn read_long_bytes(&mut self) -> Result<&[u8]> {
         self.ensure_eva()?;
         let start = self.cursor;
-        let result = (|| {
-            let n = self.read_i32()?;
-            if n < 0 {
-                return Err(error("negative string length"));
-            }
-            Ok(latin1_decode(self.read_bytes(n as usize)?))
-        })();
-        if result.is_err() {
-            self.cursor = start;
+        let prefix_end = start
+            .checked_add(4)
+            .ok_or_else(|| error("length overflow"))?;
+        let prefix = self
+            .bytes
+            .get(start..prefix_end)
+            .ok_or_else(|| error("truncated packet field"))?;
+        let len = i32::from_be_bytes(prefix.try_into().unwrap());
+        if len < 0 {
+            return Err(error("negative string length"));
         }
-        result
+        let end = prefix_end
+            .checked_add(len as usize)
+            .ok_or_else(|| error("length overflow"))?;
+        if end > self.bytes.len() {
+            return Err(error("truncated packet field"));
+        }
+        self.cursor = end;
+        Ok(&self.bytes[prefix_end..end])
+    }
+    pub fn read_long_string(&mut self) -> Result<String> {
+        Ok(latin1_decode(self.read_long_bytes()?))
     }
     pub fn read_utf8_long(&mut self) -> Result<String> {
         self.ensure_eva()?;
         let start = self.cursor;
         let result = (|| {
-            let n = self.read_i32()?;
-            if n < 0 {
-                return Err(error("negative string length"));
-            }
-            std::str::from_utf8(self.read_bytes(n as usize)?)
+            std::str::from_utf8(self.read_long_bytes()?)
                 .map(str::to_owned)
                 .map_err(|_| error("invalid UTF-8"))
         })();
