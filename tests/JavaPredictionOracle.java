@@ -1,0 +1,28 @@
+import gearth.protocol.HPacket;
+import gearth.services.Constants;
+import gearth.services.packet_representation.prediction.StructurePredictor;
+import gearth.services.packet_representation.PacketStringUtils;
+import java.util.HexFormat;
+
+public class JavaPredictionOracle {
+    public static void main(String[] args) {
+        String[] samples = {"", "0000002a000568656c6c6f01", "ffffffff", "00000100", "61626364", "0000", "0100ffff", "0002c2a9", "0000000000bc614e", "000568656c6c6f00000000", "000000010000000000000001", "0020ff0001020304"};
+        for (boolean unity : new boolean[]{false, true}) {
+            Constants.UNITY_PACKETS = unity;
+            for (int i=0; i<samples.length; i++) {
+                HPacket packet = new HPacket(1, HexFormat.of().parseHex(samples[i]));
+                System.out.println((unity ? "unity_" : "classic_") + i + "=" + new StructurePredictor(packet).getStructure());
+                System.out.println((unity ? "expression_unity_" : "expression_classic_") + i + "=" + HexFormat.of().formatHex(PacketStringUtils.predictedExpression(packet, null).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+            }
+        }
+        HPacket nested = new HPacket(1);
+        nested.appendInt(2).appendString("a").appendInt(7).appendString("b\\\"").appendInt(-1);
+        System.out.println("nested=" + HexFormat.of().formatHex(PacketStringUtils.toExpressionFromGivenStructure(nested, "i(si)", null).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        HPacket numeric = new HPacket(1);
+        numeric.appendFloat(0.1f).appendDouble(-2.5).appendShort((short) 8);
+        System.out.println("numeric=" + HexFormat.of().formatHex(PacketStringUtils.toExpressionFromGivenStructure(numeric, "fdu", null).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        HPacket floats = new HPacket(1);
+        floats.appendFloat(0.0001f).appendFloat(10000000f).appendDouble(0.0000001);
+        System.out.println("floats=" + HexFormat.of().formatHex(PacketStringUtils.toExpressionFromGivenStructure(floats, "ffd", null).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+    }
+}

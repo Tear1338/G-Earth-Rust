@@ -2,6 +2,8 @@
 
 The parser differential fixture uses the released beta-29 Java API JAR for all eight furniture state formats and selected floor, wall, inventory, friend, catalog and navigator examples. Rust compares wire bytes or decoded values. The comparison is finite; these formats and entity parsing still need broader independent oracle coverage.
 
+The prediction fixture compares 24 classic/Unity samples and their generated expressions against the released Java predictor, plus nested and floating-point structures. Resource-limit tests exercise oversized packets and malformed/unbounded nesting. These checks do not prove equivalence for every packet or floating-point value.
+
 Windows Flash and hosts attachment have additional [native integration evidence](FLASH_VALIDATION.md), including automatic process identification, real cross-process memory reads, encrypted traffic and scoped cleanup. Latest passing reference: [41329358947](https://github.com/Tear1338/G-Earth-Rust/actions/runs/41329358947).
 
 Earlier expanded transport and extension implementation validated at commit `1ece5611c846c04c919ce8ffc272df316115f8a2`:

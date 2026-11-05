@@ -6,7 +6,7 @@ Status describes source implementation and finite tests, not successful producti
 |---|---|---|
 | EVA_WIRE | Framing, primitive fields, Latin-1, HPacket/HMessage serialization | Full upstream mutation and structure-prediction API |
 | WEDGIE | Incoming/outgoing packet formats, fixed B64, VL64 and format-aware expressions | Wider parser corpus and official client regression |
-| Packet expressions | Typed/numeric/named expressions, mixed raw display notation, lossless hex | Structure prediction and all editor conveniences |
+| Packet expressions | Typed/numeric/named expressions, mixed raw display notation, bounded structure prediction, nested structures and Java comparisons | Broader prediction and editor corpus; metadata and client regression |
 | Explicit TCP relay | Nonblocking bidirectional relay, bounded output, injection, ordered block/replace, reconnect, scoped hosts attachment, Raw-IP preconnected upstreams | Real client/firewall regression |
 | RC4 | State import/export/rewind, manual keys and Windows negotiated discovery, bounded read-only heap scan, ambiguity rejection | Real AIR client regression; broaden memory-layout coverage |
 | Origins crypto | DH substitution, HKDF-SHA256, ChaCha20 channels, encrypted framing and hosts attachment | Official client end-to-end live validation |
@@ -16,7 +16,7 @@ Status describes source implementation and finite tests, not successful producti
 | Packet identifiers | Direction-aware database, beta-29 IPC, Sulek HTTPS lookup/cache, detected Flash revision, Unity JSON and TSV import | Unity client integration and broader remote-provider coverage |
 | SOCKS5 | CONNECT, remote DNS, optional RFC1929 credentials | Wider interoperability tests |
 | Rules/scheduler | Saved ordered rules and finite schedule templates | Every original scheduler and rule-editor option |
-| Logging | Cached search/display strings, virtualized rows, count/byte budget, packet display size limit and export honoring active filters | Original highlighting and complete filtering options |
+| Logging | Cached search/display strings, virtualized rows, count/byte budget, packet display size limit, predicted structure on hover and export honoring active filters | Original highlighting and complete filtering options |
 | Settings | Atomic save/load, unknown-field preservation, original cache import, notepad | Migration of every original setting |
 | UI/theme/languages | Rust eframe desktop, light/dark theme, nine original resource files, localized tabs | Exact UI/layout, all controls translated, shortcuts, tray |
 | Flash | Negotiation, Windows client memory discovery, socket owner detection, hosts attachment, Raw-IP mapping, Windows multi-instance heartbeat/lease and independent counters | Official client/firewall/multi-instance validation and non-Windows discovery |

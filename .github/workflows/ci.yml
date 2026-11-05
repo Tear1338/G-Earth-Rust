@@ -113,6 +113,14 @@ jobs:
           cargo test --locked --test stuffdata_oracle -- --ignored
         env:
           GEARTH_STUFF_ORACLE: /tmp/stuff-oracle.txt
+      - name: Compare structure prediction against the original Java API
+        run: |
+          api_jar=$(find /tmp/upstream-gearth -name 'G-Earth-Api-1.5.4-beta-29.jar' -print -quit)
+          javac -cp "$api_jar" tests/JavaPredictionOracle.java
+          java -cp "$api_jar:tests" JavaPredictionOracle > /tmp/prediction-oracle.txt
+          cargo test --locked --test prediction_oracle -- --ignored
+        env:
+          GEARTH_PREDICTION_ORACLE: /tmp/prediction-oracle.txt
       - name: Exercise an actual beta-29 Java extension against Rust
         run: cargo test --locked --features web --test java_extension -- --ignored
       - name: Exercise the original Java extension through Unity

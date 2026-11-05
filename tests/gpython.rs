@@ -121,6 +121,7 @@ fn original_gpython_kernel_authenticates_and_injects_through_the_rust_host() {
     let mut injected_client = false;
     let mut finished = false;
     let mut ready = false;
+    let mut exit_deadline = None;
     loop {
         for line in console.poll() {
             assert!(!line.starts_with("GEARTH_PYTHON_ERROR"), "{line}");
@@ -167,12 +168,18 @@ fn original_gpython_kernel_authenticates_and_injects_through_the_rust_host() {
         }
         if let Some(status) = console.exited().unwrap() {
             assert!(status.success(), "Python kernel fixture failed: {status}");
-            break;
+            if ready && injected_server && injected_client && finished {
+                break;
+            }
+            // Output and IPC are collected by other threads, which may still have
+            // events to deliver after the child process has exited.
+            let grace =
+                exit_deadline.get_or_insert_with(|| Instant::now() + Duration::from_secs(5));
+            assert!(Instant::now() < *grace, "Python exited before all events arrived: ready={ready}, server={injected_server}, client={injected_client}, finished={finished}");
         }
         assert!(Instant::now() < deadline, "Python kernel fixture timed out");
         std::thread::sleep(Duration::from_millis(10));
     }
-    assert!(ready && injected_server && injected_client && finished);
     console.stop();
     host.stop();
 }

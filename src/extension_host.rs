@@ -696,14 +696,71 @@ fn serve_peer(mut stream: TcpStream, id: u64, shared: &Arc<Shared>) -> io::Resul
                         Incoming::PacketToString { text, format } => {
                             let decoded = Packet::from_stringified_with_format(&text, format)
                                 .map_err(io::Error::other)?;
+                            let connection = shared
+                                .connection
+                                .lock()
+                                .map_err(|_| io::Error::other("connection lock poisoned"))?
+                                .clone();
+                            let expression = if format == crate::packet::PacketFormat::EvaWire {
+                                if decoded.bytes().len().saturating_sub(4) >= 3000 {
+                                    String::new()
+                                } else {
+                                    let find = |direction| {
+                                        connection.as_ref().and_then(|connection| {
+                                            let mut entries = connection
+                                                .packets
+                                                .by_header(direction, decoded.header());
+                                            let first = entries.next()?;
+                                            if first.structure.is_some() {
+                                                Some(first)
+                                            } else {
+                                                Some(
+                                                    entries
+                                                        .find(|entry| entry.structure.is_some())
+                                                        .unwrap_or(first),
+                                                )
+                                            }
+                                        })
+                                    };
+                                    let incoming = find(Direction::ToClient);
+                                    let outgoing = find(Direction::ToServer);
+                                    let selected = match (incoming, outgoing) {
+                                        (Some(info), None) => Some(("in", info)),
+                                        (None, Some(info)) => Some(("out", info)),
+                                        _ => None,
+                                    };
+                                    let identifier = selected.and_then(|(direction, info)| {
+                                        info.name
+                                            .as_ref()
+                                            .or(info.hash.as_ref())
+                                            .map(|name| format!("{direction}:{name}"))
+                                    });
+                                    let unity = connection.as_ref().is_some_and(|c| {
+                                        c.client_type.eq_ignore_ascii_case("UNITY")
+                                    });
+                                    let structure = selected
+                                        .and_then(|(_, info)| info.structure.clone())
+                                        .map(Ok)
+                                        .unwrap_or_else(|| {
+                                            crate::structure_prediction::predict(&decoded, unity)
+                                        });
+                                    structure
+                                        .and_then(|s| {
+                                            crate::structure_prediction::expression_from_structure(
+                                                &decoded,
+                                                &s,
+                                                identifier.as_deref(),
+                                            )
+                                        })
+                                        .unwrap_or_default()
+                                }
+                            } else {
+                                expression::to_lossless_expression(&decoded)
+                            };
                             let mut result = Packet::new(20);
                             result
                                 .put_long_string(&expression::wire_display(decoded.bytes()))
-                                .and_then(|p| {
-                                    p.put_long_bytes(
-                                        expression::to_lossless_expression(&decoded).as_bytes(),
-                                    )
-                                })
+                                .and_then(|p| p.put_long_bytes(expression.as_bytes()))
                                 .map_err(io::Error::other)?;
                             send(&output, result)?;
                         }

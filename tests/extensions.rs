@@ -124,6 +124,26 @@ fn requires_approval_and_supports_flags_click_injection_and_interception() {
     drop(reply.join().unwrap());
     host.stop();
 }
+
+#[test]
+fn packet_to_string_uses_known_structure_and_falls_back_to_prediction() {
+    let (host, events) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+    host.start_connection(details()).unwrap();
+    let (mut stream, _) = connect(&host, &events);
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 5);
+    for (header, expected) in [(77, "{out:TestOutgoing}{i:42}"), (90, "{h:90}{i:42}")] {
+        let mut target = Packet::new(header);
+        target.put_i32(42).unwrap();
+        let mut request = Packet::new(20);
+        request.put_long_string(&target.stringify()).unwrap();
+        write_frame(&mut stream, &request).unwrap();
+        let mut response = read_frame(&mut stream).unwrap();
+        assert_eq!(response.header(), 20);
+        let _ = response.read_long_string().unwrap();
+        assert_eq!(response.read_utf8_long().unwrap(), expected);
+    }
+    host.stop();
+}
 #[test]
 fn launch_token_is_bound_to_filename_and_one_use() {
     let (host, events) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();

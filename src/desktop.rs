@@ -24,7 +24,7 @@ use std::{
     path::{Path, PathBuf},
     process::Child,
     sync::mpsc::Receiver,
-    sync::Arc,
+    sync::{Arc, OnceLock},
     time::{Duration, Instant},
 };
 
@@ -128,6 +128,8 @@ struct LogRow {
     search: String,
     bytes: usize,
     skipped: bool,
+    unity: bool,
+    predicted_structure: OnceLock<String>,
 }
 impl Default for Desktop {
     fn default() -> Self {
@@ -388,6 +390,8 @@ impl Desktop {
                                 search,
                                 bytes,
                                 skipped,
+                                unity: matches!(self.relay.as_ref(), Some(Connection::Unity(_))),
+                                predicted_structure: OnceLock::new(),
                             });
                         }
                     }
@@ -970,6 +974,15 @@ impl Desktop {
                         egui::Label::new(egui::RichText::new(label).monospace().color(color))
                             .sense(egui::Sense::click()),
                     );
+                    if response.hovered() && !row.skipped {
+                        let structure = row.predicted_structure.get_or_init(|| {
+                            gearth_rust::structure_prediction::predict(&m.packet, row.unity)
+                                .unwrap_or_else(|_| "unavailable".into())
+                        });
+                        response
+                            .clone()
+                            .on_hover_text(format!("Predicted structure: {structure}"));
+                    }
                     if response.clicked() && !row.skipped {
                         self.expression = row.expression.clone();
                         self.direction = m.direction;
