@@ -84,7 +84,7 @@ pub struct HEntityUpdate {
     pub body_facing: HDirection,
 }
 
-fn java_integer(text: &str) -> Result<i32> {
+pub(crate) fn java_integer(text: &str) -> Result<i32> {
     let (negative, text) = match text.strip_prefix('-') {
         Some(s) => (true, s),
         None => (false, text.strip_prefix('+').unwrap_or(text)),

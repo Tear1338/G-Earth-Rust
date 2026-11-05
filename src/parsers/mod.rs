@@ -1,5 +1,6 @@
 //! Native Rust parsers for the beta-29 extension API data model.
 pub mod entity;
+pub mod furniture;
 
 pub(crate) fn java_double(value: f64) -> String {
     if value.is_nan() {
