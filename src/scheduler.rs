@@ -185,13 +185,7 @@ impl Scheduler {
         self.jobs[index] = job;
         Ok(())
     }
-    /// Correct aligned jobs after a system clock adjustment. Skipped deadlines
-    /// are not replayed, and relative jobs are unaffected.
-    pub fn tick_with_wall_clock(
-        &mut self,
-        now: Instant,
-        wall: SystemTime,
-    ) -> Vec<(Direction, Packet)> {
+    fn correct_wall_clock(&mut self, now: Instant, wall: SystemTime) {
         for job in &mut self.jobs {
             let (Some(offset), Some((reference, reference_wall))) =
                 (job.alignment_offset_ms, job.clock_reference)
@@ -215,14 +209,54 @@ impl Scheduler {
                 }
             }
         }
+    }
+    /// Correct aligned jobs after a system clock adjustment. Skipped deadlines
+    /// are not replayed, and relative jobs are unaffected.
+    pub fn tick_with_wall_clock(
+        &mut self,
+        now: Instant,
+        wall: SystemTime,
+    ) -> Vec<(Direction, Packet)> {
+        self.correct_wall_clock(now, wall);
         self.tick(now)
+    }
+
+    /// Commit each scheduled send only after the caller accepts it for delivery.
+    /// A failed enqueue leaves that job and later jobs due for a subsequent attempt.
+    pub fn dispatch_with_wall_clock<E>(
+        &mut self,
+        now: Instant,
+        wall: SystemTime,
+        send: impl FnMut(Direction, &Packet) -> std::result::Result<(), E>,
+    ) -> std::result::Result<(), E> {
+        self.correct_wall_clock(now, wall);
+        self.dispatch_due(now, send)
     }
     /// At most one emission per job per tick; missed deadlines never create bursts.
     pub fn tick(&mut self, now: Instant) -> Vec<(Direction, Packet)> {
         let mut due = Vec::new();
+        let result = self.dispatch_due(now, |direction, packet| {
+            due.push((direction, packet.clone()));
+            Ok::<(), std::convert::Infallible>(())
+        });
+        match result {
+            Ok(()) => {}
+            Err(never) => match never {},
+        }
+        due
+    }
+    fn dispatch_due<E>(
+        &mut self,
+        now: Instant,
+        mut send: impl FnMut(Direction, &Packet) -> std::result::Result<(), E>,
+    ) -> std::result::Result<(), E> {
+        let mut failure = None;
         for job in &mut self.jobs {
             if !job.paused && job.next <= now && job.remaining != Some(0) {
-                due.push((job.direction, job.packet.clone()));
+                if let Err(error) = send(job.direction, &job.packet) {
+                    failure = Some(error);
+                    break;
+                }
                 if let Some(count) = &mut job.remaining {
                     *count -= 1;
                 }
@@ -239,6 +273,9 @@ impl Scheduler {
             }
         }
         self.jobs.retain(|j| j.remaining != Some(0));
-        due
+        match failure {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
     }
 }

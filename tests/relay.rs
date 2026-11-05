@@ -2,12 +2,13 @@ use gearth_rust::{
     packet::{read_frame, write_frame, Direction, Packet},
     relay::{Config, Event, Relay},
     rules::{Action, Rule, Rules},
+    scheduler::Scheduler,
 };
 use std::{
     io::{Read, Write},
     net::{Shutdown, TcpListener, TcpStream},
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 fn wait_for(events: &std::sync::mpsc::Receiver<Event>, predicate: impl Fn(&Event) -> bool) {
     let deadline = Instant::now() + Duration::from_secs(5);
@@ -120,6 +121,63 @@ fn reconnect_after_client_disconnect() {
         client.shutdown(Shutdown::Both).unwrap();
         wait_for(&events, |e| matches!(e, Event::Disconnected));
     }
+    relay.stop();
+}
+
+#[test]
+fn scheduled_send_survives_disconnection_and_retries_after_reconnect() {
+    let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+    let (mut relay, events) = Relay::start(Config {
+        listen: "127.0.0.1:0".parse().unwrap(),
+        remote: remote.local_addr().unwrap().to_string(),
+    })
+    .unwrap();
+    let client = TcpStream::connect(relay.address).unwrap();
+    let (mut server, _) = remote.accept().unwrap();
+    server
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    wait_for(&events, |e| matches!(e, Event::Connected(_)));
+    let now = Instant::now();
+    let wall = SystemTime::now();
+    let mut scheduler = Scheduler::default();
+    scheduler
+        .add(
+            Packet::new(555),
+            Direction::ToServer,
+            Duration::from_millis(10),
+            Some(2),
+            now,
+        )
+        .unwrap();
+    scheduler
+        .dispatch_with_wall_clock(now, wall, |direction, packet| {
+            relay.inject(direction, packet.clone())
+        })
+        .unwrap();
+    assert_eq!(read_frame(&mut server).unwrap().header(), 555);
+    client.shutdown(Shutdown::Both).unwrap();
+    wait_for(&events, |e| matches!(e, Event::Disconnected));
+    let later = now + Duration::from_secs(1);
+    assert!(scheduler
+        .dispatch_with_wall_clock(later, wall + Duration::from_secs(1), |direction, packet| {
+            relay.inject(direction, packet.clone())
+        })
+        .is_err());
+    assert_eq!(scheduler.jobs[0].remaining, Some(1));
+    let _client = TcpStream::connect(relay.address).unwrap();
+    let (mut server, _) = remote.accept().unwrap();
+    server
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    wait_for(&events, |e| matches!(e, Event::Connected(_)));
+    scheduler
+        .dispatch_with_wall_clock(later, wall + Duration::from_secs(1), |direction, packet| {
+            relay.inject(direction, packet.clone())
+        })
+        .unwrap();
+    assert_eq!(read_frame(&mut server).unwrap().header(), 555);
+    assert!(scheduler.jobs.is_empty());
     relay.stop();
 }
 #[test]

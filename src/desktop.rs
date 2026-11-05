@@ -479,23 +479,19 @@ impl Desktop {
                     }
                     Event::Disconnected => {
                         self.status = "Client disconnected; listening".into();
-                        self.scheduler.jobs.clear();
-                        self.active_schedule_edit = None;
                     }
                     Event::Error(e) => self.status = e,
                 }
             }
         }
         if let Some(relay) = &self.relay {
-            for (direction, packet) in self
-                .scheduler
-                .tick_with_wall_clock(Instant::now(), SystemTime::now())
-            {
-                if let Err(e) = relay.inject(direction, packet) {
+            if relay.connected() {
+                if let Err(e) = self.scheduler.dispatch_with_wall_clock(
+                    Instant::now(),
+                    SystemTime::now(),
+                    |direction, packet| relay.inject(direction, packet.clone()),
+                ) {
                     self.status = e.to_string();
-                    self.scheduler.jobs.clear();
-                    self.active_schedule_edit = None;
-                    break;
                 }
             }
         }
