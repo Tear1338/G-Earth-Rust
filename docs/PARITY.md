@@ -11,12 +11,12 @@ Status describes source implementation and finite tests, not successful producti
 | RC4 | State import/export/rewind, manual keys and Windows negotiated discovery, bounded read-only heap scan, ambiguity rejection | Real AIR client regression; broaden memory-layout coverage |
 | Origins crypto | DH substitution, HKDF-SHA256, ChaCha20 channels, encrypted framing and hosts attachment | Official client end-to-end live validation |
 | Network extensions | Loopback host, one-use launch tokens, approval, flags, interception, injection, click, console, connection details, language changes | Full extension corpus, store and lifecycle parity |
-| Existing Java API | Actual beta-29 Java extension fixture passes auth, name lookup, bidirectional mutation/blocking/injection; released G-Presets 1.6.5 authenticates in an isolated fixture | Real G-Presets game workflows and other existing extension binaries untested |
+| Existing Java API | Actual beta-29 Java extension fixture passes auth, name lookup, bidirectional mutation/blocking/injection; released G-Presets 1.6.5 authenticates and returns fixture packets in both directions | Real G-Presets game workflows and other existing extension binaries untested |
 | Python/Node extensions | External runtimes, authenticated IPC, native G-Python/Jupyter console controls and explicit package installation/repair; real G-Python kernel fixtures on Windows/Linux | QtConsole visual workflow and real sessions |
 | Packet identifiers | Direction-aware database, beta-29 IPC, Sulek HTTPS lookup/cache, detected Flash revision, Unity JSON and TSV import | Unity client integration and broader remote-provider coverage |
 | SOCKS5 | CONNECT, remote DNS, optional RFC1929 credentials | Wider interoperability tests |
 | Rules/scheduler | Saved ordered rules and finite schedule templates | Every original scheduler and rule-editor option |
-| Logging | Cached search/display strings, virtualized rows, count/byte budget, export | Original highlighting and complete filtering options |
+| Logging | Cached search/display strings, virtualized rows, count/byte budget, packet display size limit and export honoring active filters | Original highlighting and complete filtering options |
 | Settings | Atomic save/load, unknown-field preservation, original cache import, notepad | Migration of every original setting |
 | UI/theme/languages | Rust eframe desktop, light/dark theme, nine original resource files, localized tabs | Exact UI/layout, all controls translated, shortcuts, tray |
 | Flash | Negotiation, Windows client memory discovery, socket owner detection, hosts attachment, Raw-IP mapping, Windows multi-instance heartbeat/lease and independent counters | Official client/firewall/multi-instance validation and non-Windows discovery |

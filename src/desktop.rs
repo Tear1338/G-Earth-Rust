@@ -62,6 +62,7 @@ struct Desktop {
     outgoing: bool,
     incoming: bool,
     paused: bool,
+    packet_limit: usize,
     expression: String,
     direction: Direction,
     interval_ms: u64,
@@ -126,6 +127,7 @@ struct LogRow {
     expression: String,
     search: String,
     bytes: usize,
+    skipped: bool,
 }
 impl Default for Desktop {
     fn default() -> Self {
@@ -153,6 +155,7 @@ impl Default for Desktop {
             outgoing: true,
             incoming: true,
             paused: false,
+            packet_limit: 8000,
             expression: "{h:123}{i:42}{s:\"hello\"}".into(),
             direction: Direction::ToServer,
             interval_ms: 1000,
@@ -346,7 +349,17 @@ impl Desktop {
                     Event::Packet(message) => {
                         self.total += 1;
                         if !self.paused {
-                            let expression = expression::to_lossless_expression(&message.packet);
+                            let packet_size = if message.packet.format() == PacketFormat::EvaWire {
+                                message.packet.bytes().len().saturating_sub(4)
+                            } else {
+                                message.packet.bytes().len()
+                            };
+                            let skipped = packet_size >= self.packet_limit;
+                            let expression = if skipped {
+                                format!("[packet too large to display: {packet_size} bytes]")
+                            } else {
+                                expression::to_lossless_expression(&message.packet)
+                            };
                             let search = format!(
                                 "{} {}",
                                 message.packet.header(),
@@ -374,6 +387,7 @@ impl Desktop {
                                 expression,
                                 search,
                                 bytes,
+                                skipped,
                             });
                         }
                     }
@@ -881,6 +895,8 @@ impl Desktop {
         ui.horizontal(|ui| {
             ui.label("Filter");
             ui.text_edit_singleline(&mut self.filter);
+            ui.label("Packet display limit (bytes)");
+            ui.add(egui::DragValue::new(&mut self.packet_limit).range(0..=16 * 1024 * 1024));
         });
         let filter = self.filter.to_lowercase();
         ui.horizontal(|ui| {
@@ -954,7 +970,7 @@ impl Desktop {
                         egui::Label::new(egui::RichText::new(label).monospace().color(color))
                             .sense(egui::Sense::click()),
                     );
-                    if response.clicked() {
+                    if response.clicked() && !row.skipped {
                         self.expression = row.expression.clone();
                         self.direction = m.direction;
                         self.tab = Tab::Injection;
@@ -1395,6 +1411,13 @@ impl Desktop {
     }
     fn apply_settings(&mut self) {
         self.python_console.restore_settings(&self.settings);
+        self.packet_limit = self
+            .settings
+            .values
+            .get("logger_packet_limit")
+            .and_then(|value| value.parse::<usize>().ok())
+            .filter(|value| *value <= 16 * 1024 * 1024)
+            .unwrap_or(8000);
         for (key, target) in [
             ("listen", &mut self.listen),
             ("remote", &mut self.remote),
@@ -1460,6 +1483,9 @@ impl Desktop {
     }
     fn save_settings(&mut self) {
         self.python_console.save_settings(&mut self.settings);
+        self.settings
+            .values
+            .insert("logger_packet_limit".into(), self.packet_limit.to_string());
         for (key, value) in [
             ("listen", &self.listen),
             ("remote", &self.remote),
