@@ -38,7 +38,7 @@ pub enum HDirection {
 }
 
 impl HDirection {
-    fn parse(value: i32) -> Result<Self> {
+    pub(crate) fn parse(value: i32) -> Result<Self> {
         [
             Self::North,
             Self::NorthEast,
