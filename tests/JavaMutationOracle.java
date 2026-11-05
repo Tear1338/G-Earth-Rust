@@ -31,5 +31,24 @@ public class JavaMutationOracle {
         integers.setReadIndex(7);
         integers.replaceAllIntegers(123456, -7);
         emit("integers", integers);
+        HPacket emptyGrowth = new HPacket(5);
+        emptyGrowth.appendString("").appendString("a");
+        emptyGrowth.setReadIndex(7);
+        emptyGrowth.replaceString(6, "x");
+        emit("empty_growth_original", emptyGrowth);
+        String[] oldValues = {"a", "abc", "é"};
+        String[] values = {"", "a", "abc", "é"};
+        int[] limits = {0, 1, 2, -1};
+        for (int oldIndex = 0; oldIndex < oldValues.length; oldIndex++) {
+            for (int newIndex = 0; newIndex < values.length; newIndex++) {
+                for (int limitIndex = 0; limitIndex < limits.length; limitIndex++) {
+                    HPacket sample = new HPacket(5);
+                    sample.appendString("").appendString("a").appendInt(1).appendString("abc").appendString("é").appendString("a").appendString("");
+                    sample.setReadIndex(7);
+                    sample.replaceXStrings(oldValues[oldIndex], values[newIndex], limits[limitIndex]);
+                    emit("strings_" + oldIndex + "_" + newIndex + "_" + limitIndex, sample);
+                }
+            }
+        }
     }
 }

@@ -128,7 +128,7 @@ jobs:
         run: |
           api_jar=$(find /tmp/upstream-gearth -name 'G-Earth-Api-1.5.4-beta-29.jar' -print -quit)
           test -n "$api_jar"
-          javac -cp "$api_jar" tests/JavaMutationOracle.java
+          javac -encoding UTF-8 -cp "$api_jar" tests/JavaMutationOracle.java
           java -cp "$api_jar:tests" JavaMutationOracle > /tmp/mutation-oracle.txt
           cargo test --locked --test mutation_oracle -- --ignored
         env:

@@ -94,4 +94,51 @@ fn mutations_match_original_java_packets_and_cursor() {
     integers.set_cursor(7).unwrap();
     assert_eq!(integers.replace_all_i32(123456, -7).unwrap(), 2);
     check("integers", &integers);
+    let mut empty_growth = Packet::new(5);
+    empty_growth
+        .put_string("")
+        .unwrap()
+        .put_string("a")
+        .unwrap();
+    empty_growth.set_cursor(7).unwrap();
+    empty_growth.replace_string(6, "x").unwrap();
+    let (java_hex, _) = expected["empty_growth_original"].split_once(',').unwrap();
+    assert_ne!(
+        empty_growth.bytes(),
+        expression::parse_hex(java_hex).unwrap()
+    );
+    empty_growth.reset();
+    assert_eq!(empty_growth.read_string().unwrap(), "x");
+    assert_eq!(empty_growth.read_string().unwrap(), "a");
+    let values = ["", "a", "abc", "é"];
+    let old_values = ["a", "abc", "é"];
+    let limits = [Some(0), Some(1), Some(2), None];
+    for (old_index, old) in old_values.iter().enumerate() {
+        for (new_index, new) in values.iter().enumerate() {
+            for (limit_index, limit) in limits.iter().enumerate() {
+                let mut sample = Packet::new(5);
+                sample
+                    .put_string("")
+                    .unwrap()
+                    .put_string("a")
+                    .unwrap()
+                    .put_i32(1)
+                    .unwrap()
+                    .put_string("abc")
+                    .unwrap()
+                    .put_string("é")
+                    .unwrap()
+                    .put_string("a")
+                    .unwrap()
+                    .put_string("")
+                    .unwrap();
+                sample.set_cursor(7).unwrap();
+                sample.replace_strings(old, new, *limit).unwrap();
+                check(
+                    &format!("strings_{old_index}_{new_index}_{limit_index}"),
+                    &sample,
+                );
+            }
+        }
+    }
 }

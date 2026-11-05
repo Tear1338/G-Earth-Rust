@@ -56,3 +56,18 @@ fn zero_replacements_do_not_edit_or_validate_replacement_text() {
     assert_eq!(packet.replace_strings("hello", "☃", Some(0)).unwrap(), 0);
     assert!(!packet.edited);
 }
+
+#[test]
+fn growing_empty_string_does_not_corrupt_the_following_field() {
+    let mut packet = Packet::new(5);
+    packet.put_string("").unwrap().put_string("a").unwrap();
+    let mut direct = packet.clone();
+    direct.replace_string(6, "x").unwrap();
+    direct.reset();
+    assert_eq!(direct.read_string().unwrap(), "x");
+    assert_eq!(direct.read_string().unwrap(), "a");
+    assert_eq!(packet.replace_strings("", "x", Some(1)).unwrap(), 1);
+    packet.reset();
+    assert_eq!(packet.read_string().unwrap(), "x");
+    assert_eq!(packet.read_string().unwrap(), "a");
+}
