@@ -14,7 +14,7 @@ use gearth_rust::{
     relay::{Config, Event, Relay},
     rules::{Action, Rule, Rules},
     schedule_file,
-    scheduler::Scheduler,
+    scheduler::{ScheduleSpec, Scheduler},
     settings::{ScheduleTemplate, Settings},
     socks::SocksConfig,
     web_ca::ProxyIdentity,
@@ -92,6 +92,7 @@ struct Desktop {
     repeat: u32,
     repeat_forever: bool,
     schedule_edit: Option<usize>,
+    active_schedule_edit: Option<u64>,
     schedule_path: String,
     scheduler: Scheduler,
     block_header: u16,
@@ -201,6 +202,7 @@ impl Default for Desktop {
             repeat: 1,
             repeat_forever: false,
             schedule_edit: None,
+            active_schedule_edit: None,
             schedule_path: "gearth.sched".into(),
             scheduler: Scheduler::default(),
             block_header: 0,
@@ -478,6 +480,7 @@ impl Desktop {
                     Event::Disconnected => {
                         self.status = "Client disconnected; listening".into();
                         self.scheduler.jobs.clear();
+                        self.active_schedule_edit = None;
                     }
                     Event::Error(e) => self.status = e,
                 }
@@ -491,6 +494,7 @@ impl Desktop {
                 if let Err(e) = relay.inject(direction, packet) {
                     self.status = e.to_string();
                     self.scheduler.jobs.clear();
+                    self.active_schedule_edit = None;
                     break;
                 }
             }
@@ -661,6 +665,7 @@ impl Desktop {
         self.relay.take();
         self.events = None;
         self.scheduler.jobs.clear();
+        self.active_schedule_edit = None;
     }
     fn identity_directory(&self) -> PathBuf {
         self.settings_path
@@ -1255,11 +1260,13 @@ impl Desktop {
                     .prefix("Offset ms "),
             );
         });
-        let editing = self.schedule_edit.is_some();
+        let editing = self.schedule_edit.is_some() || self.active_schedule_edit.is_some();
         if ui
             .add_enabled(
                 editing || self.relay.as_ref().is_some_and(Connection::connected),
-                egui::Button::new(if editing {
+                egui::Button::new(if self.active_schedule_edit.is_some() {
+                    "Save active schedule changes"
+                } else if editing {
                     "Save template changes"
                 } else {
                     "Add schedule"
@@ -1277,7 +1284,19 @@ impl Desktop {
                 self.status = "Offset must be smaller than the interval".into();
             } else {
                 self.status = match parsed.and_then(|packet| {
-                    if editing {
+                    if let Some(id) = self.active_schedule_edit {
+                        self.scheduler.update_configured(
+                            id,
+                            ScheduleSpec {
+                                packet,
+                                direction: self.direction,
+                                interval_ms: self.interval_ms,
+                                offset_ms: self.align_schedule.then_some(self.schedule_offset_ms),
+                                repeat: (!self.repeat_forever).then_some(self.repeat),
+                            },
+                            (Instant::now(), SystemTime::now()),
+                        )
+                    } else if editing {
                         Ok(())
                     } else {
                         self.scheduler.add_configured(
@@ -1291,38 +1310,44 @@ impl Desktop {
                     }
                 }) {
                     Ok(()) => {
-                        let template = ScheduleTemplate {
-                            expression: self.expression.clone(),
-                            direction: self.direction,
-                            interval_ms: self.interval_ms,
-                            offset_ms: self.align_schedule.then_some(self.schedule_offset_ms),
-                            paused: self
-                                .schedule_edit
-                                .and_then(|i| self.settings.schedules.get(i))
-                                .is_some_and(|old| old.paused),
-                            repeat: if self.repeat_forever { 0 } else { self.repeat },
-                        };
-                        if let Some(index) = self.schedule_edit.take() {
-                            if let Some(existing) = self.settings.schedules.get_mut(index) {
-                                *existing = template;
-                                "Template updated; active schedules are unchanged".into()
-                            } else {
-                                "Template no longer exists".into()
-                            }
+                        if self.active_schedule_edit.take().is_some() {
+                            "Active schedule updated; saved templates are unchanged".into()
                         } else {
-                            self.settings.schedules.push(template);
-                            "Schedule added".into()
+                            let template = ScheduleTemplate {
+                                expression: self.expression.clone(),
+                                direction: self.direction,
+                                interval_ms: self.interval_ms,
+                                offset_ms: self.align_schedule.then_some(self.schedule_offset_ms),
+                                paused: self
+                                    .schedule_edit
+                                    .and_then(|i| self.settings.schedules.get(i))
+                                    .is_some_and(|old| old.paused),
+                                repeat: if self.repeat_forever { 0 } else { self.repeat },
+                            };
+                            if let Some(index) = self.schedule_edit.take() {
+                                if let Some(existing) = self.settings.schedules.get_mut(index) {
+                                    *existing = template;
+                                    "Template updated; active schedules are unchanged".into()
+                                } else {
+                                    "Template no longer exists".into()
+                                }
+                            } else {
+                                self.settings.schedules.push(template);
+                                "Schedule added".into()
+                            }
                         }
                     }
                     Err(e) => e.to_string(),
                 };
             }
         }
-        if editing && ui.button("Cancel template editing").clicked() {
+        if editing && ui.button("Cancel editing").clicked() {
             self.schedule_edit = None;
+            self.active_schedule_edit = None;
         }
         if ui.button("Cancel all schedules").clicked() {
             self.scheduler.jobs.clear();
+            self.active_schedule_edit = None;
         }
         ui.label(format!("{} active schedules", self.scheduler.jobs.len()));
         if ui
@@ -1430,6 +1455,7 @@ impl Desktop {
             self.repeat_forever = template.repeat == 0;
             self.repeat = template.repeat.max(1);
             self.schedule_edit = Some(index);
+            self.active_schedule_edit = None;
         }
         if let Some(index) = remove_template {
             self.settings.schedules.remove(index);
@@ -1441,6 +1467,7 @@ impl Desktop {
         }
         let mut remove = None;
         let mut pause_change = None;
+        let mut edit_active = None;
         for (i, job) in self.scheduler.jobs.iter().enumerate() {
             ui.horizontal(|ui| {
                 if ui
@@ -1451,6 +1478,9 @@ impl Desktop {
                 }
                 if ui.small_button("Remove").clicked() {
                     remove = Some(i);
+                }
+                if ui.small_button("Edit").clicked() {
+                    edit_active = Some(job.id);
                 }
                 let remaining = job
                     .remaining
@@ -1472,7 +1502,23 @@ impl Desktop {
                 self.status = error.to_string();
             }
         }
+        if let Some(id) = edit_active {
+            if let Some(job) = self.scheduler.jobs.iter().find(|job| job.id == id) {
+                self.expression = expression::to_lossless_expression(&job.packet);
+                self.direction = job.direction;
+                self.interval_ms = job.interval.as_millis() as u64;
+                self.align_schedule = job.alignment_offset_ms.is_some();
+                self.schedule_offset_ms = job.alignment_offset_ms.unwrap_or(0);
+                self.repeat_forever = job.remaining.is_none();
+                self.repeat = job.remaining.unwrap_or(1);
+                self.active_schedule_edit = Some(id);
+                self.schedule_edit = None;
+            }
+        }
         if let Some(i) = remove {
+            if self.active_schedule_edit == Some(self.scheduler.jobs[i].id) {
+                self.active_schedule_edit = None;
+            }
             self.scheduler.jobs.remove(i);
         }
     }

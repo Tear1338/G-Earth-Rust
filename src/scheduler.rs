@@ -1,6 +1,7 @@
 use crate::packet::{error, Direction, Packet, Result};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 pub struct Job {
+    pub id: u64,
     pub packet: Packet,
     pub direction: Direction,
     pub interval: Duration,
@@ -9,6 +10,14 @@ pub struct Job {
     pub paused: bool,
     pub alignment_offset_ms: Option<u64>,
     clock_reference: Option<(Instant, SystemTime)>,
+}
+
+pub struct ScheduleSpec {
+    pub packet: Packet,
+    pub direction: Direction,
+    pub interval_ms: u64,
+    pub offset_ms: Option<u64>,
+    pub repeat: Option<u32>,
 }
 
 fn deadline_from_wall(
@@ -47,6 +56,7 @@ fn next_aligned(deadline: Instant, interval: Duration, now: Instant) -> Option<I
 #[derive(Default)]
 pub struct Scheduler {
     pub jobs: Vec<Job>,
+    next_id: u64,
 }
 impl Scheduler {
     /// Resuming skips missed sends and preserves the phase of aligned jobs.
@@ -80,7 +90,12 @@ impl Scheduler {
         {
             return Err(error("invalid schedule interval/repeat"));
         }
+        let id = self.next_id;
+        self.next_id = id
+            .checked_add(1)
+            .ok_or_else(|| error("schedule identifier exhausted"))?;
         self.jobs.push(Job {
+            id,
             packet,
             direction,
             interval,
@@ -135,6 +150,40 @@ impl Scheduler {
                 clock.0,
             ),
         }
+    }
+    /// Atomically replace one active job while preserving its identity and pause state.
+    pub fn update_configured(
+        &mut self,
+        id: u64,
+        spec: ScheduleSpec,
+        clock: (Instant, SystemTime),
+    ) -> Result<()> {
+        let index = self
+            .jobs
+            .iter()
+            .position(|job| job.id == id)
+            .ok_or_else(|| error("schedule is no longer active"))?;
+        let paused = self.jobs[index].paused;
+        let mut candidate = Self::default();
+        candidate.add_configured(
+            spec.packet,
+            spec.direction,
+            spec.interval_ms,
+            spec.offset_ms,
+            spec.repeat,
+            clock,
+        )?;
+        let mut job = candidate.jobs.pop().expect("validated schedule");
+        if job.alignment_offset_ms.is_none() {
+            job.next = clock
+                .0
+                .checked_add(job.interval)
+                .ok_or_else(|| error("schedule deadline overflow"))?;
+        }
+        job.id = id;
+        job.paused = paused;
+        self.jobs[index] = job;
+        Ok(())
     }
     /// Correct aligned jobs after a system clock adjustment. Skipped deadlines
     /// are not replayed, and relative jobs are unaffected.

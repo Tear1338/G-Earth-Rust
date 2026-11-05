@@ -511,3 +511,75 @@ fn scheduler_keeps_relative_jobs_and_paused_jobs_safe_after_clock_changes() {
         1
     );
 }
+
+#[test]
+fn scheduler_edit_targets_stable_identity_and_preserves_pause_on_failure() {
+    use gearth_rust::scheduler::ScheduleSpec;
+    let now = Instant::now();
+    let wall = std::time::UNIX_EPOCH + Duration::from_millis(1234);
+    let mut scheduler = Scheduler::default();
+    scheduler
+        .add(
+            Packet::new(1),
+            Direction::ToClient,
+            Duration::from_secs(1),
+            None,
+            now,
+        )
+        .unwrap();
+    scheduler
+        .add(
+            Packet::new(2),
+            Direction::ToServer,
+            Duration::from_secs(1),
+            None,
+            now,
+        )
+        .unwrap();
+    let id = scheduler.jobs[1].id;
+    scheduler.set_paused(1, true, now).unwrap();
+    scheduler.jobs.remove(0);
+    let spec = |offset_ms| ScheduleSpec {
+        packet: Packet::new(7),
+        direction: Direction::ToClient,
+        interval_ms: 500,
+        offset_ms,
+        repeat: Some(3),
+    };
+    assert!(scheduler
+        .update_configured(id, spec(Some(500)), (now, wall))
+        .is_err());
+    assert_eq!(scheduler.jobs[0].packet.header(), 2);
+    assert!(scheduler.jobs[0].paused);
+    scheduler
+        .update_configured(id, spec(Some(100)), (now, wall))
+        .unwrap();
+    assert_eq!(scheduler.jobs[0].id, id);
+    assert_eq!(scheduler.jobs[0].packet.header(), 7);
+    assert_eq!(scheduler.jobs[0].remaining, Some(3));
+    assert!(scheduler.jobs[0].paused);
+    assert!(scheduler
+        .update_configured(id + 100, spec(None), (now, wall))
+        .is_err());
+    assert_eq!(scheduler.jobs[0].packet.header(), 7);
+    scheduler.set_paused(0, false, now).unwrap();
+    scheduler
+        .update_configured(id, spec(None), (now, wall))
+        .unwrap();
+    assert!(scheduler.tick(now).is_empty());
+    assert_eq!(scheduler.tick(now + Duration::from_millis(500)).len(), 1);
+    scheduler.jobs.clear();
+    scheduler
+        .add(
+            Packet::new(8),
+            Direction::ToServer,
+            Duration::from_secs(1),
+            None,
+            now,
+        )
+        .unwrap();
+    assert_ne!(scheduler.jobs[0].id, id);
+    assert!(scheduler
+        .update_configured(id, spec(None), (now, wall))
+        .is_err());
+}
