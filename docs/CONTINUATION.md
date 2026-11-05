@@ -16,7 +16,7 @@ The live Python console now has a Rust launcher, dependency checks, explicit can
 
 Other missing areas include real firewall/alias and Raw-IP multi-instance client validation, non-Windows privileged helpers, QtConsole visual validation, exact UI/shortcuts/tray behavior, full localization and validation with real client sessions and G-Presets. Whole-application performance remains unmeasured; PERFORMANCE.md covers only packet construction.
 
-Native Rust parsers now cover room entities, movement, floor/wall furniture, inventory pages, all eight furniture state variants, profiles/friends, catalog and navigator. The released Java API supplies finite packet and decoded-value comparisons for state formats, furniture, friends, catalog and navigator. The original Java inventory page constructor has edge-case pagination defects; Rust uses complete pages of at most 600 items. Forum and other remaining parser APIs need implementation and differential tests.
+Native Rust parsers now cover room entities, movement, floor/wall furniture, inventory pages, all eight furniture state variants, profiles/friends, catalog, navigator and forum overviews. The released Java API supplies finite packet and decoded-value comparisons for state formats, furniture, friends, catalog, navigator and a forum comment. The original Java inventory page constructor has edge-case pagination defects; Rust uses complete pages of at most 600 items. The remaining parser APIs need implementation and wider differential tests.
 
 REA artifact inspection supplied provenance. JEB/Ghidra were unavailable in this environment; the public pinned source and Java behavioral oracles supply semantic evidence. Do not claim unavailable decompilation or native replay succeeded.
 

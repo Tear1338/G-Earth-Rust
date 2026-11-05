@@ -7,6 +7,8 @@ import gearth.extensions.parsers.HFriend;
 import gearth.extensions.parsers.catalog.HCatalogPage;
 import gearth.extensions.parsers.catalog.HCatalogIndex;
 import gearth.extensions.parsers.navigator.HNavigatorSearchResult;
+import gearth.extensions.parsers.forums.HCommentOverview;
+import gearth.extensions.parsers.forums.HThreadState;
 import java.util.HashMap;
 import java.util.HexFormat;
 
@@ -87,5 +89,13 @@ public class JavaStuffOracle {
         HPacket navigatorOutput = new HPacket(1);
         new HNavigatorSearchResult(navigatorInput).appendToPacket(navigatorOutput);
         System.out.println("navigator=" + HexFormat.of().formatHex(navigatorOutput.toBytes()));
+
+        HPacket comments = new HPacket(1);
+        comments.appendInt(1).appendInt(2).appendInt(0).appendInt(1).appendInt(3).appendInt(4).appendInt(5)
+                .appendString("Alice").appendString("figure").appendInt(6).appendString("hello")
+                .appendByte((byte) 10).appendInt(7).appendString("moderator").appendInt(8).appendInt(9);
+        HCommentOverview parsedComments = new HCommentOverview(comments);
+        if (parsedComments.getComments().get(0).getState() != HThreadState.HIDDEN_BY_ADMIN) throw new AssertionError("comment state");
+        System.out.println("comments=" + HexFormat.of().formatHex(comments.toBytes()));
     }
 }

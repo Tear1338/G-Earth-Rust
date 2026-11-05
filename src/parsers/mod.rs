@@ -1,6 +1,7 @@
 //! Native Rust parsers for the beta-29 extension API data model.
 pub mod catalog;
 pub mod entity;
+pub mod forums;
 pub mod furniture;
 pub mod navigator;
 pub mod social;

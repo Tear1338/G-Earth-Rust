@@ -191,4 +191,13 @@ fn all_stuff_data_wire_formats_match_original_java() {
     let mut encoded = Packet::new(1);
     navigation.append(&mut encoded).unwrap();
     assert_eq!(encoded.bytes(), observed["navigator"]);
+    let comments = gearth_rust::parsers::forums::CommentOverview::read(
+        &mut Packet::from_bytes(observed["comments"].clone()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        comments.comments[0].state,
+        gearth_rust::parsers::forums::ThreadState::HiddenByAdmin
+    );
+    assert_eq!(comments.comments[0].author_post_count, 9);
 }
