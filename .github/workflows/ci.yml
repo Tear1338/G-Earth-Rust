@@ -168,7 +168,7 @@ jobs:
           path: '*-benchmark.csv'
   publish-development:
     if: github.event_name == 'push' && contains(github.event.head_commit.message, '[build]')
-    needs: [core, desktop, java-compatibility, web, gpython]
+    needs: [core, desktop, java-compatibility, web, gpython, gpresets]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -211,6 +211,31 @@ jobs:
       - run: cargo test --locked --features web --test unity_browser -- --ignored --nocapture
       - run: node tests/unity_wasm_runtime.mjs "$GEARTH_UNITY_FIXTURE_DIR"
       - run: cargo clippy --locked --features web --all-targets -- -D warnings
+
+  gpresets:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - uses: Swatinem/rust-cache@v2
+      - name: Download pinned released G-Presets and JavaFX runtime
+        run: |
+          curl --fail --location --retry 3 'https://github.com/Tear1338/G-Presets/releases/download/v1.6.5/GPresets-1.6.5.jar' -o /tmp/GPresets-1.6.5.jar
+          echo 'd2bd67422b131e17a5033762a3fc7e015f5a6581f6e2d3c4abb6b414a711ddb3  /tmp/GPresets-1.6.5.jar' | sha256sum --check
+          mkdir -p /tmp/javafx
+          for module in base graphics controls fxml media web swing; do
+            curl --fail --location --retry 3 "https://repo.maven.apache.org/maven2/org/openjfx/javafx-$module/21.0.2/javafx-$module-21.0.2-linux.jar" -o "/tmp/javafx/javafx-$module.jar"
+          done
+      - name: Start the real extension in an isolated virtual display
+        run: xvfb-run -a cargo test --locked --test gpresets_compatibility -- --ignored --nocapture
+        env:
+          GEARTH_GPRESETS_JAR: /tmp/GPresets-1.6.5.jar
+          GEARTH_JAVAFX_MODULES: /tmp/javafx
 
   gpython:
     strategy:
