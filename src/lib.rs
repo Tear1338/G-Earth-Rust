@@ -13,6 +13,7 @@ pub mod gpython;
 pub mod i18n;
 pub mod packet;
 pub mod packet_info;
+pub mod parsers;
 pub mod relay;
 pub mod rules;
 pub mod scheduler;
