@@ -4,6 +4,8 @@ import gearth.extensions.parsers.HFloorItem;
 import gearth.extensions.parsers.HWallItem;
 import gearth.extensions.parsers.HInventoryItem;
 import gearth.extensions.parsers.HFriend;
+import gearth.extensions.parsers.catalog.HCatalogPage;
+import gearth.extensions.parsers.catalog.HCatalogIndex;
 import java.util.HashMap;
 import java.util.HexFormat;
 
@@ -58,5 +60,20 @@ public class JavaStuffOracle {
         HPacket friendOutput = new HPacket(1);
         new HFriend(friendInput).appendToPacket(friendOutput);
         System.out.println("friend=" + HexFormat.of().formatHex(friendOutput.toBytes()));
+
+        HPacket catalogIndex = new HPacket(1);
+        catalogIndex.appendBoolean(true).appendInt(2).appendInt(3).appendString("root").appendString("loc")
+                .appendInt(1).appendInt(99).appendInt(0).appendBoolean(true).appendString("NORMAL");
+        HCatalogIndex parsedIndex = new HCatalogIndex(catalogIndex);
+        if (parsedIndex.getRoot().getOfferIds().get(0) != 99 || !parsedIndex.isNewAdditionsAvailable()) throw new AssertionError("catalog index");
+        System.out.println("catalog_index=" + HexFormat.of().formatHex(catalogIndex.toBytes()));
+
+        HPacket catalogPage = new HPacket(1);
+        catalogPage.appendInt(7).appendString("NORMAL").appendString("default").appendInt(0).appendInt(0)
+                .appendInt(0).appendInt(-1).appendBoolean(false).appendInt(1).appendInt(0)
+                .appendString("promo").appendString("img").appendInt(1).appendInt(25).appendInt(60);
+        HCatalogPage parsedPage = new HCatalogPage(catalogPage);
+        if (parsedPage.getFrontPageItems().get(0).getProductOfferId() != 25) throw new AssertionError("catalog page");
+        System.out.println("catalog_page=" + HexFormat.of().formatHex(catalogPage.toBytes()));
     }
 }

@@ -170,4 +170,18 @@ fn all_stuff_data_wire_formats_match_original_java() {
         .unwrap(),
         friend
     );
+    let index = gearth_rust::parsers::catalog::HCatalogIndex::read(
+        &mut Packet::from_bytes(observed["catalog_index"].clone()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(index.root.offer_ids, vec![99]);
+    assert!(index.new_additions_available);
+    let page = gearth_rust::parsers::catalog::HCatalogPage::read(
+        &mut Packet::from_bytes(observed["catalog_page"].clone()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(
+        page.front_page_items[0].target,
+        gearth_rust::parsers::catalog::HFrontPageTarget::Offer(25)
+    );
 }

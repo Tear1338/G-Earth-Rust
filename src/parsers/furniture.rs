@@ -40,7 +40,7 @@ pub enum HProductType {
     Badge,
 }
 impl HProductType {
-    fn parse(value: &str) -> Result<Self> {
+    pub(crate) fn parse(value: &str) -> Result<Self> {
         match value.to_ascii_uppercase().as_str() {
             "I" => Ok(Self::WallItem),
             "S" => Ok(Self::FloorItem),
