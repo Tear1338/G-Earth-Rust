@@ -95,6 +95,7 @@ struct Desktop {
     active_schedule_edit: Option<u64>,
     schedule_path: String,
     scheduler: Scheduler,
+    scheduler_hotkeys: Option<gearth_platform::GlobalHotkeys>,
     block_header: u16,
     block_enabled: bool,
     block_direction: Direction,
@@ -205,6 +206,7 @@ impl Default for Desktop {
             active_schedule_edit: None,
             schedule_path: "gearth.sched".into(),
             scheduler: Scheduler::default(),
+            scheduler_hotkeys: None,
             block_header: 0,
             block_enabled: false,
             block_direction: Direction::ToServer,
@@ -304,6 +306,22 @@ impl Desktop {
         }
     }
     fn poll(&mut self) {
+        if let Some(hotkeys) = &self.scheduler_hotkeys {
+            for index in std::iter::from_fn(|| hotkeys.try_recv()).take(32) {
+                if let Some(job) = self.scheduler.jobs.get(index) {
+                    let paused = !job.paused;
+                    if let Err(error) = self.scheduler.set_paused(index, paused, Instant::now()) {
+                        self.status = error.to_string();
+                    } else {
+                        self.status = format!(
+                            "Schedule {} {}",
+                            index + 1,
+                            if paused { "paused" } else { "resumed" }
+                        );
+                    }
+                }
+            }
+        }
         if let Some(task) = &self.certificate_task {
             match task.try_recv() {
                 Ok(result) => {
@@ -1233,6 +1251,43 @@ impl Desktop {
     }
     fn schedule(&mut self, ui: &mut egui::Ui) {
         ui.heading("Scheduler");
+        let mut enabled = self.scheduler_hotkeys.is_some();
+        if ui
+            .add_enabled(
+                cfg!(windows),
+                egui::Checkbox::new(
+                    &mut enabled,
+                    "Global shortcuts: Ctrl+Shift+0 to 9 (Windows)",
+                ),
+            )
+            .changed()
+        {
+            if enabled {
+                let context = ui.ctx().clone();
+                match gearth_platform::GlobalHotkeys::start(move || context.request_repaint()) {
+                    Ok(hotkeys) => {
+                        let unavailable: Vec<_> = hotkeys
+                            .available()
+                            .iter()
+                            .enumerate()
+                            .filter_map(|(index, available)| {
+                                (!available).then_some(index.to_string())
+                            })
+                            .collect();
+                        self.status = if unavailable.is_empty() {
+                            "Global scheduler shortcuts enabled".into()
+                        } else {
+                            format!("Shortcuts unavailable for: {}", unavailable.join(", "))
+                        };
+                        self.scheduler_hotkeys = Some(hotkeys);
+                    }
+                    Err(error) => self.status = format!("Could not enable shortcuts: {error}"),
+                }
+            } else {
+                self.scheduler_hotkeys.take();
+                self.status = "Global scheduler shortcuts disabled".into();
+            }
+        }
         self.editor(ui);
         ui.horizontal(|ui| {
             ui.add(
@@ -1491,6 +1546,15 @@ impl Desktop {
                         .map_or_else(String::new, |offset| format!(" + {offset} ms")),
                     remaining
                 ));
+                if i < 10 {
+                    if let Some(hotkeys) = &self.scheduler_hotkeys {
+                        ui.label(if hotkeys.available()[i] {
+                            format!("Ctrl+Shift+{i}")
+                        } else {
+                            format!("Ctrl+Shift+{i} unavailable")
+                        });
+                    }
+                }
             });
         }
         if let Some((i, paused)) = pause_change {
@@ -1688,6 +1752,7 @@ impl eframe::App for Desktop {
             || self.attachment_pending.is_some()
             || self.extension_host.is_some()
             || self.python_console.is_pending()
+            || self.scheduler_hotkeys.is_some()
         {
             ctx.request_repaint_after(Duration::from_millis(50));
         }

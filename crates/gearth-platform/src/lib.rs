@@ -1,7 +1,9 @@
 //! Read-only native process access, isolated from the safe protocol core.
 use std::{io, sync::atomic::AtomicBool};
+mod hotkeys;
 mod ip_mapping;
 mod process_tree;
+pub use hotkeys::GlobalHotkeys;
 pub use ip_mapping::{system_ip_mapper, IpMapper};
 pub use process_tree::ProcessTree;
 #[derive(Clone, Debug)]
