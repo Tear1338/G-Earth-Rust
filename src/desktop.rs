@@ -63,6 +63,9 @@ struct Desktop {
     incoming: bool,
     paused: bool,
     packet_limit: usize,
+    logger_additional: bool,
+    logger_structure: bool,
+    logger_split: bool,
     expression: String,
     direction: Direction,
     interval_ms: u64,
@@ -130,6 +133,7 @@ struct LogRow {
     skipped: bool,
     unity: bool,
     predicted_structure: OnceLock<String>,
+    predicted_expression: OnceLock<String>,
 }
 impl Default for Desktop {
     fn default() -> Self {
@@ -158,6 +162,9 @@ impl Default for Desktop {
             incoming: true,
             paused: false,
             packet_limit: 8000,
+            logger_additional: true,
+            logger_structure: true,
+            logger_split: true,
             expression: "{h:123}{i:42}{s:\"hello\"}".into(),
             direction: Direction::ToServer,
             interval_ms: 1000,
@@ -392,6 +399,7 @@ impl Desktop {
                                 skipped,
                                 unity: matches!(self.relay.as_ref(), Some(Connection::Unity(_))),
                                 predicted_structure: OnceLock::new(),
+                                predicted_expression: OnceLock::new(),
                             });
                         }
                     }
@@ -902,6 +910,11 @@ impl Desktop {
             ui.label("Packet display limit (bytes)");
             ui.add(egui::DragValue::new(&mut self.packet_limit).range(0..=16 * 1024 * 1024));
         });
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut self.logger_additional, "Show additional data");
+            ui.checkbox(&mut self.logger_structure, "Show packet structure");
+            ui.checkbox(&mut self.logger_split, "Split packets");
+        });
         let filter = self.filter.to_lowercase();
         ui.horizontal(|ui| {
             ui.label("Export path");
@@ -946,9 +959,10 @@ impl Desktop {
                 }) && (filter.is_empty() || row.search.contains(&filter))
             })
             .collect();
+        let row_height = if self.logger_structure { 44.0 } else { 24.0 };
         egui::ScrollArea::vertical()
             .stick_to_bottom(true)
-            .show_rows(ui, 24.0, filtered.len(), |ui, range| {
+            .show_rows(ui, row_height, filtered.len(), |ui, range| {
                 for i in range {
                     let row = filtered[i];
                     let m = &row.message;
@@ -959,8 +973,21 @@ impl Desktop {
                     } else {
                         egui::Color32::from_rgb(20, 130, 70)
                     };
+                    let additional = if self.logger_additional {
+                        format!(
+                            "(h: {}, l: {})  ",
+                            m.packet.header(),
+                            if m.packet.format() == PacketFormat::EvaWire {
+                                m.packet.bytes().len().saturating_sub(4)
+                            } else {
+                                m.packet.bytes().len()
+                            }
+                        )
+                    } else {
+                        String::new()
+                    };
                     let label = format!(
-                        "#{:06}  {:8}  {}{}",
+                        "#{:06}  {:8}  {}{}{}",
                         m.index,
                         if m.direction == Direction::ToServer {
                             "→ SERVER"
@@ -968,12 +995,50 @@ impl Desktop {
                             "← CLIENT"
                         },
                         if m.blocked { "BLOCKED  " } else { "" },
+                        additional,
                         row.expression
                     );
-                    let response = ui.add(
-                        egui::Label::new(egui::RichText::new(label).monospace().color(color))
-                            .sense(egui::Sense::click()),
+                    let row_output = ui.allocate_ui_with_layout(
+                        egui::vec2(ui.available_width(), row_height),
+                        egui::Layout::top_down(egui::Align::Min),
+                        |ui| {
+                            let response = ui.add(
+                                egui::Label::new(
+                                    egui::RichText::new(label).monospace().color(color),
+                                )
+                                .truncate()
+                                .sense(egui::Sense::click()),
+                            );
+                            if self.logger_structure && !row.skipped {
+                                let expression = row.predicted_expression.get_or_init(|| {
+                                    gearth_rust::structure_prediction::predicted_expression(
+                                        &m.packet, row.unity,
+                                    )
+                                    .unwrap_or_default()
+                                });
+                                if !expression.is_empty() {
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(format!("Predicted: {expression}"))
+                                                .monospace()
+                                                .small(),
+                                        )
+                                        .truncate(),
+                                    );
+                                }
+                            }
+                            response
+                        },
                     );
+                    let response = row_output.inner;
+                    if self.logger_split {
+                        let rect = row_output.response.rect;
+                        let y = rect.bottom() - 1.0;
+                        ui.painter().line_segment(
+                            [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
+                            ui.visuals().widgets.noninteractive.bg_stroke,
+                        );
+                    }
                     if response.hovered() && !row.skipped {
                         let structure = row.predicted_structure.get_or_init(|| {
                             gearth_rust::structure_prediction::predict(&m.packet, row.unity)
@@ -1431,6 +1496,24 @@ impl Desktop {
             .and_then(|value| value.parse::<usize>().ok())
             .filter(|value| *value <= 16 * 1024 * 1024)
             .unwrap_or(8000);
+        self.logger_additional = self
+            .settings
+            .booleans
+            .get("logger_additional")
+            .copied()
+            .unwrap_or(true);
+        self.logger_structure = self
+            .settings
+            .booleans
+            .get("logger_structure")
+            .copied()
+            .unwrap_or(true);
+        self.logger_split = self
+            .settings
+            .booleans
+            .get("logger_split")
+            .copied()
+            .unwrap_or(true);
         for (key, target) in [
             ("listen", &mut self.listen),
             ("remote", &mut self.remote),
@@ -1520,6 +1603,9 @@ impl Desktop {
             ("dark_mode".into(), self.dark_mode),
             ("outgoing".into(), self.outgoing),
             ("incoming".into(), self.incoming),
+            ("logger_additional".into(), self.logger_additional),
+            ("logger_structure".into(), self.logger_structure),
+            ("logger_split".into(), self.logger_split),
         ]);
         match self.settings.save(&self.settings_path) {
             Ok(()) => {
