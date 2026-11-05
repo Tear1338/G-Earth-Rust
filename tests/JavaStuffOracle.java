@@ -4,6 +4,8 @@ import gearth.extensions.parsers.HFloorItem;
 import gearth.extensions.parsers.HWallItem;
 import gearth.extensions.parsers.HInventoryItem;
 import gearth.extensions.parsers.HFriend;
+import gearth.extensions.parsers.HEntity;
+import gearth.extensions.parsers.HEntityType;
 import gearth.extensions.parsers.catalog.HCatalogPage;
 import gearth.extensions.parsers.catalog.HCatalogIndex;
 import gearth.extensions.parsers.navigator.HNavigatorSearchResult;
@@ -97,5 +99,18 @@ public class JavaStuffOracle {
         HCommentOverview parsedComments = new HCommentOverview(comments);
         if (parsedComments.getComments().get(0).getState() != HThreadState.HIDDEN_BY_ADMIN) throw new AssertionError("comment state");
         System.out.println("comments=" + HexFormat.of().formatHex(comments.toBytes()));
+
+        HPacket entities = new HPacket(1);
+        entities.appendInt(4);
+        for (int i = 0; i < 4; i++) {
+            entities.appendInt(i).appendString("name").appendString("motto").appendString("figure")
+                    .appendInt(i).appendInt(1).appendInt(2).appendString("3.5").appendInt(5).appendInt(i + 1);
+            if (i == 0) entities.appendString("M").appendInt(1).appendInt(2).appendString("g").appendString("x").appendInt(3).appendBoolean(true).appendInt(4);
+            if (i == 1) entities.appendInt(1).appendInt(2).appendString("Alice").appendInt(3).appendBoolean(true).appendBoolean(false).appendBoolean(true).appendBoolean(false).appendBoolean(true).appendBoolean(false).appendInt(4).appendString("sit");
+            if (i == 3) entities.appendString("F").appendInt(8).appendString("Bob").appendInt(2).appendShort((short) 0).appendShort((short) -1);
+        }
+        HEntity[] parsedEntities = HEntity.parse(entities);
+        if (parsedEntities.length != 4 || parsedEntities[0].getEntityType() != HEntityType.HABBO || parsedEntities[3].getEntityType() != HEntityType.BOT || parsedEntities[1].getTile().getZ() != 3.5) throw new AssertionError("entities");
+        System.out.println("entities=" + HexFormat.of().formatHex(entities.toBytes()));
     }
 }

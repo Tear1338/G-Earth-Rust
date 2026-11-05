@@ -200,4 +200,22 @@ fn all_stuff_data_wire_formats_match_original_java() {
         gearth_rust::parsers::forums::ThreadState::HiddenByAdmin
     );
     assert_eq!(comments.comments[0].author_post_count, 9);
+    let entities = gearth_rust::parsers::entity::HEntity::parse(
+        &mut Packet::from_bytes(observed["entities"].clone()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(entities.len(), 4);
+    assert!(matches!(
+        entities[0].details,
+        gearth_rust::parsers::entity::HEntityDetails::Habbo { .. }
+    ));
+    assert!(matches!(
+        entities[1].details,
+        gearth_rust::parsers::entity::HEntityDetails::Pet { .. }
+    ));
+    assert!(matches!(
+        entities[3].details,
+        gearth_rust::parsers::entity::HEntityDetails::Bot { .. }
+    ));
+    assert_eq!(entities[1].tile.z, 3.5);
 }
