@@ -34,7 +34,7 @@ Nitro validation is documented in [NITRO.md](NITRO.md). Run [41334348534](https:
 
 Ordinary runs skip environment-dependent Java tests; the dedicated Java job runs them explicitly. CI generates development artifacts. The validated Cargo.lock and rustfmt output have been imported directly. CI now checks formatting and uses locked dependencies.
 
-Raw-IP validation uses fake command runners to compare Windows, Linux and macOS mapping arguments with beta-29, guard fixtures for cleanup/retry policy and a real loopback relay fixture proving consumption of preconnected upstream sockets with no direct fallback. No privileged command or real firewall/alias change is executed by automated tests. Real client/firewall sessions and the Windows multi-instance lease remain unvalidated/incomplete.
+Raw-IP validation uses fake command runners to compare Windows, Linux and macOS mapping arguments with beta-29, guard fixtures for cleanup/retry policy and a real loopback relay fixture proving consumption of preconnected upstream sockets with no direct fallback. Locked lease fixtures cover two owners, stale expiry, malformed-data preservation and last-owner-only mapping removal. No privileged command or real firewall/alias change is executed by automated tests. Real client/firewall and simultaneous multi-instance sessions remain unvalidated.
 
 Passing these checks is finite protocol evidence, not a complete application port.
 

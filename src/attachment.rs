@@ -1,5 +1,8 @@
 //! Scoped hosts-file attachment. Only this application's marked lines are restored.
-use crate::relay::{Config, Event, Relay, RelayOptions};
+use crate::{
+    raw_ip_lease::RawIpLease,
+    relay::{Config, Event, Relay, RelayOptions},
+};
 use gearth_platform::IpMapper;
 use std::{
     collections::VecDeque,
@@ -157,35 +160,71 @@ pub struct RawIpRedirect {
     port: u16,
     active: bool,
     keep_on_connect: bool,
+    lease: Option<RawIpLease>,
 }
 impl RawIpRedirect {
     fn install(ip: Ipv4Addr, port: u16) -> io::Result<Self> {
-        Self::with_mapper(
-            ip,
-            port,
-            gearth_platform::system_ip_mapper()?,
-            cfg!(windows),
-        )
+        let mapper = gearth_platform::system_ip_mapper()?;
+        if cfg!(windows) {
+            let path = crate::settings::Settings::default_path()
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .join("rawip_connections.json");
+            let _mapping_lock = RawIpLease::mapping_lock(&path)?;
+            let (lease, others_active) = RawIpLease::acquire(&path, ip)?;
+            Self::with_mapper_and_lease(ip, port, mapper, true, Some(lease), others_active)
+        } else {
+            Self::with_mapper_and_lease(ip, port, mapper, false, None, false)
+        }
     }
+    #[cfg(test)]
     fn with_mapper(
+        ip: Ipv4Addr,
+        port: u16,
+        mapper: Box<dyn IpMapper>,
+        keep_on_connect: bool,
+    ) -> io::Result<Self> {
+        Self::with_mapper_and_lease(ip, port, mapper, keep_on_connect, None, false)
+    }
+    fn with_mapper_and_lease(
         ip: Ipv4Addr,
         port: u16,
         mut mapper: Box<dyn IpMapper>,
         keep_on_connect: bool,
+        lease: Option<RawIpLease>,
+        others_active: bool,
     ) -> io::Result<Self> {
-        mapper.enable()?;
-        mapper.add_mapping(ip, port, port)?;
+        if !others_active {
+            mapper.enable()?;
+            mapper.add_mapping(ip, port, port)?;
+        }
         Ok(Self {
             mapper,
             ip,
             port,
             active: true,
             keep_on_connect,
+            lease,
         })
     }
     pub fn restore(&mut self) -> io::Result<()> {
         if self.active {
-            self.mapper.delete_mapping(self.ip, self.port, self.port)?;
+            let _mapping_lock = self
+                .lease
+                .as_ref()
+                .map(RawIpLease::lock_mapping)
+                .transpose()?;
+            let should_delete = match &self.lease {
+                Some(lease) => !lease.others_active()?,
+                None => true,
+            };
+            if should_delete {
+                self.mapper.delete_mapping(self.ip, self.port, self.port)?;
+            }
+            if let Some(lease) = &mut self.lease {
+                lease.release()?;
+            }
+            self.lease = None;
             self.active = false;
         }
         Ok(())
@@ -394,6 +433,56 @@ mod tests {
                 .filter(|call| call.starts_with("delete"))
                 .count(),
             2
+        );
+    }
+    #[test]
+    fn only_the_last_windows_lease_removes_the_shared_mapping() {
+        struct LeaseFile(PathBuf);
+        impl Drop for LeaseFile {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_file(&self.0);
+            }
+        }
+        let mut random = [0; 16];
+        getrandom::fill(&mut random).unwrap();
+        let name = random
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>();
+        let file = LeaseFile(std::env::temp_dir().join(format!("gearth-raw-map-{name}.json")));
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let mapper = || FakeMapper {
+            calls: calls.clone(),
+            ..Default::default()
+        };
+        let (first_lease, others) = RawIpLease::acquire(&file.0, ip()).unwrap();
+        assert!(!others);
+        let mut first = RawIpRedirect::with_mapper_and_lease(
+            ip(),
+            30000,
+            Box::new(mapper()),
+            true,
+            Some(first_lease),
+            others,
+        )
+        .unwrap();
+        let (second_lease, others) = RawIpLease::acquire(&file.0, ip()).unwrap();
+        assert!(others);
+        let mut second = RawIpRedirect::with_mapper_and_lease(
+            ip(),
+            30000,
+            Box::new(mapper()),
+            true,
+            Some(second_lease),
+            others,
+        )
+        .unwrap();
+        first.restore().unwrap();
+        assert_eq!(*calls.lock().unwrap(), ["enable", "add:192.0.2.40"]);
+        second.restore().unwrap();
+        assert_eq!(
+            *calls.lock().unwrap(),
+            ["enable", "add:192.0.2.40", "delete:192.0.2.40"]
         );
     }
 }

@@ -14,7 +14,7 @@ The native extension store now implements catalogue search/filter/order, bounded
 
 The live Python console now has a Rust launcher, dependency checks, explicit cancellable package installation/repair, Jupyter kernel setup, QtConsole launch and bounded process ownership. Real published G-Python 0.1.6 fixtures pass authentication, named injection, bidirectional modification/blocking and kernel shutdown on Linux and Windows. The installer fixture uses an isolated virtual environment; do not run it against a developer's global interpreter. Read GPYTHON.md. Do not use the upstream main archive as the oracle: its circular imports fail before connection.
 
-Other missing areas include the Windows Raw-IP multi-instance lease, real firewall/alias validation, non-Windows privileged helpers, QtConsole visual validation, exact UI/shortcuts/tray behavior, full localization and validation with real client sessions and G-Presets. Whole-application performance remains unmeasured; PERFORMANCE.md covers only packet construction.
+Other missing areas include real firewall/alias and Raw-IP multi-instance client validation, non-Windows privileged helpers, QtConsole visual validation, exact UI/shortcuts/tray behavior, full localization and validation with real client sessions and G-Presets. Whole-application performance remains unmeasured; PERFORMANCE.md covers only packet construction.
 
 REA artifact inspection supplied provenance. JEB/Ghidra were unavailable in this environment; the public pinned source and Java behavioral oracles supply semantic evidence. Do not claim unavailable decompilation or native replay succeeded.
 

@@ -19,7 +19,7 @@ Status describes source implementation and finite tests, not successful producti
 | Logging | Cached search/display strings, virtualized rows, count/byte budget, export | Original highlighting and complete filtering options |
 | Settings | Atomic save/load, unknown-field preservation, original cache import, notepad | Migration of every original setting |
 | UI/theme/languages | Rust eframe desktop, light/dark theme, nine original resource files, localized tabs | Exact UI/layout, all controls translated, shortcuts, tray |
-| Flash | Negotiation, Windows client memory discovery, socket owner detection, hosts attachment, Raw-IP mapping and independent counters | Official client/firewall validation, Windows Raw-IP multi-instance lease and non-Windows discovery |
+| Flash | Negotiation, Windows client memory discovery, socket owner detection, hosts attachment, Raw-IP mapping, Windows multi-instance heartbeat/lease and independent counters | Official client/firewall/multi-instance validation and non-Windows discovery |
 | Origins attachment | Scoped hosts routing to the original port | Official client validation and non-Windows privileged helpers |
 | Nitro | HTTP/TLS/WebSocket backend, beta-29 hotel matching/config, RC4/TripleDES/GCM/CTR adapters, assets, shared rules/injection/extensions, explicit current-user certificates and journaled Windows proxy cleanup | Real hotel sessions, Chrome TLS fingerprint, SOCKS upstream, non-Windows OS helpers |
 | Unity connection | Authenticated TLS communicator, exact asset routes, gzip and cache handling, validated WASM hooks, browser reinjection and Java extensions | Official client revisions, G-Presets and non-Windows system helpers |
