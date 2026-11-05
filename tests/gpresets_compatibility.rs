@@ -1,5 +1,8 @@
 //! Controlled startup check for the user's released G-Presets extension.
-use gearth_rust::extension_host::{ExtensionHost, HostEvent};
+use gearth_rust::{
+    extension_host::{ExtensionHost, HostEvent},
+    packet::{Direction, Message, Packet},
+};
 use std::{
     fs,
     path::PathBuf,
@@ -92,6 +95,25 @@ fn released_gpresets_authenticates_to_the_rust_host() {
             "G-Presets did not authenticate: {}",
             log.chars().take(8000).collect::<String>()
         );
+    }
+    // Exercise both IPC directions without connecting to a real hotel.
+    for (index, direction) in [Direction::ToServer, Direction::ToClient]
+        .into_iter()
+        .enumerate()
+    {
+        let mut packet = Packet::new(77);
+        packet.put_i32(123).unwrap();
+        let mut message = Message {
+            packet,
+            direction,
+            index: index as i32,
+            blocked: false,
+        };
+        host.intercept(&mut message)
+            .expect("G-Presets must return the intercepted fixture packet");
+        assert_eq!(message.packet.header(), 77);
+        assert_eq!(message.packet.read_i32().unwrap(), 123);
+        assert!(!message.blocked);
     }
     host.stop();
 }

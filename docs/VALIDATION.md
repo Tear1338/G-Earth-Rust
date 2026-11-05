@@ -18,7 +18,7 @@ https://github.com/Tear1338/G-Earth-Rust/actions/runs/41255104561
 | Actual beta-29 Java extension fixture | Passed |
 | Native desktop visual test | Not performed |
 | Official client/hotel connection | Not performed |
-| Existing G-Presets binary | Not performed |
+| Existing G-Presets binary | Version 1.6.5 authenticated in an isolated virtual display; game workflows untested |
 | Complete application equivalence | Incomplete; see PARITY.md |
 | Java-versus-Rust performance | Packet microbenchmark only; whole application unmeasured |
 

@@ -882,6 +882,7 @@ impl Desktop {
             ui.label("Filter");
             ui.text_edit_singleline(&mut self.filter);
         });
+        let filter = self.filter.to_lowercase();
         ui.horizontal(|ui| {
             ui.label("Export path");
             ui.text_edit_singleline(&mut self.export_path);
@@ -890,6 +891,14 @@ impl Desktop {
                     String::from("# G-Earth Rust capture: direction index blocked expression\n");
                 for row in &self.logs {
                     let m = &row.message;
+                    let direction_visible = if m.direction == Direction::ToServer {
+                        self.outgoing
+                    } else {
+                        self.incoming
+                    };
+                    if !direction_visible || (!filter.is_empty() && !row.search.contains(&filter)) {
+                        continue;
+                    }
                     text.push_str(&format!(
                         "{}\t{}\t{}\t{}\n",
                         m.direction.name(),
@@ -905,7 +914,6 @@ impl Desktop {
             }
         });
         ui.separator();
-        let filter = self.filter.to_lowercase();
         let filtered: Vec<_> = self
             .logs
             .iter()

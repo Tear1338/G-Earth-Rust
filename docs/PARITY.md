@@ -1,6 +1,6 @@
 # Compatibility with 1.5.4-beta-29
 
-Status describes source implementation and finite tests, not successful production use. No official Habbo client or G-Presets session has been tested with this port.
+Status describes source implementation and finite tests, not successful production use. No official Habbo client or G-Presets game session has been tested with this port.
 
 | Area | Rust status | Remaining work |
 |---|---|---|
@@ -11,7 +11,7 @@ Status describes source implementation and finite tests, not successful producti
 | RC4 | State import/export/rewind, manual keys and Windows negotiated discovery, bounded read-only heap scan, ambiguity rejection | Real AIR client regression; broaden memory-layout coverage |
 | Origins crypto | DH substitution, HKDF-SHA256, ChaCha20 channels, encrypted framing and hosts attachment | Official client end-to-end live validation |
 | Network extensions | Loopback host, one-use launch tokens, approval, flags, interception, injection, click, console, connection details, language changes | Full extension corpus, store and lifecycle parity |
-| Existing Java API | Actual beta-29 Java extension fixture passes auth, name lookup, bidirectional mutation/blocking/injection | G-Presets and other existing extension binaries untested |
+| Existing Java API | Actual beta-29 Java extension fixture passes auth, name lookup, bidirectional mutation/blocking/injection; released G-Presets 1.6.5 authenticates in an isolated fixture | Real G-Presets game workflows and other existing extension binaries untested |
 | Python/Node extensions | External runtimes, authenticated IPC, native G-Python/Jupyter console controls and explicit package installation/repair; real G-Python kernel fixtures on Windows/Linux | QtConsole visual workflow and real sessions |
 | Packet identifiers | Direction-aware database, beta-29 IPC, Sulek HTTPS lookup/cache, detected Flash revision, Unity JSON and TSV import | Unity client integration and broader remote-provider coverage |
 | SOCKS5 | CONNECT, remote DNS, optional RFC1929 credentials | Wider interoperability tests |
