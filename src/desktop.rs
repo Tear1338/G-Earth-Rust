@@ -13,6 +13,7 @@ use gearth_rust::{
     relay::RelayOptions,
     relay::{Config, Event, Relay},
     rules::{Action, Rule, Rules},
+    schedule_file,
     scheduler::Scheduler,
     settings::{ScheduleTemplate, Settings},
     socks::SocksConfig,
@@ -21,6 +22,7 @@ use gearth_rust::{
 };
 use std::{
     collections::VecDeque,
+    io::Read,
     path::{Path, PathBuf},
     process::Child,
     sync::mpsc::Receiver,
@@ -90,6 +92,7 @@ struct Desktop {
     repeat: u32,
     repeat_forever: bool,
     schedule_edit: Option<usize>,
+    schedule_path: String,
     scheduler: Scheduler,
     block_header: u16,
     block_enabled: bool,
@@ -198,6 +201,7 @@ impl Default for Desktop {
             repeat: 1,
             repeat_forever: false,
             schedule_edit: None,
+            schedule_path: "gearth.sched".into(),
             scheduler: Scheduler::default(),
             block_header: 0,
             block_enabled: false,
@@ -1289,6 +1293,10 @@ impl Desktop {
                             direction: self.direction,
                             interval_ms: self.interval_ms,
                             offset_ms: self.align_schedule.then_some(self.schedule_offset_ms),
+                            paused: self
+                                .schedule_edit
+                                .and_then(|i| self.settings.schedules.get(i))
+                                .is_some_and(|old| old.paused),
                             repeat: if self.repeat_forever { 0 } else { self.repeat },
                         };
                         if let Some(index) = self.schedule_edit.take() {
@@ -1337,7 +1345,13 @@ impl Desktop {
                         (Instant::now(), SystemTime::now()),
                     )
                 }) {
-                    Ok(()) => {}
+                    Ok(()) => {
+                        if template.paused {
+                            if let Some(job) = self.scheduler.jobs.last_mut() {
+                                job.paused = true;
+                            }
+                        }
+                    }
                     Err(e) => {
                         self.status = e.to_string();
                         break;
@@ -1349,12 +1363,43 @@ impl Desktop {
             self.settings.schedules.clear();
             self.schedule_edit = None;
         }
+        ui.horizontal(|ui| {
+            ui.label(".sched file");
+            ui.text_edit_singleline(&mut self.schedule_path);
+            if ui.button("Import").clicked() {
+                let result = (|| -> std::io::Result<Vec<ScheduleTemplate>> {
+                    let file = std::fs::File::open(&self.schedule_path)?;
+                    let mut bytes = Vec::new();
+                    file.take((schedule_file::MAX_SCHEDULE_FILE_BYTES + 1) as u64)
+                        .read_to_end(&mut bytes)?;
+                    let text = String::from_utf8(bytes).map_err(std::io::Error::other)?;
+                    schedule_file::parse(&text)
+                })();
+                self.status = match result {
+                    Ok(templates) => {
+                        let count = templates.len();
+                        self.settings.schedules = templates;
+                        self.schedule_edit = None;
+                        format!("Imported {count} templates; save settings to keep them")
+                    }
+                    Err(error) => format!("Import failed: {error}"),
+                };
+            }
+            if ui.button("Export").clicked() {
+                self.status = match schedule_file::format(&self.settings.schedules)
+                    .and_then(|text| std::fs::write(&self.schedule_path, text))
+                {
+                    Ok(()) => format!("Exported templates to {}", self.schedule_path),
+                    Err(error) => format!("Export failed: {error}"),
+                };
+            }
+        });
         if !self.settings.schedules.is_empty() {
             ui.label("Saved templates (save settings to keep changes)");
         }
         let mut edit_template = None;
         let mut remove_template = None;
-        for (i, template) in self.settings.schedules.iter().enumerate() {
+        for (i, template) in self.settings.schedules.iter_mut().enumerate() {
             ui.horizontal(|ui| {
                 if ui.small_button("Edit").clicked() {
                     edit_template = Some(i);
@@ -1362,6 +1407,7 @@ impl Desktop {
                 if ui.small_button("Remove").clicked() {
                     remove_template = Some(i);
                 }
+                ui.checkbox(&mut template.paused, "Paused on start");
                 ui.label(format!(
                     "{}: {} every {} ms",
                     i + 1,

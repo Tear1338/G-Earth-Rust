@@ -19,6 +19,8 @@ pub struct ScheduleTemplate {
     pub interval_ms: u64,
     /// Optional phase within the interval, measured against the Unix clock.
     pub offset_ms: Option<u64>,
+    /// Start the template paused when it is activated.
+    pub paused: bool,
     /// Zero means repeat until cancelled.
     pub repeat: u32,
 }
@@ -202,11 +204,18 @@ impl Settings {
                             .ok_or_else(|| io::Error::other("invalid schedule offset"))?,
                     ),
                 };
+                let paused = match schedule.get("paused") {
+                    None => false,
+                    Some(value) => value
+                        .as_bool()
+                        .ok_or_else(|| io::Error::other("invalid schedule paused flag"))?,
+                };
                 result.schedules.push(ScheduleTemplate {
                     expression,
                     direction,
                     interval_ms,
                     offset_ms,
+                    paused,
                     repeat,
                 });
             }
@@ -222,7 +231,7 @@ impl Settings {
         object.insert("log_limit".into(), json!(self.log_limit));
         object.insert("log_bytes".into(), json!(self.log_bytes));
         object.insert("rules".into(),Value::Array(self.rules.iter().map(|(enabled,direction,header,replacement)|json!({"enabled":enabled,"direction":direction.name(),"header":header,"replacement":replacement})).collect()));
-        object.insert("schedules".into(),Value::Array(self.schedules.iter().map(|s|json!({"expression":s.expression,"direction":s.direction.name(),"interval_ms":s.interval_ms,"offset_ms":s.offset_ms,"repeat":s.repeat})).collect()));
+        object.insert("schedules".into(),Value::Array(self.schedules.iter().map(|s|json!({"expression":s.expression,"direction":s.direction.name(),"interval_ms":s.interval_ms,"offset_ms":s.offset_ms,"paused":s.paused,"repeat":s.repeat})).collect()));
         Value::Object(object)
     }
     pub fn save(&self, path: &Path) -> io::Result<()> {
@@ -335,21 +344,26 @@ mod tests {
             direction: Direction::ToServer,
             interval_ms: 500,
             offset_ms: Some(125),
+            paused: true,
             repeat: 0,
         });
         let loaded = Settings::from_json(settings.to_json()).unwrap();
         assert_eq!(loaded.schedules[0].repeat, 0);
         assert_eq!(loaded.schedules[0].interval_ms, 500);
         assert_eq!(loaded.schedules[0].offset_ms, Some(125));
+        assert!(loaded.schedules[0].paused);
         let mut legacy = settings.to_json();
         legacy["schedules"][0]
             .as_object_mut()
             .unwrap()
             .remove("offset_ms");
-        assert_eq!(
-            Settings::from_json(legacy).unwrap().schedules[0].offset_ms,
-            None
-        );
+        legacy["schedules"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("paused");
+        let legacy = Settings::from_json(legacy).unwrap();
+        assert_eq!(legacy.schedules[0].offset_ms, None);
+        assert!(!legacy.schedules[0].paused);
         let mut invalid = settings.to_json();
         invalid["schedules"][0]["offset_ms"] = serde_json::json!(500);
         assert!(Settings::from_json(invalid).is_err());

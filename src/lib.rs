@@ -18,6 +18,7 @@ pub mod parsers;
 mod raw_ip_lease;
 pub mod relay;
 pub mod rules;
+pub mod schedule_file;
 pub mod scheduler;
 pub mod settings;
 pub mod shockwave;
