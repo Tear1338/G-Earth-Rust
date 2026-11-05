@@ -69,6 +69,225 @@ pub enum HStance {
     Lay,
 }
 
+/// Type-specific fields of a room entity in the original packet order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum HEntityDetails {
+    Habbo {
+        gender: String,
+        group_id: i32,
+        group_status: i32,
+        favorite_group: String,
+        extra_text: String,
+        achievement: i32,
+        moderator: bool,
+        unknown: i32,
+    },
+    Pet {
+        pet_type: i32,
+        owner_id: i32,
+        owner_name: String,
+        rarity: i32,
+        flags: [bool; 6],
+        level: i32,
+        posture: String,
+    },
+    OldBot,
+    Bot {
+        gender: String,
+        owner_id: i32,
+        owner_name: String,
+        skills: Vec<u16>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct HEntity {
+    pub id: i32,
+    pub name: String,
+    pub motto: String,
+    pub figure_id: String,
+    pub index: i32,
+    pub tile: HPoint,
+    pub unknown: i32,
+    pub details: HEntityDetails,
+    pub last_update: Option<HEntityUpdate>,
+}
+
+impl HEntity {
+    pub fn read(packet: &mut Packet) -> Result<Self> {
+        let id = packet.read_i32()?;
+        let name = packet.read_string()?;
+        let motto = packet.read_string()?;
+        let figure_id = packet.read_string()?;
+        let index = packet.read_i32()?;
+        let x = packet.read_i32()?;
+        let y = packet.read_i32()?;
+        let z = packet
+            .read_string()?
+            .parse()
+            .map_err(|_| error("invalid entity height"))?;
+        let unknown = packet.read_i32()?;
+        let details = match packet.read_i32()? {
+            1 => HEntityDetails::Habbo {
+                gender: packet.read_string()?,
+                group_id: packet.read_i32()?,
+                group_status: packet.read_i32()?,
+                favorite_group: packet.read_string()?,
+                extra_text: packet.read_string()?,
+                achievement: packet.read_i32()?,
+                moderator: packet.read_bool()?,
+                unknown: packet.read_i32()?,
+            },
+            2 => HEntityDetails::Pet {
+                pet_type: packet.read_i32()?,
+                owner_id: packet.read_i32()?,
+                owner_name: packet.read_string()?,
+                rarity: packet.read_i32()?,
+                flags: [
+                    packet.read_bool()?,
+                    packet.read_bool()?,
+                    packet.read_bool()?,
+                    packet.read_bool()?,
+                    packet.read_bool()?,
+                    packet.read_bool()?,
+                ],
+                level: packet.read_i32()?,
+                posture: packet.read_string()?,
+            },
+            3 => HEntityDetails::OldBot,
+            4 => {
+                let gender = packet.read_string()?;
+                let owner_id = packet.read_i32()?;
+                let owner_name = packet.read_string()?;
+                let count = usize::try_from(packet.read_i32()?)
+                    .map_err(|_| error("negative bot skill count"))?;
+                if count > 65_536 {
+                    return Err(error("too many bot skills"));
+                }
+                let mut skills = Vec::with_capacity(count);
+                for _ in 0..count {
+                    skills.push(packet.read_u16()?);
+                }
+                HEntityDetails::Bot {
+                    gender,
+                    owner_id,
+                    owner_name,
+                    skills,
+                }
+            }
+            _ => return Err(error("unknown room entity type")),
+        };
+        Ok(Self {
+            id,
+            name,
+            motto,
+            figure_id,
+            index,
+            tile: HPoint::with_height(x, y, z),
+            unknown,
+            details,
+            last_update: None,
+        })
+    }
+    pub fn append(&self, packet: &mut Packet) -> Result<()> {
+        packet
+            .put_i32(self.id)?
+            .put_string(&self.name)?
+            .put_string(&self.motto)?
+            .put_string(&self.figure_id)?
+            .put_i32(self.index)?
+            .put_i32(self.tile.x)?
+            .put_i32(self.tile.y)?
+            .put_string(&super::java_double(self.tile.z))?
+            .put_i32(self.unknown)?;
+        match &self.details {
+            HEntityDetails::Habbo {
+                gender,
+                group_id,
+                group_status,
+                favorite_group,
+                extra_text,
+                achievement,
+                moderator,
+                unknown,
+            } => {
+                packet
+                    .put_i32(1)?
+                    .put_string(gender)?
+                    .put_i32(*group_id)?
+                    .put_i32(*group_status)?
+                    .put_string(favorite_group)?
+                    .put_string(extra_text)?
+                    .put_i32(*achievement)?
+                    .put_bool(*moderator)?
+                    .put_i32(*unknown)?;
+            }
+            HEntityDetails::Pet {
+                pet_type,
+                owner_id,
+                owner_name,
+                rarity,
+                flags,
+                level,
+                posture,
+            } => {
+                packet
+                    .put_i32(2)?
+                    .put_i32(*pet_type)?
+                    .put_i32(*owner_id)?
+                    .put_string(owner_name)?
+                    .put_i32(*rarity)?;
+                for flag in flags {
+                    packet.put_bool(*flag)?;
+                }
+                packet.put_i32(*level)?.put_string(posture)?;
+            }
+            HEntityDetails::OldBot => {
+                packet.put_i32(3)?;
+            }
+            HEntityDetails::Bot {
+                gender,
+                owner_id,
+                owner_name,
+                skills,
+            } => {
+                if skills.len() > 65_536 {
+                    return Err(error("too many bot skills"));
+                }
+                packet
+                    .put_i32(4)?
+                    .put_string(gender)?
+                    .put_i32(*owner_id)?
+                    .put_string(owner_name)?
+                    .put_i32(skills.len() as i32)?;
+                for skill in skills {
+                    packet.put_u16(*skill)?;
+                }
+            }
+        }
+        Ok(())
+    }
+    pub fn parse(packet: &mut Packet) -> Result<Vec<Self>> {
+        let n = usize::try_from(packet.read_i32()?).map_err(|_| error("negative entity count"))?;
+        if n > 65_536 {
+            return Err(error("too many room entities"));
+        }
+        let mut entities = Vec::with_capacity(n);
+        for _ in 0..n {
+            entities.push(Self::read(packet)?);
+        }
+        Ok(entities)
+    }
+    pub fn apply_update(&mut self, update: &HEntityUpdate) -> bool {
+        if self.index != update.index {
+            return false;
+        }
+        self.tile = update.tile;
+        self.last_update = Some(update.clone());
+        true
+    }
+}
+
 /// One entry from the beta-29 avatar movement/update packet.
 #[derive(Clone, Debug, PartialEq)]
 pub struct HEntityUpdate {
@@ -186,7 +405,7 @@ impl HEntityUpdate {
 
 #[cfg(test)]
 mod tests {
-    use super::{HAction, HDirection, HEntityUpdate, HPoint, HStance};
+    use super::{HAction, HDirection, HEntity, HEntityDetails, HEntityUpdate, HPoint, HStance};
     use crate::packet::Packet;
 
     #[test]
@@ -232,5 +451,55 @@ mod tests {
         assert_eq!(update.stance, Some(HStance::Sit));
         assert_eq!(update.action, Some(HAction::Sign));
         assert_eq!(update.sign, Some(11));
+    }
+    #[test]
+    fn room_entity_variants_round_trip() {
+        let details = [
+            HEntityDetails::Habbo {
+                gender: "M".into(),
+                group_id: 1,
+                group_status: 2,
+                favorite_group: "g".into(),
+                extra_text: "x".into(),
+                achievement: 3,
+                moderator: true,
+                unknown: 4,
+            },
+            HEntityDetails::Pet {
+                pet_type: 1,
+                owner_id: 2,
+                owner_name: "Alice".into(),
+                rarity: 3,
+                flags: [true, false, true, false, true, false],
+                level: 4,
+                posture: "sit".into(),
+            },
+            HEntityDetails::OldBot,
+            HEntityDetails::Bot {
+                gender: "F".into(),
+                owner_id: 8,
+                owner_name: "Bob".into(),
+                skills: vec![0, 65535],
+            },
+        ];
+        let mut packet = Packet::new(1);
+        packet.put_i32(details.len() as i32).unwrap();
+        let mut expected = Vec::new();
+        for (index, detail) in details.into_iter().enumerate() {
+            let entity = HEntity {
+                id: index as i32,
+                name: "name".into(),
+                motto: "motto".into(),
+                figure_id: "figure".into(),
+                index: index as i32,
+                tile: HPoint::with_height(1, 2, 3.5),
+                unknown: 5,
+                details: detail,
+                last_update: None,
+            };
+            entity.append(&mut packet).unwrap();
+            expected.push(entity);
+        }
+        assert_eq!(HEntity::parse(&mut packet).unwrap(), expected);
     }
 }
