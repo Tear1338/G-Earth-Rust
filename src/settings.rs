@@ -17,6 +17,8 @@ pub struct ScheduleTemplate {
     pub expression: String,
     pub direction: Direction,
     pub interval_ms: u64,
+    /// Optional phase within the interval, measured against the Unix clock.
+    pub offset_ms: Option<u64>,
     /// Zero means repeat until cancelled.
     pub repeat: u32,
 }
@@ -191,10 +193,20 @@ impl Settings {
                         .ok_or_else(|| io::Error::other("invalid schedule repetitions"))?,
                 )
                 .map_err(io::Error::other)?;
+                let offset_ms = match schedule.get("offset_ms") {
+                    None | Some(Value::Null) => None,
+                    Some(value) => Some(
+                        value
+                            .as_u64()
+                            .filter(|n| *n < interval_ms)
+                            .ok_or_else(|| io::Error::other("invalid schedule offset"))?,
+                    ),
+                };
                 result.schedules.push(ScheduleTemplate {
                     expression,
                     direction,
                     interval_ms,
+                    offset_ms,
                     repeat,
                 });
             }
@@ -210,7 +222,7 @@ impl Settings {
         object.insert("log_limit".into(), json!(self.log_limit));
         object.insert("log_bytes".into(), json!(self.log_bytes));
         object.insert("rules".into(),Value::Array(self.rules.iter().map(|(enabled,direction,header,replacement)|json!({"enabled":enabled,"direction":direction.name(),"header":header,"replacement":replacement})).collect()));
-        object.insert("schedules".into(),Value::Array(self.schedules.iter().map(|s|json!({"expression":s.expression,"direction":s.direction.name(),"interval_ms":s.interval_ms,"repeat":s.repeat})).collect()));
+        object.insert("schedules".into(),Value::Array(self.schedules.iter().map(|s|json!({"expression":s.expression,"direction":s.direction.name(),"interval_ms":s.interval_ms,"offset_ms":s.offset_ms,"repeat":s.repeat})).collect()));
         Value::Object(object)
     }
     pub fn save(&self, path: &Path) -> io::Result<()> {
@@ -322,10 +334,24 @@ mod tests {
             expression: "{h:1}".into(),
             direction: Direction::ToServer,
             interval_ms: 500,
+            offset_ms: Some(125),
             repeat: 0,
         });
         let loaded = Settings::from_json(settings.to_json()).unwrap();
         assert_eq!(loaded.schedules[0].repeat, 0);
         assert_eq!(loaded.schedules[0].interval_ms, 500);
+        assert_eq!(loaded.schedules[0].offset_ms, Some(125));
+        let mut legacy = settings.to_json();
+        legacy["schedules"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("offset_ms");
+        assert_eq!(
+            Settings::from_json(legacy).unwrap().schedules[0].offset_ms,
+            None
+        );
+        let mut invalid = settings.to_json();
+        invalid["schedules"][0]["offset_ms"] = serde_json::json!(500);
+        assert!(Settings::from_json(invalid).is_err());
     }
 }

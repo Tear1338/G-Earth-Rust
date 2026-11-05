@@ -342,3 +342,43 @@ fn scheduler_can_pause_and_repeat_until_removed() {
     assert_eq!(scheduler.tick(now + Duration::from_secs(100)).len(), 1);
     assert_eq!(scheduler.jobs.len(), 1);
 }
+
+#[test]
+fn scheduler_preserves_clock_alignment_when_late_or_resumed() {
+    let now = Instant::now();
+    let wall = std::time::UNIX_EPOCH + Duration::from_millis(1234);
+    let mut scheduler = Scheduler::default();
+    scheduler
+        .add_aligned(
+            Packet::new(2),
+            Direction::ToServer,
+            500,
+            100,
+            None,
+            (now, wall),
+        )
+        .unwrap();
+    assert!(scheduler.tick(now + Duration::from_millis(365)).is_empty());
+    assert_eq!(scheduler.tick(now + Duration::from_millis(475)).len(), 1);
+    assert!(scheduler.tick(now + Duration::from_millis(865)).is_empty());
+    assert_eq!(scheduler.tick(now + Duration::from_millis(866)).len(), 1);
+    scheduler
+        .set_paused(0, true, now + Duration::from_millis(900))
+        .unwrap();
+    scheduler
+        .set_paused(0, false, now + Duration::from_millis(2000))
+        .unwrap();
+    assert!(scheduler.tick(now + Duration::from_millis(2365)).is_empty());
+    assert_eq!(scheduler.tick(now + Duration::from_millis(2366)).len(), 1);
+    assert!(scheduler
+        .add_aligned(
+            Packet::new(2),
+            Direction::ToServer,
+            500,
+            500,
+            None,
+            (now, wall)
+        )
+        .is_err());
+    assert_eq!(scheduler.jobs.len(), 1);
+}

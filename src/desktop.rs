@@ -25,7 +25,7 @@ use std::{
     process::Child,
     sync::mpsc::Receiver,
     sync::{Arc, OnceLock},
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 
 // Both lazy prediction caches count against the capture byte budget.
@@ -85,6 +85,8 @@ struct Desktop {
     expression: String,
     direction: Direction,
     interval_ms: u64,
+    align_schedule: bool,
+    schedule_offset_ms: u64,
     repeat: u32,
     repeat_forever: bool,
     scheduler: Scheduler,
@@ -190,6 +192,8 @@ impl Default for Desktop {
             expression: "{h:123}{i:42}{s:\"hello\"}".into(),
             direction: Direction::ToServer,
             interval_ms: 1000,
+            align_schedule: false,
+            schedule_offset_ms: 0,
             repeat: 1,
             repeat_forever: false,
             scheduler: Scheduler::default(),
@@ -1233,6 +1237,15 @@ impl Desktop {
             );
             ui.checkbox(&mut self.repeat_forever, "Repeat until cancelled");
         });
+        ui.horizontal(|ui| {
+            ui.checkbox(&mut self.align_schedule, "Align interval to clock");
+            ui.add_enabled(
+                self.align_schedule,
+                egui::DragValue::new(&mut self.schedule_offset_ms)
+                    .range(0..=self.interval_ms.saturating_sub(1))
+                    .prefix("Offset ms "),
+            );
+        });
         if ui
             .add_enabled(
                 self.relay.as_ref().is_some_and(Connection::connected),
@@ -1246,12 +1259,13 @@ impl Desktop {
                 Some((self.direction, &self.packet_info)),
             )
             .and_then(|p| {
-                self.scheduler.add(
+                self.scheduler.add_configured(
                     p,
                     self.direction,
-                    Duration::from_millis(self.interval_ms),
+                    self.interval_ms,
+                    self.align_schedule.then_some(self.schedule_offset_ms),
                     (!self.repeat_forever).then_some(self.repeat),
-                    Instant::now(),
+                    (Instant::now(), SystemTime::now()),
                 )
             }) {
                 Ok(()) => {
@@ -1259,6 +1273,7 @@ impl Desktop {
                         expression: self.expression.clone(),
                         direction: self.direction,
                         interval_ms: self.interval_ms,
+                        offset_ms: self.align_schedule.then_some(self.schedule_offset_ms),
                         repeat: if self.repeat_forever { 0 } else { self.repeat },
                     });
                     "Schedule added".into()
@@ -1284,12 +1299,13 @@ impl Desktop {
                     Some((template.direction, &self.packet_info)),
                 )
                 .and_then(|p| {
-                    self.scheduler.add(
+                    self.scheduler.add_configured(
                         p,
                         template.direction,
-                        Duration::from_millis(template.interval_ms),
+                        template.interval_ms,
+                        template.offset_ms,
                         (template.repeat != 0).then_some(template.repeat),
-                        Instant::now(),
+                        (Instant::now(), SystemTime::now()),
                     )
                 }) {
                     Ok(()) => {}
@@ -1320,11 +1336,13 @@ impl Desktop {
                     .remaining
                     .map_or_else(|| "until cancelled".to_owned(), |n| n.to_string());
                 ui.monospace(format!(
-                    "{}: {} header {} every {} ms - remaining {}",
+                    "{}: {} header {} every {} ms{} - remaining {}",
                     i + 1,
                     job.direction.name(),
                     job.packet.header(),
                     job.interval.as_millis(),
+                    job.alignment_offset_ms
+                        .map_or_else(String::new, |offset| format!(" + {offset} ms")),
                     remaining
                 ));
             });
