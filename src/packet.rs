@@ -385,6 +385,150 @@ impl Packet {
         self.edited = true;
         Ok(())
     }
+
+    /// Replace a fixed-width EVA field at an absolute packet offset, preserving
+    /// the read cursor. Header and length bytes are intentionally protected.
+    fn replace_fixed(&mut self, offset: usize, replacement: &[u8]) -> Result<&mut Self> {
+        self.ensure_eva()?;
+        let end = offset
+            .checked_add(replacement.len())
+            .ok_or_else(|| error("offset overflow"))?;
+        if offset < self.format.body_offset() || end > self.bytes.len() {
+            return Err(error("replacement outside body"));
+        }
+        self.bytes[offset..end].copy_from_slice(replacement);
+        self.edited = true;
+        Ok(self)
+    }
+
+    pub fn replace_u8(&mut self, offset: usize, value: u8) -> Result<&mut Self> {
+        self.replace_fixed(offset, &[value])
+    }
+    pub fn replace_bool(&mut self, offset: usize, value: bool) -> Result<&mut Self> {
+        self.replace_u8(offset, u8::from(value))
+    }
+    pub fn replace_u16(&mut self, offset: usize, value: u16) -> Result<&mut Self> {
+        self.replace_fixed(offset, &value.to_be_bytes())
+    }
+    pub fn replace_i32(&mut self, offset: usize, value: i32) -> Result<&mut Self> {
+        self.replace_fixed(offset, &value.to_be_bytes())
+    }
+    pub fn replace_i64(&mut self, offset: usize, value: i64) -> Result<&mut Self> {
+        self.replace_fixed(offset, &value.to_be_bytes())
+    }
+    pub fn replace_f32(&mut self, offset: usize, value: f32) -> Result<&mut Self> {
+        self.replace_fixed(offset, &value.to_be_bytes())
+    }
+    pub fn replace_f64(&mut self, offset: usize, value: f64) -> Result<&mut Self> {
+        self.replace_fixed(offset, &value.to_be_bytes())
+    }
+
+    /// Replace one length-prefixed Latin-1 string. A cursor past the new end
+    /// is clamped so subsequent reads remain safe after a shrinking edit.
+    pub fn replace_string(&mut self, offset: usize, value: &str) -> Result<&mut Self> {
+        self.ensure_eva()?;
+        if value.len() > usize::from(u16::MAX) * 2 {
+            return Err(error("short string too long"));
+        }
+        let prefix_end = offset
+            .checked_add(2)
+            .ok_or_else(|| error("offset overflow"))?;
+        if offset < self.format.body_offset() || prefix_end > self.bytes.len() {
+            return Err(error("replacement outside body"));
+        }
+        let old_len =
+            u16::from_be_bytes(self.bytes[offset..prefix_end].try_into().unwrap()) as usize;
+        let old_end = prefix_end
+            .checked_add(old_len)
+            .ok_or_else(|| error("length overflow"))?;
+        if old_end > self.bytes.len() {
+            return Err(error("truncated packet field"));
+        }
+        let bytes = latin1_encode(value)?;
+        let len = u16::try_from(bytes.len()).map_err(|_| error("short string too long"))?;
+        let mut field = Vec::with_capacity(2 + bytes.len());
+        field.extend_from_slice(&len.to_be_bytes());
+        field.extend_from_slice(&bytes);
+        let cursor = self.cursor;
+        self.replace(offset, old_end - offset, &field)?;
+        self.cursor = cursor.min(self.bytes.len());
+        Ok(self)
+    }
+
+    /// Replace non-overlapping occurrences of a big-endian integer in the body.
+    pub fn replace_all_i32(&mut self, old: i32, new: i32) -> Result<usize> {
+        self.ensure_eva()?;
+        let old = old.to_be_bytes();
+        let new = new.to_be_bytes();
+        let mut offset = self.format.body_offset();
+        let mut count = 0;
+        while offset + 4 <= self.bytes.len() {
+            if self.bytes[offset..offset + 4] == old {
+                self.bytes[offset..offset + 4].copy_from_slice(&new);
+                self.edited = true;
+                count += 1;
+                offset += 4;
+            } else {
+                offset += 1;
+            }
+        }
+        Ok(count)
+    }
+
+    /// Replace up to `limit` exact, length-prefixed Latin-1 strings anywhere in
+    /// the EVA body; `None` replaces all. The packet is unchanged on failure.
+    pub fn replace_strings(&mut self, old: &str, new: &str, limit: Option<usize>) -> Result<usize> {
+        self.ensure_eva()?;
+        if limit == Some(0) {
+            return Ok(0);
+        }
+        if old.len() > usize::from(u16::MAX) * 2 || new.len() > usize::from(u16::MAX) * 2 {
+            return Err(error("short string too long"));
+        }
+        let old = latin1_encode(old)?;
+        let new = latin1_encode(new)?;
+        let old_len = u16::try_from(old.len()).map_err(|_| error("short string too long"))?;
+        let new_len = u16::try_from(new.len()).map_err(|_| error("short string too long"))?;
+        let mut result = Vec::new();
+        let mut offset = self.format.body_offset();
+        let mut copied = 0;
+        let mut count = 0;
+        while offset + 2 + old.len() <= self.bytes.len() {
+            if self.bytes[offset..offset + 2] == old_len.to_be_bytes()
+                && self.bytes[offset + 2..offset + 2 + old.len()] == old
+            {
+                let end = offset + 2 + old.len();
+                let needed = result
+                    .len()
+                    .checked_add(offset - copied)
+                    .and_then(|n| n.checked_add(2 + new.len()))
+                    .and_then(|n| n.checked_add(self.bytes.len() - end))
+                    .ok_or_else(|| error("length overflow"))?;
+                if needed > MAX_FRAME + 4 {
+                    return Err(error("packet too large"));
+                }
+                result.extend_from_slice(&self.bytes[copied..offset]);
+                result.extend_from_slice(&new_len.to_be_bytes());
+                result.extend_from_slice(&new);
+                copied = end;
+                offset = end;
+                count += 1;
+                if limit == Some(count) {
+                    break;
+                }
+            } else {
+                offset += 1;
+            }
+        }
+        if count != 0 {
+            result.extend_from_slice(&self.bytes[copied..]);
+            self.bytes = result;
+            self.fix_length();
+            self.cursor = self.cursor.min(self.bytes.len());
+            self.edited = true;
+        }
+        Ok(count)
+    }
     pub fn stringify(&self) -> String {
         format!(
             "{}{}",
