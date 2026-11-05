@@ -24,7 +24,7 @@ Status describes source implementation and finite tests, not successful producti
 | Nitro | HTTP/TLS/WebSocket backend, beta-29 hotel matching/config, RC4/TripleDES/GCM/CTR adapters, assets, shared rules/injection/extensions, explicit current-user certificates and journaled Windows proxy cleanup | Real hotel sessions, Chrome TLS fingerprint, SOCKS upstream, non-Windows OS helpers |
 | Unity connection | Authenticated TLS communicator, exact asset routes, gzip and cache handling, validated WASM hooks, browser reinjection and Java extensions | Official client revisions, G-Presets and non-Windows system helpers |
 | Hotel detection | Flash/Origins lists, custom domain/revision, Nitro hello fallback, dynamic nitro.json, beta-29 hotel URL/prefixes and adapters | Live hotel regression and Unity discovery |
-| Room/catalog/inventory/entity API | Existing Java extensions retain their original Java parsers | Native Rust parser API parity |
+| Room/catalog/inventory/entity API | Native Rust positions, movement updates, floor/wall furniture, inventory pages and eight furniture state formats; state bytes compared against the released Java API | Complete entity, room, catalog and inventory API; broader Java differential coverage |
 | Extension store/updater | Original catalogue, native search/filter/order, bounded archive install, separate-version updates, authenticated launch and managed uninstall | Full Maven version edge cases, thumbnails/readme presentation and broader package corpus |
 | Windows packaging | Tested development EXE and CLI via Actions/prereleases | Installer, signing and release QA |
 | Linux/macOS | Core tests on Linux; Windows desktop compiled | Desktop distribution and platform proxy helpers |

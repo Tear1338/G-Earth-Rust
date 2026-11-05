@@ -105,6 +105,14 @@ jobs:
         run: cargo test --locked --test oracle -- --ignored
         env:
           GEARTH_JAVA_ORACLE: /tmp/java-oracle.txt
+      - name: Compare furniture state formats against the original Java API
+        run: |
+          api_jar=$(find /tmp/upstream-gearth -name 'G-Earth-Api-1.5.4-beta-29.jar' -print -quit)
+          javac -cp "$api_jar" tests/JavaStuffOracle.java
+          java -cp "$api_jar:tests" JavaStuffOracle > /tmp/stuff-oracle.txt
+          cargo test --locked --test stuffdata_oracle -- --ignored
+        env:
+          GEARTH_STUFF_ORACLE: /tmp/stuff-oracle.txt
       - name: Exercise an actual beta-29 Java extension against Rust
         run: cargo test --locked --features web --test java_extension -- --ignored
       - name: Exercise the original Java extension through Unity
