@@ -45,6 +45,12 @@ public class JavaMutationOracle {
         utf8Replacement.setReadIndex(7);
         utf8Replacement.replaceString(6, "雪🐱", StandardCharsets.UTF_8);
         emit("utf8_replacement", utf8Replacement);
+        HPacket utf16 = new HPacket(8);
+        utf16.appendString("Aé水", StandardCharsets.UTF_16BE).appendInt(42);
+        emit("utf16", utf16);
+        utf16.setReadIndex(7);
+        utf16.replaceString(6, "Z猫", StandardCharsets.UTF_16BE);
+        emit("utf16_replacement", utf16);
         String[] oldValues = {"a", "abc", "é"};
         String[] values = {"", "a", "abc", "é"};
         int[] limits = {0, 1, 2, -1};

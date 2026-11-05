@@ -64,3 +64,30 @@ fn short_utf8_limit_counts_encoded_bytes_not_characters() {
     assert!(packet.put_utf8(&format!("{text}x")).is_err());
     assert_eq!(packet, before);
 }
+
+#[test]
+fn raw_short_fields_round_trip_custom_encodings_without_cursor_loss() {
+    let original = [0, 65, 0, 233, 0x6c, 0x34];
+    let replacement = [0, 90, 0x73, 0x2b];
+    let mut packet = Packet::new(9);
+    packet
+        .put_short_bytes(&original)
+        .unwrap()
+        .put_i32(42)
+        .unwrap();
+    packet.reset();
+    assert_eq!(packet.read_short_bytes().unwrap(), original);
+    assert_eq!(packet.read_i32().unwrap(), 42);
+    packet.replace_short_bytes(6, &replacement).unwrap();
+    packet.reset();
+    assert_eq!(packet.read_short_bytes().unwrap(), replacement);
+    assert_eq!(packet.read_i32().unwrap(), 42);
+
+    let mut truncated = Packet::new(1);
+    truncated.append(&[0, 4, 1]).unwrap();
+    assert!(truncated.read_short_bytes().is_err());
+    assert_eq!(truncated.cursor(), 6);
+    let before = truncated.clone();
+    assert!(truncated.replace_short_bytes(6, &replacement).is_err());
+    assert_eq!(truncated, before);
+}

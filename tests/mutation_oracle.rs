@@ -125,6 +125,18 @@ fn mutations_match_original_java_packets_and_cursor() {
     utf8_replacement.set_cursor(7).unwrap();
     utf8_replacement.replace_utf8(6, "雪🐱").unwrap();
     check("utf8_replacement", &utf8_replacement);
+    let mut utf16 = Packet::new(8);
+    let encode_utf16 =
+        |text: &str| -> Vec<u8> { text.encode_utf16().flat_map(u16::to_be_bytes).collect() };
+    utf16
+        .put_short_bytes(&encode_utf16("Aé水"))
+        .unwrap()
+        .put_i32(42)
+        .unwrap();
+    check("utf16", &utf16);
+    utf16.set_cursor(7).unwrap();
+    utf16.replace_short_bytes(6, &encode_utf16("Z猫")).unwrap();
+    check("utf16_replacement", &utf16);
     let values = ["", "a", "abc", "é"];
     let old_values = ["a", "abc", "é"];
     let limits = [Some(0), Some(1), Some(2), None];
