@@ -143,4 +143,31 @@ fn all_stuff_data_wire_formats_match_original_java() {
             .unwrap(),
         inventory
     );
+    let friend = gearth_rust::parsers::social::HFriend {
+        id: 8,
+        name: "Bob".into(),
+        male: true,
+        online: true,
+        following_allowed: false,
+        figure: "hr".into(),
+        category_id: 2,
+        motto: "m".into(),
+        real_name: "".into(),
+        facebook_id: "".into(),
+        persisted_message_user: false,
+        vip_member: true,
+        pocket_habbo_user: false,
+        relationship_status: 1,
+        category_name: None,
+    };
+    let mut packet = Packet::new(1);
+    friend.append(&mut packet).unwrap();
+    assert_eq!(packet.bytes(), observed["friend"]);
+    assert_eq!(
+        gearth_rust::parsers::social::HFriend::read(
+            &mut Packet::from_bytes(observed["friend"].clone()).unwrap()
+        )
+        .unwrap(),
+        friend
+    );
 }

@@ -3,6 +3,7 @@ import gearth.extensions.parsers.stuffdata.*;
 import gearth.extensions.parsers.HFloorItem;
 import gearth.extensions.parsers.HWallItem;
 import gearth.extensions.parsers.HInventoryItem;
+import gearth.extensions.parsers.HFriend;
 import java.util.HashMap;
 import java.util.HexFormat;
 
@@ -49,5 +50,13 @@ public class JavaStuffOracle {
         HPacket inventoryOutput = new HPacket(1);
         new HInventoryItem(inventoryInput).appendToPacket(inventoryOutput);
         System.out.println("inventory=" + HexFormat.of().formatHex(inventoryOutput.toBytes()));
+
+        HPacket friendInput = new HPacket(1);
+        friendInput.appendInt(8).appendString("Bob").appendInt(1).appendBoolean(true).appendBoolean(false)
+                .appendString("hr").appendInt(2).appendString("m").appendString("").appendString("")
+                .appendBoolean(false).appendBoolean(true).appendBoolean(false).appendShort((short) 1);
+        HPacket friendOutput = new HPacket(1);
+        new HFriend(friendInput).appendToPacket(friendOutput);
+        System.out.println("friend=" + HexFormat.of().formatHex(friendOutput.toBytes()));
     }
 }

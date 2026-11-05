@@ -1,6 +1,7 @@
 //! Native Rust parsers for the beta-29 extension API data model.
 pub mod entity;
 pub mod furniture;
+pub mod social;
 pub mod stuffdata;
 
 pub(crate) fn java_double(value: f64) -> String {
