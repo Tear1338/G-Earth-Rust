@@ -47,25 +47,6 @@ impl Default for Settings {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::{ScheduleTemplate, Settings};
-    use crate::packet::Direction;
-
-    #[test]
-    fn repeating_schedule_survives_settings_round_trip() {
-        let mut settings = Settings::default();
-        settings.schedules.push(ScheduleTemplate {
-            expression: "{h:1}".into(),
-            direction: Direction::ToServer,
-            interval_ms: 500,
-            repeat: 0,
-        });
-        let loaded = Settings::from_json(settings.to_json()).unwrap();
-        assert_eq!(loaded.schedules[0].repeat, 0);
-        assert_eq!(loaded.schedules[0].interval_ms, 500);
-    }
-}
 impl Settings {
     pub fn default_path() -> PathBuf {
         if let Some(override_path) = std::env::var_os("GEARTH_RUST_CONFIG") {
@@ -326,5 +307,25 @@ impl Settings {
         }
         self.extra.insert("legacy_java_cache".into(), value);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ScheduleTemplate, Settings};
+    use crate::packet::Direction;
+
+    #[test]
+    fn repeating_schedule_survives_settings_round_trip() {
+        let mut settings = Settings::default();
+        settings.schedules.push(ScheduleTemplate {
+            expression: "{h:1}".into(),
+            direction: Direction::ToServer,
+            interval_ms: 500,
+            repeat: 0,
+        });
+        let loaded = Settings::from_json(settings.to_json()).unwrap();
+        assert_eq!(loaded.schedules[0].repeat, 0);
+        assert_eq!(loaded.schedules[0].interval_ms, 500);
     }
 }

@@ -44,45 +44,6 @@ fn bounded_log_prediction(mut value: String) -> String {
     value
 }
 
-#[cfg(test)]
-mod logger_prediction_tests {
-    use super::{bounded_log_prediction, invalidate_log_expressions, LogRow, LOG_PREDICTION_LIMIT};
-    use gearth_rust::packet::{Direction, Message, Packet};
-    use std::{collections::VecDeque, sync::OnceLock};
-
-    #[test]
-    fn limits_predictions_without_splitting_unicode() {
-        let short = "abc".to_owned();
-        assert_eq!(bounded_log_prediction(short.clone()), short);
-        let long = bounded_log_prediction("é".repeat(1000));
-        assert!(long.len() <= LOG_PREDICTION_LIMIT);
-        assert!(long.ends_with('…'));
-    }
-
-    #[test]
-    fn packet_metadata_refresh_invalidates_cached_expressions() {
-        let cached = OnceLock::new();
-        cached.set(("old expression".to_owned(), true)).unwrap();
-        let mut rows = VecDeque::from([LogRow {
-            message: Message {
-                packet: Packet::new(1),
-                direction: Direction::ToClient,
-                index: 1,
-                blocked: false,
-            },
-            expression: String::new(),
-            search: String::new(),
-            bytes: 0,
-            skipped: false,
-            unity: false,
-            predicted_structure: OnceLock::new(),
-            packet_expression: cached,
-        }]);
-        invalidate_log_expressions(&mut rows);
-        assert!(rows[0].packet_expression.get().is_none());
-    }
-}
-
 fn main() -> eframe::Result<()> {
     eframe::run_native(
         "G-Earth Rust — development",
@@ -1909,5 +1870,44 @@ impl Drop for Desktop {
             let _ = child.kill();
             let _ = child.wait();
         }
+    }
+}
+
+#[cfg(test)]
+mod logger_prediction_tests {
+    use super::{bounded_log_prediction, invalidate_log_expressions, LogRow, LOG_PREDICTION_LIMIT};
+    use gearth_rust::packet::{Direction, Message, Packet};
+    use std::{collections::VecDeque, sync::OnceLock};
+
+    #[test]
+    fn limits_predictions_without_splitting_unicode() {
+        let short = "abc".to_owned();
+        assert_eq!(bounded_log_prediction(short.clone()), short);
+        let long = bounded_log_prediction("é".repeat(1000));
+        assert!(long.len() <= LOG_PREDICTION_LIMIT);
+        assert!(long.ends_with('…'));
+    }
+
+    #[test]
+    fn packet_metadata_refresh_invalidates_cached_expressions() {
+        let cached = OnceLock::new();
+        cached.set(("old expression".to_owned(), true)).unwrap();
+        let mut rows = VecDeque::from([LogRow {
+            message: Message {
+                packet: Packet::new(1),
+                direction: Direction::ToClient,
+                index: 1,
+                blocked: false,
+            },
+            expression: String::new(),
+            search: String::new(),
+            bytes: 0,
+            skipped: false,
+            unity: false,
+            predicted_structure: OnceLock::new(),
+            packet_expression: cached,
+        }]);
+        invalidate_log_expressions(&mut rows);
+        assert!(rows[0].packet_expression.get().is_none());
     }
 }
