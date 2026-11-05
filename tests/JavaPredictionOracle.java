@@ -1,5 +1,8 @@
 import gearth.protocol.HPacket;
+import gearth.protocol.HMessage;
 import gearth.services.Constants;
+import gearth.services.packet_info.PacketInfo;
+import gearth.services.packet_info.PacketInfoManager;
 import gearth.services.packet_representation.prediction.StructurePredictor;
 import gearth.services.packet_representation.PacketStringUtils;
 import java.util.HexFormat;
@@ -24,5 +27,16 @@ public class JavaPredictionOracle {
         HPacket floats = new HPacket(1);
         floats.appendFloat(0.0001f).appendFloat(10000000f).appendDouble(0.0000001);
         System.out.println("floats=" + HexFormat.of().formatHex(PacketStringUtils.toExpressionFromGivenStructure(floats, "ffd", null).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        Constants.UNITY_PACKETS = false;
+        HPacket named = new HPacket(42);
+        named.appendInt(7).appendString("hello");
+        PacketInfo withoutStructure = new PacketInfo(HMessage.Direction.TOCLIENT, 42, "hash0", "Earlier", null, "test");
+        PacketInfo known = new PacketInfo(HMessage.Direction.TOCLIENT, 42, "hash1", "Known", "is", "test");
+        PacketInfo wrongDirection = new PacketInfo(HMessage.Direction.TOSERVER, 42, "hash2", "Wrong", "b", "test");
+        for (boolean structure : new boolean[]{true, false}) {
+            PacketInfoManager manager = new PacketInfoManager("test", structure ? java.util.List.of(withoutStructure, known, wrongDirection) : java.util.List.of(withoutStructure, wrongDirection));
+            String expression = named.toExpression(HMessage.Direction.TOCLIENT, manager, true);
+            System.out.println((structure ? "named_known" : "named_predicted") + "=" + HexFormat.of().formatHex(expression.getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        }
     }
 }

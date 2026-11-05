@@ -1,4 +1,9 @@
-use gearth_rust::{expression, packet::Packet, structure_prediction};
+use gearth_rust::{
+    expression,
+    packet::{Direction, Packet},
+    packet_info::{PacketInfo, PacketInfoManager},
+    structure_prediction,
+};
 use std::collections::BTreeMap;
 
 #[test]
@@ -24,6 +29,41 @@ fn predictions_match_the_released_java_api() {
         "000000010000000000000001",
         "0020ff0001020304",
     ];
+    let mut named = Packet::new(42);
+    named.put_i32(7).unwrap().put_string("hello").unwrap();
+    let entry = |direction, name: &str, structure: Option<&str>| PacketInfo {
+        header: 42,
+        hash: Some("hash".into()),
+        name: Some(name.into()),
+        structure: structure.map(str::to_owned),
+        direction,
+        source: "test".into(),
+    };
+    for known in [true, false] {
+        let mut entries = vec![entry(Direction::ToClient, "Earlier", None)];
+        if known {
+            entries.push(entry(Direction::ToClient, "Known", Some("is")));
+        }
+        entries.push(entry(Direction::ToServer, "Wrong", Some("b")));
+        let manager = PacketInfoManager::new("test", entries);
+        let (actual, used_structure) = structure_prediction::expression_with_metadata(
+            &named,
+            Direction::ToClient,
+            &manager,
+            false,
+        )
+        .unwrap();
+        let key = if known {
+            "named_known"
+        } else {
+            "named_predicted"
+        };
+        assert_eq!(
+            actual.as_bytes(),
+            expression::parse_hex(observed[key]).unwrap()
+        );
+        assert_eq!(used_structure, known);
+    }
     for unity in [false, true] {
         for (index, sample) in samples.iter().enumerate() {
             let mut packet = Packet::new(1);

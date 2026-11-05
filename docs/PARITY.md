@@ -16,7 +16,7 @@ Status describes source implementation and finite tests, not successful producti
 | Packet identifiers | Direction-aware database, beta-29 IPC, Sulek HTTPS lookup/cache, detected Flash revision, Unity JSON and TSV import | Unity client integration and broader remote-provider coverage |
 | SOCKS5 | CONNECT, remote DNS, optional RFC1929 credentials | Wider interoperability tests |
 | Rules/scheduler | Saved ordered rules and finite schedule templates | Every original scheduler and rule-editor option |
-| Logging | Cached search/display strings, virtualized rows, count/byte budget, packet display size limit, optional additional data, predicted expression and separators, plus export honoring active filters | Original highlighting, metadata-based structures, WEDGIE prediction and complete filtering options |
+| Logging | Cached search/display strings, virtualized rows, count/byte budget, packet display size limit, optional additional data, metadata-based or predicted expressions and separators, plus export honoring active filters | Original highlighting, WEDGIE prediction, complete filtering options and visual validation |
 | Settings | Atomic save/load, unknown-field preservation, original cache import, notepad | Migration of every original setting |
 | UI/theme/languages | Rust eframe desktop, light/dark theme, nine original resource files, localized tabs | Exact UI/layout, all controls translated, shortcuts, tray |
 | Flash | Negotiation, Windows client memory discovery, socket owner detection, hosts attachment, Raw-IP mapping, Windows multi-instance heartbeat/lease and independent counters | Official client/firewall/multi-instance validation and non-Windows discovery |

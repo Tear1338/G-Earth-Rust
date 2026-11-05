@@ -46,7 +46,9 @@ fn bounded_log_prediction(mut value: String) -> String {
 
 #[cfg(test)]
 mod logger_prediction_tests {
-    use super::{bounded_log_prediction, LOG_PREDICTION_LIMIT};
+    use super::{bounded_log_prediction, invalidate_log_expressions, LogRow, LOG_PREDICTION_LIMIT};
+    use gearth_rust::packet::{Direction, Message, Packet};
+    use std::{collections::VecDeque, sync::OnceLock};
 
     #[test]
     fn limits_predictions_without_splitting_unicode() {
@@ -55,6 +57,29 @@ mod logger_prediction_tests {
         let long = bounded_log_prediction("é".repeat(1000));
         assert!(long.len() <= LOG_PREDICTION_LIMIT);
         assert!(long.ends_with('…'));
+    }
+
+    #[test]
+    fn packet_metadata_refresh_invalidates_cached_expressions() {
+        let cached = OnceLock::new();
+        cached.set(("old expression".to_owned(), true)).unwrap();
+        let mut rows = VecDeque::from([LogRow {
+            message: Message {
+                packet: Packet::new(1),
+                direction: Direction::ToClient,
+                index: 1,
+                blocked: false,
+            },
+            expression: String::new(),
+            search: String::new(),
+            bytes: 0,
+            skipped: false,
+            unity: false,
+            predicted_structure: OnceLock::new(),
+            packet_expression: cached,
+        }]);
+        invalidate_log_expressions(&mut rows);
+        assert!(rows[0].packet_expression.get().is_none());
     }
 }
 
@@ -163,7 +188,12 @@ struct LogRow {
     skipped: bool,
     unity: bool,
     predicted_structure: OnceLock<String>,
-    predicted_expression: OnceLock<String>,
+    packet_expression: OnceLock<(String, bool)>,
+}
+fn invalidate_log_expressions(logs: &mut VecDeque<LogRow>) {
+    for row in logs {
+        row.packet_expression.take();
+    }
 }
 impl Default for Desktop {
     fn default() -> Self {
@@ -348,6 +378,7 @@ impl Desktop {
                             self.status =
                                 format!("Loaded {} packet identifiers", database.entries().len());
                             self.packet_info = database;
+                            invalidate_log_expressions(&mut self.logs);
                             self.packet_database.clear();
                         }
                         Err(e) => self.status = format!("Packet lookup failed: {e}"),
@@ -384,7 +415,10 @@ impl Desktop {
             for event in events.try_iter().take(512) {
                 match event {
                     Event::Status(status) => self.status = status,
-                    Event::PacketIdentifiers(database) => self.packet_info = database,
+                    Event::PacketIdentifiers(database) => {
+                        self.packet_info = database;
+                        invalidate_log_expressions(&mut self.logs);
+                    }
                     Event::Packet(message) => {
                         self.total += 1;
                         if !self.paused {
@@ -431,7 +465,7 @@ impl Desktop {
                                 skipped,
                                 unity: matches!(self.relay.as_ref(), Some(Connection::Unity(_))),
                                 predicted_structure: OnceLock::new(),
-                                predicted_expression: OnceLock::new(),
+                                packet_expression: OnceLock::new(),
                             });
                         }
                     }
@@ -1042,20 +1076,23 @@ impl Desktop {
                                 .sense(egui::Sense::click()),
                             );
                             if self.logger_structure && !row.skipped {
-                                let expression = row.predicted_expression.get_or_init(|| {
-                                    bounded_log_prediction(
-                                        gearth_rust::structure_prediction::predicted_expression(
-                                            &m.packet, row.unity,
+                                let (expression, known) = row.packet_expression.get_or_init(|| {
+                                    let (expression, known) =
+                                        gearth_rust::structure_prediction::expression_with_metadata(
+                                            &m.packet, m.direction, &self.packet_info, row.unity,
                                         )
-                                        .unwrap_or_default(),
-                                    )
+                                        .unwrap_or_default();
+                                    (bounded_log_prediction(expression), known)
                                 });
                                 if !expression.is_empty() {
                                     ui.add(
                                         egui::Label::new(
-                                            egui::RichText::new(format!("Predicted: {expression}"))
-                                                .monospace()
-                                                .small(),
+                                            egui::RichText::new(format!(
+                                                "{}: {expression}",
+                                                if *known { "Structure" } else { "Predicted" }
+                                            ))
+                                            .monospace()
+                                            .small(),
                                         )
                                         .truncate(),
                                     );
@@ -1687,6 +1724,7 @@ impl Desktop {
         } else if self.packet_info.version != self.hotel_version {
             self.packet_info = PacketInfoManager::default();
         }
+        invalidate_log_expressions(&mut self.logs);
         Ok(())
     }
     fn relay_options(&mut self) -> std::io::Result<RelayOptions> {

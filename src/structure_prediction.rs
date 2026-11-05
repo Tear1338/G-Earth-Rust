@@ -1,5 +1,8 @@
 //! Bounded port of beta-29's heuristic packet structure predictor.
-use crate::packet::{error, Packet, PacketFormat, Result};
+use crate::{
+    packet::{error, Direction, Packet, PacketFormat, Result},
+    packet_info::PacketInfoManager,
+};
 
 const MAX_BYTES: usize = 256 * 1024;
 const MAX_SCAN: usize = 4 * 1024 * 1024;
@@ -224,6 +227,48 @@ pub fn predict(packet: &Packet, unity: bool) -> Result<String> {
 pub fn predicted_expression(packet: &Packet, unity: bool) -> Result<String> {
     let structure = predict(packet, unity)?;
     expression_from_structure(packet, &structure, None)
+}
+
+/// Uses direction-specific packet metadata when available, otherwise predicts
+/// the structure. The boolean indicates whether metadata supplied the structure.
+pub fn expression_with_metadata(
+    packet: &Packet,
+    direction: Direction,
+    metadata: &PacketInfoManager,
+    unity: bool,
+) -> Result<(String, bool)> {
+    let mut entries = metadata.by_header(direction, packet.header());
+    let first = entries.next();
+    let info = match first {
+        Some(first) if first.structure.is_some() => Some(first),
+        Some(first) => Some(
+            entries
+                .find(|entry| entry.structure.is_some())
+                .unwrap_or(first),
+        ),
+        None => None,
+    };
+    let identifier = info.and_then(|entry| {
+        entry.name.as_ref().or(entry.hash.as_ref()).map(|value| {
+            format!(
+                "{}:{value}",
+                if direction == Direction::ToClient {
+                    "in"
+                } else {
+                    "out"
+                }
+            )
+        })
+    });
+    let known = info.and_then(|entry| entry.structure.as_deref());
+    let structure = match known {
+        Some(structure) => structure.to_owned(),
+        None => predict(packet, unity)?,
+    };
+    Ok((
+        expression_from_structure(packet, &structure, identifier.as_deref())?,
+        known.is_some(),
+    ))
 }
 
 #[derive(Debug)]
