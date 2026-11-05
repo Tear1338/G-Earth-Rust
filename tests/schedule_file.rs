@@ -37,3 +37,14 @@ fn rejects_malformed_files_and_lossy_exports() {
     items[0].offset_ms = None;
     assert!(schedule_file::format(&items).is_err());
 }
+
+#[test]
+#[ignore = "requires the original Java scheduler oracle"]
+fn schedule_file_matches_original_java_serializer() {
+    let path = std::env::var("GEARTH_SCHEDULE_ORACLE").unwrap();
+    let input = std::fs::read_to_string(path).unwrap().replace("\r\n", "\n");
+    let input = input.trim_end_matches('\n');
+    let schedules = schedule_file::parse(input).unwrap();
+    assert_eq!(schedules.len(), 2);
+    assert_eq!(schedule_file::format(&schedules).unwrap(), input);
+}

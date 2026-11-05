@@ -133,6 +133,21 @@ jobs:
           cargo test --locked --test maven_oracle -- --ignored
         env:
           GEARTH_MAVEN_ORACLE: /tmp/maven-oracle.txt
+      - name: Compare scheduler files against the original Java serializer
+        run: |
+          api_jar=$(find /tmp/upstream-gearth -name 'G-Earth-Api-1.5.4-beta-29.jar' -print -quit)
+          test -n "$api_jar"
+          curl --fail --location --retry 3 'https://repo.maven.apache.org/maven2/org/openjfx/javafx-base/21.0.2/javafx-base-21.0.2-linux.jar' -o /tmp/javafx-base.jar
+          mkdir -p /tmp/scheduler-src /tmp/scheduler-classes
+          for source in gearth/app/services/scheduler/ScheduleItem.java gearth/app/services/scheduler/Interval.java gearth/app/ui/subforms/scheduler/InteractableScheduleItem.java gearth/app/services/scheduler/listeners/OnBeingUpdatedListener.java gearth/app/services/scheduler/listeners/OnDeleteListener.java gearth/app/services/scheduler/listeners/OnEditListener.java gearth/app/services/scheduler/listeners/OnUpdatedListener.java; do
+            mkdir -p "/tmp/scheduler-src/$(dirname "$source")"
+            curl --fail --location --retry 3 "https://raw.githubusercontent.com/G-Realm/G-Earth/242155c291b1109d6c9a02370f6a2af1ead41ea8/G-Earth/src/main/java/$source" -o "/tmp/scheduler-src/$source"
+          done
+          javac -cp "$api_jar:/tmp/javafx-base.jar" -d /tmp/scheduler-classes $(find /tmp/scheduler-src -name '*.java') tests/java_schedule/gearth/app/ui/subforms/scheduler/SchedulerController.java tests/java_schedule/JavaScheduleOracle.java
+          java -cp "$api_jar:/tmp/javafx-base.jar:/tmp/scheduler-classes" JavaScheduleOracle > /tmp/schedule-oracle.txt
+          cargo test --locked --test schedule_file -- --ignored
+        env:
+          GEARTH_SCHEDULE_ORACLE: /tmp/schedule-oracle.txt
       - name: Exercise an actual beta-29 Java extension against Rust
         run: cargo test --locked --features web --test java_extension -- --ignored
       - name: Exercise the original Java extension through Unity
