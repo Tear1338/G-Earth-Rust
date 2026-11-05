@@ -2,6 +2,7 @@
 pub mod catalog;
 pub mod entity;
 pub mod furniture;
+pub mod navigator;
 pub mod social;
 pub mod stuffdata;
 

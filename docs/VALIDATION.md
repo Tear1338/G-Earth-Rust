@@ -1,6 +1,6 @@
 # Validation record
 
-Furniture parsing has an additional differential fixture: JavaStuffOracle generates all eight state formats and one example each of floor furniture, wall furniture and an inventory item with the released beta-29 API JAR. Rust compares the resulting wire bytes and reads them back. The comparison is finite; these formats and entity parsing still need broader independent oracle coverage.
+The parser differential fixture uses the released beta-29 Java API JAR for all eight furniture state formats and selected floor, wall, inventory, friend, catalog and navigator examples. Rust compares wire bytes or decoded values. The comparison is finite; these formats and entity parsing still need broader independent oracle coverage.
 
 Windows Flash and hosts attachment have additional [native integration evidence](FLASH_VALIDATION.md), including automatic process identification, real cross-process memory reads, encrypted traffic and scoped cleanup. Latest passing reference: [41329358947](https://github.com/Tear1338/G-Earth-Rust/actions/runs/41329358947).
 

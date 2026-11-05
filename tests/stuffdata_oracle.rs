@@ -184,4 +184,11 @@ fn all_stuff_data_wire_formats_match_original_java() {
         page.front_page_items[0].target,
         gearth_rust::parsers::catalog::HFrontPageTarget::Offer(25)
     );
+    let mut original = Packet::from_bytes(observed["navigator"].clone()).unwrap();
+    let navigation =
+        gearth_rust::parsers::navigator::NavigatorSearchResult::read(&mut original).unwrap();
+    assert_eq!(navigation.blocks[0].rooms[0].group.as_ref().unwrap().0, 7);
+    let mut encoded = Packet::new(1);
+    navigation.append(&mut encoded).unwrap();
+    assert_eq!(encoded.bytes(), observed["navigator"]);
 }

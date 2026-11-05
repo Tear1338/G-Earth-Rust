@@ -6,6 +6,7 @@ import gearth.extensions.parsers.HInventoryItem;
 import gearth.extensions.parsers.HFriend;
 import gearth.extensions.parsers.catalog.HCatalogPage;
 import gearth.extensions.parsers.catalog.HCatalogIndex;
+import gearth.extensions.parsers.navigator.HNavigatorSearchResult;
 import java.util.HashMap;
 import java.util.HexFormat;
 
@@ -75,5 +76,16 @@ public class JavaStuffOracle {
         HCatalogPage parsedPage = new HCatalogPage(catalogPage);
         if (parsedPage.getFrontPageItems().get(0).getProductOfferId() != 25) throw new AssertionError("catalog page");
         System.out.println("catalog_page=" + HexFormat.of().formatHex(catalogPage.toBytes()));
+
+        HPacket navigatorInput = new HPacket(1);
+        navigatorInput.appendString("popular").appendString("").appendInt(1)
+                .appendString("popular").appendString("Popular").appendInt(1).appendBoolean(false).appendInt(0).appendInt(1)
+                .appendInt(1).appendString("Room").appendInt(2).appendString("Alice").appendInt(0).appendInt(3).appendInt(20)
+                .appendString("Test").appendInt(1).appendInt(4).appendInt(5).appendInt(6).appendInt(1).appendString("tag")
+                .appendInt(31).appendString("pic").appendInt(7).appendString("group").appendString("badge")
+                .appendString("ad").appendString("details").appendInt(8);
+        HPacket navigatorOutput = new HPacket(1);
+        new HNavigatorSearchResult(navigatorInput).appendToPacket(navigatorOutput);
+        System.out.println("navigator=" + HexFormat.of().formatHex(navigatorOutput.toBytes()));
     }
 }
