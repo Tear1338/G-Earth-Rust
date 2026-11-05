@@ -11,6 +11,7 @@ pub mod extension_store;
 pub mod flash;
 pub mod gpython;
 pub mod i18n;
+mod maven_version;
 pub mod packet;
 pub mod packet_info;
 pub mod parsers;

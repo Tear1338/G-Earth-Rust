@@ -196,6 +196,9 @@ fn version_order_covers_release_candidates_numeric_components_and_service_packs(
         ("1.0-beta", "1.0-alpha", Ordering::Greater),
         ("1.0-sp1", "1.0", Ordering::Greater),
         ("1.0-final", "1.0", Ordering::Equal),
+        ("1-a", "1-alpha", Ordering::Greater),
+        ("1-a1", "1-alpha1", Ordering::Equal),
+        ("1-1", "1.1", Ordering::Less),
     ] {
         assert_eq!(
             extension_store::compare_versions(a, b),

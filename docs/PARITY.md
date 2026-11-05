@@ -25,7 +25,7 @@ Status describes source implementation and finite tests, not successful producti
 | Unity connection | Authenticated TLS communicator, exact asset routes, gzip and cache handling, validated WASM hooks, browser reinjection and Java extensions | Official client revisions, G-Presets and non-Windows system helpers |
 | Hotel detection | Flash/Origins lists, custom domain/revision, Nitro hello fallback, dynamic nitro.json, beta-29 hotel URL/prefixes and adapters | Live hotel regression and Unity discovery |
 | Room/catalog/inventory/entity API | Native Rust room entities, movement, floor/wall furniture, inventory pages, furniture states, profiles/friends, catalog and navigator; selected packet vectors compared against the released Java API | Remaining parser APIs, broader Java differential coverage and live extension validation |
-| Extension store/updater | Original catalogue, native search/filter/order, bounded archive install, separate-version updates, authenticated launch and managed uninstall | Full Maven version edge cases, thumbnails/readme presentation and broader package corpus |
+| Extension store/updater | Original catalogue, native search/filter/order, Maven-style version comparison with Java oracle, bounded archive install, separate-version updates, authenticated launch and managed uninstall | Broader version and package corpus, thumbnails/readme presentation |
 | Windows packaging | Tested development EXE and CLI via Actions/prereleases | Installer, signing and release QA |
 | Linux/macOS | Core tests on Linux; Windows desktop compiled | Desktop distribution and platform proxy helpers |
 | beta-29 integration fixes | leet/habblet prefix matching and dynamic nitro.json ported | Chrome TLS fingerprint, privileged macOS helper, tray cropping |

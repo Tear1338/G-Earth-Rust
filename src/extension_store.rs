@@ -632,71 +632,7 @@ pub fn uninstall(root: &Path, record: &Installed) -> io::Result<()> {
     }
     fs::remove_dir_all(path)
 }
-/// Numeric components compare by magnitude; prerelease qualifiers sort before a final release.
+/// Compare extension versions using Maven's ComparableVersion rules.
 pub fn compare_versions(a: &str, b: &str) -> Ordering {
-    fn tokens(value: &str) -> Vec<String> {
-        let mut tokens = Vec::new();
-        let mut part = String::new();
-        let mut numeric = None;
-        for character in value.to_ascii_lowercase().chars() {
-            if !character.is_ascii_alphanumeric() {
-                if !part.is_empty() {
-                    tokens.push(std::mem::take(&mut part));
-                }
-                numeric = None;
-                continue;
-            }
-            let number = character.is_ascii_digit();
-            if numeric.is_some_and(|previous| previous != number) && !part.is_empty() {
-                tokens.push(std::mem::take(&mut part));
-            }
-            numeric = Some(number);
-            part.push(character);
-        }
-        if !part.is_empty() {
-            tokens.push(part);
-        }
-        tokens
-    }
-    fn qualifier(value: &str) -> i32 {
-        match value {
-            "alpha" | "a" => -5,
-            "beta" | "b" => -4,
-            "milestone" | "m" => -3,
-            "rc" | "cr" => -2,
-            "snapshot" => -1,
-            "" | "final" | "ga" | "release" => 0,
-            "sp" => 1,
-            _ => 2,
-        }
-    }
-    let left = tokens(a);
-    let right = tokens(b);
-    for index in 0..left.len().max(right.len()) {
-        let a = left.get(index).map(String::as_str).unwrap_or("");
-        let b = right.get(index).map(String::as_str).unwrap_or("");
-        let an = !a.is_empty() && a.bytes().all(|value| value.is_ascii_digit());
-        let bn = !b.is_empty() && b.bytes().all(|value| value.is_ascii_digit());
-        let result = if (an || a.is_empty()) && (bn || b.is_empty()) {
-            let a = a.trim_start_matches('0');
-            let b = b.trim_start_matches('0');
-            a.len().cmp(&b.len()).then(a.cmp(b))
-        } else if an {
-            Ordering::Greater
-        } else if bn {
-            Ordering::Less
-        } else {
-            qualifier(a).cmp(&qualifier(b)).then_with(|| {
-                if qualifier(a) == 2 {
-                    a.cmp(b)
-                } else {
-                    Ordering::Equal
-                }
-            })
-        };
-        if result != Ordering::Equal {
-            return result;
-        }
-    }
-    Ordering::Equal
+    crate::maven_version::compare(a, b)
 }
