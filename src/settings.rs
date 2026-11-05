@@ -17,6 +17,7 @@ pub struct ScheduleTemplate {
     pub expression: String,
     pub direction: Direction,
     pub interval_ms: u64,
+    /// Zero means repeat until cancelled.
     pub repeat: u32,
 }
 #[derive(Clone, Debug)]
@@ -43,6 +44,26 @@ impl Default for Settings {
             log_bytes: 16 * 1024 * 1024,
             extra: serde_json::Map::new(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ScheduleTemplate, Settings};
+    use crate::packet::Direction;
+
+    #[test]
+    fn repeating_schedule_survives_settings_round_trip() {
+        let mut settings = Settings::default();
+        settings.schedules.push(ScheduleTemplate {
+            expression: "{h:1}".into(),
+            direction: Direction::ToServer,
+            interval_ms: 500,
+            repeat: 0,
+        });
+        let loaded = Settings::from_json(settings.to_json()).unwrap();
+        assert_eq!(loaded.schedules[0].repeat, 0);
+        assert_eq!(loaded.schedules[0].interval_ms, 500);
     }
 }
 impl Settings {
@@ -186,7 +207,6 @@ impl Settings {
                 let repeat = u32::try_from(
                     schedule["repeat"]
                         .as_u64()
-                        .filter(|n| *n > 0)
                         .ok_or_else(|| io::Error::other("invalid schedule repetitions"))?,
                 )
                 .map_err(io::Error::other)?;

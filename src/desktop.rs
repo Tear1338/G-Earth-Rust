@@ -125,6 +125,7 @@ struct Desktop {
     direction: Direction,
     interval_ms: u64,
     repeat: u32,
+    repeat_forever: bool,
     scheduler: Scheduler,
     block_header: u16,
     block_enabled: bool,
@@ -229,6 +230,7 @@ impl Default for Desktop {
             direction: Direction::ToServer,
             interval_ms: 1000,
             repeat: 1,
+            repeat_forever: false,
             scheduler: Scheduler::default(),
             block_header: 0,
             block_enabled: false,
@@ -1268,6 +1270,7 @@ impl Desktop {
                     .range(1..=1_000_000)
                     .prefix("Count "),
             );
+            ui.checkbox(&mut self.repeat_forever, "Repeat until cancelled");
         });
         if ui
             .add_enabled(
@@ -1286,7 +1289,7 @@ impl Desktop {
                     p,
                     self.direction,
                     Duration::from_millis(self.interval_ms),
-                    Some(self.repeat),
+                    (!self.repeat_forever).then_some(self.repeat),
                     Instant::now(),
                 )
             }) {
@@ -1295,7 +1298,7 @@ impl Desktop {
                         expression: self.expression.clone(),
                         direction: self.direction,
                         interval_ms: self.interval_ms,
-                        repeat: self.repeat,
+                        repeat: if self.repeat_forever { 0 } else { self.repeat },
                     });
                     "Schedule added".into()
                 }
@@ -1324,7 +1327,7 @@ impl Desktop {
                         p,
                         template.direction,
                         Duration::from_millis(template.interval_ms),
-                        Some(template.repeat),
+                        (template.repeat != 0).then_some(template.repeat),
                         Instant::now(),
                     )
                 }) {
@@ -1339,17 +1342,42 @@ impl Desktop {
         if ui.button("Clear saved schedules").clicked() {
             self.settings.schedules.clear();
         }
+        let mut remove = None;
+        let mut pause_change = None;
         for (i, job) in self.scheduler.jobs.iter().enumerate() {
-            ui.monospace(format!(
-                "{}: {} header {} every {} ms · remaining {}",
-                i + 1,
-                job.direction.name(),
-                job.packet.header(),
-                job.interval.as_millis(),
-                job.remaining.unwrap_or(0)
-            ));
+            ui.horizontal(|ui| {
+                if ui
+                    .small_button(if job.paused { "Resume" } else { "Pause" })
+                    .clicked()
+                {
+                    pause_change = Some((i, !job.paused));
+                }
+                if ui.small_button("Remove").clicked() {
+                    remove = Some(i);
+                }
+                let remaining = job
+                    .remaining
+                    .map_or_else(|| "until cancelled".to_owned(), |n| n.to_string());
+                ui.monospace(format!(
+                    "{}: {} header {} every {} ms - remaining {}",
+                    i + 1,
+                    job.direction.name(),
+                    job.packet.header(),
+                    job.interval.as_millis(),
+                    remaining
+                ));
+            });
+        }
+        if let Some((i, paused)) = pause_change {
+            if let Err(error) = self.scheduler.set_paused(i, paused, Instant::now()) {
+                self.status = error.to_string();
+            }
+        }
+        if let Some(i) = remove {
+            self.scheduler.jobs.remove(i);
         }
     }
+
     fn tools(&mut self, ui: &mut egui::Ui) {
         ui.heading("Packet tools");
         ui.add(

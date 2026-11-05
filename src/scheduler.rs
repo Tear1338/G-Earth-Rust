@@ -6,12 +6,27 @@ pub struct Job {
     pub interval: Duration,
     pub next: Instant,
     pub remaining: Option<u32>,
+    pub paused: bool,
 }
 #[derive(Default)]
 pub struct Scheduler {
     pub jobs: Vec<Job>,
 }
 impl Scheduler {
+    /// Resuming starts a fresh interval and never catches up missed sends.
+    pub fn set_paused(&mut self, index: usize, paused: bool, now: Instant) -> Result<()> {
+        let job = self
+            .jobs
+            .get_mut(index)
+            .ok_or_else(|| error("unknown schedule"))?;
+        if job.paused && !paused {
+            job.next = now
+                .checked_add(job.interval)
+                .ok_or_else(|| error("schedule deadline overflow"))?;
+        }
+        job.paused = paused;
+        Ok(())
+    }
     pub fn add(
         &mut self,
         packet: Packet,
@@ -32,6 +47,7 @@ impl Scheduler {
             interval,
             next: now,
             remaining: repeat,
+            paused: false,
         });
         Ok(())
     }
@@ -39,7 +55,7 @@ impl Scheduler {
     pub fn tick(&mut self, now: Instant) -> Vec<(Direction, Packet)> {
         let mut due = Vec::new();
         for job in &mut self.jobs {
-            if job.next <= now && job.remaining != Some(0) {
+            if !job.paused && job.next <= now && job.remaining != Some(0) {
                 due.push((job.direction, job.packet.clone()));
                 if let Some(count) = &mut job.remaining {
                     *count -= 1;

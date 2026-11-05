@@ -317,3 +317,28 @@ fn scheduler_no_catchup_bursts_and_repeat() {
         )
         .is_err());
 }
+
+#[test]
+fn scheduler_can_pause_and_repeat_until_removed() {
+    let now = Instant::now();
+    let mut scheduler = Scheduler::default();
+    scheduler
+        .add(
+            Packet::new(2),
+            Direction::ToClient,
+            Duration::from_secs(1),
+            None,
+            now,
+        )
+        .unwrap();
+    assert_eq!(scheduler.tick(now).len(), 1);
+    scheduler.set_paused(0, true, now).unwrap();
+    assert!(scheduler.tick(now + Duration::from_secs(50)).is_empty());
+    scheduler
+        .set_paused(0, false, now + Duration::from_secs(50))
+        .unwrap();
+    assert!(scheduler.tick(now + Duration::from_secs(50)).is_empty());
+    assert_eq!(scheduler.tick(now + Duration::from_secs(51)).len(), 1);
+    assert_eq!(scheduler.tick(now + Duration::from_secs(100)).len(), 1);
+    assert_eq!(scheduler.jobs.len(), 1);
+}

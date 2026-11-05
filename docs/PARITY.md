@@ -15,7 +15,7 @@ Status describes source implementation and finite tests, not successful producti
 | Python/Node extensions | External runtimes, authenticated IPC, native G-Python/Jupyter console controls and explicit package installation/repair; real G-Python kernel fixtures on Windows/Linux | QtConsole visual workflow and real sessions |
 | Packet identifiers | Direction-aware database, beta-29 IPC, Sulek HTTPS lookup/cache, detected Flash revision, Unity JSON and TSV import | Unity client integration and broader remote-provider coverage |
 | SOCKS5 | CONNECT, remote DNS, optional RFC1929 credentials | Wider interoperability tests |
-| Rules/scheduler | Saved ordered rules and finite schedule templates | Every original scheduler and rule-editor option |
+| Rules/scheduler | Saved ordered rules, finite or indefinite schedule templates, per-job pause/resume and removal | Original interval offsets, full scheduler persistence/editing and rule-editor options |
 | Logging | Cached search/display strings, virtualized rows, count/byte budget, packet display size limit, optional additional data, metadata-based or predicted expressions and separators, plus export honoring active filters | Original highlighting, WEDGIE prediction, complete filtering options and visual validation |
 | Settings | Atomic save/load, unknown-field preservation, original cache import, notepad | Migration of every original setting |
 | UI/theme/languages | Rust eframe desktop, light/dark theme, nine original resource files, localized tabs | Exact UI/layout, all controls translated, shortcuts, tray |
