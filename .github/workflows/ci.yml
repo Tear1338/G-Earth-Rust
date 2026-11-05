@@ -39,6 +39,8 @@ jobs:
             Cargo.lock
             Cargo.toml
             LICENSE
+            LICENSE-APACHE-MAVEN
+            NOTICE-APACHE-MAVEN
             resources/
             src/
             tests/
@@ -57,6 +59,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
       - run: cargo clippy --locked --features desktop --bin gearth-desktop -- -D warnings
+      - run: cargo test --locked --features desktop --bin gearth-desktop logger_prediction_tests
       - run: cargo build --locked --release --features desktop --bin gearth-desktop
       - run: python tools/check_pe_imports.py target/release/gearth-desktop.exe
       - name: Package desktop usage and license
@@ -64,7 +67,7 @@ jobs:
         run: |
           New-Item -ItemType Directory -Path package -Force | Out-Null
           Copy-Item -LiteralPath target/release/gearth-desktop.exe -Destination package/gearth-desktop.exe
-          Copy-Item -LiteralPath README.md,LICENSE -Destination package
+          Copy-Item -LiteralPath README.md,LICENSE,LICENSE-APACHE-MAVEN,NOTICE-APACHE-MAVEN -Destination package
           Copy-Item -LiteralPath docs -Destination package/docs -Recurse
       - uses: actions/upload-artifact@v4
         with:

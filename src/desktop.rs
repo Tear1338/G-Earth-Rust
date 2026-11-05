@@ -28,6 +28,36 @@ use std::{
     time::{Duration, Instant},
 };
 
+// Both lazy prediction caches count against the capture byte budget.
+const LOG_PREDICTION_LIMIT: usize = 1024;
+
+fn bounded_log_prediction(mut value: String) -> String {
+    if value.len() > LOG_PREDICTION_LIMIT {
+        let mut end = LOG_PREDICTION_LIMIT - "…".len();
+        while !value.is_char_boundary(end) {
+            end -= 1;
+        }
+        value.truncate(end);
+        value.push('…');
+    }
+    value.shrink_to_fit();
+    value
+}
+
+#[cfg(test)]
+mod logger_prediction_tests {
+    use super::{bounded_log_prediction, LOG_PREDICTION_LIMIT};
+
+    #[test]
+    fn limits_predictions_without_splitting_unicode() {
+        let short = "abc".to_owned();
+        assert_eq!(bounded_log_prediction(short.clone()), short);
+        let long = bounded_log_prediction("é".repeat(1000));
+        assert!(long.len() <= LOG_PREDICTION_LIMIT);
+        assert!(long.ends_with('…'));
+    }
+}
+
 fn main() -> eframe::Result<()> {
     eframe::run_native(
         "G-Earth Rust — development",
@@ -374,8 +404,10 @@ impl Desktop {
                                 message.packet.header(),
                                 expression.to_lowercase()
                             );
-                            let bytes =
-                                message.packet.bytes().len() + expression.len() + search.len();
+                            let bytes = message.packet.bytes().len()
+                                + expression.len()
+                                + search.len()
+                                + 2 * LOG_PREDICTION_LIMIT;
                             if bytes > self.settings.log_bytes {
                                 self.display_dropped += 1;
                                 continue;
@@ -1011,10 +1043,12 @@ impl Desktop {
                             );
                             if self.logger_structure && !row.skipped {
                                 let expression = row.predicted_expression.get_or_init(|| {
-                                    gearth_rust::structure_prediction::predicted_expression(
-                                        &m.packet, row.unity,
+                                    bounded_log_prediction(
+                                        gearth_rust::structure_prediction::predicted_expression(
+                                            &m.packet, row.unity,
+                                        )
+                                        .unwrap_or_default(),
                                     )
-                                    .unwrap_or_default()
                                 });
                                 if !expression.is_empty() {
                                     ui.add(
@@ -1041,8 +1075,10 @@ impl Desktop {
                     }
                     if response.hovered() && !row.skipped {
                         let structure = row.predicted_structure.get_or_init(|| {
-                            gearth_rust::structure_prediction::predict(&m.packet, row.unity)
-                                .unwrap_or_else(|_| "unavailable".into())
+                            bounded_log_prediction(
+                                gearth_rust::structure_prediction::predict(&m.packet, row.unity)
+                                    .unwrap_or_else(|_| "unavailable".into()),
+                            )
                         });
                         response
                             .clone()
