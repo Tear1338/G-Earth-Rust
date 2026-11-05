@@ -484,7 +484,10 @@ impl Desktop {
             }
         }
         if let Some(relay) = &self.relay {
-            for (direction, packet) in self.scheduler.tick(Instant::now()) {
+            for (direction, packet) in self
+                .scheduler
+                .tick_with_wall_clock(Instant::now(), SystemTime::now())
+            {
                 if let Err(e) = relay.inject(direction, packet) {
                     self.status = e.to_string();
                     self.scheduler.jobs.clear();

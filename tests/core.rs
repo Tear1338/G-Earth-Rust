@@ -382,3 +382,132 @@ fn scheduler_preserves_clock_alignment_when_late_or_resumed() {
         .is_err());
     assert_eq!(scheduler.jobs.len(), 1);
 }
+
+#[test]
+fn scheduler_realigns_after_wall_clock_moves_without_bursts() {
+    let now = Instant::now();
+    let wall = std::time::UNIX_EPOCH + Duration::from_millis(1234);
+    let mut scheduler = Scheduler::default();
+    scheduler
+        .add_aligned(
+            Packet::new(2),
+            Direction::ToServer,
+            500,
+            100,
+            None,
+            (now, wall),
+        )
+        .unwrap();
+
+    assert!(scheduler
+        .tick_with_wall_clock(
+            now + Duration::from_millis(200),
+            wall + Duration::from_millis(200)
+        )
+        .is_empty());
+    let forward = std::time::UNIX_EPOCH + Duration::from_millis(2384);
+    assert!(scheduler
+        .tick_with_wall_clock(now + Duration::from_millis(250), forward)
+        .is_empty());
+    assert!(scheduler
+        .tick_with_wall_clock(
+            now + Duration::from_millis(465),
+            forward + Duration::from_millis(215)
+        )
+        .is_empty());
+    assert_eq!(
+        scheduler
+            .tick_with_wall_clock(
+                now + Duration::from_millis(466),
+                forward + Duration::from_millis(216)
+            )
+            .len(),
+        1
+    );
+
+    let backward = std::time::UNIX_EPOCH + Duration::from_millis(1534);
+    assert!(scheduler
+        .tick_with_wall_clock(now + Duration::from_millis(600), backward)
+        .is_empty());
+    assert!(scheduler
+        .tick_with_wall_clock(
+            now + Duration::from_millis(665),
+            backward + Duration::from_millis(65)
+        )
+        .is_empty());
+    assert_eq!(
+        scheduler
+            .tick_with_wall_clock(
+                now + Duration::from_millis(666),
+                backward + Duration::from_millis(66)
+            )
+            .len(),
+        1
+    );
+    assert!(scheduler
+        .tick_with_wall_clock(
+            now + Duration::from_millis(666),
+            backward + Duration::from_millis(66)
+        )
+        .is_empty());
+}
+
+#[test]
+fn scheduler_keeps_relative_jobs_and_paused_jobs_safe_after_clock_changes() {
+    let now = Instant::now();
+    let wall = std::time::UNIX_EPOCH + Duration::from_millis(1234);
+    let mut scheduler = Scheduler::default();
+    scheduler
+        .add(
+            Packet::new(1),
+            Direction::ToServer,
+            Duration::from_millis(500),
+            None,
+            now,
+        )
+        .unwrap();
+    scheduler
+        .add_aligned(
+            Packet::new(2),
+            Direction::ToClient,
+            500,
+            100,
+            None,
+            (now, wall),
+        )
+        .unwrap();
+    scheduler.set_paused(1, true, now).unwrap();
+    assert_eq!(scheduler.tick_with_wall_clock(now, wall).len(), 1);
+    let changed = std::time::UNIX_EPOCH + Duration::from_millis(2000);
+    assert!(scheduler
+        .tick_with_wall_clock(now + Duration::from_millis(250), changed)
+        .is_empty());
+    assert_eq!(
+        scheduler
+            .tick_with_wall_clock(
+                now + Duration::from_millis(500),
+                changed + Duration::from_millis(250)
+            )
+            .len(),
+        1
+    );
+    assert!(scheduler.jobs[1].paused);
+    scheduler
+        .set_paused(1, false, now + Duration::from_millis(500))
+        .unwrap();
+    assert!(scheduler
+        .tick_with_wall_clock(
+            now + Duration::from_millis(500),
+            changed + Duration::from_millis(250)
+        )
+        .is_empty());
+    assert_eq!(
+        scheduler
+            .tick_with_wall_clock(
+                now + Duration::from_millis(850),
+                changed + Duration::from_millis(600)
+            )
+            .len(),
+        1
+    );
+}
