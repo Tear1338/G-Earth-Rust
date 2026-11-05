@@ -1,5 +1,6 @@
 import gearth.protocol.HPacket;
 import java.util.HexFormat;
+import java.nio.charset.StandardCharsets;
 
 public class JavaMutationOracle {
     static void emit(String name, HPacket packet) {
@@ -36,6 +37,14 @@ public class JavaMutationOracle {
         emptyGrowth.setReadIndex(7);
         emptyGrowth.replaceString(6, "x");
         emit("empty_growth_original", emptyGrowth);
+        HPacket utf8 = new HPacket(6);
+        utf8.appendString("café 🐱", StandardCharsets.UTF_8).appendLongString("水🪶", StandardCharsets.UTF_8);
+        emit("utf8", utf8);
+        HPacket utf8Replacement = new HPacket(7);
+        utf8Replacement.appendString("cat", StandardCharsets.UTF_8).appendInt(42);
+        utf8Replacement.setReadIndex(7);
+        utf8Replacement.replaceString(6, "雪🐱", StandardCharsets.UTF_8);
+        emit("utf8_replacement", utf8Replacement);
         String[] oldValues = {"a", "abc", "é"};
         String[] values = {"", "a", "abc", "é"};
         int[] limits = {0, 1, 2, -1};

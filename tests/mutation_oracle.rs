@@ -110,6 +110,21 @@ fn mutations_match_original_java_packets_and_cursor() {
     empty_growth.reset();
     assert_eq!(empty_growth.read_string().unwrap(), "x");
     assert_eq!(empty_growth.read_string().unwrap(), "a");
+    let mut utf8 = Packet::new(6);
+    utf8.put_utf8("café 🐱")
+        .unwrap()
+        .put_utf8_long("水🪶")
+        .unwrap();
+    check("utf8", &utf8);
+    let mut utf8_replacement = Packet::new(7);
+    utf8_replacement
+        .put_utf8("cat")
+        .unwrap()
+        .put_i32(42)
+        .unwrap();
+    utf8_replacement.set_cursor(7).unwrap();
+    utf8_replacement.replace_utf8(6, "雪🐱").unwrap();
+    check("utf8_replacement", &utf8_replacement);
     let values = ["", "a", "abc", "é"];
     let old_values = ["a", "abc", "é"];
     let limits = [Some(0), Some(1), Some(2), None];

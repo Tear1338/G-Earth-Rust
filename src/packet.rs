@@ -232,6 +232,21 @@ impl Packet {
         }
         result
     }
+    /// Read an EVA short string encoded in UTF-8. Invalid text leaves the cursor unchanged.
+    pub fn read_utf8(&mut self) -> Result<String> {
+        self.ensure_eva()?;
+        let start = self.cursor;
+        let result = (|| {
+            let len = self.read_u16()? as usize;
+            std::str::from_utf8(self.read_bytes(len)?)
+                .map(str::to_owned)
+                .map_err(|_| error("invalid UTF-8"))
+        })();
+        if result.is_err() {
+            self.cursor = start;
+        }
+        result
+    }
     pub fn read_long_string(&mut self) -> Result<String> {
         self.ensure_eva()?;
         let start = self.cursor;
@@ -255,7 +270,8 @@ impl Packet {
             if n < 0 {
                 return Err(error("negative string length"));
             }
-            String::from_utf8(self.read_bytes(n as usize)?.to_vec())
+            std::str::from_utf8(self.read_bytes(n as usize)?)
+                .map(str::to_owned)
                 .map_err(|_| error("invalid UTF-8"))
         })();
         if result.is_err() {
@@ -362,12 +378,48 @@ impl Packet {
     pub fn put_long_string(&mut self, s: &str) -> Result<&mut Self> {
         self.put_long_bytes(&latin1_encode(s)?)
     }
+    /// Append an EVA UTF-8 string with a two-byte byte-length prefix.
+    pub fn put_utf8(&mut self, s: &str) -> Result<&mut Self> {
+        self.ensure_eva()?;
+        let len = u16::try_from(s.len()).map_err(|_| error("short string too long"))?;
+        let total = self
+            .bytes
+            .len()
+            .checked_add(2)
+            .and_then(|n| n.checked_add(s.len()))
+            .ok_or_else(|| error("length overflow"))?;
+        if total > MAX_FRAME + 4 {
+            return Err(error("packet too large"));
+        }
+        self.bytes.reserve(2 + s.len());
+        self.bytes.extend_from_slice(&len.to_be_bytes());
+        self.bytes.extend_from_slice(s.as_bytes());
+        self.fix_length();
+        self.edited = true;
+        Ok(self)
+    }
+    /// Append an EVA UTF-8 string with a four-byte byte-length prefix.
+    pub fn put_utf8_long(&mut self, s: &str) -> Result<&mut Self> {
+        self.put_long_bytes(s.as_bytes())
+    }
     pub fn put_long_bytes(&mut self, bytes: &[u8]) -> Result<&mut Self> {
         self.ensure_eva()?;
         let n = i32::try_from(bytes.len()).map_err(|_| error("string too long"))?;
-        let mut field = n.to_be_bytes().to_vec();
-        field.extend_from_slice(bytes);
-        self.append(&field)
+        let total = self
+            .bytes
+            .len()
+            .checked_add(4)
+            .and_then(|n| n.checked_add(bytes.len()))
+            .ok_or_else(|| error("length overflow"))?;
+        if total > MAX_FRAME + 4 {
+            return Err(error("packet too large"));
+        }
+        self.bytes.reserve(4 + bytes.len());
+        self.bytes.extend_from_slice(&n.to_be_bytes());
+        self.bytes.extend_from_slice(bytes);
+        self.fix_length();
+        self.edited = true;
+        Ok(self)
     }
     pub fn replace(&mut self, offset: usize, count: usize, replacement: &[u8]) -> Result<()> {
         let end = offset
@@ -430,6 +482,14 @@ impl Packet {
         if value.len() > usize::from(u16::MAX) * 2 {
             return Err(error("short string too long"));
         }
+        self.replace_short_bytes(offset, &latin1_encode(value)?)
+    }
+    /// Replace a two-byte-length-prefixed UTF-8 string at an absolute offset.
+    pub fn replace_utf8(&mut self, offset: usize, value: &str) -> Result<&mut Self> {
+        self.replace_short_bytes(offset, value.as_bytes())
+    }
+    fn replace_short_bytes(&mut self, offset: usize, bytes: &[u8]) -> Result<&mut Self> {
+        self.ensure_eva()?;
         let prefix_end = offset
             .checked_add(2)
             .ok_or_else(|| error("offset overflow"))?;
@@ -444,11 +504,10 @@ impl Packet {
         if old_end > self.bytes.len() {
             return Err(error("truncated packet field"));
         }
-        let bytes = latin1_encode(value)?;
         let len = u16::try_from(bytes.len()).map_err(|_| error("short string too long"))?;
         let mut field = Vec::with_capacity(2 + bytes.len());
         field.extend_from_slice(&len.to_be_bytes());
-        field.extend_from_slice(&bytes);
+        field.extend_from_slice(bytes);
         let cursor = self.cursor;
         self.replace(offset, old_end - offset, &field)?;
         self.cursor = cursor.min(self.bytes.len());
