@@ -63,6 +63,7 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --locked --features desktop --bin gearth-desktop -- -D warnings
       - run: cargo test --locked --features desktop --bin gearth-desktop logger_prediction_tests
+      - run: cargo test --locked --features desktop --bin gearth-desktop rule_editor_tests
       - run: cargo build --locked --release --features desktop --bin gearth-desktop
       - run: python tools/check_pe_imports.py target/release/gearth-desktop.exe
       - name: Package desktop usage and license
@@ -155,11 +156,20 @@ jobs:
             mkdir -p "/tmp/scheduler-src/$(dirname "$source")"
             curl --fail --location --retry 3 "https://raw.githubusercontent.com/G-Realm/G-Earth/242155c291b1109d6c9a02370f6a2af1ead41ea8/G-Earth/src/main/java/$source" -o "/tmp/scheduler-src/$source"
           done
-          javac -cp "$api_jar:/tmp/javafx-base.jar" -d /tmp/scheduler-classes $(find /tmp/scheduler-src -name '*.java') tests/java_schedule/gearth/app/ui/subforms/scheduler/SchedulerController.java tests/java_schedule/JavaScheduleOracle.java
+          javac -cp "$api_jar:/tmp/javafx-base.jar" -d /tmp/scheduler-classes $(find /tmp/scheduler-src -name '*.java') tests/java_schedule/gearth/app/ui/subforms/scheduler/SchedulerController.java tests/java_schedule/JavaScheduleOracle.java tests/java_schedule/JavaSchedulePacketOracle.java
           java -cp "$api_jar:/tmp/javafx-base.jar:/tmp/scheduler-classes" JavaScheduleOracle > /tmp/schedule-oracle.txt
+          export GEARTH_SCHEDULE_PACKET_CLASSPATH="$api_jar:/tmp/scheduler-classes"
           cargo test --locked --test schedule_file -- --ignored
         env:
           GEARTH_SCHEDULE_ORACLE: /tmp/schedule-oracle.txt
+      - name: Compare packet hex dumps with the original Java logger
+        run: |
+          mkdir -p /tmp/hexdump-classes
+          curl --fail --location --retry 3 'https://raw.githubusercontent.com/G-Realm/G-Earth/242155c291b1109d6c9a02370f6a2af1ead41ea8/G-Earth/src/main/java/gearth/app/services/internal_extensions/uilogger/hexdumper/Hexdump.java' -o /tmp/Hexdump.java
+          javac -d /tmp/hexdump-classes /tmp/Hexdump.java tests/JavaHexdumpOracle.java
+          cargo test --locked --test logger_display hex_dump_matches_original_java -- --ignored
+        env:
+          GEARTH_HEXDUMP_CLASSPATH: /tmp/hexdump-classes
       - name: Exercise an actual beta-29 Java extension against Rust
         run: cargo test --locked --features web --test java_extension -- --ignored
       - name: Exercise the original Java extension through Unity

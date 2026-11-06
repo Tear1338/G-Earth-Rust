@@ -1,5 +1,19 @@
 use crate::packet::{error, Direction, Packet, Result};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+/// The scheduler editor keeps its draft separate from the injection editor.
+pub struct ScheduleDraft {
+    pub expression: String,
+    pub direction: Direction,
+}
+impl Default for ScheduleDraft {
+    fn default() -> Self {
+        Self {
+            expression: "{h:123}{i:42}{s:\"hello\"}".into(),
+            direction: Direction::ToClient,
+        }
+    }
+}
 pub struct Job {
     pub id: u64,
     pub packet: Packet,
@@ -59,6 +73,19 @@ pub struct Scheduler {
     next_id: u64,
 }
 impl Scheduler {
+    /// Time until the next unpaused job, with a minimum retry delay for due jobs.
+    /// This is a UI wakeup hint; actual dispatch still depends on the runtime.
+    pub fn next_wake_in(&self, now: Instant) -> Option<Duration> {
+        self.jobs
+            .iter()
+            .filter(|job| !job.paused && job.remaining != Some(0))
+            .map(|job| {
+                job.next
+                    .saturating_duration_since(now)
+                    .max(Duration::from_millis(1))
+            })
+            .min()
+    }
     /// Resuming skips missed sends and preserves the phase of aligned jobs.
     pub fn set_paused(&mut self, index: usize, paused: bool, now: Instant) -> Result<()> {
         let job = self
@@ -150,6 +177,49 @@ impl Scheduler {
                 clock.0,
             ),
         }
+    }
+    /// Validate the entire batch before adding any jobs to the running scheduler.
+    pub fn add_batch_configured(
+        &mut self,
+        specs: Vec<(ScheduleSpec, bool)>,
+        clock: (Instant, SystemTime),
+    ) -> Result<()> {
+        let mut candidate = Self {
+            jobs: Vec::new(),
+            next_id: self.next_id,
+        };
+        for (spec, paused) in specs {
+            candidate.add_configured(
+                spec.packet,
+                spec.direction,
+                spec.interval_ms,
+                spec.offset_ms,
+                spec.repeat,
+                clock,
+            )?;
+            candidate
+                .jobs
+                .last_mut()
+                .expect("newly added schedule")
+                .paused = paused;
+        }
+        self.next_id = candidate.next_id;
+        self.jobs.extend(candidate.jobs);
+        Ok(())
+    }
+    /// Replace all jobs only after the complete batch has been validated.
+    pub fn replace_batch_configured(
+        &mut self,
+        specs: Vec<(ScheduleSpec, bool)>,
+        clock: (Instant, SystemTime),
+    ) -> Result<()> {
+        let mut candidate = Self {
+            jobs: Vec::new(),
+            next_id: self.next_id,
+        };
+        candidate.add_batch_configured(specs, clock)?;
+        *self = candidate;
+        Ok(())
     }
     /// Atomically replace one active job while preserving its identity and pause state.
     pub fn update_configured(

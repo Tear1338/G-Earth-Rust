@@ -319,6 +319,153 @@ fn scheduler_no_catchup_bursts_and_repeat() {
 }
 
 #[test]
+fn scheduler_wakeup_tracks_the_earliest_active_deadline() {
+    let now = Instant::now();
+    let mut scheduler = Scheduler::default();
+    assert_eq!(scheduler.next_wake_in(now), None);
+    scheduler
+        .add(
+            Packet::new(1),
+            Direction::ToServer,
+            Duration::from_millis(10),
+            None,
+            now,
+        )
+        .unwrap();
+    scheduler
+        .add(
+            Packet::new(2),
+            Direction::ToClient,
+            Duration::from_millis(80),
+            None,
+            now,
+        )
+        .unwrap();
+    assert_eq!(scheduler.next_wake_in(now), Some(Duration::from_millis(1)));
+    assert_eq!(scheduler.tick(now).len(), 2);
+    assert_eq!(scheduler.next_wake_in(now), Some(Duration::from_millis(10)));
+    assert_eq!(
+        scheduler.next_wake_in(now + Duration::from_millis(4)),
+        Some(Duration::from_millis(6))
+    );
+    scheduler
+        .set_paused(0, true, now + Duration::from_millis(4))
+        .unwrap();
+    assert_eq!(
+        scheduler.next_wake_in(now + Duration::from_millis(4)),
+        Some(Duration::from_millis(76))
+    );
+    scheduler
+        .set_paused(1, true, now + Duration::from_millis(4))
+        .unwrap();
+    assert_eq!(
+        scheduler.next_wake_in(now + Duration::from_millis(100)),
+        None
+    );
+    scheduler
+        .set_paused(0, false, now + Duration::from_millis(100))
+        .unwrap();
+    assert_eq!(
+        scheduler.next_wake_in(now + Duration::from_millis(100)),
+        Some(Duration::from_millis(10))
+    );
+    assert_eq!(
+        scheduler.next_wake_in(now + Duration::from_millis(200)),
+        Some(Duration::from_millis(1))
+    );
+}
+
+#[test]
+fn scheduler_batch_failure_is_atomic_and_preserves_existing_jobs() {
+    use gearth_rust::scheduler::ScheduleSpec;
+    let now = Instant::now();
+    let wall = std::time::UNIX_EPOCH + Duration::from_secs(1234);
+    let mut scheduler = Scheduler::default();
+    scheduler
+        .add(
+            Packet::new(1),
+            Direction::ToServer,
+            Duration::from_secs(1),
+            None,
+            now,
+        )
+        .unwrap();
+    let spec = |header, interval_ms| ScheduleSpec {
+        packet: Packet::new(header),
+        direction: Direction::ToClient,
+        interval_ms,
+        offset_ms: None,
+        repeat: Some(2),
+    };
+    assert!(scheduler
+        .add_batch_configured(
+            vec![(spec(2, 100), false), (spec(3, 0), false)],
+            (now, wall)
+        )
+        .is_err());
+    assert_eq!(scheduler.jobs.len(), 1);
+    assert_eq!(scheduler.jobs[0].id, 0);
+    scheduler
+        .add_batch_configured(
+            vec![(spec(2, 100), true), (spec(3, 100), false)],
+            (now, wall),
+        )
+        .unwrap();
+    assert_eq!(
+        scheduler.jobs.iter().map(|job| job.id).collect::<Vec<_>>(),
+        vec![0, 1, 2]
+    );
+    assert!(scheduler.jobs[1].paused);
+    assert!(!scheduler.jobs[2].paused);
+    assert_eq!(scheduler.tick(now).len(), 2);
+}
+
+#[test]
+fn scheduler_replacement_is_atomic_and_does_not_reuse_ids() {
+    use gearth_rust::scheduler::ScheduleSpec;
+    let now = Instant::now();
+    let wall = std::time::UNIX_EPOCH + Duration::from_secs(100);
+    let mut scheduler = Scheduler::default();
+    scheduler
+        .add(
+            Packet::new(1),
+            Direction::ToServer,
+            Duration::from_secs(1),
+            None,
+            now,
+        )
+        .unwrap();
+    let spec = |header, interval_ms| ScheduleSpec {
+        packet: Packet::new(header),
+        direction: Direction::ToClient,
+        interval_ms,
+        offset_ms: Some(0),
+        repeat: None,
+    };
+    assert!(scheduler
+        .replace_batch_configured(vec![(spec(2, 500), false), (spec(3, 0), true)], (now, wall))
+        .is_err());
+    assert_eq!(scheduler.jobs.len(), 1);
+    assert_eq!(scheduler.jobs[0].id, 0);
+    assert_eq!(scheduler.jobs[0].packet.header(), 1);
+    scheduler
+        .replace_batch_configured(vec![(spec(2, 500), true)], (now, wall))
+        .unwrap();
+    assert_eq!(scheduler.jobs.len(), 1);
+    assert_eq!(scheduler.jobs[0].id, 1);
+    assert!(scheduler.jobs[0].paused);
+    assert!(scheduler.tick(now).is_empty());
+    scheduler
+        .replace_batch_configured(vec![], (now, wall))
+        .unwrap();
+    assert!(scheduler.jobs.is_empty());
+    scheduler
+        .replace_batch_configured(vec![(spec(3, 500), false)], (now, wall))
+        .unwrap();
+    assert_eq!(scheduler.jobs[0].id, 2);
+}
+
+#[test]
 fn scheduler_can_pause_and_repeat_until_removed() {
     let now = Instant::now();
     let mut scheduler = Scheduler::default();

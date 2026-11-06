@@ -270,6 +270,32 @@ impl Settings {
     pub fn compiled_rules(&self) -> io::Result<Vec<Rule>> {
         self.compiled_rules_for(false)
     }
+    /// Update one saved rule without changing its enabled state or position.
+    pub fn replace_saved_rule(
+        &mut self,
+        index: usize,
+        direction: Direction,
+        header: u16,
+        replacement: Option<String>,
+    ) -> io::Result<()> {
+        let rule = self
+            .rules
+            .get_mut(index)
+            .ok_or_else(|| io::Error::other("saved rule no longer exists"))?;
+        rule.1 = direction;
+        rule.2 = header;
+        rule.3 = replacement;
+        Ok(())
+    }
+    /// Move an existing rule without changing the relative order of the others.
+    pub fn move_saved_rule(&mut self, from: usize, to: usize) -> io::Result<()> {
+        if from >= self.rules.len() || to >= self.rules.len() {
+            return Err(io::Error::other("saved rule no longer exists"));
+        }
+        let rule = self.rules.remove(from);
+        self.rules.insert(to, rule);
+        Ok(())
+    }
     pub fn compiled_rules_for(&self, origins: bool) -> io::Result<Vec<Rule>> {
         self.rules
             .iter()
@@ -297,6 +323,46 @@ impl Settings {
                 })
             })
             .collect()
+    }
+    /// Compile enabled rules independently so one invalid rule cannot keep a
+    /// previously installed ruleset in place or prevent valid rules from updating.
+    pub fn compiled_rules_independent(&self, origins: bool) -> (Vec<Rule>, Vec<(usize, String)>) {
+        let mut entries = Vec::new();
+        let mut errors = Vec::new();
+        for (index, (enabled, direction, header, replacement)) in self.rules.iter().enumerate() {
+            if !enabled {
+                continue;
+            }
+            if origins && *header >= 4096 {
+                errors.push((index, "Shockwave header must be between 0 and 4095".into()));
+                continue;
+            }
+            let format = if origins {
+                if *direction == Direction::ToServer {
+                    crate::packet::PacketFormat::WedgieOutgoing
+                } else {
+                    crate::packet::PacketFormat::WedgieIncoming
+                }
+            } else {
+                crate::packet::PacketFormat::EvaWire
+            };
+            let action = match replacement {
+                None => Ok(Action::Block),
+                Some(text) => {
+                    expression::parse_with_format(text, format, None).map(Action::Replace)
+                }
+            };
+            match action {
+                Ok(action) => entries.push(Rule {
+                    enabled: true,
+                    direction: *direction,
+                    header: *header,
+                    action,
+                }),
+                Err(error) => errors.push((index, error.to_string())),
+            }
+        }
+        (entries, errors)
     }
     pub fn import_java_cache(&mut self, value: Value) -> io::Result<()> {
         if !value.is_object() {

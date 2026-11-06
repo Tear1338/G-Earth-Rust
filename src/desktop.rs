@@ -8,20 +8,24 @@ use gearth_rust::{
     expression,
     extension_host::{ConnectionDetails, ExtensionHost, HostEvent},
     i18n::{I18n, LANGUAGES},
+    injection::{self, InjectionHistory},
+    logger_display::{self, PacketRepresentation},
+    logger_filter::{AntiSpam, LoggerFilter},
     packet::{Direction, Message, PacketFormat},
     packet_info::PacketInfoManager,
+    packet_tools,
     relay::RelayOptions,
     relay::{Config, Event, Relay},
     rules::{Action, Rule, Rules},
     schedule_file,
-    scheduler::{ScheduleSpec, Scheduler},
+    scheduler::{ScheduleDraft, ScheduleSpec, Scheduler},
     settings::{ScheduleTemplate, Settings},
     socks::SocksConfig,
     web_ca::ProxyIdentity,
     web_proxy::{WebOptions, WebProxy, NITRO_REVISION},
 };
 use std::{
-    collections::VecDeque,
+    collections::{HashSet, VecDeque},
     io::Read,
     path::{Path, PathBuf},
     process::Child,
@@ -77,6 +81,7 @@ struct Desktop {
     events: Option<Receiver<Event>>,
     logs: VecDeque<LogRow>,
     filter: String,
+    logger_search_cache: Option<(String, HashSet<(Direction, u16)>)>,
     outgoing: bool,
     incoming: bool,
     paused: bool,
@@ -84,8 +89,22 @@ struct Desktop {
     logger_additional: bool,
     logger_structure: bool,
     logger_split: bool,
+    logger_names: bool,
+    logger_hashes: bool,
+    logger_representation: PacketRepresentation,
+    logger_timestamp: bool,
+    logger_autoscroll: bool,
+    logger_clear_on_connect: bool,
+    logger_clear_on_disconnect: bool,
+    logger_connection_active: bool,
+    logger_antispam: AntiSpam,
+    logger_filter: LoggerFilter,
+    logger_filtered: u64,
+    packet_dump: Option<String>,
     expression: String,
     direction: Direction,
+    injection_history: InjectionHistory,
+    schedule_draft: ScheduleDraft,
     interval_ms: u64,
     align_schedule: bool,
     schedule_offset_ms: u64,
@@ -99,8 +118,14 @@ struct Desktop {
     block_header: u16,
     block_enabled: bool,
     block_direction: Direction,
+    editing_saved_rule: Option<usize>,
+    rule_errors: Vec<(usize, String)>,
     tool_input: String,
     tool_output: String,
+    tool_int: String,
+    tool_int_encoded: String,
+    tool_ushort: String,
+    tool_ushort_encoded: String,
     export_path: String,
     total: u64,
     display_dropped: u64,
@@ -152,6 +177,7 @@ struct Desktop {
 }
 struct LogRow {
     message: Message,
+    timestamp_ms: Option<u64>,
     expression: String,
     search: String,
     bytes: usize,
@@ -159,11 +185,95 @@ struct LogRow {
     unity: bool,
     predicted_structure: OnceLock<String>,
     packet_expression: OnceLock<(String, bool)>,
+    packet_metadata: OnceLock<(String, String)>,
 }
 fn invalidate_log_expressions(logs: &mut VecDeque<LogRow>) {
     for row in logs {
         row.packet_expression.take();
+        row.packet_metadata.take();
     }
+}
+fn clear_log_contents(logs: &mut VecDeque<LogRow>, bytes: &mut usize, filtered: &mut u64) {
+    logs.clear();
+    *bytes = 0;
+    *filtered = 0;
+}
+fn matching_packet_metadata(info: &PacketInfoManager, filter: &str) -> HashSet<(Direction, u16)> {
+    if filter.is_empty() {
+        return HashSet::new();
+    }
+    info.entries()
+        .iter()
+        .filter(|entry| {
+            [&entry.name, &entry.hash]
+                .into_iter()
+                .flatten()
+                .any(|s| s.to_lowercase().contains(filter))
+        })
+        .map(|entry| (entry.direction, entry.header))
+        .collect()
+}
+fn log_row_matches(
+    row: &LogRow,
+    filter: &str,
+    metadata: &HashSet<(Direction, u16)>,
+    outgoing: bool,
+    incoming: bool,
+) -> bool {
+    let message = &row.message;
+    let visible = match message.direction {
+        Direction::ToServer => outgoing,
+        Direction::ToClient => incoming,
+    };
+    visible
+        && (filter.is_empty()
+            || row.search.contains(filter)
+            || metadata.contains(&(message.direction, message.packet.header())))
+}
+fn log_packet_metadata(
+    info: &PacketInfoManager,
+    direction: Direction,
+    header: u16,
+) -> (String, String) {
+    let mut names = Vec::new();
+    let mut hashes = Vec::new();
+    let mut name_len = 0;
+    let mut hash_len = 0;
+    for item in info.by_header(direction, header) {
+        if let Some(name) = item.name.as_deref() {
+            if name_len < LOG_PREDICTION_LIMIT && !names.contains(&name) {
+                name_len += name.len() + 3;
+                names.push(name);
+            }
+        }
+        if let Some(hash) = item.hash.as_deref() {
+            if hash_len < LOG_PREDICTION_LIMIT && !hashes.contains(&hash) {
+                hash_len += hash.len() + 3;
+                hashes.push(hash);
+            }
+        }
+        if name_len >= LOG_PREDICTION_LIMIT && hash_len >= LOG_PREDICTION_LIMIT {
+            break;
+        }
+    }
+    (
+        bounded_log_prediction(names.join(", ")),
+        bounded_log_prediction(hashes.join(", ")),
+    )
+}
+fn combine_rules(
+    mut saved: Vec<Rule>,
+    draft: gearth_rust::packet::Result<Option<Rule>>,
+) -> (Rules, Option<gearth_rust::packet::PacketError>) {
+    let error = match draft {
+        Ok(Some(rule)) => {
+            saved.push(rule);
+            None
+        }
+        Ok(None) => None,
+        Err(error) => Some(error),
+    };
+    (Rules { entries: saved }, error)
 }
 impl Default for Desktop {
     fn default() -> Self {
@@ -188,6 +298,7 @@ impl Default for Desktop {
             events: None,
             logs: VecDeque::new(),
             filter: String::new(),
+            logger_search_cache: None,
             outgoing: true,
             incoming: true,
             paused: false,
@@ -195,13 +306,27 @@ impl Default for Desktop {
             logger_additional: true,
             logger_structure: true,
             logger_split: true,
+            logger_names: true,
+            logger_hashes: false,
+            logger_representation: PacketRepresentation::Expression,
+            logger_timestamp: false,
+            logger_autoscroll: true,
+            logger_clear_on_connect: false,
+            logger_clear_on_disconnect: false,
+            logger_connection_active: false,
+            logger_antispam: AntiSpam::None,
+            logger_filter: LoggerFilter::default(),
+            logger_filtered: 0,
+            packet_dump: None,
             expression: "{h:123}{i:42}{s:\"hello\"}".into(),
             direction: Direction::ToServer,
-            interval_ms: 1000,
-            align_schedule: false,
+            injection_history: InjectionHistory::default(),
+            schedule_draft: ScheduleDraft::default(),
+            interval_ms: 500,
+            align_schedule: true,
             schedule_offset_ms: 0,
             repeat: 1,
-            repeat_forever: false,
+            repeat_forever: true,
             schedule_edit: None,
             active_schedule_edit: None,
             schedule_path: "gearth.sched".into(),
@@ -210,8 +335,14 @@ impl Default for Desktop {
             block_header: 0,
             block_enabled: false,
             block_direction: Direction::ToServer,
+            editing_saved_rule: None,
+            rule_errors: Vec::new(),
             tool_input: String::new(),
             tool_output: String::new(),
+            tool_int: String::new(),
+            tool_int_encoded: String::new(),
+            tool_ushort: String::new(),
+            tool_ushort_encoded: String::new(),
             export_path: "gearth.capture".into(),
             total: 0,
             display_dropped: 0,
@@ -270,39 +401,81 @@ impl Default for Desktop {
     }
 }
 impl Desktop {
+    fn compile_schedules(
+        &self,
+        templates: &[ScheduleTemplate],
+    ) -> gearth_rust::packet::Result<Vec<(ScheduleSpec, bool)>> {
+        templates
+            .iter()
+            .map(|template| {
+                expression::parse_with_format(
+                    &template.expression,
+                    self.packet_format(template.direction),
+                    Some((template.direction, &self.packet_info)),
+                )
+                .map(|packet| {
+                    (
+                        ScheduleSpec {
+                            packet,
+                            direction: template.direction,
+                            interval_ms: template.interval_ms,
+                            offset_ms: template.offset_ms,
+                            repeat: (template.repeat != 0).then_some(template.repeat),
+                        },
+                        template.paused,
+                    )
+                })
+            })
+            .collect()
+    }
+
+    fn read_schedule_file(&self) -> std::io::Result<Vec<ScheduleTemplate>> {
+        let file = std::fs::File::open(&self.schedule_path)?;
+        let mut bytes = Vec::new();
+        file.take((schedule_file::MAX_SCHEDULE_FILE_BYTES + 1) as u64)
+            .read_to_end(&mut bytes)?;
+        let text = String::from_utf8(bytes).map_err(std::io::Error::other)?;
+        schedule_file::parse(&text)
+    }
+
     fn update_rules(&mut self) {
-        let mut entries = match self.settings.compiled_rules_for(self.origins) {
-            Ok(entries) => entries,
-            Err(e) => {
-                self.status = e.to_string();
-                return;
-            }
-        };
-        let action = if self.replacement_expression.trim().is_empty() {
-            Action::Block
-        } else {
-            match expression::parse_with_format(
+        let (entries, errors) = self
+            .settings
+            .compiled_rules_independent(self.origins && !self.nitro);
+        self.rule_errors = errors;
+        let (rules, draft_error) = combine_rules(
+            entries,
+            Rules::editor_rule(
+                self.block_enabled,
+                self.block_direction,
+                self.block_header,
                 &self.replacement_expression,
                 self.packet_format(self.block_direction),
-                Some((self.block_direction, &self.packet_info)),
-            ) {
-                Ok(p) => Action::Replace(p),
-                Err(e) => {
-                    self.status = e.to_string();
-                    return;
-                }
-            }
-        };
-        entries.push(Rule {
-            enabled: self.block_enabled,
-            direction: self.block_direction,
-            header: self.block_header,
-            action,
-        });
+                &self.packet_info,
+            ),
+        );
         if let Some(relay) = &self.relay {
-            if let Err(e) = relay.set_rules(Rules { entries }) {
-                self.status = e.to_string();
+            if let Err(e) = relay.set_rules(rules) {
+                self.status = format!("Could not update rules: {e}");
+                return;
             }
+        }
+        if !self.rule_errors.is_empty() || draft_error.is_some() {
+            let mut messages = Vec::new();
+            if !self.rule_errors.is_empty() {
+                messages.push(format!(
+                    "Saved rules skipped: {}",
+                    self.rule_errors
+                        .iter()
+                        .map(|(i, _)| (i + 1).to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+            if let Some(error) = draft_error {
+                messages.push(format!("Editor rule disabled: {error}"));
+            }
+            self.status = messages.join("; ");
         }
     }
     fn poll(&mut self) {
@@ -372,6 +545,7 @@ impl Desktop {
                                 format!("Loaded {} packet identifiers", database.entries().len());
                             self.packet_info = database;
                             invalidate_log_expressions(&mut self.logs);
+                            self.logger_search_cache = None;
                             self.packet_database.clear();
                         }
                         Err(e) => self.status = format!("Packet lookup failed: {e}"),
@@ -411,10 +585,15 @@ impl Desktop {
                     Event::PacketIdentifiers(database) => {
                         self.packet_info = database;
                         invalidate_log_expressions(&mut self.logs);
+                        self.logger_search_cache = None;
                     }
                     Event::Packet(message) => {
                         self.total += 1;
                         if !self.paused {
+                            if self.logger_filter.suppress(&message, Instant::now()) {
+                                self.logger_filtered = self.logger_filtered.saturating_add(1);
+                                continue;
+                            }
                             let packet_size = if message.packet.format() == PacketFormat::EvaWire {
                                 message.packet.bytes().len().saturating_sub(4)
                             } else {
@@ -434,7 +613,7 @@ impl Desktop {
                             let bytes = message.packet.bytes().len()
                                 + expression.len()
                                 + search.len()
-                                + 2 * LOG_PREDICTION_LIMIT;
+                                + 4 * LOG_PREDICTION_LIMIT;
                             if bytes > self.settings.log_bytes {
                                 self.display_dropped += 1;
                                 continue;
@@ -452,6 +631,10 @@ impl Desktop {
                             self.logs_bytes += bytes;
                             self.logs.push_back(LogRow {
                                 message,
+                                timestamp_ms: SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .ok()
+                                    .and_then(|d| u64::try_from(d.as_millis()).ok()),
                                 expression,
                                 search,
                                 bytes,
@@ -459,11 +642,20 @@ impl Desktop {
                                 unity: matches!(self.relay.as_ref(), Some(Connection::Unity(_))),
                                 predicted_structure: OnceLock::new(),
                                 packet_expression: OnceLock::new(),
+                                packet_metadata: OnceLock::new(),
                             });
                         }
                     }
                     Event::Listening(a) => self.status = format!("Listening on {a}"),
                     Event::Connected(a) => {
+                        self.logger_connection_active = true;
+                        if self.logger_clear_on_connect {
+                            clear_log_contents(
+                                &mut self.logs,
+                                &mut self.logs_bytes,
+                                &mut self.logger_filtered,
+                            );
+                        }
                         self.status = format!("Connected to {a}");
                         if let Some(guard) = &mut self.proxy_guard {
                             match guard.restore() {
@@ -496,6 +688,14 @@ impl Desktop {
                         self.client_identifier = identifier;
                     }
                     Event::Disconnected => {
+                        self.logger_connection_active = false;
+                        if self.logger_clear_on_disconnect {
+                            clear_log_contents(
+                                &mut self.logs,
+                                &mut self.logs_bytes,
+                                &mut self.logger_filtered,
+                            );
+                        }
                         self.status = "Client disconnected; listening".into();
                     }
                     Event::Error(e) => self.status = e,
@@ -522,9 +722,11 @@ impl Desktop {
                 egui::Checkbox::new(&mut self.nitro, "Browser client (Nitro / Unity)"),
             )
             .changed()
-            && self.nitro
         {
-            self.origins = false;
+            if self.nitro {
+                self.origins = false;
+            }
+            self.update_rules();
         }
         if self.nitro {
             ui.add_enabled_ui(self.relay.is_none(), |ui| {
@@ -564,6 +766,7 @@ impl Desktop {
                     "game-fr.habbo.com".into()
                 };
             }
+            self.update_rules();
         }
         egui::CollapsingHeader::new("Official client attachment").default_open(true).show(ui,|ui|{
             let hotels=if self.origins{gearth_rust::attachment::ORIGINS_HOTELS}else{gearth_rust::attachment::FLASH_HOTELS};
@@ -663,6 +866,17 @@ impl Desktop {
         });
     }
     fn stop_connection(&mut self) {
+        if self.logger_clear_on_disconnect
+            && (self.logger_connection_active
+                || self.relay.as_ref().is_some_and(Connection::connected))
+        {
+            clear_log_contents(
+                &mut self.logs,
+                &mut self.logs_bytes,
+                &mut self.logger_filtered,
+            );
+        }
+        self.logger_connection_active = false;
         self.status = "Disconnected".into();
         if let Some(guard) = &mut self.proxy_guard {
             match guard.restore() {
@@ -713,6 +927,8 @@ impl Desktop {
                 include_bytes!("../resources/unity/messages.json"),
             )
             .map_err(std::io::Error::other)?;
+            invalidate_log_expressions(&mut self.logs);
+            self.logger_search_cache = None;
         }
         let http = WebOptions::new(
             self.listen.parse().map_err(std::io::Error::other)?,
@@ -957,12 +1173,24 @@ impl Desktop {
     fn logger(&mut self, ui: &mut egui::Ui) {
         ui.heading("Packet logger");
         ui.horizontal(|ui| {
-            ui.checkbox(&mut self.outgoing, "To server");
-            ui.checkbox(&mut self.incoming, "To client");
+            ui.checkbox(
+                &mut self.outgoing,
+                self.i18n.text("ext.logger.menu.view.outgoing"),
+            );
+            ui.checkbox(
+                &mut self.incoming,
+                self.i18n.text("ext.logger.menu.view.incoming"),
+            );
             ui.checkbox(&mut self.paused, "Pause display");
-            if ui.button("Clear").clicked() {
-                self.logs.clear();
-                self.logs_bytes = 0;
+            if ui
+                .button(self.i18n.text("ext.logger.menu.view.cleartext"))
+                .clicked()
+            {
+                clear_log_contents(
+                    &mut self.logs,
+                    &mut self.logs_bytes,
+                    &mut self.logger_filtered,
+                );
             }
         });
         ui.horizontal(|ui| {
@@ -971,12 +1199,121 @@ impl Desktop {
             ui.label("Packet display limit (bytes)");
             ui.add(egui::DragValue::new(&mut self.packet_limit).range(0..=16 * 1024 * 1024));
         });
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.checkbox(&mut self.logger_additional, "Show additional data");
-            ui.checkbox(&mut self.logger_structure, "Show packet structure");
+            ui.checkbox(
+                &mut self.logger_structure,
+                self.i18n
+                    .text("ext.logger.menu.packets.displaydetails.structure"),
+            );
             ui.checkbox(&mut self.logger_split, "Split packets");
+            ui.checkbox(
+                &mut self.logger_names,
+                self.i18n
+                    .text("ext.logger.menu.packets.displaydetails.message.name"),
+            );
+            ui.checkbox(
+                &mut self.logger_hashes,
+                self.i18n
+                    .text("ext.logger.menu.packets.displaydetails.message.hash"),
+            );
+            let old = self.logger_antispam;
+            egui::ComboBox::from_id_salt("logger_antispam")
+                .selected_text(format!(
+                    "{}: {}",
+                    self.i18n.text("ext.logger.menu.packets.antispam"),
+                    self.i18n.text(old.translation_key())
+                ))
+                .show_ui(ui, |ui| {
+                    for mode in [
+                        AntiSpam::None,
+                        AntiSpam::Low,
+                        AntiSpam::Medium,
+                        AntiSpam::High,
+                        AntiSpam::Ultra,
+                    ] {
+                        ui.selectable_value(
+                            &mut self.logger_antispam,
+                            mode,
+                            self.i18n.text(mode.translation_key()),
+                        );
+                    }
+                });
+            if old != self.logger_antispam {
+                self.logger_filter.set_mode(self.logger_antispam);
+            }
+            ui.label(format!(
+                "{}: {}",
+                self.i18n.text("ext.logger.state.filtered"),
+                self.logger_filtered
+            ));
+        });
+        ui.horizontal(|ui| {
+            ui.checkbox(
+                &mut self.logger_timestamp,
+                self.i18n
+                    .text("ext.logger.menu.packets.displaydetails.timestamp"),
+            );
+            ui.checkbox(
+                &mut self.logger_autoscroll,
+                self.i18n.text("ext.logger.menu.view.autoscroll"),
+            );
+            egui::ComboBox::from_id_salt("logger_representation")
+                .selected_text(format!(
+                    "{}: {}",
+                    self.i18n
+                        .text("ext.logger.menu.packets.displaydetails.byterep"),
+                    self.i18n.text(self.logger_representation.translation_key())
+                ))
+                .show_ui(ui, |ui| {
+                    for mode in [
+                        PacketRepresentation::Expression,
+                        PacketRepresentation::Legacy,
+                        PacketRepresentation::RawHex,
+                        PacketRepresentation::HexDump,
+                    ] {
+                        ui.selectable_value(
+                            &mut self.logger_representation,
+                            mode,
+                            self.i18n.text(mode.translation_key()),
+                        );
+                    }
+                });
+        });
+        ui.horizontal_wrapped(|ui| {
+            ui.checkbox(
+                &mut self.logger_clear_on_connect,
+                format!(
+                    "{}: {}",
+                    self.i18n.text("ext.logger.menu.window.onconnect"),
+                    self.i18n.text("ext.logger.menu.window.onconnect.reset")
+                ),
+            );
+            ui.checkbox(
+                &mut self.logger_clear_on_disconnect,
+                format!(
+                    "{}: {}",
+                    self.i18n.text("ext.logger.menu.window.ondisconnect"),
+                    self.i18n.text("ext.logger.menu.window.ondisconnect.reset")
+                ),
+            );
         });
         let filter = self.filter.to_lowercase();
+        if self
+            .logger_search_cache
+            .as_ref()
+            .is_none_or(|(cached, _)| cached != &filter)
+        {
+            self.logger_search_cache = Some((
+                filter.clone(),
+                matching_packet_metadata(&self.packet_info, &filter),
+            ));
+        }
+        let matching_metadata = &self
+            .logger_search_cache
+            .as_ref()
+            .expect("search cache initialized")
+            .1;
         ui.horizontal(|ui| {
             ui.label("Export path");
             ui.text_edit_singleline(&mut self.export_path);
@@ -985,12 +1322,13 @@ impl Desktop {
                     String::from("# G-Earth Rust capture: direction index blocked expression\n");
                 for row in &self.logs {
                     let m = &row.message;
-                    let direction_visible = if m.direction == Direction::ToServer {
-                        self.outgoing
-                    } else {
-                        self.incoming
-                    };
-                    if !direction_visible || (!filter.is_empty() && !row.search.contains(&filter)) {
+                    if !log_row_matches(
+                        row,
+                        &filter,
+                        matching_metadata,
+                        self.outgoing,
+                        self.incoming,
+                    ) {
                         continue;
                     }
                     text.push_str(&format!(
@@ -1012,17 +1350,27 @@ impl Desktop {
             .logs
             .iter()
             .filter(|row| {
-                let m = &row.message;
-                (if m.direction == Direction::ToServer {
-                    self.outgoing
-                } else {
-                    self.incoming
-                }) && (filter.is_empty() || row.search.contains(&filter))
+                log_row_matches(
+                    row,
+                    &filter,
+                    matching_metadata,
+                    self.outgoing,
+                    self.incoming,
+                )
             })
             .collect();
-        let row_height = if self.logger_structure { 44.0 } else { 24.0 };
+        let row_height = if self.logger_representation == PacketRepresentation::HexDump {
+            // Eight 16-byte lines, an offset/truncation footer, and the header.
+            ui.text_style_height(&egui::TextStyle::Monospace) * 13.0
+                + if self.logger_structure { 24.0 } else { 0.0 }
+        } else if self.logger_structure {
+            44.0
+        } else {
+            24.0
+        };
+        let mut inspection = None;
         egui::ScrollArea::vertical()
-            .stick_to_bottom(true)
+            .stick_to_bottom(self.logger_autoscroll)
             .show_rows(ui, row_height, filtered.len(), |ui, range| {
                 for i in range {
                     let row = filtered[i];
@@ -1047,17 +1395,62 @@ impl Desktop {
                     } else {
                         String::new()
                     };
+                    let metadata = if self.logger_names || self.logger_hashes {
+                        let (names, hashes) = row.packet_metadata.get_or_init(|| {
+                            log_packet_metadata(&self.packet_info, m.direction, m.packet.header())
+                        });
+                        let mut display = String::new();
+                        if self.logger_names && !names.is_empty() {
+                            display.push_str(&format!("[{names}] "));
+                        }
+                        if self.logger_hashes && !hashes.is_empty() {
+                            display.push_str(&format!("[{hashes}] "));
+                        }
+                        display
+                    } else {
+                        String::new()
+                    };
+                    let inline_dump =
+                        self.logger_representation == PacketRepresentation::HexDump && !row.skipped;
+                    let representation = if inline_dump {
+                        std::borrow::Cow::Borrowed("")
+                    } else if row.skipped
+                        || self.logger_representation == PacketRepresentation::Expression
+                    {
+                        std::borrow::Cow::Borrowed(row.expression.as_str())
+                    } else {
+                        std::borrow::Cow::Owned(logger_display::represent(
+                            m.packet.bytes(),
+                            self.logger_representation,
+                            1024,
+                        ))
+                    };
+                    let timestamp = if self.logger_timestamp {
+                        row.timestamp_ms
+                            .map(|ms| format!("({ms} ms) "))
+                            .unwrap_or_default()
+                    } else {
+                        String::new()
+                    };
                     let label = format!(
-                        "#{:06}  {:8}  {}{}{}",
+                        "{}#{:06}  {:8}  {}{}{}{}",
+                        timestamp,
                         m.index,
                         if m.direction == Direction::ToServer {
                             "→ SERVER"
                         } else {
                             "← CLIENT"
                         },
-                        if m.blocked { "BLOCKED  " } else { "" },
+                        if m.blocked {
+                            "BLOCKED  "
+                        } else if m.packet.edited {
+                            "REPLACED  "
+                        } else {
+                            ""
+                        },
                         additional,
-                        row.expression
+                        metadata,
+                        representation
                     );
                     let row_output = ui.allocate_ui_with_layout(
                         egui::vec2(ui.available_width(), row_height),
@@ -1070,6 +1463,18 @@ impl Desktop {
                                 .truncate()
                                 .sense(egui::Sense::click()),
                             );
+                            if inline_dump {
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(logger_display::hex_dump(
+                                            m.packet.bytes(),
+                                            128,
+                                        ))
+                                        .monospace(),
+                                    )
+                                    .wrap_mode(egui::TextWrapMode::Extend),
+                                );
+                            }
                             if self.logger_structure && !row.skipped {
                                 let (expression, known) = row.packet_expression.get_or_init(|| {
                                     let (expression, known) =
@@ -1097,6 +1502,12 @@ impl Desktop {
                         },
                     );
                     let response = row_output.inner;
+                    response.context_menu(|ui| {
+                        if ui.button("Inspect packet bytes").clicked() {
+                            inspection = Some(logger_display::hex_dump(m.packet.bytes(), 4096));
+                            ui.close_menu();
+                        }
+                    });
                     if self.logger_split {
                         let rect = row_output.response.rect;
                         let y = rect.bottom() - 1.0;
@@ -1123,23 +1534,79 @@ impl Desktop {
                     }
                 }
             });
+        if let Some(dump) = inspection {
+            self.packet_dump = Some(dump);
+        }
+        let mut open = self.packet_dump.is_some();
+        if let Some(dump) = &self.packet_dump {
+            egui::Window::new("Packet bytes")
+                .open(&mut open)
+                .resizable(true)
+                .default_width(720.0)
+                .show(ui.ctx(), |ui| {
+                    if ui.button("Copy hex dump").clicked() {
+                        ui.ctx().copy_text(dump.clone());
+                    }
+                    egui::ScrollArea::both().max_height(500.0).show(ui, |ui| {
+                        ui.monospace(dump);
+                    });
+                });
+        }
+        if !open {
+            self.packet_dump = None;
+        }
     }
-    fn editor(&mut self, ui: &mut egui::Ui) {
-        direction_selector(ui, &mut self.direction);
+    fn editor(&mut self, ui: &mut egui::Ui, allow_batch: bool) {
+        let (draft, direction) = if allow_batch {
+            (&mut self.expression, &mut self.direction)
+        } else {
+            (
+                &mut self.schedule_draft.expression,
+                &mut self.schedule_draft.direction,
+            )
+        };
+        direction_selector(ui, direction);
         ui.add(
-            egui::TextEdit::multiline(&mut self.expression)
+            egui::TextEdit::multiline(draft)
                 .font(egui::TextStyle::Monospace)
                 .desired_rows(5)
                 .desired_width(f32::INFINITY),
         );
-        match expression::parse_with_format(
-            &self.expression,
-            self.packet_format(self.direction),
-            Some((self.direction, &self.packet_info)),
-        ) {
-            Ok(p) => {
+        let (draft, direction) = if allow_batch {
+            (&self.expression, self.direction)
+        } else {
+            (
+                &self.schedule_draft.expression,
+                self.schedule_draft.direction,
+            )
+        };
+        if draft.len() > 64 * 1024 {
+            ui.label("Preview disabled for large input; it will be validated when submitted.");
+            return;
+        }
+        let parsed = if allow_batch {
+            injection::parse_packets(
+                draft,
+                self.packet_format(direction),
+                direction,
+                &self.packet_info,
+            )
+        } else {
+            expression::parse_with_format(
+                draft,
+                self.packet_format(direction),
+                Some((direction, &self.packet_info)),
+            )
+            .map(|packet| vec![packet])
+        };
+        match parsed {
+            Ok(packets) if packets.len() == 1 => {
+                let p = &packets[0];
                 ui.label(format!("Header {} · {} bytes", p.header(), p.bytes().len()));
-                ui.monospace(expression::hex(p.bytes()));
+                ui.monospace(packet_tools::hex_preview(p, 1024));
+            }
+            Ok(packets) => {
+                ui.label(format!("{} packets ready", packets.len()));
             }
             Err(e) => {
                 ui.colored_label(egui::Color32::from_rgb(180, 60, 60), e.to_string());
@@ -1148,31 +1615,85 @@ impl Desktop {
     }
     fn injection(&mut self, ui: &mut egui::Ui) {
         ui.heading("Packet injection");
-        self.editor(ui);
-        if ui
-            .add_enabled(
-                self.relay.as_ref().is_some_and(Connection::connected),
-                egui::Button::new("Send packet"),
-            )
-            .clicked()
-        {
-            self.status = match expression::parse_with_format(
+        self.editor(ui, true);
+        // Large inputs are checked on submission to keep the editor responsive.
+        let (server_valid, client_valid) = if self.expression.len() <= 64 * 1024 {
+            injection::valid_destinations(
                 &self.expression,
-                self.packet_format(self.direction),
-                Some((self.direction, &self.packet_info)),
-            ) {
-                Ok(packet) => match self.relay.as_ref().unwrap().inject(self.direction, packet) {
-                    Ok(()) => "Packet queued".into(),
-                    Err(e) => e.to_string(),
-                },
-                Err(e) => e.to_string(),
-            };
-        }
+                self.packet_format(Direction::ToServer),
+                self.packet_format(Direction::ToClient),
+                &self.packet_info,
+            )
+        } else {
+            (true, true)
+        };
+        ui.horizontal(|ui| {
+            let connected = self.relay.as_ref().is_some_and(Connection::connected);
+            if ui
+                .add_enabled(
+                    connected && server_valid,
+                    egui::Button::new(self.i18n.text("tab.injection.send.toserver")),
+                )
+                .clicked()
+            {
+                self.send_injection(Direction::ToServer);
+            }
+            if ui
+                .add_enabled(
+                    connected && client_valid,
+                    egui::Button::new(self.i18n.text("tab.injection.send.toclient")),
+                )
+                .clicked()
+            {
+                self.send_injection(Direction::ToClient);
+            }
+        });
+        ui.horizontal(|ui| {
+            ui.label(self.i18n.text("tab.injection.history"));
+            if ui
+                .button(self.i18n.text("tab.injection.history.clear"))
+                .clicked()
+            {
+                self.injection_history.clear();
+                self.status = match self.injection_history.save_to_settings(&self.settings_path) {
+                    Ok(()) => "Injection history cleared".into(),
+                    Err(error) => format!("History cleared in memory; could not save: {error}"),
+                };
+            }
+        });
+        egui::ScrollArea::vertical()
+            .id_salt("injection_history")
+            .max_height(120.0)
+            .show(ui, |ui| {
+                for entry in self.injection_history.entries() {
+                    let label = format!(
+                        "{}: {}",
+                        entry.direction,
+                        entry.expression.replace('\n', " ")
+                    );
+                    if ui
+                        .add(
+                            egui::Label::new(label)
+                                .truncate()
+                                .sense(egui::Sense::click()),
+                        )
+                        .double_clicked()
+                    {
+                        self.expression = entry.expression.clone();
+                        if let Ok(direction) = Direction::parse(&entry.direction) {
+                            self.direction = direction;
+                        }
+                    }
+                }
+            });
         ui.add_space(20.0);
         ui.separator();
         ui.heading("Block rule");
         let changed = ui
-            .checkbox(&mut self.block_enabled, "Enable rule")
+            .add_enabled(
+                self.editing_saved_rule.is_none(),
+                egui::Checkbox::new(&mut self.block_enabled, "Enable rule"),
+            )
             .changed();
         let changed = ui
             .add(egui::DragValue::new(&mut self.block_header).prefix("Header "))
@@ -1190,33 +1711,68 @@ impl Desktop {
         {
             self.update_rules();
         }
-        if ui.button("Add saved rule").clicked() {
-            let replacement = if self.replacement_expression.trim().is_empty() {
-                Ok(None)
+        if let Some(index) = self.editing_saved_rule {
+            ui.label(format!("Editing saved rule {}", index + 1));
+        }
+        if ui
+            .button(if self.editing_saved_rule.is_some() {
+                "Save rule changes"
             } else {
-                expression::parse_with_format(
-                    &self.replacement_expression,
-                    self.packet_format(self.block_direction),
-                    Some((self.block_direction, &self.packet_info)),
-                )
-                .map(|p| Some(expression::to_lossless_expression(&p)))
-            };
+                "Add saved rule"
+            })
+            .clicked()
+        {
+            let replacement = Rules::editor_rule(
+                true,
+                self.block_direction,
+                self.block_header,
+                &self.replacement_expression,
+                self.packet_format(self.block_direction),
+                &self.packet_info,
+            )
+            .map(|rule| match rule.expect("enabled rule is present").action {
+                Action::Block => None,
+                Action::Replace(packet) => Some(expression::to_lossless_expression(&packet)),
+            });
             match replacement {
                 Ok(replacement) => {
-                    self.settings.rules.push((
-                        true,
-                        self.block_direction,
-                        self.block_header,
-                        replacement,
-                    ));
-                    self.block_enabled = false;
-                    self.update_rules();
+                    let result = if let Some(index) = self.editing_saved_rule {
+                        self.settings.replace_saved_rule(
+                            index,
+                            self.block_direction,
+                            self.block_header,
+                            replacement,
+                        )
+                    } else {
+                        self.settings.rules.push((
+                            true,
+                            self.block_direction,
+                            self.block_header,
+                            replacement,
+                        ));
+                        Ok(())
+                    };
+                    match result {
+                        Ok(()) => {
+                            self.editing_saved_rule = None;
+                            self.block_enabled = false;
+                            self.status = "Rule updated; save settings to keep it".into();
+                            self.update_rules();
+                        }
+                        Err(error) => self.status = error.to_string(),
+                    }
                 }
-                Err(e) => self.status = e.to_string(),
+                Err(error) => self.status = error.to_string(),
             }
         }
+        if self.editing_saved_rule.is_some() && ui.button("Cancel rule editing").clicked() {
+            self.editing_saved_rule = None;
+        }
         let mut remove = None;
+        let mut edit = None;
+        let mut move_rule = None;
         let mut changed = false;
+        let rule_count = self.settings.rules.len();
         for (index, (enabled, direction, header, replacement)) in
             self.settings.rules.iter_mut().enumerate()
         {
@@ -1239,15 +1795,93 @@ impl Desktop {
                 if ui.small_button("Remove").clicked() {
                     remove = Some(index);
                 }
+                if ui.small_button("Edit").clicked() {
+                    edit = Some(index);
+                }
+                if ui
+                    .add_enabled(
+                        self.editing_saved_rule.is_none() && index > 0,
+                        egui::Button::new("Up"),
+                    )
+                    .clicked()
+                {
+                    move_rule = Some((index, index - 1));
+                }
+                if ui
+                    .add_enabled(
+                        self.editing_saved_rule.is_none() && index + 1 < rule_count,
+                        egui::Button::new("Down"),
+                    )
+                    .clicked()
+                {
+                    move_rule = Some((index, index + 1));
+                }
+                if let Some((_, error)) = self.rule_errors.iter().find(|(i, _)| *i == index) {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(180, 60, 60),
+                        format!("Not active: {error}"),
+                    );
+                }
             });
         }
         if let Some(index) = remove {
             self.settings.rules.remove(index);
+            self.editing_saved_rule = match self.editing_saved_rule {
+                Some(editing) if editing == index => None,
+                Some(editing) if editing > index => Some(editing - 1),
+                other => other,
+            };
             changed = true;
+        }
+        if let Some((from, to)) = move_rule {
+            if let Err(error) = self.settings.move_saved_rule(from, to) {
+                self.status = error.to_string();
+            } else {
+                changed = true;
+            }
+        }
+        if let Some(index) = edit {
+            if let Some((_, direction, header, replacement)) = self.settings.rules.get(index) {
+                self.block_direction = *direction;
+                self.block_header = *header;
+                self.replacement_expression = replacement.clone().unwrap_or_default();
+                self.block_enabled = false;
+                self.editing_saved_rule = Some(index);
+                changed = true;
+            }
         }
         if changed {
             self.update_rules();
         }
+    }
+    fn send_injection(&mut self, direction: Direction) {
+        self.direction = direction;
+        let Some(relay) = self.relay.as_ref() else {
+            self.status = "Not connected".into();
+            return;
+        };
+        self.status = match injection::parse_packets(
+            &self.expression,
+            self.packet_format(direction),
+            direction,
+            &self.packet_info,
+        ) {
+            Ok(packets) => {
+                let total = packets.len();
+                match injection::enqueue_packets(packets, |packet| relay.inject(direction, packet)) {
+                    Err((accepted, error)) => format!("{accepted} of {total} packets queued; remaining packets not queued: {error}"),
+                    Ok(accepted) => {
+                        if self.injection_history.record(&self.expression, direction) {
+                            match self.injection_history.save_to_settings(&self.settings_path) {
+                                Ok(()) => format!("{accepted} packets queued"),
+                                Err(error) => format!("{accepted} packets queued; could not save history: {error}"),
+                            }
+                        } else { format!("{accepted} packets queued; expression too large for history") }
+                    }
+                }
+            }
+            Err(error) => error.to_string(),
+        };
     }
     fn schedule(&mut self, ui: &mut egui::Ui) {
         ui.heading("Scheduler");
@@ -1288,7 +1922,7 @@ impl Desktop {
                 self.status = "Global scheduler shortcuts disabled".into();
             }
         }
-        self.editor(ui);
+        self.editor(ui, false);
         ui.horizontal(|ui| {
             ui.add(
                 egui::DragValue::new(&mut self.interval_ms)
@@ -1327,9 +1961,9 @@ impl Desktop {
         {
             let valid_offset = !self.align_schedule || self.schedule_offset_ms < self.interval_ms;
             let parsed = expression::parse_with_format(
-                &self.expression,
-                self.packet_format(self.direction),
-                Some((self.direction, &self.packet_info)),
+                &self.schedule_draft.expression,
+                self.packet_format(self.schedule_draft.direction),
+                Some((self.schedule_draft.direction, &self.packet_info)),
             );
             if !valid_offset {
                 self.status = "Offset must be smaller than the interval".into();
@@ -1340,7 +1974,7 @@ impl Desktop {
                             id,
                             ScheduleSpec {
                                 packet,
-                                direction: self.direction,
+                                direction: self.schedule_draft.direction,
                                 interval_ms: self.interval_ms,
                                 offset_ms: self.align_schedule.then_some(self.schedule_offset_ms),
                                 repeat: (!self.repeat_forever).then_some(self.repeat),
@@ -1352,7 +1986,7 @@ impl Desktop {
                     } else {
                         self.scheduler.add_configured(
                             packet,
-                            self.direction,
+                            self.schedule_draft.direction,
                             self.interval_ms,
                             self.align_schedule.then_some(self.schedule_offset_ms),
                             (!self.repeat_forever).then_some(self.repeat),
@@ -1365,8 +1999,8 @@ impl Desktop {
                             "Active schedule updated; saved templates are unchanged".into()
                         } else {
                             let template = ScheduleTemplate {
-                                expression: self.expression.clone(),
-                                direction: self.direction,
+                                expression: self.schedule_draft.expression.clone(),
+                                direction: self.schedule_draft.direction,
                                 interval_ms: self.interval_ms,
                                 offset_ms: self.align_schedule.then_some(self.schedule_offset_ms),
                                 paused: self
@@ -1408,35 +2042,14 @@ impl Desktop {
             )
             .clicked()
         {
-            for template in &self.settings.schedules {
-                match expression::parse_with_format(
-                    &template.expression,
-                    self.packet_format(template.direction),
-                    Some((template.direction, &self.packet_info)),
-                )
-                .and_then(|p| {
-                    self.scheduler.add_configured(
-                        p,
-                        template.direction,
-                        template.interval_ms,
-                        template.offset_ms,
-                        (template.repeat != 0).then_some(template.repeat),
-                        (Instant::now(), SystemTime::now()),
-                    )
-                }) {
-                    Ok(()) => {
-                        if template.paused {
-                            if let Some(job) = self.scheduler.jobs.last_mut() {
-                                job.paused = true;
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        self.status = e.to_string();
-                        break;
-                    }
-                }
-            }
+            let specs = self.compile_schedules(&self.settings.schedules);
+            self.status = match specs.and_then(|specs| {
+                self.scheduler
+                    .add_batch_configured(specs, (Instant::now(), SystemTime::now()))
+            }) {
+                Ok(()) => "Saved schedules started".into(),
+                Err(e) => format!("No saved schedules started: {e}"),
+            };
         }
         if ui.button("Clear saved schedules").clicked() {
             self.settings.schedules.clear();
@@ -1446,14 +2059,7 @@ impl Desktop {
             ui.label(".sched file");
             ui.text_edit_singleline(&mut self.schedule_path);
             if ui.button("Import").clicked() {
-                let result = (|| -> std::io::Result<Vec<ScheduleTemplate>> {
-                    let file = std::fs::File::open(&self.schedule_path)?;
-                    let mut bytes = Vec::new();
-                    file.take((schedule_file::MAX_SCHEDULE_FILE_BYTES + 1) as u64)
-                        .read_to_end(&mut bytes)?;
-                    let text = String::from_utf8(bytes).map_err(std::io::Error::other)?;
-                    schedule_file::parse(&text)
-                })();
+                let result = self.read_schedule_file();
                 self.status = match result {
                     Ok(templates) => {
                         let count = templates.len();
@@ -1464,13 +2070,62 @@ impl Desktop {
                     Err(error) => format!("Import failed: {error}"),
                 };
             }
-            if ui.button("Export").clicked() {
-                self.status = match schedule_file::format(&self.settings.schedules)
-                    .and_then(|text| std::fs::write(&self.schedule_path, text))
-                {
-                    Ok(()) => format!("Exported templates to {}", self.schedule_path),
-                    Err(error) => format!("Export failed: {error}"),
+            if ui
+                .add_enabled(
+                    self.relay.as_ref().is_some_and(Connection::connected),
+                    egui::Button::new("Load and replace active"),
+                )
+                .on_hover_text(
+                    "Replace active schedules with the .sched file; an empty file clears them",
+                )
+                .clicked()
+            {
+                let result = self.read_schedule_file().and_then(|templates| {
+                    let specs = self
+                        .compile_schedules(&templates)
+                        .map_err(std::io::Error::other)?;
+                    self.scheduler
+                        .replace_batch_configured(specs, (Instant::now(), SystemTime::now()))
+                        .map_err(std::io::Error::other)?;
+                    Ok(templates)
+                });
+                self.status = match result {
+                    Ok(templates) => {
+                        let count = templates.len();
+                        self.active_schedule_edit = None;
+                        format!(
+                            "Loaded {count} active schedules from {}",
+                            self.schedule_path
+                        )
+                    }
+                    Err(error) => format!("Load failed; active schedules unchanged: {error}"),
                 };
+            }
+            if ui.button("Export templates").clicked() {
+                self.status =
+                    match schedule_file::format(&self.settings.schedules).and_then(|text| {
+                        schedule_file::write_atomic(Path::new(&self.schedule_path), &text)
+                    }) {
+                        Ok(()) => format!("Exported templates to {}", self.schedule_path),
+                        Err(error) => format!("Export failed: {error}"),
+                    };
+            }
+            if ui
+                .button("Export active")
+                .on_hover_text("Export active, indefinitely repeating clock-aligned schedules")
+                .clicked()
+            {
+                self.status =
+                    match schedule_file::format_active(&self.scheduler.jobs).and_then(|text| {
+                        schedule_file::write_atomic(Path::new(&self.schedule_path), &text)
+                    }) {
+                        Ok(()) => format!(
+                            "Exported {} active schedules to {}",
+                            self.scheduler.jobs.len(),
+                            self.schedule_path
+                        ),
+                        Err(error) => format!("Export failed: {error}"),
+                    };
             }
         });
         if !self.settings.schedules.is_empty() {
@@ -1498,8 +2153,8 @@ impl Desktop {
         }
         if let Some(index) = edit_template {
             let template = &self.settings.schedules[index];
-            self.expression = template.expression.clone();
-            self.direction = template.direction;
+            self.schedule_draft.expression = template.expression.clone();
+            self.schedule_draft.direction = template.direction;
             self.interval_ms = template.interval_ms;
             self.align_schedule = template.offset_ms.is_some();
             self.schedule_offset_ms = template.offset_ms.unwrap_or(0);
@@ -1564,8 +2219,8 @@ impl Desktop {
         }
         if let Some(id) = edit_active {
             if let Some(job) = self.scheduler.jobs.iter().find(|job| job.id == id) {
-                self.expression = expression::to_lossless_expression(&job.packet);
-                self.direction = job.direction;
+                self.schedule_draft.expression = expression::to_lossless_expression(&job.packet);
+                self.schedule_draft.direction = job.direction;
                 self.interval_ms = job.interval.as_millis() as u64;
                 self.align_schedule = job.alignment_offset_ms.is_some();
                 self.schedule_offset_ms = job.alignment_offset_ms.unwrap_or(0);
@@ -1585,6 +2240,58 @@ impl Desktop {
 
     fn tools(&mut self, ui: &mut egui::Ui) {
         ui.heading("Packet tools");
+        ui.horizontal(|ui| {
+            ui.label(self.i18n.text("tab.tools.type.integer"));
+            ui.add(egui::TextEdit::singleline(&mut self.tool_int).desired_width(110.0));
+            if ui
+                .button(self.i18n.text("tab.tools.button.encode"))
+                .clicked()
+            {
+                match packet_tools::encode_i32(&self.tool_int) {
+                    Ok(value) => self.tool_int_encoded = value,
+                    Err(error) => self.status = error.to_string(),
+                }
+            }
+            if ui
+                .button(self.i18n.text("tab.tools.button.decode"))
+                .clicked()
+            {
+                match packet_tools::decode_i32(&self.tool_int_encoded) {
+                    Ok(value) => self.tool_int = value.to_string(),
+                    Err(error) => self.status = error.to_string(),
+                }
+            }
+            ui.add(egui::TextEdit::singleline(&mut self.tool_int_encoded).desired_width(240.0));
+        });
+        ui.horizontal(|ui| {
+            ui.label(self.i18n.text("tab.tools.type.ushort"));
+            ui.add(egui::TextEdit::singleline(&mut self.tool_ushort).desired_width(110.0));
+            if ui
+                .button(self.i18n.text("tab.tools.button.encode"))
+                .clicked()
+            {
+                match packet_tools::encode_u16(&self.tool_ushort) {
+                    Ok(value) => self.tool_ushort_encoded = value,
+                    Err(error) => self.status = error.to_string(),
+                }
+            }
+            if ui
+                .button(self.i18n.text("tab.tools.button.decode"))
+                .clicked()
+            {
+                match packet_tools::decode_u16(&self.tool_ushort_encoded) {
+                    Ok(value) => self.tool_ushort = value.to_string(),
+                    Err(error) => self.status = error.to_string(),
+                }
+            }
+            ui.add(egui::TextEdit::singleline(&mut self.tool_ushort_encoded).desired_width(240.0));
+        });
+        ui.separator();
+        direction_selector(ui, &mut self.direction);
+        ui.label(format!(
+            "Packet format: {:?}",
+            self.packet_format(self.direction)
+        ));
         ui.add(
             egui::TextEdit::multiline(&mut self.tool_input)
                 .desired_rows(5)
@@ -1593,15 +2300,50 @@ impl Desktop {
         );
         ui.horizontal(|ui| {
             if ui.button("Expression → wire hex").clicked() {
-                self.tool_output = expression::parse(&self.tool_input)
-                    .map(|p| expression::hex(p.bytes()))
-                    .unwrap_or_else(|e| e.to_string());
+                self.tool_output = packet_tools::expression_to_hex(
+                    &self.tool_input,
+                    self.packet_format(self.direction),
+                    self.direction,
+                    &self.packet_info,
+                )
+                .unwrap_or_else(|e| e.to_string());
             }
             if ui.button("Wire hex → lossless expression").clicked() {
-                self.tool_output = expression::parse_hex(&self.tool_input)
-                    .and_then(gearth_rust::packet::Packet::from_bytes)
-                    .map(|p| expression::to_lossless_expression(&p))
-                    .unwrap_or_else(|e| e.to_string());
+                self.tool_output = packet_tools::hex_to_expression(
+                    &self.tool_input,
+                    self.packet_format(self.direction),
+                )
+                .unwrap_or_else(|e| e.to_string());
+            }
+        });
+        ui.horizontal(|ui| {
+            if ui.button("Expression -> G-Earth packet").clicked() {
+                self.tool_output = packet_tools::expression_to_wire(
+                    &self.tool_input,
+                    self.packet_format(self.direction),
+                    self.direction,
+                    &self.packet_info,
+                )
+                .unwrap_or_else(|error| error.to_string());
+            }
+            if ui.button("G-Earth packet -> expression").clicked() {
+                match packet_tools::wire_to_expression(
+                    &self.tool_input,
+                    self.packet_format(self.direction),
+                    self.direction,
+                    &self.packet_info,
+                    self.nitro && self.unity,
+                ) {
+                    Ok((output, structured)) => {
+                        self.tool_output = output;
+                        self.status = if structured {
+                            "Packet converted to a verified expression".into()
+                        } else {
+                            "Structure unavailable; kept the original packet bytes".into()
+                        };
+                    }
+                    Err(error) => self.status = error.to_string(),
+                }
             }
         });
         ui.add(
@@ -1610,6 +2352,12 @@ impl Desktop {
                 .desired_width(f32::INFINITY)
                 .font(egui::TextStyle::Monospace),
         );
+        if ui.button("Copy output").clicked() {
+            ui.ctx().copy_text(self.tool_output.clone());
+        }
+        if ui.button("Use output as input").clicked() {
+            self.tool_input.clone_from(&self.tool_output);
+        }
         ui.separator();
         ui.label("Notepad");
         ui.add(
@@ -1725,9 +2473,21 @@ impl eframe::App for Desktop {
         egui::CentralPanel::default().show(ctx, |ui| match self.tab {
             Tab::Connection => self.connection(ui),
             Tab::Logger => self.logger(ui),
-            Tab::Injection => self.injection(ui),
-            Tab::Scheduler => self.schedule(ui),
-            Tab::Tools => self.tools(ui),
+            Tab::Injection => {
+                egui::ScrollArea::vertical()
+                    .id_salt("injection_panel")
+                    .show(ui, |ui| self.injection(ui));
+            }
+            Tab::Scheduler => {
+                egui::ScrollArea::vertical()
+                    .id_salt("scheduler_panel")
+                    .show(ui, |ui| self.schedule(ui));
+            }
+            Tab::Tools => {
+                egui::ScrollArea::vertical()
+                    .id_salt("tools_panel")
+                    .show(ui, |ui| self.tools(ui));
+            }
             Tab::Extensions => self.extensions(ui),
             Tab::Info => {
                 ui.heading("G-Earth Rust");
@@ -1754,7 +2514,13 @@ impl eframe::App for Desktop {
             || self.python_console.is_pending()
             || self.scheduler_hotkeys.is_some()
         {
-            ctx.request_repaint_after(Duration::from_millis(50));
+            let mut delay = Duration::from_millis(50);
+            if self.relay.as_ref().is_some_and(Connection::connected) {
+                if let Some(next) = self.scheduler.next_wake_in(Instant::now()) {
+                    delay = delay.min(next);
+                }
+            }
+            ctx.request_repaint_after(delay);
         }
     }
 }
@@ -1795,7 +2561,38 @@ impl Desktop {
         }
     }
     fn apply_settings(&mut self) {
+        self.editing_saved_rule = None;
         self.python_console.restore_settings(&self.settings);
+        self.injection_history =
+            InjectionHistory::from_json(self.settings.get("injection_history"));
+        self.logger_representation =
+            PacketRepresentation::from_setting(self.settings.get("logger_representation"));
+        self.logger_timestamp = self
+            .settings
+            .booleans
+            .get("logger_timestamp")
+            .copied()
+            .unwrap_or(false);
+        self.logger_autoscroll = self
+            .settings
+            .booleans
+            .get("logger_autoscroll")
+            .copied()
+            .unwrap_or(true);
+        self.logger_clear_on_connect = self
+            .settings
+            .booleans
+            .get("logger_clear_on_connect")
+            .copied()
+            .unwrap_or(false);
+        self.logger_clear_on_disconnect = self
+            .settings
+            .booleans
+            .get("logger_clear_on_disconnect")
+            .copied()
+            .unwrap_or(false);
+        self.logger_antispam = AntiSpam::from_setting(self.settings.get("logger_antispam"));
+        self.logger_filter.set_mode(self.logger_antispam);
         self.packet_limit = self
             .settings
             .values
@@ -1821,6 +2618,18 @@ impl Desktop {
             .get("logger_split")
             .copied()
             .unwrap_or(true);
+        self.logger_names = self
+            .settings
+            .booleans
+            .get("logger_names")
+            .copied()
+            .unwrap_or(true);
+        self.logger_hashes = self
+            .settings
+            .booleans
+            .get("logger_hashes")
+            .copied()
+            .unwrap_or(false);
         for (key, target) in [
             ("listen", &mut self.listen),
             ("remote", &mut self.remote),
@@ -1888,6 +2697,16 @@ impl Desktop {
         self.python_console.save_settings(&mut self.settings);
         self.settings
             .values
+            .insert("injection_history".into(), self.injection_history.to_json());
+        self.settings.values.insert(
+            "logger_representation".into(),
+            self.logger_representation.name().into(),
+        );
+        self.settings
+            .values
+            .insert("logger_antispam".into(), self.logger_antispam.name().into());
+        self.settings
+            .values
             .insert("logger_packet_limit".into(), self.packet_limit.to_string());
         for (key, value) in [
             ("listen", &self.listen),
@@ -1913,6 +2732,18 @@ impl Desktop {
             ("logger_additional".into(), self.logger_additional),
             ("logger_structure".into(), self.logger_structure),
             ("logger_split".into(), self.logger_split),
+            ("logger_names".into(), self.logger_names),
+            ("logger_hashes".into(), self.logger_hashes),
+            ("logger_timestamp".into(), self.logger_timestamp),
+            ("logger_autoscroll".into(), self.logger_autoscroll),
+            (
+                "logger_clear_on_connect".into(),
+                self.logger_clear_on_connect,
+            ),
+            (
+                "logger_clear_on_disconnect".into(),
+                self.logger_clear_on_disconnect,
+            ),
         ]);
         match self.settings.save(&self.settings_path) {
             Ok(()) => {
@@ -1959,6 +2790,7 @@ impl Desktop {
             self.packet_info = PacketInfoManager::default();
         }
         invalidate_log_expressions(&mut self.logs);
+        self.logger_search_cache = None;
         Ok(())
     }
     fn relay_options(&mut self) -> std::io::Result<RelayOptions> {
@@ -2119,9 +2951,78 @@ impl Drop for Desktop {
 }
 
 #[cfg(test)]
+mod rule_editor_tests {
+    use super::combine_rules;
+    use gearth_rust::{
+        packet::{Direction, Message, Packet, PacketFormat},
+        packet_info::PacketInfoManager,
+        rules::{Action, Rule, Rules},
+    };
+
+    fn message(header: u16) -> Message {
+        Message {
+            packet: Packet::new(header),
+            direction: Direction::ToServer,
+            index: 0,
+            blocked: false,
+        }
+    }
+
+    #[test]
+    fn invalid_or_disabled_editor_does_not_retain_previous_rule_or_discard_saved_rules() {
+        let info = PacketInfoManager::default();
+        let saved = || {
+            vec![Rule {
+                enabled: true,
+                direction: Direction::ToServer,
+                header: 10,
+                action: Action::Block,
+            }]
+        };
+        let draft = |enabled, text| {
+            Rules::editor_rule(
+                enabled,
+                Direction::ToServer,
+                20,
+                text,
+                PacketFormat::EvaWire,
+                &info,
+            )
+        };
+        let (initial, error) = combine_rules(saved(), draft(true, "{h:21}"));
+        assert!(error.is_none());
+        let mut before = message(20);
+        initial.apply(&mut before);
+        assert_eq!(before.packet.header(), 21);
+
+        for (enabled, expect_error) in [(true, true), (false, false)] {
+            let (rules, error) = combine_rules(saved(), draft(enabled, "{h:bad}"));
+            assert_eq!(error.is_some(), expect_error);
+            let mut stale = message(20);
+            rules.apply(&mut stale);
+            assert_eq!(stale.packet.header(), 20);
+            assert!(!stale.blocked);
+            let mut still_saved = message(10);
+            rules.apply(&mut still_saved);
+            assert!(still_saved.blocked);
+        }
+        let (block, error) = combine_rules(vec![], draft(true, "  "));
+        assert!(error.is_none());
+        let mut blocked = message(20);
+        block.apply(&mut blocked);
+        assert!(blocked.blocked);
+    }
+}
+
+#[cfg(test)]
 mod logger_prediction_tests {
-    use super::{bounded_log_prediction, invalidate_log_expressions, LogRow, LOG_PREDICTION_LIMIT};
+    use super::{
+        bounded_log_prediction, clear_log_contents, invalidate_log_expressions,
+        log_packet_metadata, log_row_matches, matching_packet_metadata, LogRow,
+        LOG_PREDICTION_LIMIT,
+    };
     use gearth_rust::packet::{Direction, Message, Packet};
+    use gearth_rust::packet_info::{PacketInfo, PacketInfoManager};
     use std::{collections::VecDeque, sync::OnceLock};
 
     #[test]
@@ -2137,6 +3038,10 @@ mod logger_prediction_tests {
     fn packet_metadata_refresh_invalidates_cached_expressions() {
         let cached = OnceLock::new();
         cached.set(("old expression".to_owned(), true)).unwrap();
+        let metadata = OnceLock::new();
+        metadata
+            .set(("old name".into(), "old hash".into()))
+            .unwrap();
         let mut rows = VecDeque::from([LogRow {
             message: Message {
                 packet: Packet::new(1),
@@ -2144,6 +3049,7 @@ mod logger_prediction_tests {
                 index: 1,
                 blocked: false,
             },
+            timestamp_ms: None,
             expression: String::new(),
             search: String::new(),
             bytes: 0,
@@ -2151,8 +3057,98 @@ mod logger_prediction_tests {
             unity: false,
             predicted_structure: OnceLock::new(),
             packet_expression: cached,
+            packet_metadata: metadata,
         }]);
         invalidate_log_expressions(&mut rows);
         assert!(rows[0].packet_expression.get().is_none());
+        assert!(rows[0].packet_metadata.get().is_none());
+        let mut accounted_bytes = 500;
+        let mut filtered = 7;
+        clear_log_contents(&mut rows, &mut accounted_bytes, &mut filtered);
+        assert!(rows.is_empty());
+        assert_eq!((accounted_bytes, filtered), (0, 0));
+    }
+
+    #[test]
+    fn packet_metadata_respects_direction_and_removes_duplicates() {
+        let entry = |direction, name: &str, hash: &str| PacketInfo {
+            header: 42,
+            direction,
+            name: Some(name.into()),
+            hash: Some(hash.into()),
+            structure: None,
+            source: "fixture".into(),
+        };
+        let info = PacketInfoManager::new(
+            "fixture",
+            vec![
+                entry(Direction::ToClient, "Room", "abc"),
+                entry(Direction::ToClient, "Room", "abc"),
+                entry(Direction::ToClient, "Other", "def"),
+                entry(Direction::ToServer, "Outgoing", "xyz"),
+            ],
+        );
+        assert_eq!(
+            log_packet_metadata(&info, Direction::ToClient, 42),
+            ("Room, Other".into(), "abc, def".into())
+        );
+        assert_eq!(
+            log_packet_metadata(&info, Direction::ToServer, 42),
+            ("Outgoing".into(), "xyz".into())
+        );
+        assert_eq!(
+            log_packet_metadata(&info, Direction::ToClient, 43),
+            (String::new(), String::new())
+        );
+    }
+
+    #[test]
+    fn logger_search_matches_names_and_hashes_without_crossing_directions() {
+        let info = PacketInfoManager::new(
+            "v",
+            vec![PacketInfo {
+                header: 42,
+                direction: Direction::ToClient,
+                name: Some("RoomInfo".into()),
+                hash: Some("AB12".into()),
+                structure: None,
+                source: "fixture".into(),
+            }],
+        );
+        let incoming = LogRow {
+            message: Message {
+                packet: Packet::new(42),
+                direction: Direction::ToClient,
+                index: 1,
+                blocked: false,
+            },
+            timestamp_ms: None,
+            expression: "{h:42}".into(),
+            search: "42 {h:42}".into(),
+            bytes: 0,
+            skipped: false,
+            unity: false,
+            predicted_structure: OnceLock::new(),
+            packet_expression: OnceLock::new(),
+            packet_metadata: OnceLock::new(),
+        };
+        let matches = matching_packet_metadata(&info, "roominfo");
+        assert!(log_row_matches(&incoming, "roominfo", &matches, true, true));
+        assert!(!log_row_matches(
+            &incoming, "roominfo", &matches, true, false
+        ));
+        assert!(log_row_matches(
+            &incoming,
+            "ab12",
+            &matching_packet_metadata(&info, "ab12"),
+            true,
+            true
+        ));
+        let mut outgoing = incoming;
+        outgoing.message.direction = Direction::ToServer;
+        assert!(!log_row_matches(
+            &outgoing, "roominfo", &matches, true, true
+        ));
+        assert!(log_row_matches(&outgoing, "42", &matches, true, true));
     }
 }

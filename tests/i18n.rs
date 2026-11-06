@@ -1,4 +1,32 @@
 use gearth_rust::i18n::{parse_properties, I18n, LANGUAGES};
+
+#[test]
+fn logger_choices_resolve_in_every_supported_language() {
+    use gearth_rust::{logger_display::PacketRepresentation, logger_filter::AntiSpam};
+    for (language, _) in LANGUAGES {
+        let i18n = I18n::new(language);
+        for mode in [
+            AntiSpam::None,
+            AntiSpam::Low,
+            AntiSpam::Medium,
+            AntiSpam::High,
+            AntiSpam::Ultra,
+        ] {
+            assert_ne!(i18n.text(mode.translation_key()), mode.translation_key());
+        }
+        for mode in [
+            PacketRepresentation::Expression,
+            PacketRepresentation::Legacy,
+            PacketRepresentation::RawHex,
+        ] {
+            assert_ne!(i18n.text(mode.translation_key()), mode.translation_key());
+        }
+    }
+    assert_eq!(
+        I18n::new("fr").text(AntiSpam::Medium.translation_key()),
+        "Moyen"
+    );
+}
 #[test]
 fn decodes_escaped_unicode_surrogates_and_continuations() {
     let values =

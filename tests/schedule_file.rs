@@ -1,4 +1,122 @@
-use gearth_rust::{packet::Direction, schedule_file};
+use gearth_rust::{
+    expression,
+    packet::{Direction, Packet, PacketFormat},
+    schedule_file,
+    scheduler::Scheduler,
+};
+use std::time::{Duration, Instant, UNIX_EPOCH};
+
+fn active_fixture() -> Scheduler {
+    let now = Instant::now();
+    let wall = UNIX_EPOCH + Duration::from_secs(100);
+    let mut scheduler = Scheduler::default();
+    for (format, direction) in [
+        (PacketFormat::EvaWire, Direction::ToServer),
+        (PacketFormat::WedgieIncoming, Direction::ToClient),
+        (PacketFormat::WedgieOutgoing, Direction::ToServer),
+    ] {
+        let mut packet = Packet::new_with_format(format, 42).unwrap();
+        packet.append(&(0..=255).collect::<Vec<u8>>()).unwrap();
+        scheduler
+            .add_aligned(packet, direction, 1000, 125, None, (now, wall))
+            .unwrap();
+    }
+    scheduler.jobs[1].paused = true;
+    scheduler
+}
+
+#[test]
+fn active_export_roundtrips_packets_timing_and_pause_without_templates() {
+    let scheduler = active_fixture();
+    let exported = schedule_file::format_active(&scheduler.jobs).unwrap();
+    let templates = schedule_file::parse(&exported).unwrap();
+    for (job, template) in scheduler.jobs.iter().zip(&templates) {
+        let packet =
+            expression::parse_with_format(&template.expression, job.packet.format(), None).unwrap();
+        assert_eq!(packet.bytes(), job.packet.bytes());
+        assert_eq!(template.direction, job.direction);
+        assert_eq!(template.paused, job.paused);
+        assert_eq!(template.offset_ms, Some(125));
+        assert_eq!(template.interval_ms, 1000);
+        assert_eq!(template.repeat, 0);
+    }
+}
+
+#[test]
+fn active_export_refuses_timing_that_original_format_cannot_represent() {
+    let mut scheduler = active_fixture();
+    scheduler.jobs[0].remaining = Some(1);
+    assert!(schedule_file::format_active(&scheduler.jobs).is_err());
+    scheduler.jobs[0].remaining = None;
+    scheduler.jobs[0].alignment_offset_ms = None;
+    assert!(schedule_file::format_active(&scheduler.jobs).is_err());
+    scheduler.jobs[0].alignment_offset_ms = Some(0);
+    scheduler.jobs[0].interval = Duration::from_micros(1500);
+    assert!(schedule_file::format_active(&scheduler.jobs).is_err());
+}
+
+#[test]
+fn schedule_file_atomic_export_replaces_complete_file() {
+    let mut nonce = [0u8; 16];
+    getrandom::fill(&mut nonce).unwrap();
+    let name = nonce.iter().map(|b| format!("{b:02x}")).collect::<String>();
+    let directory = std::env::temp_dir().join(format!("gearth-schedule-test-{name}"));
+    std::fs::create_dir(&directory).unwrap();
+    let path = directory.join("example.sched");
+    std::fs::write(&path, "previous").unwrap();
+    schedule_file::write_atomic(&path, "new content").unwrap();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "new content");
+    assert!(schedule_file::write_atomic(
+        &path,
+        &"x".repeat(schedule_file::MAX_SCHEDULE_FILE_BYTES + 1)
+    )
+    .is_err());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "new content");
+    assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 1);
+    std::fs::remove_file(path).unwrap();
+    std::fs::remove_dir(directory).unwrap();
+}
+
+#[test]
+#[ignore = "requires the original Java API and compiled JavaSchedulePacketOracle"]
+fn active_export_packets_are_understood_by_original_java() {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let scheduler = active_fixture();
+    let exported = schedule_file::format_active(&scheduler.jobs).unwrap();
+    let templates = schedule_file::parse(&exported).unwrap();
+    let mut child = Command::new("java")
+        .args([
+            "-cp",
+            &std::env::var("GEARTH_SCHEDULE_PACKET_CLASSPATH").unwrap(),
+            "JavaSchedulePacketOracle",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    {
+        let mut stdin = child.stdin.take().unwrap();
+        for template in templates {
+            writeln!(stdin, "{}", template.expression).unwrap();
+        }
+    }
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+    let actual = String::from_utf8(output.stdout).unwrap();
+    let expected = scheduler
+        .jobs
+        .iter()
+        .map(|job| {
+            job.packet
+                .bytes()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(actual.lines().collect::<Vec<_>>(), expected);
+}
 
 #[test]
 fn imports_original_schedule_rows_and_preserves_pause_and_offsets() {

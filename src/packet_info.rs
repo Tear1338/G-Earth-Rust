@@ -16,6 +16,7 @@ pub struct PacketInfoManager {
     pub version: String,
     entries: Vec<PacketInfo>,
     names: HashMap<(Direction, String), usize>,
+    headers: HashMap<(Direction, u16), Vec<usize>>,
 }
 impl PacketInfoManager {
     /// Read the upstream Sulek response or G-Earth's Unity messages.json schema.
@@ -180,7 +181,9 @@ impl PacketInfoManager {
     }
     pub fn new(version: impl Into<String>, entries: Vec<PacketInfo>) -> Self {
         let mut names = HashMap::new();
+        let mut headers: HashMap<(Direction, u16), Vec<usize>> = HashMap::new();
         for (i, e) in entries.iter().enumerate() {
+            headers.entry((e.direction, e.header)).or_default().push(i);
             for name in [&e.name, &e.hash].into_iter().flatten() {
                 names.entry((e.direction, name.clone())).or_insert(i);
             }
@@ -189,6 +192,7 @@ impl PacketInfoManager {
             version: version.into(),
             entries,
             names,
+            headers,
         }
     }
     pub fn entries(&self) -> &[PacketInfo] {
@@ -204,9 +208,11 @@ impl PacketInfoManager {
         direction: Direction,
         header: u16,
     ) -> impl Iterator<Item = &PacketInfo> {
-        self.entries
-            .iter()
-            .filter(move |e| e.direction == direction && e.header == header)
+        self.headers
+            .get(&(direction, header))
+            .into_iter()
+            .flatten()
+            .map(|index| &self.entries[*index])
     }
     pub fn append_to(&self, p: &mut Packet) -> Result<()> {
         p.put_i32(
