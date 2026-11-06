@@ -160,21 +160,41 @@ impl Relay {
                             }
                         }
                         let server = if let Some(socks) = &options.socks {
-                            socks.connect(&config.remote).ok()
+                            socks
+                                .connect(&config.remote)
+                                .map_err(|error| format!("SOCKS connection failed: {error}"))
                         } else if let Some(upstream) = &mut raw_upstream {
-                            upstream.pop_front()
+                            upstream.pop_front().ok_or_else(|| {
+                                "preconnected Raw-IP server sockets exhausted".to_string()
+                            })
                         } else {
-                            remote.iter().find_map(|addr| {
+                            let mut last_error = None;
+                            let mut connected = None;
+                            for addr in &remote {
                                 if worker_stop.load(Ordering::Acquire) {
-                                    return None;
+                                    break;
                                 }
-                                TcpStream::connect_timeout(addr, Duration::from_secs(2)).ok()
+                                match TcpStream::connect_timeout(addr, Duration::from_secs(2)) {
+                                    Ok(stream) => {
+                                        connected = Some(stream);
+                                        break;
+                                    }
+                                    Err(error) => last_error = Some(error),
+                                }
+                            }
+                            connected.ok_or_else(|| match last_error {
+                                Some(error) => format!("remote connection failed: {error}"),
+                                None => "remote connection cancelled".to_string(),
                             })
                         };
-                        let Some(server) = server else {
-                            let _ =
-                                events.try_send(Event::Error("remote connection failed".into()));
-                            continue;
+                        let server = match server {
+                            Ok(server) => server,
+                            Err(error) => {
+                                if !worker_stop.load(Ordering::Acquire) {
+                                    let _ = events.try_send(Event::Error(error));
+                                }
+                                continue;
+                            }
                         };
                         let (injections, commands) = mpsc::sync_channel(256);
                         let closed = Arc::new(AtomicBool::new(false));

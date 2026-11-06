@@ -21,6 +21,63 @@ fn wait_for(events: &std::sync::mpsc::Receiver<Event>, predicate: impl Fn(&Event
     }
     panic!("timed out waiting for relay event");
 }
+
+#[test]
+fn socks_authentication_failure_is_reported_and_reconnect_succeeds() {
+    use gearth_rust::{relay::RelayOptions, socks::SocksConfig};
+    let proxy = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = proxy.local_addr().unwrap();
+    let worker = thread::spawn(move || {
+        for accepted in [false, true] {
+            let (mut stream, _) = proxy.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let mut greeting = [0; 3];
+            stream.read_exact(&mut greeting).unwrap();
+            assert_eq!(greeting, [5, 1, 2]);
+            stream.write_all(&[5, 2]).unwrap();
+            let mut auth = [0; 13];
+            stream.read_exact(&mut auth).unwrap();
+            assert_eq!(&auth, b"\x01\x04user\x06secret");
+            stream.write_all(&[1, u8::from(!accepted)]).unwrap();
+            if accepted {
+                let mut request = [0; 5];
+                stream.read_exact(&mut request).unwrap();
+                assert_eq!(&request[..4], &[5, 1, 0, 3]);
+                let mut tail = vec![0; request[4] as usize + 2];
+                stream.read_exact(&mut tail).unwrap();
+                stream.write_all(&[5, 0, 0, 1, 127, 0, 0, 1, 0, 1]).unwrap();
+                assert_eq!(read_frame(&mut stream).unwrap().header(), 99);
+            }
+        }
+    });
+    let (mut relay, events) = Relay::start_with_options(
+        Config {
+            listen: "127.0.0.1:0".parse().unwrap(),
+            remote: "example.invalid:30000".into(),
+        },
+        RelayOptions {
+            socks: Some(SocksConfig {
+                proxy: address.to_string(),
+                credentials: Some(("user".into(), "secret".into())),
+            }),
+            ..RelayOptions::default()
+        },
+    )
+    .unwrap();
+    let first = TcpStream::connect(relay.address).unwrap();
+    wait_for(
+        &events,
+        |event| matches!(event, Event::Error(message) if message.contains("SOCKS credentials rejected") && !message.contains("secret")),
+    );
+    drop(first);
+    let mut second = TcpStream::connect(relay.address).unwrap();
+    wait_for(&events, |event| matches!(event, Event::Connected(_)));
+    write_frame(&mut second, &Packet::new(99)).unwrap();
+    worker.join().unwrap();
+    relay.stop();
+}
 #[test]
 fn duplex_injection_rules_and_stop() {
     let remote = TcpListener::bind("127.0.0.1:0").unwrap();
