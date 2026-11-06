@@ -179,7 +179,8 @@ impl Packet {
         }
     }
     pub fn read_u16(&mut self) -> Result<u16> {
-        match self.format {
+        let start = self.cursor;
+        let result = (|| match self.format {
             PacketFormat::EvaWire => {
                 Ok(u16::from_be_bytes(self.read_bytes(2)?.try_into().unwrap()))
             }
@@ -189,7 +190,11 @@ impl Packet {
             PacketFormat::WedgieOutgoing => {
                 Ok(crate::encoding::decode_b64(self.read_bytes(2)?)? as u16)
             }
+        })();
+        if result.is_err() {
+            self.cursor = start;
         }
+        result
     }
     pub fn read_i32(&mut self) -> Result<i32> {
         if self.format == PacketFormat::EvaWire {

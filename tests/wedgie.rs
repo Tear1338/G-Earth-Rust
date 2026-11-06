@@ -25,6 +25,26 @@ fn both_wedgie_formats_read_write_and_serialize() {
         assert!(p.put_i64(1).is_err());
     }
 }
+
+#[test]
+fn invalid_unsigned_fields_leave_cursor_at_the_start() {
+    for value in [-1, 65_536] {
+        let mut packet = Packet::new_with_format(PacketFormat::WedgieIncoming, 1).unwrap();
+        packet.put_i32(value).unwrap();
+        let start = packet.cursor();
+        assert!(packet.read_u16().is_err());
+        assert_eq!(packet.cursor(), start);
+        assert_eq!(packet.read_i32().unwrap(), value);
+    }
+    for bytes in [&[0x20, 0x40][..], &[0x40][..]] {
+        let mut packet = Packet::new_with_format(PacketFormat::WedgieOutgoing, 1).unwrap();
+        packet.append(bytes).unwrap();
+        let start = packet.cursor();
+        assert!(packet.read_u16().is_err());
+        assert_eq!(packet.cursor(), start);
+        assert_eq!(packet.read_bytes(bytes.len()).unwrap(), bytes);
+    }
+}
 #[test]
 fn extension_codec_carries_wedgie_format_after_inner_data() {
     let p = Packet::new_with_format(PacketFormat::WedgieOutgoing, 123).unwrap();
