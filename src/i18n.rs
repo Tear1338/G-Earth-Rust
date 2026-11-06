@@ -44,15 +44,23 @@ impl I18n {
 pub fn parse_properties(source: &str) -> HashMap<String, String> {
     let mut values = HashMap::new();
     let mut combined = String::new();
-    for raw in source.lines() {
-        let raw = raw.trim_start();
+    let source = source.replace("\r\n", "\n").replace('\r', "\n");
+    let mut continuing = false;
+    // The final empty line also flushes a continuation at end of file.
+    for raw in source.split('\n').chain(std::iter::once("")) {
+        let raw = raw.trim_start_matches([' ', '\t', '\x0c']);
+        if !continuing && (raw.is_empty() || raw.starts_with(['#', '!'])) {
+            continue;
+        }
         combined.push_str(raw);
         if combined.chars().rev().take_while(|c| *c == '\\').count() % 2 == 1 {
             combined.pop();
+            continuing = true;
             continue;
         }
+        continuing = false;
         let line = std::mem::take(&mut combined);
-        if line.is_empty() || line.starts_with(['#', '!']) {
+        if line.is_empty() {
             continue;
         }
         let mut escaped = false;
@@ -66,16 +74,16 @@ pub fn parse_properties(source: &str) -> HashMap<String, String> {
                 escaped = true;
                 continue;
             }
-            if c == '=' || c == ':' || c.is_whitespace() {
+            if c == '=' || c == ':' || matches!(c, ' ' | '\t' | '\x0c') {
                 separator = Some(i);
                 break;
             }
         }
         let (key, value) = match separator {
             Some(i) => {
-                let mut rest = line[i..].trim_start();
+                let mut rest = line[i..].trim_start_matches([' ', '\t', '\x0c']);
                 if rest.starts_with(['=', ':']) {
-                    rest = rest[1..].trim_start();
+                    rest = rest[1..].trim_start_matches([' ', '\t', '\x0c']);
                 }
                 (&line[..i], rest)
             }
