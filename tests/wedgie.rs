@@ -45,6 +45,23 @@ fn invalid_unsigned_fields_leave_cursor_at_the_start() {
         assert_eq!(packet.read_bytes(bytes.len()).unwrap(), bytes);
     }
 }
+
+#[test]
+fn header_edits_reject_out_of_range_shockwave_values_without_mutation() {
+    for format in [PacketFormat::WedgieIncoming, PacketFormat::WedgieOutgoing] {
+        let mut packet = Packet::new_with_format(format, 5).unwrap();
+        let before = packet.clone();
+        assert!(packet.set_header(4096).is_err());
+        assert!(packet.set_header(u16::MAX).is_err());
+        assert_eq!(packet, before);
+        packet.set_header(4095).unwrap();
+        assert_eq!(packet.header(), 4095);
+        assert!(packet.edited);
+    }
+    let mut packet = Packet::new(0);
+    packet.set_header(u16::MAX).unwrap();
+    assert_eq!(packet.header(), u16::MAX);
+}
 #[test]
 fn extension_codec_carries_wedgie_format_after_inner_data() {
     let p = Packet::new_with_format(PacketFormat::WedgieOutgoing, 123).unwrap();

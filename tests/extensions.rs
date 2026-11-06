@@ -107,7 +107,7 @@ fn requires_approval_and_supports_flags_click_injection_and_interception() {
         let mut p = read_frame(&mut stream).unwrap();
         assert_eq!(p.header(), 3);
         let mut message = Message::parse(&p.read_long_string().unwrap()).unwrap();
-        message.packet.set_header(88);
+        message.packet.set_header(88).unwrap();
         message.blocked = true;
         write_frame(&mut stream, &extension::manipulated(&message).unwrap()).unwrap();
         stream

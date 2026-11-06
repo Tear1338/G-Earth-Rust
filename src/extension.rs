@@ -151,7 +151,7 @@ pub fn intercept(message: &Message) -> Result<Packet> {
 }
 pub fn manipulated(message: &Message) -> Result<Packet> {
     let mut p = intercept(message)?;
-    p.set_header(2);
+    p.set_header(2)?;
     Ok(p)
 }
 pub fn send(direction: Direction, packet: &Packet) -> Result<Packet> {

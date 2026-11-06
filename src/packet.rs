@@ -147,14 +147,20 @@ impl Packet {
         self.cursor = cursor;
         Ok(())
     }
-    pub fn set_header(&mut self, header: u16) {
+    /// Change the header without truncating Shockwave's 12-bit identifier.
+    /// An out-of-range identifier leaves the packet unchanged.
+    pub fn set_header(&mut self, header: u16) -> Result<()> {
         if self.format == PacketFormat::EvaWire {
             self.bytes[4..6].copy_from_slice(&header.to_be_bytes());
         } else {
+            if header >= 4096 {
+                return Err(error("WEDGIE header must be between 0 and 4095"));
+            }
             self.bytes[0] = 64 + ((header >> 6) & 63) as u8;
             self.bytes[1] = 64 + (header & 63) as u8;
         }
         self.edited = true;
+        Ok(())
     }
     pub fn read_bytes(&mut self, n: usize) -> Result<&[u8]> {
         let end = self
