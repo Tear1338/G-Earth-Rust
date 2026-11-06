@@ -1711,6 +1711,26 @@ impl Desktop {
                     );
                     let response = row_output.inner;
                     response.context_menu(|ui| {
+                        if ui
+                            .add_enabled(
+                                !row.skipped,
+                                egui::Button::new(self.i18n.text("rust.logger.copy_packet")),
+                            )
+                            .clicked()
+                        {
+                            ui.ctx().copy_text(row.expression.clone());
+                            ui.close_menu();
+                        }
+                        if ui
+                            .add_enabled(
+                                !row.skipped,
+                                egui::Button::new(self.i18n.text("rust.logger.copy_hex")),
+                            )
+                            .clicked()
+                        {
+                            ui.ctx().copy_text(expression::hex(m.packet.bytes()));
+                            ui.close_menu();
+                        }
                         if ui.button("Inspect packet bytes").clicked() {
                             inspection = Some(logger_display::hex_dump(m.packet.bytes(), 4096));
                             ui.close_menu();
