@@ -669,7 +669,7 @@ mod tests {
         let _second_client = TcpStream::connect(address).unwrap();
         wait_for(
             &events,
-            |event| matches!(event, Event::Error(error) if error == "remote connection failed"),
+            |event| matches!(event, Event::Error(error) if error == "preconnected Raw-IP server sockets exhausted"),
         );
         assert!(matches!(
             remote.accept(),
