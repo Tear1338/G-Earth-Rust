@@ -74,6 +74,7 @@ enum Tab {
 }
 struct Desktop {
     tab: Tab,
+    always_on_top: bool,
     listen: String,
     remote: String,
     status: String,
@@ -487,6 +488,7 @@ impl Default for Desktop {
         };
         let mut desktop = Self {
             tab: Tab::Connection,
+            always_on_top: false,
             python_console: gpython_ui::PythonUi::default(),
             listen: "127.0.0.1:1234".into(),
             remote: "".into(),
@@ -2799,6 +2801,21 @@ impl eframe::App for Desktop {
                         name.to_owned()
                     };
                     ui.selectable_value(&mut self.tab, tab, label);
+                }
+                if ui
+                    .checkbox(
+                        &mut self.always_on_top,
+                        self.i18n.text("tab.extra.options.alwaysontop"),
+                    )
+                    .changed()
+                {
+                    ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
+                        if self.always_on_top {
+                            egui::WindowLevel::AlwaysOnTop
+                        } else {
+                            egui::WindowLevel::Normal
+                        },
+                    ));
                 }
             });
         });
