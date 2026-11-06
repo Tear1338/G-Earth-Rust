@@ -126,6 +126,51 @@ fn requires_approval_and_supports_flags_click_injection_and_interception() {
 }
 
 #[test]
+fn reconnect_does_not_replay_injections_from_a_previous_session() {
+    let (host, events) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+    host.start_connection(details()).unwrap();
+    let (mut stream, _) = connect(&host, &events);
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 5);
+
+    // The flags response is a protocol barrier: the preceding injection has
+    // been processed and queued before the connection is ended.
+    write_frame(
+        &mut stream,
+        &extension::send(Direction::ToServer, &Packet::new(91)).unwrap(),
+    )
+    .unwrap();
+    write_frame(&mut stream, &Packet::new(3)).unwrap();
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 4);
+    host.end_connection();
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 6);
+
+    // An extension may continue sending while no game session is active.
+    write_frame(
+        &mut stream,
+        &extension::send(Direction::ToServer, &Packet::new(92)).unwrap(),
+    )
+    .unwrap();
+    write_frame(&mut stream, &Packet::new(3)).unwrap();
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 4);
+    host.start_connection(details()).unwrap();
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 5);
+    assert!(host.take_injections().is_empty());
+
+    write_frame(
+        &mut stream,
+        &extension::send(Direction::ToServer, &Packet::new(93)).unwrap(),
+    )
+    .unwrap();
+    write_frame(&mut stream, &Packet::new(3)).unwrap();
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 4);
+    let packets = host.take_injections();
+    assert_eq!(packets.len(), 1);
+    assert_eq!(packets[0].1.header(), 93);
+    drop(stream);
+    host.stop();
+}
+
+#[test]
 fn packet_safety_blocks_unseen_extension_packets_without_disconnecting() {
     use gearth_rust::packet_safety::PacketSafety;
     use std::sync::{Arc, Mutex};

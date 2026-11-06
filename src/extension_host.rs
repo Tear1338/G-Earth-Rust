@@ -245,6 +245,12 @@ impl ExtensionHost {
     pub fn end_connection(&self) {
         if let Ok(mut c) = self.shared.connection.lock() {
             *c = None;
+            // Keep the connection lock until pending injections are discarded:
+            // extension workers use the same lock while they enqueue, so an
+            // old-session packet cannot race this drain into the next session.
+            if let Ok(injections) = self.injections.lock() {
+                while injections.try_recv().is_ok() {}
+            }
         }
         self.broadcast(Packet::new(6));
     }
@@ -689,10 +695,11 @@ fn serve_peer(mut stream: TcpStream, id: u64, shared: &Arc<Shared>) -> io::Resul
                             extension::flags(&shared.flags).map_err(io::Error::other)?,
                         )?,
                         Incoming::Send { direction, packet } => {
-                            let revision = shared
+                            let connection = shared
                                 .connection
                                 .lock()
-                                .map_err(|_| io::Error::other("connection lock poisoned"))?
+                                .map_err(|_| io::Error::other("connection lock poisoned"))?;
+                            let revision = connection
                                 .as_ref()
                                 .map(|connection| connection.version.clone());
                             if let Some(revision) = revision {
@@ -723,6 +730,7 @@ fn serve_peer(mut stream: TcpStream, id: u64, shared: &Arc<Shared>) -> io::Resul
                                         io::Error::other("extension injection queue full")
                                     })?;
                             }
+                            drop(connection);
                         }
                         Incoming::Console(text) => {
                             let _ = shared
