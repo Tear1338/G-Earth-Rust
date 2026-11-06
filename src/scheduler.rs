@@ -9,7 +9,7 @@ pub struct ScheduleDraft {
 impl Default for ScheduleDraft {
     fn default() -> Self {
         Self {
-            expression: "{h:123}{i:42}{s:\"hello\"}".into(),
+            expression: "{in:Chat}{i:-1}{s:\"Frank loves G-Earth\"}{i:0}{i:33}{i:0}{i:0}".into(),
             direction: Direction::ToClient,
         }
     }

@@ -4,6 +4,16 @@ use gearth_rust::{
 use std::time::{Duration, Instant};
 
 #[test]
+fn scheduler_initial_draft_matches_original_java_sample() {
+    let draft = gearth_rust::scheduler::ScheduleDraft::default();
+    assert_eq!(draft.direction, Direction::ToClient);
+    assert_eq!(
+        draft.expression,
+        "{in:Chat}{i:-1}{s:\"Frank loves G-Earth\"}{i:0}{i:33}{i:0}{i:0}"
+    );
+}
+
+#[test]
 fn java_bytebuffer_wire_vector() {
     let p = expression::parse("{h:123}{i:42}{s:\"hello\"}{b:true}").unwrap();
     assert_eq!(
