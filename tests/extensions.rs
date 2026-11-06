@@ -171,6 +171,45 @@ fn reconnect_does_not_replay_injections_from_a_previous_session() {
 }
 
 #[test]
+fn a_full_injection_queue_reports_the_dropped_packet_and_keeps_the_extension_connected() {
+    let (host, events) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+    host.start_connection(details()).unwrap();
+    let (mut stream, id) = connect(&host, &events);
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 5);
+    for header in 0..=256 {
+        write_frame(
+            &mut stream,
+            &extension::send(Direction::ToServer, &Packet::new(header)).unwrap(),
+        )
+        .unwrap();
+    }
+    // This response confirms that all 257 requests were handled in order.
+    write_frame(&mut stream, &Packet::new(3)).unwrap();
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 4);
+    assert!(events.try_iter().any(|event| matches!(event, HostEvent::Console { id: source, text } if source == id && text.contains("Packet 256 not sent") && text.contains("queue full"))));
+    let mut headers = Vec::new();
+    for _ in 0..4 {
+        headers.extend(
+            host.take_injections()
+                .into_iter()
+                .map(|(_, packet)| packet.header()),
+        );
+    }
+    assert_eq!(headers, (0..256).collect::<Vec<_>>());
+    assert!(host.take_injections().is_empty());
+    write_frame(
+        &mut stream,
+        &extension::send(Direction::ToServer, &Packet::new(300)).unwrap(),
+    )
+    .unwrap();
+    write_frame(&mut stream, &Packet::new(3)).unwrap();
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 4);
+    assert_eq!(host.take_injections()[0].1.header(), 300);
+    drop(stream);
+    host.stop();
+}
+
+#[test]
 fn packet_safety_blocks_unseen_extension_packets_without_disconnecting() {
     use gearth_rust::packet_safety::PacketSafety;
     use std::sync::{Arc, Mutex};

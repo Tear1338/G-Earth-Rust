@@ -723,12 +723,21 @@ fn serve_peer(mut stream: TcpStream, id: u64, shared: &Arc<Shared>) -> io::Resul
                                     });
                                     continue;
                                 }
-                                shared
-                                    .injections
-                                    .try_send((direction, packet))
-                                    .map_err(|_| {
-                                        io::Error::other("extension injection queue full")
-                                    })?;
+                                let header = packet.header();
+                                match shared.injections.try_send((direction, packet)) {
+                                    Ok(()) => {}
+                                    Err(mpsc::TrySendError::Full(_)) => {
+                                        let _ = shared.events.try_send(HostEvent::Console {
+                                            id: p.id,
+                                            text: format!("Packet {header} not sent: extension injection queue full"),
+                                        });
+                                    }
+                                    Err(mpsc::TrySendError::Disconnected(_)) => {
+                                        return Err(io::Error::other(
+                                            "extension injection queue closed",
+                                        ));
+                                    }
+                                }
                             }
                             drop(connection);
                         }
