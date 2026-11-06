@@ -93,6 +93,9 @@ struct Desktop {
     logger_hashes: bool,
     logger_message_id: bool,
     logger_representation: PacketRepresentation,
+    logger_extra_legacy: bool,
+    logger_extra_raw_hex: bool,
+    logger_extra_hex_dump: bool,
     logger_timestamp: bool,
     logger_autoscroll: bool,
     logger_clear_on_connect: bool,
@@ -270,12 +273,16 @@ struct LogDisplayOptions {
     hashes: bool,
     message_id: bool,
     representation: PacketRepresentation,
+    extra_legacy: bool,
+    extra_raw_hex: bool,
+    extra_hex_dump: bool,
     timestamp: bool,
     structure: bool,
 }
 
 struct RenderedLogRow {
     header: String,
+    extra_representations: Vec<String>,
     dump: Option<String>,
     structure: Option<String>,
 }
@@ -312,8 +319,11 @@ fn render_log_row(
     if options.message_id {
         metadata.push_str(&format!("[{}] ", packet.header()));
     }
-    let inline_dump = options.representation == PacketRepresentation::HexDump && !row.skipped;
-    let representation = if inline_dump {
+    let inline_dump = (options.representation == PacketRepresentation::HexDump
+        || options.extra_hex_dump)
+        && !row.skipped;
+    let representation = if options.representation == PacketRepresentation::HexDump && !row.skipped
+    {
         std::borrow::Cow::Borrowed("")
     } else if row.skipped || options.representation == PacketRepresentation::Expression {
         std::borrow::Cow::Borrowed(row.expression.as_str())
@@ -352,6 +362,21 @@ fn render_log_row(
         representation
     );
     let dump = inline_dump.then(|| logger_display::hex_dump(packet.bytes(), 128));
+    let mut extra_representations = Vec::new();
+    if !row.skipped {
+        for (enabled, mode) in [
+            (options.extra_legacy, PacketRepresentation::Legacy),
+            (options.extra_raw_hex, PacketRepresentation::RawHex),
+        ] {
+            if enabled && options.representation != mode {
+                extra_representations.push(format!(
+                    "{}: {}",
+                    mode.name(),
+                    logger_display::represent(packet.bytes(), mode, 1024)
+                ));
+            }
+        }
+    }
     let structure = if options.structure && !row.skipped {
         let (expression, known) = row.packet_expression.get_or_init(|| {
             let (expression, known) = gearth_rust::structure_prediction::expression_with_metadata(
@@ -374,6 +399,7 @@ fn render_log_row(
     };
     RenderedLogRow {
         header,
+        extra_representations,
         dump,
         structure,
     }
@@ -389,6 +415,9 @@ fn write_log_capture<'a>(
     for row in rows {
         let rendered = render_log_row(row, info, options);
         writeln!(output, "{}", rendered.header)?;
+        for representation in rendered.extra_representations {
+            writeln!(output, "{representation}")?;
+        }
         if let Some(dump) = rendered.dump {
             writeln!(output, "{dump}")?;
         }
@@ -450,6 +479,9 @@ impl Default for Desktop {
             logger_hashes: false,
             logger_message_id: false,
             logger_representation: PacketRepresentation::Expression,
+            logger_extra_legacy: false,
+            logger_extra_raw_hex: false,
+            logger_extra_hex_dump: false,
             logger_timestamp: false,
             logger_autoscroll: true,
             logger_clear_on_connect: false,
@@ -1428,6 +1460,24 @@ impl Desktop {
                 });
         });
         ui.horizontal_wrapped(|ui| {
+            ui.label("Additional representations:");
+            ui.checkbox(
+                &mut self.logger_extra_legacy,
+                self.i18n
+                    .text(PacketRepresentation::Legacy.translation_key()),
+            );
+            ui.checkbox(
+                &mut self.logger_extra_raw_hex,
+                self.i18n
+                    .text(PacketRepresentation::RawHex.translation_key()),
+            );
+            ui.checkbox(
+                &mut self.logger_extra_hex_dump,
+                self.i18n
+                    .text(PacketRepresentation::HexDump.translation_key()),
+            );
+        });
+        ui.horizontal_wrapped(|ui| {
             ui.checkbox(
                 &mut self.logger_clear_on_connect,
                 format!(
@@ -1467,6 +1517,9 @@ impl Desktop {
             hashes: self.logger_hashes,
             message_id: self.logger_message_id,
             representation: self.logger_representation,
+            extra_legacy: self.logger_extra_legacy,
+            extra_raw_hex: self.logger_extra_raw_hex,
+            extra_hex_dump: self.logger_extra_hex_dump,
             timestamp: self.logger_timestamp,
             structure: self.logger_structure,
         };
@@ -1512,7 +1565,14 @@ impl Desktop {
                 )
             })
             .collect();
-        let row_height = if self.logger_representation == PacketRepresentation::HexDump {
+        let extra_lines = usize::from(
+            self.logger_extra_legacy && self.logger_representation != PacketRepresentation::Legacy,
+        ) + usize::from(
+            self.logger_extra_raw_hex && self.logger_representation != PacketRepresentation::RawHex,
+        );
+        let row_height = if self.logger_representation == PacketRepresentation::HexDump
+            || self.logger_extra_hex_dump
+        {
             // Eight 16-byte lines, an offset/truncation footer, and the header.
             ui.text_style_height(&egui::TextStyle::Monospace) * 13.0
                 + if self.logger_structure { 24.0 } else { 0.0 }
@@ -1520,7 +1580,8 @@ impl Desktop {
             44.0
         } else {
             24.0
-        };
+        } + extra_lines as f32
+            * (ui.text_style_height(&egui::TextStyle::Monospace) + ui.spacing().item_spacing.y);
         let mut inspection = None;
         egui::ScrollArea::vertical()
             .stick_to_bottom(self.logger_autoscroll)
@@ -1549,6 +1610,16 @@ impl Desktop {
                                 .truncate()
                                 .sense(egui::Sense::click()),
                             );
+                            for representation in &rendered.extra_representations {
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(representation)
+                                            .monospace()
+                                            .color(color),
+                                    )
+                                    .truncate(),
+                                );
+                            }
                             if let Some(dump) = &rendered.dump {
                                 ui.add(
                                     egui::Label::new(egui::RichText::new(dump).monospace())
@@ -2665,6 +2736,24 @@ impl Desktop {
             InjectionHistory::from_json(self.settings.get("injection_history"));
         self.logger_representation =
             PacketRepresentation::from_setting(self.settings.get("logger_representation"));
+        self.logger_extra_legacy = self
+            .settings
+            .booleans
+            .get("logger_extra_legacy")
+            .copied()
+            .unwrap_or(false);
+        self.logger_extra_raw_hex = self
+            .settings
+            .booleans
+            .get("logger_extra_raw_hex")
+            .copied()
+            .unwrap_or(false);
+        self.logger_extra_hex_dump = self
+            .settings
+            .booleans
+            .get("logger_extra_hex_dump")
+            .copied()
+            .unwrap_or(false);
         self.logger_timestamp = self
             .settings
             .booleans
@@ -2839,6 +2928,9 @@ impl Desktop {
             ("logger_names".into(), self.logger_names),
             ("logger_hashes".into(), self.logger_hashes),
             ("logger_message_id".into(), self.logger_message_id),
+            ("logger_extra_legacy".into(), self.logger_extra_legacy),
+            ("logger_extra_raw_hex".into(), self.logger_extra_raw_hex),
+            ("logger_extra_hex_dump".into(), self.logger_extra_hex_dump),
             ("logger_timestamp".into(), self.logger_timestamp),
             ("logger_autoscroll".into(), self.logger_autoscroll),
             (
@@ -3166,6 +3258,9 @@ mod logger_prediction_tests {
             hashes: false,
             message_id: true,
             representation: PacketRepresentation::RawHex,
+            extra_legacy: false,
+            extra_raw_hex: false,
+            extra_hex_dump: false,
             timestamp: true,
             structure: false,
         };
@@ -3177,6 +3272,19 @@ mod logger_prediction_tests {
         assert!(text.contains("[Example] [42]"));
         assert!(text.contains("00000002002a"));
         assert!(text.ends_with("--------------------\n"));
+        options.extra_legacy = true;
+        options.extra_raw_hex = true;
+        options.extra_hex_dump = true;
+        let mut output = Vec::new();
+        write_log_capture(&mut output, [&row], &info, options, false).unwrap();
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("Legacy:"));
+        assert!(text.contains("00000002002a"));
+        assert!(text.contains("00000000  00 00 00 02 00 2a"));
+        assert!(!text.contains("Raw hex:")); // Already used by the main representation.
+        options.extra_legacy = false;
+        options.extra_raw_hex = false;
+        options.extra_hex_dump = false;
         options.representation = PacketRepresentation::HexDump;
         let mut output = Vec::new();
         write_log_capture(&mut output, [&row], &info, options, false).unwrap();
