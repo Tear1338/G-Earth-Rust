@@ -2758,6 +2758,9 @@ impl eframe::App for Desktop {
         });
         self.poll();
         egui::TopBottomPanel::top("tabs").show(ctx, |ui| {
+            if self.developer_mode_confirmation {
+                ui.disable();
+            }
             ui.horizontal(|ui| {
                 ui.strong("G-Earth Rust");
                 ui.label("0.1.0 · development");
@@ -2831,42 +2834,47 @@ impl eframe::App for Desktop {
                 ));
             });
         });
-        egui::CentralPanel::default().show(ctx, |ui| match self.tab {
-            Tab::Connection => self.connection(ui),
-            Tab::Logger => self.logger(ui),
-            Tab::Injection => {
-                egui::ScrollArea::vertical()
-                    .id_salt("injection_panel")
-                    .show(ui, |ui| self.injection(ui));
+        egui::CentralPanel::default().show(ctx, |ui| {
+            if self.developer_mode_confirmation {
+                ui.disable();
             }
-            Tab::Scheduler => {
-                egui::ScrollArea::vertical()
-                    .id_salt("scheduler_panel")
-                    .show(ui, |ui| self.schedule(ui));
-            }
-            Tab::Tools => {
-                egui::ScrollArea::vertical()
-                    .id_salt("tools_panel")
-                    .show(ui, |ui| self.tools(ui));
-            }
-            Tab::Extensions => self.extensions(ui),
-            Tab::Info => {
-                ui.heading("G-Earth Rust");
-                ui.label("Rust port in progress, based on G-Realm/G-Earth 1.5.4-beta-29.");
-                ui.hyperlink_to(
-                    "Original project · sirjonasxx & contributors",
-                    "https://github.com/G-Realm/G-Earth",
-                );
-                ui.hyperlink_to(
-                    "Rust project · 1desirable1337",
-                    "https://github.com/Tear1338/G-Earth-Rust",
-                );
-                ui.label(
+            match self.tab {
+                Tab::Connection => self.connection(ui),
+                Tab::Logger => self.logger(ui),
+                Tab::Injection => {
+                    egui::ScrollArea::vertical()
+                        .id_salt("injection_panel")
+                        .show(ui, |ui| self.injection(ui));
+                }
+                Tab::Scheduler => {
+                    egui::ScrollArea::vertical()
+                        .id_salt("scheduler_panel")
+                        .show(ui, |ui| self.schedule(ui));
+                }
+                Tab::Tools => {
+                    egui::ScrollArea::vertical()
+                        .id_salt("tools_panel")
+                        .show(ui, |ui| self.tools(ui));
+                }
+                Tab::Extensions => self.extensions(ui),
+                Tab::Info => {
+                    ui.heading("G-Earth Rust");
+                    ui.label("Rust port in progress, based on G-Realm/G-Earth 1.5.4-beta-29.");
+                    ui.hyperlink_to(
+                        "Original project · sirjonasxx & contributors",
+                        "https://github.com/G-Realm/G-Earth",
+                    );
+                    ui.hyperlink_to(
+                        "Rust project · 1desirable1337",
+                        "https://github.com/Tear1338/G-Earth-Rust",
+                    );
+                    ui.label(
                     "MIT licensed. Read docs/PARITY.md for implemented and missing functionality.",
                 );
-                ui.label(
+                    ui.label(
                     "Performance improvements have not been measured against the Java application.",
                 );
+                }
             }
         });
         self.developer_mode_dialog(ctx);
