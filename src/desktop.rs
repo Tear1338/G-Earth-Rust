@@ -70,6 +70,7 @@ enum Tab {
     Scheduler,
     Tools,
     Extensions,
+    Extra,
     Info,
 }
 struct Desktop {
@@ -1859,8 +1860,7 @@ impl Desktop {
             self.developer_mode_confirmation = false;
         }
     }
-    fn injection(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Packet injection");
+    fn developer_mode_control(&mut self, ui: &mut egui::Ui) {
         let developer_changed = ui
             .checkbox(
                 &mut self.developer_mode,
@@ -1882,6 +1882,10 @@ impl Desktop {
                 self.status = "Packet safety state unavailable".into();
             }
         }
+    }
+    fn injection(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Packet injection");
+        self.developer_mode_control(ui);
         self.editor(ui, true);
         // Large inputs are checked on submission to keep the editor responsive.
         let (server_valid, client_valid) = if self.expression.len() <= 64 * 1024 {
@@ -2584,6 +2588,31 @@ impl Desktop {
         }
     }
 
+    fn extra(&mut self, ui: &mut egui::Ui) {
+        ui.heading(self.i18n.text("tab.extra"));
+        if ui
+            .checkbox(
+                &mut self.always_on_top,
+                self.i18n.text("tab.extra.options.alwaysontop"),
+            )
+            .changed()
+        {
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::WindowLevel(if self.always_on_top {
+                    egui::WindowLevel::AlwaysOnTop
+                } else {
+                    egui::WindowLevel::Normal
+                }));
+        }
+        self.developer_mode_control(ui);
+        ui.separator();
+        ui.label(self.i18n.text("tab.extra.notepad"));
+        ui.add(
+            egui::TextEdit::multiline(&mut self.notepad)
+                .desired_rows(12)
+                .desired_width(f32::INFINITY),
+        );
+    }
     fn tools(&mut self, ui: &mut egui::Ui) {
         ui.heading("Packet tools");
         ui.horizontal(|ui| {
@@ -2796,6 +2825,7 @@ impl eframe::App for Desktop {
                     (Tab::Scheduler, "tab.scheduler"),
                     (Tab::Tools, "tab.tools"),
                     (Tab::Extensions, "tab.extensions"),
+                    (Tab::Extra, "tab.extra"),
                     (Tab::Info, "Info"),
                 ] {
                     let label = if name.starts_with("tab.") {
@@ -2857,6 +2887,11 @@ impl eframe::App for Desktop {
                         .show(ui, |ui| self.tools(ui));
                 }
                 Tab::Extensions => self.extensions(ui),
+                Tab::Extra => {
+                    egui::ScrollArea::vertical()
+                        .id_salt("extra_panel")
+                        .show(ui, |ui| self.extra(ui));
+                }
                 Tab::Info => {
                     ui.heading("G-Earth Rust");
                     ui.label("Rust port in progress, based on G-Realm/G-Earth 1.5.4-beta-29.");
