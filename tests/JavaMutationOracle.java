@@ -32,6 +32,19 @@ public class JavaMutationOracle {
         integers.setReadIndex(7);
         integers.replaceAllIntegers(123456, -7);
         emit("integers", integers);
+        for (int limit : new int[]{1, 2, -1}) {
+            HPacket substring = new HPacket(9);
+            substring.appendString("cat cat").appendString("catdog");
+            substring.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                substring.replaceXSubstrings("cat", "hello", limit);
+            } finally {
+                System.setOut(original);
+            }
+            emit("substring_" + limit, substring);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);

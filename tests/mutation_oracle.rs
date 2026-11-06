@@ -94,6 +94,27 @@ fn mutations_match_original_java_packets_and_cursor() {
     integers.set_cursor(7).unwrap();
     assert_eq!(integers.replace_all_i32(123456, -7).unwrap(), 2);
     check("integers", &integers);
+    for limit in [1, 2, -1] {
+        let mut packet = Packet::new(9);
+        packet
+            .put_string("cat cat")
+            .unwrap()
+            .put_string("catdog")
+            .unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_literal(
+                "cat",
+                "hello",
+                if limit == -1 {
+                    None
+                } else {
+                    Some(limit as usize)
+                },
+            )
+            .unwrap();
+        check(&format!("substring_{limit}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

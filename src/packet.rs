@@ -623,6 +623,83 @@ impl Packet {
         }
         Ok(count)
     }
+
+    /// Replace literal substrings in length-prefixed Latin-1 fields, scanning
+    /// from the end as beta-29 does. Java regex patterns and replacement groups
+    /// are deliberately rejected until their semantics are implemented.
+    pub fn replace_substrings_literal(
+        &mut self,
+        old: &str,
+        new: &str,
+        limit: Option<usize>,
+    ) -> Result<usize> {
+        self.ensure_eva()?;
+        if limit == Some(0) {
+            return Ok(0);
+        }
+        if old.is_empty()
+            || old.chars().any(|c| ".^$|?*+()[]{}\\".contains(c))
+            || new.contains(['$', '\\'])
+        {
+            return Err(error(
+                "empty or regex substring replacement is not supported",
+            ));
+        }
+        if old.len() > usize::from(u16::MAX) * 2 || new.len() > usize::from(u16::MAX) * 2 {
+            return Err(error("short string too long"));
+        }
+        let old_bytes = latin1_encode(old)?;
+        let new_bytes = latin1_encode(new)?;
+        let mut candidate = self.clone();
+        let mut offset = candidate.bytes.len() as isize - 2 - old_bytes.len() as isize;
+        let mut max = candidate.bytes.len();
+        let mut count = 0;
+        let mut scanned_bytes = 0usize;
+        while offset >= candidate.format.body_offset() as isize {
+            let i = offset as usize;
+            if i + 2 <= candidate.bytes.len() {
+                let length =
+                    u16::from_be_bytes([candidate.bytes[i], candidate.bytes[i + 1]]) as usize;
+                let end = i + 2 + length;
+                if end <= candidate.bytes.len() && end <= max {
+                    scanned_bytes = scanned_bytes
+                        .checked_add(length)
+                        .filter(|n| *n <= MAX_FRAME)
+                        .ok_or_else(|| error("substring scan limit exceeded"))?;
+                    let text = latin1_decode(&candidate.bytes[i + 2..end]);
+                    if text.contains(old) {
+                        let occurrences = text.matches(old).count();
+                        let result_len = length
+                            .checked_sub(occurrences * old_bytes.len())
+                            .and_then(|n| {
+                                occurrences
+                                    .checked_mul(new_bytes.len())
+                                    .and_then(|growth| n.checked_add(growth))
+                            })
+                            .filter(|n| *n <= usize::from(u16::MAX))
+                            .ok_or_else(|| error("short string too long"))?;
+                        if candidate.bytes.len() - length + result_len > MAX_FRAME + 4 {
+                            return Err(error("packet too large"));
+                        }
+                        let replacement = text.replace(old, new);
+                        candidate.replace_string(i, &replacement)?;
+                        count += 1;
+                        offset -= 1 + old_bytes.len() as isize;
+                        if limit == Some(count) {
+                            break;
+                        }
+                        if offset < 0 {
+                            break;
+                        }
+                        max = offset as usize;
+                    }
+                }
+            }
+            offset -= 1;
+        }
+        *self = candidate;
+        Ok(count)
+    }
     pub fn stringify(&self) -> String {
         format!(
             "{}{}",

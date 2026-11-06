@@ -71,3 +71,42 @@ fn growing_empty_string_does_not_corrupt_the_following_field() {
     assert_eq!(packet.read_string().unwrap(), "x");
     assert_eq!(packet.read_string().unwrap(), "a");
 }
+
+#[test]
+fn substring_replacement_scans_from_the_end_and_is_transactional() {
+    let mut packet = Packet::new(9);
+    packet
+        .put_string("cat cat")
+        .unwrap()
+        .put_string("catdog")
+        .unwrap();
+    let mut first = packet.clone();
+    assert_eq!(
+        first
+            .replace_substrings_literal("cat", "x", Some(1))
+            .unwrap(),
+        1
+    );
+    first.reset();
+    assert_eq!(first.read_string().unwrap(), "cat cat");
+    assert_eq!(first.read_string().unwrap(), "xdog");
+    // Java's backward scan skips the preceding adjacent field here.
+    assert_eq!(
+        packet
+            .replace_substrings_literal("cat", "hello", None)
+            .unwrap(),
+        1
+    );
+    packet.reset();
+    assert_eq!(packet.read_string().unwrap(), "cat cat");
+    assert_eq!(packet.read_string().unwrap(), "hellodog");
+    let before = packet.clone();
+    assert!(packet.replace_substrings_literal(".", "x", None).is_err());
+    assert!(packet.replace_substrings_literal("x", "$1", None).is_err());
+    assert_eq!(packet, before);
+    let mut large = Packet::new(3);
+    large.put_string(&"a".repeat(40_000)).unwrap();
+    let before = large.clone();
+    assert!(large.replace_substrings_literal("a", "aaa", None).is_err());
+    assert_eq!(large, before);
+}

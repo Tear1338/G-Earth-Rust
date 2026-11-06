@@ -4,7 +4,7 @@ Status describes source implementation and finite tests, not successful producti
 
 | Area | Rust status | Remaining work |
 |---|---|---|
-| EVA_WIRE | Framing, primitive fields, Latin-1 and explicit UTF-8 strings, raw short and long fields for custom encodings, HPacket/HMessage serialization, typed field/string and bulk exact-value mutations with Java comparisons | Remaining mutation helpers, built-in support for other charsets and broader compatibility corpus |
+| EVA_WIRE | Framing, primitive fields, Latin-1 and explicit UTF-8 strings, raw short and long fields for custom encodings, HPacket/HMessage serialization, typed mutations and bounded literal substring replacement with Java comparisons | Full Java regex substring semantics, remaining mutation helpers, other charsets and broader compatibility corpus |
 | WEDGIE | Incoming/outgoing packet formats, fixed B64, VL64 and format-aware expressions | Wider parser corpus and official client regression |
 | Packet expressions | Typed/numeric/named expressions, mixed raw display notation, bounded structure prediction, nested structures and Java comparisons | Broader prediction and editor corpus; metadata and client regression |
 | Injection and tools | Multi-packet input with pre-validation, separate destination buttons, ordered queueing and partial-error reporting, bounded immediately persisted history, EVA/WEDGIE expression conversion, integer and unsigned-short encoding | UI interaction, full editor parity and real connection validation |
