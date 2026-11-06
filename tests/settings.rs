@@ -111,6 +111,7 @@ fn importing_java_logger_settings_preserves_menu_choices() {
         ("outgoing", false),
         ("logger_structure", true),
         ("logger_autoscroll", false),
+        ("logger_skip_big", true),
         ("logger_names", false),
         ("logger_hashes", true),
         ("logger_message_id", true),

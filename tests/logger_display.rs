@@ -1,6 +1,16 @@
 use gearth_rust::logger_display::{hex_dump, represent, PacketRepresentation};
 
 #[test]
+fn java_large_packet_thresholds_are_strict_and_exclude_frame_prefix() {
+    use gearth_rust::logger_display::skip_large_eva_representations as skip;
+    assert!(!skip(1004, true));
+    assert!(skip(1005, true));
+    assert!(!skip(4004, false));
+    assert!(skip(4005, false));
+    assert!(!skip(0, true));
+}
+
+#[test]
 fn capture_export_preserves_existing_file_on_failed_write() {
     use std::io::Write;
     let mut nonce = [0u8; 16];

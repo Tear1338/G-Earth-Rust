@@ -96,6 +96,7 @@ struct Desktop {
     logger_extra_legacy: bool,
     logger_extra_raw_hex: bool,
     logger_extra_hex_dump: bool,
+    logger_skip_big: bool,
     logger_timestamp: bool,
     logger_autoscroll: bool,
     logger_clear_on_connect: bool,
@@ -279,6 +280,7 @@ struct LogDisplayOptions {
     extra_legacy: bool,
     extra_raw_hex: bool,
     extra_hex_dump: bool,
+    skip_big: bool,
     timestamp: bool,
     structure: bool,
 }
@@ -322,11 +324,27 @@ fn render_log_row(
     if options.message_id {
         metadata.push_str(&format!("[{}] ", packet.header()));
     }
-    let inline_dump = (options.representation == PacketRepresentation::HexDump
-        || options.extra_hex_dump)
+    let has_byte_representation = options.representation != PacketRepresentation::Expression
+        || options.extra_legacy
+        || options.extra_raw_hex
+        || options.extra_hex_dump;
+    let omit_representations = options.skip_big
+        && has_byte_representation
+        && packet.format() == PacketFormat::EvaWire
+        && logger_display::skip_large_eva_representations(
+            packet.bytes().len(),
+            options.representation == PacketRepresentation::HexDump || options.extra_hex_dump,
+        );
+    let inline_dump = !omit_representations
+        && (options.representation == PacketRepresentation::HexDump || options.extra_hex_dump)
         && !row.skipped;
-    let representation = if options.representation == PacketRepresentation::HexDump && !row.skipped
+    let representation = if row.skipped
+        || (omit_representations && options.representation == PacketRepresentation::Expression)
     {
+        std::borrow::Cow::Borrowed(row.expression.as_str())
+    } else if omit_representations {
+        std::borrow::Cow::Borrowed("<skipped>")
+    } else if options.representation == PacketRepresentation::HexDump && !row.skipped {
         std::borrow::Cow::Borrowed("")
     } else if row.skipped || options.representation == PacketRepresentation::Expression {
         std::borrow::Cow::Borrowed(row.expression.as_str())
@@ -366,7 +384,13 @@ fn render_log_row(
     );
     let dump = inline_dump.then(|| logger_display::hex_dump(packet.bytes(), 128));
     let mut extra_representations = Vec::new();
-    if !row.skipped {
+    if !row.skipped
+        && omit_representations
+        && options.representation == PacketRepresentation::Expression
+    {
+        extra_representations.push("<skipped>".into());
+    }
+    if !row.skipped && !omit_representations {
         for (enabled, mode) in [
             (options.extra_legacy, PacketRepresentation::Legacy),
             (options.extra_raw_hex, PacketRepresentation::RawHex),
@@ -485,6 +509,7 @@ impl Default for Desktop {
             logger_extra_legacy: false,
             logger_extra_raw_hex: false,
             logger_extra_hex_dump: false,
+            logger_skip_big: false,
             logger_timestamp: false,
             logger_autoscroll: true,
             logger_clear_on_connect: false,
@@ -1498,6 +1523,10 @@ impl Desktop {
         ui.horizontal_wrapped(|ui| {
             ui.label("Additional representations:");
             ui.checkbox(
+                &mut self.logger_skip_big,
+                self.i18n.text("ext.logger.menu.packets.skipbig"),
+            );
+            ui.checkbox(
                 &mut self.logger_extra_legacy,
                 self.i18n
                     .text(PacketRepresentation::Legacy.translation_key()),
@@ -1556,6 +1585,7 @@ impl Desktop {
             extra_legacy: self.logger_extra_legacy,
             extra_raw_hex: self.logger_extra_raw_hex,
             extra_hex_dump: self.logger_extra_hex_dump,
+            skip_big: self.logger_skip_big,
             timestamp: self.logger_timestamp,
             structure: self.logger_structure,
         };
@@ -2897,6 +2927,12 @@ impl Desktop {
             .get("logger_extra_hex_dump")
             .copied()
             .unwrap_or(false);
+        self.logger_skip_big = self
+            .settings
+            .booleans
+            .get("logger_skip_big")
+            .copied()
+            .unwrap_or(false);
         self.logger_timestamp = self
             .settings
             .booleans
@@ -3085,6 +3121,7 @@ impl Desktop {
             ("logger_extra_legacy".into(), self.logger_extra_legacy),
             ("logger_extra_raw_hex".into(), self.logger_extra_raw_hex),
             ("logger_extra_hex_dump".into(), self.logger_extra_hex_dump),
+            ("logger_skip_big".into(), self.logger_skip_big),
             ("logger_timestamp".into(), self.logger_timestamp),
             ("logger_autoscroll".into(), self.logger_autoscroll),
             (
@@ -3378,6 +3415,56 @@ mod logger_prediction_tests {
     use std::{collections::VecDeque, sync::OnceLock};
 
     #[test]
+    fn large_packet_option_hides_bytes_without_hiding_packet_expression() {
+        let mut packet = Packet::new(42);
+        packet.append(&vec![b'a'; 1000]).unwrap();
+        let row = LogRow {
+            message: Message {
+                packet,
+                direction: Direction::ToClient,
+                index: 1,
+                blocked: false,
+            },
+            timestamp_ms: None,
+            expression: "{h:42}".into(),
+            search: String::new(),
+            bytes: 0,
+            skipped: false,
+            unity: false,
+            predicted_structure: OnceLock::new(),
+            packet_expression: OnceLock::new(),
+            packet_metadata: OnceLock::new(),
+        };
+        let mut options = LogDisplayOptions {
+            additional: false,
+            names: false,
+            hashes: false,
+            message_id: false,
+            representation: PacketRepresentation::Expression,
+            extra_legacy: true,
+            extra_raw_hex: false,
+            extra_hex_dump: true,
+            skip_big: true,
+            timestamp: false,
+            structure: false,
+        };
+        let info = PacketInfoManager::default();
+        let mut output = Vec::new();
+        write_log_capture(&mut output, [&row], &info, options, false).unwrap();
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("{h:42}"));
+        assert!(text.contains("<skipped>"));
+        assert!(!text.contains("00000000  "));
+        assert!(!text.contains("Legacy:"));
+        options.skip_big = false;
+        let mut output = Vec::new();
+        write_log_capture(&mut output, [&row], &info, options, false).unwrap();
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("Legacy:"));
+        assert!(text.contains("00000000  "));
+    }
+
+    #[test]
     fn exported_capture_uses_display_options_and_reports_write_errors() {
         let row = LogRow {
             message: Message {
@@ -3416,6 +3503,7 @@ mod logger_prediction_tests {
             extra_legacy: false,
             extra_raw_hex: false,
             extra_hex_dump: false,
+            skip_big: false,
             timestamp: true,
             structure: false,
         };

@@ -40,6 +40,14 @@ pub enum PacketRepresentation {
     HexDump,
 }
 
+/// beta-29 omits byte representations for large EVA packets, but keeps the
+/// packet and its structured display available. `frame_len` includes the
+/// four-byte EVA length prefix, while Java's HPacket.length() excludes it.
+pub fn skip_large_eva_representations(frame_len: usize, hex_dump_enabled: bool) -> bool {
+    let packet_len = frame_len.saturating_sub(4);
+    packet_len > 4000 || (hex_dump_enabled && packet_len > 1000)
+}
+
 impl PacketRepresentation {
     pub fn translation_key(self) -> &'static str {
         match self {

@@ -417,6 +417,7 @@ impl Settings {
                 (1, "outgoing"),
                 (2, "logger_structure"),
                 (3, "logger_autoscroll"),
+                (4, "logger_skip_big"),
                 (5, "logger_names"),
                 (6, "logger_hashes"),
                 (7, "logger_message_id"),
