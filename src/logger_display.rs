@@ -1,5 +1,35 @@
 //! Packet representation options for the built-in logger.
 use crate::expression;
+use std::{fs::OpenOptions, io, path::Path};
+
+/// Replace a capture only after its complete contents have been written and flushed.
+pub fn write_atomic(
+    path: &Path,
+    write: impl FnOnce(&mut std::fs::File) -> io::Result<()>,
+) -> io::Result<()> {
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let mut nonce = [0u8; 16];
+    getrandom::fill(&mut nonce).map_err(|error| io::Error::other(error.to_string()))?;
+    let suffix = nonce
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let temporary = parent.join(format!(".gearth-capture-{suffix}.tmp"));
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary)?;
+    let result = write(&mut file).and_then(|_| file.sync_all());
+    drop(file);
+    let result = result.and_then(|_| std::fs::rename(&temporary, path));
+    if result.is_err() {
+        let _ = std::fs::remove_file(&temporary);
+    }
+    result
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum PacketRepresentation {

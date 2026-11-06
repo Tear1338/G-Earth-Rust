@@ -262,6 +262,145 @@ fn log_packet_metadata(
         bounded_log_prediction(hashes.join(", ")),
     )
 }
+
+#[derive(Clone, Copy)]
+struct LogDisplayOptions {
+    additional: bool,
+    names: bool,
+    hashes: bool,
+    message_id: bool,
+    representation: PacketRepresentation,
+    timestamp: bool,
+    structure: bool,
+}
+
+struct RenderedLogRow {
+    header: String,
+    dump: Option<String>,
+    structure: Option<String>,
+}
+
+fn render_log_row(
+    row: &LogRow,
+    info: &PacketInfoManager,
+    options: LogDisplayOptions,
+) -> RenderedLogRow {
+    let message = &row.message;
+    let packet = &message.packet;
+    let additional = if options.additional {
+        let length = if packet.format() == PacketFormat::EvaWire {
+            packet.bytes().len().saturating_sub(4)
+        } else {
+            packet.bytes().len()
+        };
+        format!("(h: {}, l: {length})  ", packet.header())
+    } else {
+        String::new()
+    };
+    let mut metadata = String::new();
+    if options.names || options.hashes {
+        let (names, hashes) = row
+            .packet_metadata
+            .get_or_init(|| log_packet_metadata(info, message.direction, packet.header()));
+        if options.names && !names.is_empty() {
+            metadata.push_str(&format!("[{names}] "));
+        }
+        if options.hashes && !hashes.is_empty() {
+            metadata.push_str(&format!("[{hashes}] "));
+        }
+    }
+    if options.message_id {
+        metadata.push_str(&format!("[{}] ", packet.header()));
+    }
+    let inline_dump = options.representation == PacketRepresentation::HexDump && !row.skipped;
+    let representation = if inline_dump {
+        std::borrow::Cow::Borrowed("")
+    } else if row.skipped || options.representation == PacketRepresentation::Expression {
+        std::borrow::Cow::Borrowed(row.expression.as_str())
+    } else {
+        std::borrow::Cow::Owned(logger_display::represent(
+            packet.bytes(),
+            options.representation,
+            1024,
+        ))
+    };
+    let timestamp = if options.timestamp {
+        row.timestamp_ms
+            .map(|ms| format!("({ms} ms) "))
+            .unwrap_or_default()
+    } else {
+        String::new()
+    };
+    let header = format!(
+        "{}#{:06}  {:8}  {}{}{}{}",
+        timestamp,
+        message.index,
+        if message.direction == Direction::ToServer {
+            "→ SERVER"
+        } else {
+            "← CLIENT"
+        },
+        if message.blocked {
+            "BLOCKED  "
+        } else if packet.edited {
+            "REPLACED  "
+        } else {
+            ""
+        },
+        additional,
+        metadata,
+        representation
+    );
+    let dump = inline_dump.then(|| logger_display::hex_dump(packet.bytes(), 128));
+    let structure = if options.structure && !row.skipped {
+        let (expression, known) = row.packet_expression.get_or_init(|| {
+            let (expression, known) = gearth_rust::structure_prediction::expression_with_metadata(
+                packet,
+                message.direction,
+                info,
+                row.unity,
+            )
+            .unwrap_or_default();
+            (bounded_log_prediction(expression), known)
+        });
+        (!expression.is_empty()).then(|| {
+            format!(
+                "{}: {expression}",
+                if *known { "Structure" } else { "Predicted" }
+            )
+        })
+    } else {
+        None
+    };
+    RenderedLogRow {
+        header,
+        dump,
+        structure,
+    }
+}
+
+fn write_log_capture<'a>(
+    mut output: impl std::io::Write,
+    rows: impl IntoIterator<Item = &'a LogRow>,
+    info: &PacketInfoManager,
+    options: LogDisplayOptions,
+    split: bool,
+) -> std::io::Result<()> {
+    for row in rows {
+        let rendered = render_log_row(row, info, options);
+        writeln!(output, "{}", rendered.header)?;
+        if let Some(dump) = rendered.dump {
+            writeln!(output, "{dump}")?;
+        }
+        if let Some(structure) = rendered.structure {
+            writeln!(output, "{structure}")?;
+        }
+        if split {
+            writeln!(output, "--------------------")?;
+        }
+    }
+    output.flush()
+}
 fn combine_rules(
     mut saved: Vec<Rule>,
     draft: gearth_rust::packet::Result<Option<Rule>>,
@@ -1322,32 +1461,38 @@ impl Desktop {
             .as_ref()
             .expect("search cache initialized")
             .1;
+        let display_options = LogDisplayOptions {
+            additional: self.logger_additional,
+            names: self.logger_names,
+            hashes: self.logger_hashes,
+            message_id: self.logger_message_id,
+            representation: self.logger_representation,
+            timestamp: self.logger_timestamp,
+            structure: self.logger_structure,
+        };
         ui.horizontal(|ui| {
             ui.label("Export path");
             ui.text_edit_singleline(&mut self.export_path);
             if ui.button("Export displayed capture").clicked() {
-                let mut text =
-                    String::from("# G-Earth Rust capture: direction index blocked expression\n");
-                for row in &self.logs {
-                    let m = &row.message;
-                    if !log_row_matches(
+                let visible = self.logs.iter().filter(|row| {
+                    log_row_matches(
                         row,
                         &filter,
                         matching_metadata,
                         self.outgoing,
                         self.incoming,
-                    ) {
-                        continue;
-                    }
-                    text.push_str(&format!(
-                        "{}\t{}\t{}\t{}\n",
-                        m.direction.name(),
-                        m.index,
-                        m.blocked,
-                        row.expression
-                    ));
-                }
-                self.status = match std::fs::write(&self.export_path, text) {
+                    )
+                });
+                let result = logger_display::write_atomic(Path::new(&self.export_path), |file| {
+                    write_log_capture(
+                        std::io::BufWriter::new(file),
+                        visible,
+                        &self.packet_info,
+                        display_options,
+                        self.logger_split,
+                    )
+                });
+                self.status = match result {
                     Ok(()) => format!("Capture saved to {}", self.export_path),
                     Err(e) => e.to_string(),
                 };
@@ -1390,124 +1535,33 @@ impl Desktop {
                     } else {
                         egui::Color32::from_rgb(20, 130, 70)
                     };
-                    let additional = if self.logger_additional {
-                        format!(
-                            "(h: {}, l: {})  ",
-                            m.packet.header(),
-                            if m.packet.format() == PacketFormat::EvaWire {
-                                m.packet.bytes().len().saturating_sub(4)
-                            } else {
-                                m.packet.bytes().len()
-                            }
-                        )
-                    } else {
-                        String::new()
-                    };
-                    let mut metadata = if self.logger_names || self.logger_hashes {
-                        let (names, hashes) = row.packet_metadata.get_or_init(|| {
-                            log_packet_metadata(&self.packet_info, m.direction, m.packet.header())
-                        });
-                        let mut display = String::new();
-                        if self.logger_names && !names.is_empty() {
-                            display.push_str(&format!("[{names}] "));
-                        }
-                        if self.logger_hashes && !hashes.is_empty() {
-                            display.push_str(&format!("[{hashes}] "));
-                        }
-                        display
-                    } else {
-                        String::new()
-                    };
-                    if self.logger_message_id {
-                        metadata.push_str(&format!("[{}] ", m.packet.header()));
-                    }
-                    let inline_dump =
-                        self.logger_representation == PacketRepresentation::HexDump && !row.skipped;
-                    let representation = if inline_dump {
-                        std::borrow::Cow::Borrowed("")
-                    } else if row.skipped
-                        || self.logger_representation == PacketRepresentation::Expression
-                    {
-                        std::borrow::Cow::Borrowed(row.expression.as_str())
-                    } else {
-                        std::borrow::Cow::Owned(logger_display::represent(
-                            m.packet.bytes(),
-                            self.logger_representation,
-                            1024,
-                        ))
-                    };
-                    let timestamp = if self.logger_timestamp {
-                        row.timestamp_ms
-                            .map(|ms| format!("({ms} ms) "))
-                            .unwrap_or_default()
-                    } else {
-                        String::new()
-                    };
-                    let label = format!(
-                        "{}#{:06}  {:8}  {}{}{}{}",
-                        timestamp,
-                        m.index,
-                        if m.direction == Direction::ToServer {
-                            "→ SERVER"
-                        } else {
-                            "← CLIENT"
-                        },
-                        if m.blocked {
-                            "BLOCKED  "
-                        } else if m.packet.edited {
-                            "REPLACED  "
-                        } else {
-                            ""
-                        },
-                        additional,
-                        metadata,
-                        representation
-                    );
+                    let rendered = render_log_row(row, &self.packet_info, display_options);
                     let row_output = ui.allocate_ui_with_layout(
                         egui::vec2(ui.available_width(), row_height),
                         egui::Layout::top_down(egui::Align::Min),
                         |ui| {
                             let response = ui.add(
                                 egui::Label::new(
-                                    egui::RichText::new(label).monospace().color(color),
+                                    egui::RichText::new(&rendered.header)
+                                        .monospace()
+                                        .color(color),
                                 )
                                 .truncate()
                                 .sense(egui::Sense::click()),
                             );
-                            if inline_dump {
+                            if let Some(dump) = &rendered.dump {
                                 ui.add(
-                                    egui::Label::new(
-                                        egui::RichText::new(logger_display::hex_dump(
-                                            m.packet.bytes(),
-                                            128,
-                                        ))
-                                        .monospace(),
-                                    )
-                                    .wrap_mode(egui::TextWrapMode::Extend),
+                                    egui::Label::new(egui::RichText::new(dump).monospace())
+                                        .wrap_mode(egui::TextWrapMode::Extend),
                                 );
                             }
-                            if self.logger_structure && !row.skipped {
-                                let (expression, known) = row.packet_expression.get_or_init(|| {
-                                    let (expression, known) =
-                                        gearth_rust::structure_prediction::expression_with_metadata(
-                                            &m.packet, m.direction, &self.packet_info, row.unity,
-                                        )
-                                        .unwrap_or_default();
-                                    (bounded_log_prediction(expression), known)
-                                });
-                                if !expression.is_empty() {
-                                    ui.add(
-                                        egui::Label::new(
-                                            egui::RichText::new(format!(
-                                                "{}: {expression}",
-                                                if *known { "Structure" } else { "Predicted" }
-                                            ))
-                                            .monospace()
-                                            .small(),
-                                        )
-                                        .truncate(),
-                                    );
-                                }
+                            if let Some(structure) = &rendered.structure {
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(structure).monospace().small(),
+                                    )
+                                    .truncate(),
+                                );
                             }
                             response
                         },
@@ -3069,12 +3123,77 @@ mod rule_editor_tests {
 mod logger_prediction_tests {
     use super::{
         bounded_log_prediction, clear_log_contents, invalidate_log_expressions,
-        log_packet_metadata, log_row_matches, matching_packet_metadata, LogRow,
-        LOG_PREDICTION_LIMIT,
+        log_packet_metadata, log_row_matches, matching_packet_metadata, write_log_capture,
+        LogDisplayOptions, LogRow, PacketRepresentation, LOG_PREDICTION_LIMIT,
     };
     use gearth_rust::packet::{Direction, Message, Packet};
     use gearth_rust::packet_info::{PacketInfo, PacketInfoManager};
     use std::{collections::VecDeque, sync::OnceLock};
+
+    #[test]
+    fn exported_capture_uses_display_options_and_reports_write_errors() {
+        let row = LogRow {
+            message: Message {
+                packet: Packet::new(42),
+                direction: Direction::ToClient,
+                index: 7,
+                blocked: true,
+            },
+            timestamp_ms: Some(123),
+            expression: "{h:42}".into(),
+            search: String::new(),
+            bytes: 0,
+            skipped: false,
+            unity: false,
+            predicted_structure: OnceLock::new(),
+            packet_expression: OnceLock::new(),
+            packet_metadata: OnceLock::new(),
+        };
+        let info = PacketInfoManager::new(
+            "test",
+            vec![PacketInfo {
+                header: 42,
+                direction: Direction::ToClient,
+                name: Some("Example".into()),
+                hash: Some("abc".into()),
+                structure: None,
+                source: "test".into(),
+            }],
+        );
+        let mut options = LogDisplayOptions {
+            additional: false,
+            names: true,
+            hashes: false,
+            message_id: true,
+            representation: PacketRepresentation::RawHex,
+            timestamp: true,
+            structure: false,
+        };
+        let mut output = Vec::new();
+        write_log_capture(&mut output, [&row], &info, options, true).unwrap();
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("(123 ms)"));
+        assert!(text.contains("BLOCKED"));
+        assert!(text.contains("[Example] [42]"));
+        assert!(text.contains("00000002002a"));
+        assert!(text.ends_with("--------------------\n"));
+        options.representation = PacketRepresentation::HexDump;
+        let mut output = Vec::new();
+        write_log_capture(&mut output, [&row], &info, options, false).unwrap();
+        assert!(String::from_utf8(output)
+            .unwrap()
+            .contains("00000000  00 00 00 02 00 2a"));
+        struct Fails;
+        impl std::io::Write for Fails {
+            fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::other("write failed"))
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        assert!(write_log_capture(Fails, [&row], &info, options, false).is_err());
+    }
 
     #[test]
     fn limits_predictions_without_splitting_unicode() {

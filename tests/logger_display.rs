@@ -1,6 +1,33 @@
 use gearth_rust::logger_display::{hex_dump, represent, PacketRepresentation};
 
 #[test]
+fn capture_export_preserves_existing_file_on_failed_write() {
+    use std::io::Write;
+    let mut nonce = [0u8; 16];
+    getrandom::fill(&mut nonce).unwrap();
+    let suffix = nonce
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let directory = std::env::temp_dir().join(format!("gearth-capture-test-{suffix}"));
+    std::fs::create_dir(&directory).unwrap();
+    let path = directory.join("capture.txt");
+    std::fs::write(&path, "old capture").unwrap();
+    let error = gearth_rust::logger_display::write_atomic(&path, |file| {
+        file.write_all(b"partial capture")?;
+        Err(std::io::Error::other("simulated write failure"))
+    });
+    assert!(error.is_err());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "old capture");
+    assert_eq!(std::fs::read_dir(&directory).unwrap().count(), 1);
+    gearth_rust::logger_display::write_atomic(&path, |file| file.write_all(b"complete capture"))
+        .unwrap();
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "complete capture");
+    std::fs::remove_file(path).unwrap();
+    std::fs::remove_dir(directory).unwrap();
+}
+
+#[test]
 fn hex_dump_aligns_bytes_offsets_and_marks_truncation() {
     let bytes = [0, b'A', b' ', b'\t', b'\n', b'\r', 255];
     let dump = hex_dump(&bytes, usize::MAX);
