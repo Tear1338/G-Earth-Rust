@@ -12,6 +12,14 @@ use std::{
     path::{Path, PathBuf},
 };
 const MAX_SETTINGS: usize = 2 * 1024 * 1024;
+
+fn host_and_port(host: &str, port: u64) -> String {
+    if host.parse::<std::net::Ipv6Addr>().is_ok() {
+        format!("[{host}]:{port}")
+    } else {
+        format!("{host}:{port}")
+    }
+}
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ScheduleTemplate {
     pub expression: String,
@@ -374,11 +382,23 @@ impl Settings {
         ) {
             if port <= 65535 {
                 self.values
-                    .insert("remote".into(), format!("{host}:{port}"));
+                    .insert("remote".into(), host_and_port(host, port));
             }
         }
         if let Some(mode) = value["last_client_mode"].as_str() {
             self.values.insert("client_type".into(), mode.into());
+            let selected = match mode {
+                "FLASH" => Some((false, false, false)),
+                "SHOCKWAVE" => Some((true, false, false)),
+                "NITRO" => Some((false, true, false)),
+                "UNITY" => Some((false, true, true)),
+                _ => None,
+            };
+            if let Some((origins, nitro, unity)) = selected {
+                self.booleans.insert("origins".into(), origins);
+                self.booleans.insert("nitro".into(), nitro);
+                self.booleans.insert("unity".into(), unity);
+            }
         }
         if let Some(text) = value["notepad_text"].as_str() {
             self.values.insert("notepad".into(), text.into());
@@ -396,7 +416,7 @@ impl Settings {
         ) {
             if port <= 65535 {
                 self.values
-                    .insert("socks_proxy".into(), format!("{host}:{port}"));
+                    .insert("socks_proxy".into(), host_and_port(host, port));
             }
         }
         self.extra.insert("legacy_java_cache".into(), value);

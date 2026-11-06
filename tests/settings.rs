@@ -48,6 +48,54 @@ fn imports_real_beta29_cache_keys_and_retains_all_original_values() {
 }
 
 #[test]
+fn importing_java_client_mode_overrides_previous_rust_mode() {
+    let mut settings = Settings::default();
+    for (mode, expected) in [
+        ("UNITY", (false, true, true)),
+        ("NITRO", (false, true, false)),
+        ("SHOCKWAVE", (true, false, false)),
+        ("FLASH", (false, false, false)),
+    ] {
+        settings
+            .import_java_cache(serde_json::json!({"last_client_mode": mode}))
+            .unwrap();
+        assert_eq!(
+            (
+                settings.booleans["origins"],
+                settings.booleans["nitro"],
+                settings.booleans["unity"]
+            ),
+            expected
+        );
+    }
+    settings
+        .import_java_cache(serde_json::json!({"last_client_mode": "FUTURE"}))
+        .unwrap();
+    assert_eq!(
+        (
+            settings.booleans["origins"],
+            settings.booleans["nitro"],
+            settings.booleans["unity"]
+        ),
+        (false, false, false)
+    );
+    assert_eq!(settings.get("client_type"), "FUTURE");
+}
+
+#[test]
+fn importing_java_ipv6_addresses_adds_required_brackets() {
+    let mut settings = Settings::default();
+    settings
+        .import_java_cache(serde_json::json!({
+            "last_connection_settings": {"host": "2001:db8::1", "port": 30000},
+            "socks_config": {"ip": "::1", "port": 1080}
+        }))
+        .unwrap();
+    assert_eq!(settings.get("remote"), "[2001:db8::1]:30000");
+    assert_eq!(settings.get("socks_proxy"), "[::1]:1080");
+}
+
+#[test]
 fn imports_java_injection_history_without_inventing_destinations() {
     use gearth_rust::injection::InjectionHistory;
     let mut settings = Settings::default();
