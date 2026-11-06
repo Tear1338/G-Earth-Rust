@@ -56,6 +56,10 @@ fn logger_choices_resolve_in_every_supported_language() {
         I18n::new("fr").text(AntiSpam::Medium.translation_key()),
         "Moyen"
     );
+    assert_eq!(
+        I18n::new("fr").text("ext.logger.element.skipped"),
+        "paquet ignoré"
+    );
 }
 #[test]
 fn decodes_escaped_unicode_surrogates_and_continuations() {

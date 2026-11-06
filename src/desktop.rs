@@ -271,7 +271,7 @@ fn log_packet_metadata(
 }
 
 #[derive(Clone, Copy)]
-struct LogDisplayOptions {
+struct LogDisplayOptions<'a> {
     additional: bool,
     names: bool,
     hashes: bool,
@@ -281,6 +281,7 @@ struct LogDisplayOptions {
     extra_raw_hex: bool,
     extra_hex_dump: bool,
     skip_big: bool,
+    skipped_label: &'a str,
     timestamp: bool,
     structure: bool,
 }
@@ -295,7 +296,7 @@ struct RenderedLogRow {
 fn render_log_row(
     row: &LogRow,
     info: &PacketInfoManager,
-    options: LogDisplayOptions,
+    options: LogDisplayOptions<'_>,
 ) -> RenderedLogRow {
     let message = &row.message;
     let packet = &message.packet;
@@ -343,7 +344,7 @@ fn render_log_row(
     {
         std::borrow::Cow::Borrowed(row.expression.as_str())
     } else if omit_representations {
-        std::borrow::Cow::Borrowed("<skipped>")
+        std::borrow::Cow::Borrowed(options.skipped_label)
     } else if options.representation == PacketRepresentation::HexDump && !row.skipped {
         std::borrow::Cow::Borrowed("")
     } else if row.skipped || options.representation == PacketRepresentation::Expression {
@@ -388,7 +389,7 @@ fn render_log_row(
         && omit_representations
         && options.representation == PacketRepresentation::Expression
     {
-        extra_representations.push("<skipped>".into());
+        extra_representations.push(options.skipped_label.into());
     }
     if !row.skipped && !omit_representations {
         for (enabled, mode) in [
@@ -436,7 +437,7 @@ fn write_log_capture<'a>(
     mut output: impl std::io::Write,
     rows: impl IntoIterator<Item = &'a LogRow>,
     info: &PacketInfoManager,
-    options: LogDisplayOptions,
+    options: LogDisplayOptions<'_>,
     split: bool,
 ) -> std::io::Result<()> {
     for row in rows {
@@ -1576,6 +1577,7 @@ impl Desktop {
             .as_ref()
             .expect("search cache initialized")
             .1;
+        let skipped_label = format!("<{}>", self.i18n.text("ext.logger.element.skipped"));
         let display_options = LogDisplayOptions {
             additional: self.logger_additional,
             names: self.logger_names,
@@ -1586,6 +1588,7 @@ impl Desktop {
             extra_raw_hex: self.logger_extra_raw_hex,
             extra_hex_dump: self.logger_extra_hex_dump,
             skip_big: self.logger_skip_big,
+            skipped_label: &skipped_label,
             timestamp: self.logger_timestamp,
             structure: self.logger_structure,
         };
@@ -3445,6 +3448,7 @@ mod logger_prediction_tests {
             extra_raw_hex: false,
             extra_hex_dump: true,
             skip_big: true,
+            skipped_label: "<paquet ignoré>",
             timestamp: false,
             structure: false,
         };
@@ -3453,9 +3457,16 @@ mod logger_prediction_tests {
         write_log_capture(&mut output, [&row], &info, options, false).unwrap();
         let text = String::from_utf8(output).unwrap();
         assert!(text.contains("{h:42}"));
-        assert!(text.contains("<skipped>"));
+        assert!(text.contains("<paquet ignoré>"));
         assert!(!text.contains("00000000  "));
         assert!(!text.contains("Legacy:"));
+        options.representation = PacketRepresentation::RawHex;
+        let mut output = Vec::new();
+        write_log_capture(&mut output, [&row], &info, options, false).unwrap();
+        assert!(String::from_utf8(output)
+            .unwrap()
+            .contains("<paquet ignoré>"));
+        options.representation = PacketRepresentation::Expression;
         options.skip_big = false;
         let mut output = Vec::new();
         write_log_capture(&mut output, [&row], &info, options, false).unwrap();
@@ -3504,6 +3515,7 @@ mod logger_prediction_tests {
             extra_raw_hex: false,
             extra_hex_dump: false,
             skip_big: false,
+            skipped_label: "<packet skipped>",
             timestamp: true,
             structure: false,
         };
