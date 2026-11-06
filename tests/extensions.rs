@@ -126,6 +126,67 @@ fn requires_approval_and_supports_flags_click_injection_and_interception() {
 }
 
 #[test]
+fn packet_safety_blocks_unseen_extension_packets_without_disconnecting() {
+    use gearth_rust::packet_safety::PacketSafety;
+    use std::sync::{Arc, Mutex};
+    let (host, events) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+    let safety = Arc::new(Mutex::new(PacketSafety::default()));
+    host.set_packet_safety(safety.clone()).unwrap();
+    host.start_connection(details()).unwrap();
+    let (mut stream, id) = connect(&host, &events);
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 5);
+    write_frame(
+        &mut stream,
+        &extension::send(Direction::ToServer, &Packet::new(91)).unwrap(),
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        if events.try_iter().any(|event| matches!(event, HostEvent::Console {id: source, text} if source == id && text.contains("91 not sent"))) { break; }
+        assert!(Instant::now() < deadline, "missing blocked-packet event");
+        thread::sleep(Duration::from_millis(5));
+    }
+    assert!(host.take_injections().is_empty());
+    safety
+        .lock()
+        .unwrap()
+        .observe("TEST", Direction::ToServer, 92);
+    write_frame(
+        &mut stream,
+        &extension::send(Direction::ToServer, &Packet::new(92)).unwrap(),
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        let packets = host.take_injections();
+        if !packets.is_empty() {
+            assert_eq!(packets[0].1.header(), 92);
+            break;
+        }
+        assert!(Instant::now() < deadline, "observed packet was not queued");
+        thread::sleep(Duration::from_millis(5));
+    }
+    safety.lock().unwrap().set_developer_mode(true);
+    write_frame(
+        &mut stream,
+        &extension::send(Direction::ToClient, &Packet::new(93)).unwrap(),
+    )
+    .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(3);
+    loop {
+        let packets = host.take_injections();
+        if !packets.is_empty() {
+            assert_eq!(packets[0].1.header(), 93);
+            break;
+        }
+        assert!(Instant::now() < deadline, "developer packet was not queued");
+        thread::sleep(Duration::from_millis(5));
+    }
+    drop(stream);
+    host.stop();
+}
+
+#[test]
 fn packet_to_string_uses_known_structure_and_falls_back_to_prediction() {
     let (host, events) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
     host.start_connection(details()).unwrap();

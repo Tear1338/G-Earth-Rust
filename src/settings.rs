@@ -403,6 +403,9 @@ impl Settings {
         if let Some(text) = value["notepad_text"].as_str() {
             self.values.insert("notepad".into(), text.into());
         }
+        if let Some(enabled) = value["develop_mode"].as_bool() {
+            self.booleans.insert("developer_mode".into(), enabled);
+        }
         if let Some(entries) = value["INJECTED_HISTORY"].as_array() {
             let history = crate::injection::InjectionHistory::from_java_cache(entries);
             if entries.is_empty() || !history.entries().is_empty() {

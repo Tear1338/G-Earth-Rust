@@ -83,6 +83,21 @@ fn importing_java_client_mode_overrides_previous_rust_mode() {
 }
 
 #[test]
+fn importing_java_developer_mode_preserves_the_explicit_choice() {
+    let mut settings = Settings::default();
+    settings
+        .import_java_cache(serde_json::json!({"develop_mode": true}))
+        .unwrap();
+    assert_eq!(settings.booleans.get("developer_mode"), Some(&true));
+    settings
+        .import_java_cache(serde_json::json!({"develop_mode": false}))
+        .unwrap();
+    assert_eq!(settings.booleans.get("developer_mode"), Some(&false));
+    settings.import_java_cache(serde_json::json!({})).unwrap();
+    assert_eq!(settings.booleans.get("developer_mode"), Some(&false));
+}
+
+#[test]
 fn importing_java_ipv6_addresses_adds_required_brackets() {
     let mut settings = Settings::default();
     settings

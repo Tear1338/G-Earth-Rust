@@ -69,6 +69,7 @@ struct Shared {
     peers: Mutex<BTreeMap<u64, Arc<Peer>>>,
     tokens: Mutex<HashMap<String, (String, Instant)>>,
     connection: Mutex<Option<ConnectionDetails>>,
+    packet_safety: Mutex<Option<Arc<Mutex<crate::packet_safety::PacketSafety>>>>,
     injections: SyncSender<(Direction, Packet)>,
     events: SyncSender<HostEvent>,
     stop: AtomicBool,
@@ -82,6 +83,19 @@ pub struct ExtensionHost {
     pub address: SocketAddr,
 }
 impl ExtensionHost {
+    /// Use the same observed-ID and developer-mode state as the desktop.
+    pub fn set_packet_safety(
+        &self,
+        safety: Arc<Mutex<crate::packet_safety::PacketSafety>>,
+    ) -> io::Result<()> {
+        *self
+            .shared
+            .packet_safety
+            .lock()
+            .map_err(|_| io::Error::other("packet safety lock poisoned"))? = Some(safety);
+        Ok(())
+    }
+
     pub fn start(
         address: SocketAddr,
         flags: Vec<String>,
@@ -102,6 +116,7 @@ impl ExtensionHost {
             peers: Mutex::new(BTreeMap::new()),
             tokens: Mutex::new(HashMap::new()),
             connection: Mutex::new(None),
+            packet_safety: Mutex::new(None),
             injections,
             events,
             stop: AtomicBool::new(false),
@@ -674,12 +689,33 @@ fn serve_peer(mut stream: TcpStream, id: u64, shared: &Arc<Shared>) -> io::Resul
                             extension::flags(&shared.flags).map_err(io::Error::other)?,
                         )?,
                         Incoming::Send { direction, packet } => {
-                            if shared
+                            let revision = shared
                                 .connection
                                 .lock()
                                 .map_err(|_| io::Error::other("connection lock poisoned"))?
-                                .is_some()
-                            {
+                                .as_ref()
+                                .map(|connection| connection.version.clone());
+                            if let Some(revision) = revision {
+                                let allowed = match shared.packet_safety.lock() {
+                                    Ok(policy) => match policy.as_ref() {
+                                        Some(safety) => safety.lock().is_ok_and(|safety| {
+                                            safety.may_send_with_current_mode(
+                                                Some(&revision),
+                                                direction,
+                                                packet.header(),
+                                            )
+                                        }),
+                                        None => true,
+                                    },
+                                    Err(_) => false,
+                                };
+                                if !allowed {
+                                    let _ = shared.events.try_send(HostEvent::Console {
+                                        id: p.id,
+                                        text: format!("Packet {} not sent: ID not observed for this hotel version and direction", packet.header()),
+                                    });
+                                    continue;
+                                }
                                 shared
                                     .injections
                                     .try_send((direction, packet))

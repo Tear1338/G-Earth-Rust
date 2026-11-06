@@ -112,6 +112,72 @@ fn named_packets_are_validated_for_the_actual_destination() {
 }
 
 #[test]
+fn safety_checks_all_packets_and_keeps_revision_and_direction_separate() {
+    use gearth_rust::packet_safety::PacketSafety;
+    let info = PacketInfoManager::default();
+    let packets = parse_packets(
+        "{h:1}\n{h:2}",
+        PacketFormat::EvaWire,
+        Direction::ToServer,
+        &info,
+    )
+    .unwrap();
+    let mut safety = PacketSafety::default();
+    safety.observe("v1", Direction::ToServer, 1);
+    assert_eq!(
+        gearth_rust::injection::first_unsafe_packet(
+            &packets,
+            Direction::ToServer,
+            Some("v1"),
+            &safety,
+            false
+        ),
+        Some(2)
+    );
+    assert_eq!(
+        gearth_rust::injection::first_unsafe_packet(
+            &packets,
+            Direction::ToServer,
+            Some("v1"),
+            &safety,
+            true
+        ),
+        None
+    );
+    safety.observe("v1", Direction::ToServer, 2);
+    assert_eq!(
+        gearth_rust::injection::first_unsafe_packet(
+            &packets,
+            Direction::ToServer,
+            Some("v1"),
+            &safety,
+            false
+        ),
+        None
+    );
+    assert_eq!(
+        gearth_rust::injection::first_unsafe_packet(
+            &packets,
+            Direction::ToClient,
+            Some("v1"),
+            &safety,
+            false
+        ),
+        Some(1)
+    );
+    assert_eq!(
+        gearth_rust::injection::first_unsafe_packet(
+            &packets,
+            Direction::ToServer,
+            Some("v2"),
+            &safety,
+            false
+        ),
+        Some(1)
+    );
+}
+
+#[test]
 fn history_roundtrips_is_bounded_deduplicated_and_validates_input() {
     let mut history = InjectionHistory::default();
     assert!(history.record("{h:1}", Direction::ToServer));

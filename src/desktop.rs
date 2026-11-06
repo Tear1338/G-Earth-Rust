@@ -144,6 +144,8 @@ struct Desktop {
     packet_database: String,
     packet_info: PacketInfoManager,
     packet_safety: Arc<std::sync::Mutex<gearth_rust::packet_safety::PacketSafety>>,
+    developer_mode: bool,
+    developer_mode_confirmation: bool,
     socks_proxy: String,
     socks_user: String,
     socks_password: String,
@@ -533,6 +535,8 @@ impl Default for Desktop {
             packet_safety: Arc::new(std::sync::Mutex::new(
                 gearth_rust::packet_safety::PacketSafety::default(),
             )),
+            developer_mode: false,
+            developer_mode_confirmation: false,
             socks_proxy: String::new(),
             socks_user: String::new(),
             socks_password: String::new(),
@@ -573,6 +577,11 @@ impl Default for Desktop {
                     .join("extensions"),
             ),
         };
+        if let Some(host) = &desktop.extension_host {
+            if let Err(error) = host.set_packet_safety(desktop.packet_safety.clone()) {
+                desktop.status = format!("Extension packet safety unavailable: {error}");
+            }
+        }
         desktop.load_settings();
         desktop
     }
@@ -882,12 +891,33 @@ impl Desktop {
         }
         if let Some(relay) = &self.relay {
             if relay.connected() {
-                if let Err(e) = self.scheduler.dispatch_with_wall_clock(
+                let mut blocked = None;
+                let result: std::io::Result<()> = self.scheduler.dispatch_filtered_with_wall_clock(
                     Instant::now(),
                     SystemTime::now(),
-                    |direction, packet| relay.inject(direction, packet.clone()),
-                ) {
+                    |direction, packet| {
+                        let allowed = self
+                            .packet_safety
+                            .lock()
+                            .map_err(|_| std::io::Error::other("Packet safety state unavailable"))?
+                            .may_send(
+                                Some(&self.hotel_version),
+                                direction,
+                                packet.header(),
+                                self.developer_mode,
+                            );
+                        if !allowed {
+                            blocked.get_or_insert(packet.header());
+                            return Ok(false);
+                        }
+                        relay.inject(direction, packet.clone())?;
+                        Ok(true)
+                    },
+                );
+                if let Err(e) = result {
                     self.status = e.to_string();
+                } else if let Some(header) = blocked {
+                    self.status = format!("Scheduled packet {header} was not sent: ID not observed for this hotel version and direction");
                 }
             }
         }
@@ -1118,6 +1148,7 @@ impl Desktop {
         );
         communicator.extensions = self.extension_host.clone();
         communicator.packet_info = self.packet_info.clone();
+        communicator.packet_safety = Some(self.packet_safety.clone());
         let cache = self
             .settings_path
             .parent()
@@ -1162,6 +1193,7 @@ impl Desktop {
             self.identity_directory(),
         );
         options.packet_info = self.packet_info.clone();
+        options.packet_safety = Some(self.packet_safety.clone());
         options.extensions = self.extension_host.clone();
         options.hotels = gearth_rust::nitro::Hotels::load(
             &self
@@ -1753,17 +1785,92 @@ impl Desktop {
             }
         }
     }
+    fn developer_mode_dialog(&mut self, ctx: &egui::Context) {
+        if !self.developer_mode_confirmation {
+            return;
+        }
+        let mut open = true;
+        let mut decision = None;
+        egui::Window::new(self.i18n.text("tab.extra.options.developmode.alert.title"))
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .show(ctx, |ui| {
+                ui.label(
+                    self.i18n
+                        .text("tab.extra.options.developmode.alert.content"),
+                );
+                ui.horizontal(|ui| {
+                    if ui.button(self.i18n.text("rust.confirmation.no")).clicked() {
+                        decision = Some(false);
+                    }
+                    if ui.button(self.i18n.text("rust.confirmation.yes")).clicked() {
+                        decision = Some(true);
+                    }
+                });
+            });
+        if let Some(enable) = decision {
+            self.developer_mode_confirmation = false;
+            if enable {
+                if let Ok(mut safety) = self.packet_safety.lock() {
+                    safety.set_developer_mode(true);
+                    self.developer_mode = true;
+                } else {
+                    self.status = "Packet safety state unavailable".into();
+                }
+            }
+        } else if !open {
+            self.developer_mode_confirmation = false;
+        }
+    }
     fn injection(&mut self, ui: &mut egui::Ui) {
         ui.heading("Packet injection");
+        let developer_changed = ui
+            .checkbox(
+                &mut self.developer_mode,
+                self.i18n.text("tab.extra.options.developmode"),
+            )
+            .on_hover_text(
+                self.i18n
+                    .text("tab.extra.options.developmode.alert.content"),
+            )
+            .changed();
+        if developer_changed {
+            if self.developer_mode {
+                self.developer_mode = false;
+                self.developer_mode_confirmation = true;
+            } else if let Ok(mut safety) = self.packet_safety.lock() {
+                safety.set_developer_mode(false);
+            } else {
+                self.developer_mode = true;
+                self.status = "Packet safety state unavailable".into();
+            }
+        }
         self.editor(ui, true);
         // Large inputs are checked on submission to keep the editor responsive.
         let (server_valid, client_valid) = if self.expression.len() <= 64 * 1024 {
-            injection::valid_destinations(
-                &self.expression,
-                self.packet_format(Direction::ToServer),
-                self.packet_format(Direction::ToClient),
-                &self.packet_info,
-            )
+            let validate = |direction| {
+                injection::parse_packets(
+                    &self.expression,
+                    self.packet_format(direction),
+                    direction,
+                    &self.packet_info,
+                )
+                .is_ok_and(|packets| {
+                    self.packet_safety.lock().is_ok_and(|safety| {
+                        injection::first_unsafe_packet(
+                            &packets,
+                            direction,
+                            Some(&self.hotel_version),
+                            &safety,
+                            self.developer_mode,
+                        )
+                        .is_none()
+                    })
+                })
+            };
+            (validate(Direction::ToServer), validate(Direction::ToClient))
         } else {
             (true, true)
         };
@@ -1774,6 +1881,11 @@ impl Desktop {
                     connected && server_valid,
                     egui::Button::new(self.i18n.text("tab.injection.send.toserver")),
                 )
+                .on_disabled_hover_text(if connected {
+                    "Invalid packet or ID not observed for this hotel version and direction"
+                } else {
+                    "Connect a client first"
+                })
                 .clicked()
             {
                 self.send_injection(Direction::ToServer);
@@ -1783,6 +1895,11 @@ impl Desktop {
                     connected && client_valid,
                     egui::Button::new(self.i18n.text("tab.injection.send.toclient")),
                 )
+                .on_disabled_hover_text(if connected {
+                    "Invalid packet or ID not observed for this hotel version and direction"
+                } else {
+                    "Connect a client first"
+                })
                 .clicked()
             {
                 self.send_injection(Direction::ToClient);
@@ -2011,6 +2128,23 @@ impl Desktop {
             &self.packet_info,
         ) {
             Ok(packets) => {
+                let unsafe_id = match self.packet_safety.lock() {
+                    Ok(safety) => injection::first_unsafe_packet(
+                        &packets,
+                        direction,
+                        Some(&self.hotel_version),
+                        &safety,
+                        self.developer_mode,
+                    ),
+                    Err(_) => {
+                        self.status = "Packet safety state unavailable".into();
+                        return;
+                    }
+                };
+                if let Some(header) = unsafe_id {
+                    self.status = format!("Packet {header} has not been observed in this direction for this hotel version");
+                    return;
+                }
                 let total = packets.len();
                 match injection::enqueue_packets(packets, |packet| relay.inject(direction, packet)) {
                     Err((accepted, error)) => format!("{accepted} of {total} packets queued; remaining packets not queued: {error}"),
@@ -2685,6 +2819,7 @@ impl eframe::App for Desktop {
                 );
             }
         });
+        self.developer_mode_dialog(ctx);
         if self.relay.is_some()
             || self.attachment_pending.is_some()
             || self.extension_host.is_some()
@@ -2831,6 +2966,16 @@ impl Desktop {
             .get("logger_message_id")
             .copied()
             .unwrap_or(false);
+        self.developer_mode = self
+            .settings
+            .booleans
+            .get("developer_mode")
+            .copied()
+            .unwrap_or(false);
+        self.developer_mode_confirmation = false;
+        if let Ok(mut safety) = self.packet_safety.lock() {
+            safety.set_developer_mode(self.developer_mode);
+        }
         for (key, target) in [
             ("listen", &mut self.listen),
             ("remote", &mut self.remote),
@@ -2936,6 +3081,7 @@ impl Desktop {
             ("logger_names".into(), self.logger_names),
             ("logger_hashes".into(), self.logger_hashes),
             ("logger_message_id".into(), self.logger_message_id),
+            ("developer_mode".into(), self.developer_mode),
             ("logger_extra_legacy".into(), self.logger_extra_legacy),
             ("logger_extra_raw_hex".into(), self.logger_extra_raw_hex),
             ("logger_extra_hex_dump".into(), self.logger_extra_hex_dump),

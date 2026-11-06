@@ -357,11 +357,12 @@ fn forwards_plain_http_and_stops_without_external_network() {
 #[test]
 fn nitro_websocket_supports_block_replace_and_bidirectional_injection() {
     let dir = Directory::new();
-    let (mut proxy, events) = WebProxy::start(WebOptions::new(
-        "127.0.0.1:0".parse().unwrap(),
-        dir.0.join("ca"),
-    ))
-    .unwrap();
+    let safety = std::sync::Arc::new(std::sync::Mutex::new(
+        gearth_rust::packet_safety::PacketSafety::default(),
+    ));
+    let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), dir.0.join("ca"));
+    options.packet_safety = Some(safety.clone());
+    let (mut proxy, events) = WebProxy::start(options).unwrap();
     proxy
         .set_rules(Rules {
             entries: vec![
@@ -480,5 +481,13 @@ fn nitro_websocket_supports_block_replace_and_bidirectional_injection() {
         upstream.await.unwrap();
     });
     assert!(blocked_seen);
+    let observed = safety.lock().unwrap();
+    let revision = Some(gearth_rust::web_proxy::NITRO_REVISION);
+    assert!(observed.is_safe(revision, Direction::ToServer, 77));
+    assert!(observed.is_safe(revision, Direction::ToServer, 78));
+    assert!(observed.is_safe(revision, Direction::ToClient, 88));
+    assert!(!observed.is_safe(revision, Direction::ToServer, 79));
+    assert!(!observed.is_safe(revision, Direction::ToClient, 89));
+    drop(observed);
     proxy.stop();
 }

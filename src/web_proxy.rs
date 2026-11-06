@@ -41,6 +41,7 @@ pub struct WebOptions {
     pub listen: SocketAddr,
     pub identity_directory: PathBuf,
     pub packet_info: PacketInfoManager,
+    pub packet_safety: Option<Arc<Mutex<crate::packet_safety::PacketSafety>>>,
     pub extensions: Option<Arc<ExtensionHost>>,
     pub extra_roots: Vec<Vec<u8>>,
     pub websocket_urls: Vec<String>,
@@ -56,6 +57,7 @@ impl WebOptions {
             unity: None,
             detect_nitro: true,
             packet_info: PacketInfoManager::default(),
+            packet_safety: None,
             extensions: None,
             extra_roots: Vec::new(),
             websocket_urls: Vec::new(),
@@ -317,6 +319,11 @@ impl Shared {
                 blocked: false,
             };
             if !injected {
+                if let Some(safety) = &state.options.packet_safety {
+                    if let Ok(mut safety) = safety.lock() {
+                        safety.observe(NITRO_REVISION, direction, message.packet.header());
+                    }
+                }
                 state
                     .rules
                     .lock()

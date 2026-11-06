@@ -200,6 +200,9 @@ fn all_stuff_data_wire_formats_match_original_java() {
         gearth_rust::parsers::forums::ThreadState::HiddenByAdmin
     );
     assert_eq!(comments.comments[0].author_post_count, 9);
+    let mut encoded_comments = Packet::new(1);
+    comments.append(&mut encoded_comments).unwrap();
+    assert_eq!(encoded_comments.bytes(), observed["comments"]);
     let entities = gearth_rust::parsers::entity::HEntity::parse(
         &mut Packet::from_bytes(observed["entities"].clone()).unwrap(),
     )

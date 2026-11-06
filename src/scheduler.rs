@@ -300,7 +300,20 @@ impl Scheduler {
         &mut self,
         now: Instant,
         wall: SystemTime,
-        send: impl FnMut(Direction, &Packet) -> std::result::Result<(), E>,
+        mut send: impl FnMut(Direction, &Packet) -> std::result::Result<(), E>,
+    ) -> std::result::Result<(), E> {
+        self.correct_wall_clock(now, wall);
+        self.dispatch_due(now, |direction, packet| {
+            send(direction, packet).map(|()| true)
+        })
+    }
+    /// A false result skips the current occurrence and schedules the next one,
+    /// without consuming a finite repetition. Queue errors remain retryable.
+    pub fn dispatch_filtered_with_wall_clock<E>(
+        &mut self,
+        now: Instant,
+        wall: SystemTime,
+        send: impl FnMut(Direction, &Packet) -> std::result::Result<bool, E>,
     ) -> std::result::Result<(), E> {
         self.correct_wall_clock(now, wall);
         self.dispatch_due(now, send)
@@ -310,7 +323,7 @@ impl Scheduler {
         let mut due = Vec::new();
         let result = self.dispatch_due(now, |direction, packet| {
             due.push((direction, packet.clone()));
-            Ok::<(), std::convert::Infallible>(())
+            Ok::<bool, std::convert::Infallible>(true)
         });
         match result {
             Ok(()) => {}
@@ -321,17 +334,22 @@ impl Scheduler {
     fn dispatch_due<E>(
         &mut self,
         now: Instant,
-        mut send: impl FnMut(Direction, &Packet) -> std::result::Result<(), E>,
+        mut send: impl FnMut(Direction, &Packet) -> std::result::Result<bool, E>,
     ) -> std::result::Result<(), E> {
         let mut failure = None;
         for job in &mut self.jobs {
             if !job.paused && job.next <= now && job.remaining != Some(0) {
-                if let Err(error) = send(job.direction, &job.packet) {
-                    failure = Some(error);
-                    break;
-                }
-                if let Some(count) = &mut job.remaining {
-                    *count -= 1;
+                let accepted = match send(job.direction, &job.packet) {
+                    Ok(accepted) => accepted,
+                    Err(error) => {
+                        failure = Some(error);
+                        break;
+                    }
+                };
+                if accepted {
+                    if let Some(count) = &mut job.remaining {
+                        *count -= 1;
+                    }
                 }
                 let next = if job.alignment_offset_ms.is_some() {
                     next_aligned(job.next, job.interval, now)

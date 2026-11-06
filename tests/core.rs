@@ -14,6 +14,59 @@ fn scheduler_initial_draft_matches_original_java_sample() {
 }
 
 #[test]
+fn scheduler_skips_disallowed_occurrence_without_starving_other_jobs() {
+    let now = Instant::now();
+    let wall = std::time::UNIX_EPOCH + Duration::from_secs(100);
+    let mut scheduler = Scheduler::default();
+    scheduler
+        .add_configured(
+            Packet::new(1),
+            Direction::ToServer,
+            500,
+            None,
+            Some(2),
+            (now, wall),
+        )
+        .unwrap();
+    scheduler
+        .add_configured(
+            Packet::new(2),
+            Direction::ToClient,
+            500,
+            None,
+            Some(1),
+            (now, wall),
+        )
+        .unwrap();
+    let mut sent = Vec::new();
+    scheduler
+        .dispatch_filtered_with_wall_clock(now, wall, |_, packet| {
+            if packet.header() == 1 {
+                return Ok::<_, ()>(false);
+            }
+            sent.push(packet.header());
+            Ok(true)
+        })
+        .unwrap();
+    assert_eq!(sent, vec![2]);
+    assert_eq!(scheduler.jobs.len(), 1);
+    assert_eq!(scheduler.jobs[0].remaining, Some(2));
+    assert_eq!(scheduler.jobs[0].next, now + Duration::from_millis(500));
+    scheduler
+        .dispatch_filtered_with_wall_clock(
+            now + Duration::from_millis(500),
+            wall + Duration::from_millis(500),
+            |_, packet| {
+                sent.push(packet.header());
+                Ok::<_, ()>(true)
+            },
+        )
+        .unwrap();
+    assert_eq!(sent, vec![2, 1]);
+    assert_eq!(scheduler.jobs[0].remaining, Some(1));
+}
+
+#[test]
 fn java_bytebuffer_wire_vector() {
     let p = expression::parse("{h:123}{i:42}{s:\"hello\"}{b:true}").unwrap();
     assert_eq!(

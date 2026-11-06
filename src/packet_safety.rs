@@ -12,9 +12,22 @@ const MAX_REVISION_BYTES: usize = 1024;
 #[derive(Default)]
 pub struct PacketSafety {
     revisions: HashMap<String, HashSet<(Direction, u16)>>,
+    developer_mode: bool,
 }
 
 impl PacketSafety {
+    pub fn set_developer_mode(&mut self, enabled: bool) {
+        self.developer_mode = enabled;
+    }
+
+    pub fn may_send_with_current_mode(
+        &self,
+        revision: Option<&str>,
+        direction: Direction,
+        header: u16,
+    ) -> bool {
+        self.may_send(revision, direction, header, self.developer_mode)
+    }
     /// Empty revisions are ignored, as they are in the Java traffic listener.
     /// Returns false if a new revision cannot be tracked within the bounds.
     pub fn observe(&mut self, revision: &str, direction: Direction, header: u16) -> bool {

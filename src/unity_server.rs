@@ -42,6 +42,7 @@ pub struct UnityOptions {
     pub listen: SocketAddr,
     pub identity_directory: PathBuf,
     pub packet_info: PacketInfoManager,
+    pub packet_safety: Option<Arc<Mutex<crate::packet_safety::PacketSafety>>>,
     pub extensions: Option<Arc<ExtensionHost>>,
 }
 impl UnityOptions {
@@ -50,6 +51,7 @@ impl UnityOptions {
             listen,
             identity_directory,
             packet_info: PacketInfoManager::default(),
+            packet_safety: None,
             extensions: None,
         }
     }
@@ -197,6 +199,7 @@ impl State {
         direction: Direction,
         packet: Packet,
         injected: bool,
+        revision: Option<String>,
     ) -> io::Result<Option<Packet>> {
         let state = self.clone();
         tokio::task::spawn_blocking(move || {
@@ -218,6 +221,13 @@ impl State {
                 blocked: false,
             };
             if !injected {
+                if let (Some(safety), Some(revision)) =
+                    (&state.options.packet_safety, revision.as_deref())
+                {
+                    if let Ok(mut safety) = safety.lock() {
+                        safety.observe(revision, direction, message.packet.header());
+                    }
+                }
                 state
                     .rules
                     .lock()
@@ -285,13 +295,13 @@ async fn session(
         _=stopped.changed()=>break,
         _=&mut handshake,if !peer.ready.load(Ordering::Acquire)=>return Err(io::Error::new(io::ErrorKind::TimedOut,"Unity revision/hello timed out")),
         _=tick.tick(),if peer.ready.load(Ordering::Acquire)=>{if let Some(host)=&state.options.extensions {for (direction,packet) in host.take_injections(){peer.enqueue(direction,packet)?;}}},
-        injection=injections.recv()=>{let Some((direction,packet))=injection else{break;};peer.queued.fetch_sub(packet.bytes().len(),Ordering::AcqRel);if let Some(packet)=state.packet(direction,packet,true).await?{tokio::time::timeout(Duration::from_secs(5),socket.send(wire(direction,&packet))).await.map_err(io::Error::other)?.map_err(io::Error::other)?;}},
+        injection=injections.recv()=>{let Some((direction,packet))=injection else{break;};peer.queued.fetch_sub(packet.bytes().len(),Ordering::AcqRel);if let Some(packet)=state.packet(direction,packet,true,None).await?{tokio::time::timeout(Duration::from_secs(5),socket.send(wire(direction,&packet))).await.map_err(io::Error::other)?.map_err(io::Error::other)?;}},
         message=socket.next()=>{let Some(message)=message else{break;};match message.map_err(io::Error::other)? {
             WsMessage::Binary(bytes)=>{if revision_name.is_none(){revision_name=Some(revision(&bytes)?);continue;}let (&prefix,payload)=bytes.split_first().ok_or_else(||io::Error::other("empty Unity frame"))?;let direction=direction(prefix)?;
                 if !peer.ready.load(Ordering::Acquire){prehello_bytes+=payload.len();if direction!=Direction::ToServer||prehello_bytes>65536{return Err(io::Error::other("Unity requires an outgoing hello after its revision"));}}
                 let decoder=&mut decoders[prefix as usize];for chunk in payload.chunks(65536){decoder.push(chunk).map_err(io::Error::other)?;while let Some(packet)=decoder.next_packet().map_err(io::Error::other)? {
                     if !peer.ready.load(Ordering::Acquire){if packet.header()!=4000{return Err(io::Error::other("Unity first outgoing packet must be hello 4000"));}let mut hello=packet.clone();hello.read_string().map_err(io::Error::other)?;let identifier=hello.read_string().map_err(io::Error::other)?;let actor=state.clone();let current=peer.clone();let revision=revision_name.clone().unwrap();tokio::task::spawn_blocking(move||actor.initialize(&current,revision,identifier)).await.map_err(io::Error::other)??;}
-                    if let Some(packet)=state.packet(direction,packet,false).await?{tokio::time::timeout(Duration::from_secs(5),socket.send(wire(direction,&packet))).await.map_err(io::Error::other)?.map_err(io::Error::other)?;}
+                    if let Some(packet)=state.packet(direction,packet,false,revision_name.clone()).await?{tokio::time::timeout(Duration::from_secs(5),socket.send(wire(direction,&packet))).await.map_err(io::Error::other)?.map_err(io::Error::other)?;}
                 }}
             },
             WsMessage::Ping(_)=>socket.flush().await.map_err(io::Error::other)?,WsMessage::Pong(_)=>{},WsMessage::Close(_)=>break,_=>return Err(io::Error::other("Unity communicator requires binary messages")),

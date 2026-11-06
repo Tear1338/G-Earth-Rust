@@ -80,3 +80,22 @@ fn every_original_language_has_core_tabs() {
     }
     assert_eq!(I18n::new("fr").text("tab.connection"), "Connexion");
 }
+
+#[test]
+fn developer_confirmation_has_translated_choices_and_fallbacks() {
+    for (language, _) in LANGUAGES {
+        let bundle = I18n::new(language);
+        assert_ne!(
+            bundle.text("rust.confirmation.yes"),
+            "rust.confirmation.yes"
+        );
+        assert_ne!(bundle.text("rust.confirmation.no"), "rust.confirmation.no");
+        assert_ne!(
+            bundle.text("tab.extra.options.developmode.alert.title"),
+            "tab.extra.options.developmode.alert.title"
+        );
+    }
+    let french = I18n::new("fr");
+    assert_eq!(french.text("rust.confirmation.yes"), "Oui");
+    assert_eq!(french.text("rust.confirmation.no"), "Non");
+}

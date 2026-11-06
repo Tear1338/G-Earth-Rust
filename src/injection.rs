@@ -3,6 +3,7 @@ use crate::{
     expression,
     packet::{error, Direction, Packet, PacketFormat, Result, MAX_FRAME},
     packet_info::PacketInfoManager,
+    packet_safety::PacketSafety,
 };
 use serde::{Deserialize, Serialize};
 use std::{collections::VecDeque, io, path::Path};
@@ -25,6 +26,20 @@ pub fn valid_destinations(
         parse_packets(input, server_format, Direction::ToServer, info).is_ok(),
         parse_packets(input, client_format, Direction::ToClient, info).is_ok(),
     )
+}
+
+/// Return the first packet ID that has not been observed for this revision.
+pub fn first_unsafe_packet(
+    packets: &[Packet],
+    direction: Direction,
+    revision: Option<&str>,
+    safety: &PacketSafety,
+    developer_mode: bool,
+) -> Option<u16> {
+    packets
+        .iter()
+        .map(Packet::header)
+        .find(|header| !safety.may_send(revision, direction, *header, developer_mode))
 }
 
 /// Validate the whole batch before submitting any packet to the connection.

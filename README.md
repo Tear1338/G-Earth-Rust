@@ -42,6 +42,8 @@ cargo run --release --bin gearth-rust -- relay 127.0.0.1:1234 test-server.exampl
 
 CLI relay commands: `server EXPR`, `client EXPR`, `quit`. Binding is restricted to loopback. The CLI TCP relay does not modify system proxy settings. The desktop includes negotiated Flash decryption, scoped hostname attachment and Flash Raw-IP attachment; see [attachment setup and limits](docs/ATTACHMENT.md).
 
+For CLI packet-ID checks, append `--revision VERSION`: only IDs observed in original traffic for that revision and direction can be injected. `--developer` overrides the check. The explicit plaintext relay cannot discover a revision itself, so without `--revision` it retains the original behavior and permits unobserved IDs.
+
 ## Validation
 
 CI runs core and TCP loopback tests on Windows and Linux and builds the Windows desktop executable. A separate Java compatibility job downloads the pinned upstream beta-29 release, verifies its published SHA-256, invokes its actual API JAR and compares wire vectors against Rust. These finite checks cover only the declared vectors, not all G-Earth behavior.

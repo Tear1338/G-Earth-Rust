@@ -140,6 +140,87 @@ fn tracks_only_original_traffic_before_rules_not_injections() {
     drop(observed);
     relay.stop();
 }
+
+#[test]
+fn scheduled_send_waits_until_packet_id_is_observed() {
+    use gearth_rust::{
+        extension_host::ConnectionDetails, packet_info::PacketInfoManager,
+        packet_safety::PacketSafety, relay::RelayOptions,
+    };
+    use std::sync::{Arc, Mutex};
+    let safety = Arc::new(Mutex::new(PacketSafety::default()));
+    let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+    let options = RelayOptions {
+        packet_safety: Some(safety.clone()),
+        connection: Some(ConnectionDetails {
+            host: "fixture".into(),
+            port: 1,
+            version: "fixture-v1".into(),
+            identifier: "fixture".into(),
+            client_type: "FLASH".into(),
+            packets: PacketInfoManager::default(),
+        }),
+        ..Default::default()
+    };
+    let (mut relay, events) = Relay::start_with_options(
+        Config {
+            listen: "127.0.0.1:0".parse().unwrap(),
+            remote: remote.local_addr().unwrap().to_string(),
+        },
+        options,
+    )
+    .unwrap();
+    let mut client = TcpStream::connect(relay.address).unwrap();
+    let (mut server, _) = remote.accept().unwrap();
+    server
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    wait_for(&events, |event| matches!(event, Event::Connected(_)));
+    let now = Instant::now();
+    let wall = SystemTime::now();
+    let mut scheduler = Scheduler::default();
+    scheduler
+        .add_configured(
+            Packet::new(42),
+            Direction::ToServer,
+            500,
+            None,
+            Some(1),
+            (now, wall),
+        )
+        .unwrap();
+    let mut queued = 0;
+    let mut dispatch = |direction, packet: &Packet| -> std::io::Result<bool> {
+        if !safety
+            .lock()
+            .unwrap()
+            .may_send(Some("fixture-v1"), direction, packet.header(), false)
+        {
+            return Ok(false);
+        }
+        relay.inject(direction, packet.clone())?;
+        queued += 1;
+        Ok(true)
+    };
+    scheduler
+        .dispatch_filtered_with_wall_clock(now, wall, &mut dispatch)
+        .unwrap();
+    assert_eq!(scheduler.jobs[0].remaining, Some(1));
+    write_frame(&mut client, &Packet::new(42)).unwrap();
+    assert_eq!(read_frame(&mut server).unwrap().header(), 42);
+    scheduler
+        .dispatch_filtered_with_wall_clock(
+            now + Duration::from_millis(500),
+            wall + Duration::from_millis(500),
+            &mut dispatch,
+        )
+        .unwrap();
+    assert!(scheduler.jobs.is_empty());
+    assert_eq!(read_frame(&mut server).unwrap().header(), 42);
+    drop(dispatch);
+    assert_eq!(queued, 1);
+    relay.stop();
+}
 #[test]
 fn truncated_frame_closes_both_sockets() {
     let remote = TcpListener::bind("127.0.0.1:0").unwrap();

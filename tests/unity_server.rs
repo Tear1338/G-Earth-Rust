@@ -101,11 +101,12 @@ async fn hello(socket: &mut Socket) {
 #[test]
 fn tls_communicator_authenticates_and_routes_mutations_injections_and_fragmented_packets() {
     let directory = Directory::new();
-    let (mut server, events) = UnityServer::start(UnityOptions::new(
-        "127.0.0.1:0".parse().unwrap(),
-        directory.0.join("ca"),
-    ))
-    .unwrap();
+    let safety = std::sync::Arc::new(std::sync::Mutex::new(
+        gearth_rust::packet_safety::PacketSafety::default(),
+    ));
+    let mut options = UnityOptions::new("127.0.0.1:0".parse().unwrap(), directory.0.join("ca"));
+    options.packet_safety = Some(safety.clone());
+    let (mut server, events) = UnityServer::start(options).unwrap();
     server
         .set_rules(Rules {
             entries: vec![
@@ -173,6 +174,13 @@ fn tls_communicator_authenticates_and_routes_mutations_injections_and_fragmented
         .iter()
         .any(|e| matches!(e,Event::Packet(m) if m.packet.header()==77&&m.blocked)));
     assert!(events.iter().any(|e|matches!(e,Event::Identified {version,identifier} if version=="TEST-UNITY-1"&&identifier=="UNITY-FIXTURE")));
+    let observed = safety.lock().unwrap();
+    let revision = Some("TEST-UNITY-1");
+    assert!(observed.is_safe(revision, Direction::ToServer, 77));
+    assert!(observed.is_safe(revision, Direction::ToServer, 78));
+    assert!(observed.is_safe(revision, Direction::ToClient, 88));
+    assert!(!observed.is_safe(revision, Direction::ToServer, 79));
+    assert!(!observed.is_safe(revision, Direction::ToClient, 89));
 }
 #[test]
 fn refuses_missing_token_and_a_second_concurrent_browser() {
