@@ -43,6 +43,8 @@ pub struct RelayOptions {
     pub socks: Option<SocksConfig>,
     pub outgoing_rc4: Option<Rc4>,
     pub incoming_rc4: Option<Rc4>,
+    /// Optional session-shared registry for tracking IDs from real traffic.
+    pub packet_safety: Option<Arc<Mutex<crate::packet_safety::PacketSafety>>>,
 }
 struct Session {
     injections: SyncSender<(Direction, Packet)>,
@@ -393,6 +395,11 @@ fn run_session(
     let mut flash = options
         .flash_process
         .map(|_| crate::flash::FlashSession::default());
+    let mut safety_revision = options
+        .connection
+        .as_ref()
+        .map(|details| details.version.clone())
+        .unwrap_or_default();
     while !stop.load(Ordering::Acquire) && !closed.load(Ordering::Acquire) {
         let mut progress = false;
         let mut injected: Vec<_> = commands.try_iter().take(64).collect();
@@ -507,6 +514,7 @@ fn run_session(
             };
             if let Some(flash) = &mut flash {
                 if let Some(identity) = flash.take_identity() {
+                    safety_revision.clone_from(&identity.version);
                     let _ = events.try_send(Event::Identified {
                         version: identity.version.clone(),
                         identifier: identity.identifier.clone(),
@@ -546,6 +554,11 @@ fn run_session(
             }
             for (packet, encrypted) in packets {
                 progress = true;
+                if let Some(safety) = &options.packet_safety {
+                    if let Ok(mut safety) = safety.lock() {
+                        safety.observe(&safety_revision, direction, packet.header());
+                    }
+                }
                 let mut message = Message {
                     packet,
                     direction,

@@ -80,6 +80,66 @@ fn duplex_injection_rules_and_stop() {
     assert!(!relay.connected());
     assert!(relay.inject(Direction::ToServer, Packet::new(1)).is_err());
 }
+
+#[test]
+fn tracks_only_original_traffic_before_rules_not_injections() {
+    use gearth_rust::{
+        extension_host::ConnectionDetails, packet_info::PacketInfoManager,
+        packet_safety::PacketSafety, relay::RelayOptions,
+    };
+    use std::sync::{Arc, Mutex};
+    let safety = Arc::new(Mutex::new(PacketSafety::default()));
+    let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+    let options = RelayOptions {
+        packet_safety: Some(safety.clone()),
+        connection: Some(ConnectionDetails {
+            host: "fixture".into(),
+            port: 1,
+            version: "fixture-v1".into(),
+            identifier: "fixture".into(),
+            client_type: "FLASH".into(),
+            packets: PacketInfoManager::default(),
+        }),
+        ..Default::default()
+    };
+    let (mut relay, events) = Relay::start_with_options(
+        Config {
+            listen: "127.0.0.1:0".parse().unwrap(),
+            remote: remote.local_addr().unwrap().to_string(),
+        },
+        options,
+    )
+    .unwrap();
+    let mut client = TcpStream::connect(relay.address).unwrap();
+    let (mut server, _) = remote.accept().unwrap();
+    client
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    server
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    wait_for(&events, |event| matches!(event, Event::Connected(_)));
+    relay
+        .set_rules(Rules {
+            entries: vec![Rule {
+                enabled: true,
+                direction: Direction::ToServer,
+                header: 77,
+                action: Action::Replace(Packet::new(78)),
+            }],
+        })
+        .unwrap();
+    write_frame(&mut client, &Packet::new(77)).unwrap();
+    assert_eq!(read_frame(&mut server).unwrap().header(), 78);
+    relay.inject(Direction::ToClient, Packet::new(99)).unwrap();
+    assert_eq!(read_frame(&mut client).unwrap().header(), 99);
+    let observed = safety.lock().unwrap();
+    assert!(observed.is_safe(Some("fixture-v1"), Direction::ToServer, 77));
+    assert!(!observed.is_safe(Some("fixture-v1"), Direction::ToServer, 78));
+    assert!(!observed.is_safe(Some("fixture-v1"), Direction::ToClient, 99));
+    drop(observed);
+    relay.stop();
+}
 #[test]
 fn truncated_frame_closes_both_sockets() {
     let remote = TcpListener::bind("127.0.0.1:0").unwrap();

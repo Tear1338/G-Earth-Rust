@@ -17,6 +17,7 @@ pub mod logger_filter;
 mod maven_version;
 pub mod packet;
 pub mod packet_info;
+pub mod packet_safety;
 pub mod packet_tools;
 pub mod parsers;
 mod raw_ip_lease;

@@ -143,6 +143,7 @@ struct Desktop {
     client_identifier: String,
     packet_database: String,
     packet_info: PacketInfoManager,
+    packet_safety: Arc<std::sync::Mutex<gearth_rust::packet_safety::PacketSafety>>,
     socks_proxy: String,
     socks_user: String,
     socks_password: String,
@@ -529,6 +530,9 @@ impl Default for Desktop {
             client_identifier: String::new(),
             packet_database: String::new(),
             packet_info: PacketInfoManager::default(),
+            packet_safety: Arc::new(std::sync::Mutex::new(
+                gearth_rust::packet_safety::PacketSafety::default(),
+            )),
             socks_proxy: String::new(),
             socks_user: String::new(),
             socks_password: String::new(),
@@ -3022,6 +3026,7 @@ impl Desktop {
             packets: self.packet_info.clone(),
         };
         Ok(RelayOptions {
+            packet_safety: Some(self.packet_safety.clone()),
             flash_process: if self.flash_auto && !self.origins {
                 if self.flash_pid != 0
                     && !gearth_platform::habbo_processes()?
