@@ -11,6 +11,35 @@ pub struct SocksConfig {
 }
 impl SocksConfig {
     pub fn connect(&self, target: &str) -> io::Result<TcpStream> {
+        let (host, port) = target.rsplit_once(':').ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "target requires host:port")
+        })?;
+        let port: u16 = port
+            .parse()
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid target port"))?;
+        let host = if let Some(ip) = host.strip_prefix('[').and_then(|s| s.strip_suffix(']')) {
+            ip.parse::<std::net::Ipv6Addr>().map_err(|_| {
+                io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "invalid bracketed IPv6 address",
+                )
+            })?;
+            ip
+        } else {
+            if host.is_empty() || host.contains(['[', ']', ':']) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "invalid target host; IPv6 addresses require brackets",
+                ));
+            }
+            host
+        };
+        if host.len() > 255 && host.parse::<IpAddr>().is_err() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "SOCKS hostname must be 1..255 bytes",
+            ));
+        }
         let addresses: Vec<_> = self.proxy.to_socket_addrs()?.collect();
         let mut stream = addresses
             .iter()
@@ -20,13 +49,6 @@ impl SocksConfig {
             })?;
         stream.set_read_timeout(Some(Duration::from_secs(2)))?;
         stream.set_write_timeout(Some(Duration::from_secs(2)))?;
-        let (host, port) = target.rsplit_once(':').ok_or_else(|| {
-            io::Error::new(io::ErrorKind::InvalidInput, "target requires host:port")
-        })?;
-        let port: u16 = port
-            .parse()
-            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid target port"))?;
-        let host = host.trim_start_matches('[').trim_end_matches(']');
         let greeting = if self.credentials.is_some() {
             vec![5, 1, 2]
         } else {
