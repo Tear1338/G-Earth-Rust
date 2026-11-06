@@ -406,6 +406,43 @@ impl Settings {
         if let Some(enabled) = value["develop_mode"].as_bool() {
             self.booleans.insert("developer_mode".into(), enabled);
         }
+        // beta-29 stores these in the exact menu order from UiLoggerController.
+        // Reject malformed or differently sized lists, as Java does for old layouts.
+        if let Some(items) = value["LOGGER_SETTINGS"]
+            .as_array()
+            .filter(|items| items.len() == 21 && items.iter().all(serde_json::Value::is_boolean))
+        {
+            for (index, key) in [
+                (0, "incoming"),
+                (1, "outgoing"),
+                (2, "logger_structure"),
+                (3, "logger_autoscroll"),
+                (5, "logger_names"),
+                (6, "logger_hashes"),
+                (7, "logger_message_id"),
+                (9, "logger_clear_on_connect"),
+                (11, "logger_clear_on_disconnect"),
+                (17, "logger_timestamp"),
+                (18, "logger_extra_hex_dump"),
+                (19, "logger_extra_legacy"),
+                (20, "logger_extra_raw_hex"),
+            ] {
+                self.booleans
+                    .insert(key.into(), items[index].as_bool().unwrap());
+            }
+            let selected: Vec<_> = ["None", "Low", "Medium", "High", "Ultra"]
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| items[12 + index].as_bool() == Some(true))
+                .map(|(_, mode)| *mode)
+                .collect();
+            if let [mode] = selected.as_slice() {
+                self.values.insert("logger_antispam".into(), (*mode).into());
+            }
+            // Java's byte representations are independent of its main expression.
+            self.values
+                .insert("logger_representation".into(), "Expression".into());
+        }
         if let Some(entries) = value["INJECTED_HISTORY"].as_array() {
             let history = crate::injection::InjectionHistory::from_java_cache(entries);
             if entries.is_empty() || !history.entries().is_empty() {

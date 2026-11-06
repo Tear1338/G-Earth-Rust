@@ -98,6 +98,69 @@ fn importing_java_developer_mode_preserves_the_explicit_choice() {
 }
 
 #[test]
+fn importing_java_logger_settings_preserves_menu_choices() {
+    let mut settings = Settings::default();
+    let choices = vec![
+        true, false, true, false, true, false, true, true, false, true, false, true, false, false,
+        false, true, false, true, true, false, true,
+    ];
+    let cache = serde_json::json!({"LOGGER_SETTINGS": choices});
+    settings.import_java_cache(cache.clone()).unwrap();
+    for (key, expected) in [
+        ("incoming", true),
+        ("outgoing", false),
+        ("logger_structure", true),
+        ("logger_autoscroll", false),
+        ("logger_names", false),
+        ("logger_hashes", true),
+        ("logger_message_id", true),
+        ("logger_clear_on_connect", true),
+        ("logger_clear_on_disconnect", true),
+        ("logger_timestamp", true),
+        ("logger_extra_hex_dump", true),
+        ("logger_extra_legacy", false),
+        ("logger_extra_raw_hex", true),
+    ] {
+        assert_eq!(settings.booleans.get(key), Some(&expected), "{key}");
+    }
+    assert_eq!(settings.get("logger_antispam"), "High");
+    assert_eq!(settings.get("logger_representation"), "Expression");
+    assert_eq!(settings.extra["legacy_java_cache"], cache);
+    let path = path();
+    settings.save(&path).unwrap();
+    let loaded = Settings::read(&path).unwrap();
+    fs::remove_file(path).unwrap();
+    assert_eq!(loaded.get("logger_antispam"), "High");
+    assert_eq!(loaded.booleans.get("logger_extra_hex_dump"), Some(&true));
+}
+
+#[test]
+fn importing_invalid_logger_settings_does_not_override_existing_choices() {
+    let mut settings = Settings::default();
+    settings.booleans.insert("incoming".into(), false);
+    settings
+        .values
+        .insert("logger_antispam".into(), "Medium".into());
+    for bad in [
+        serde_json::json!([true, false]),
+        serde_json::json!(vec!["true"; 21]),
+    ] {
+        settings
+            .import_java_cache(serde_json::json!({"LOGGER_SETTINGS": bad}))
+            .unwrap();
+        assert!(!settings.booleans["incoming"]);
+        assert_eq!(settings.get("logger_antispam"), "Medium");
+    }
+    let mut choices = vec![false; 21];
+    choices[12] = true;
+    choices[13] = true;
+    settings
+        .import_java_cache(serde_json::json!({"LOGGER_SETTINGS": choices}))
+        .unwrap();
+    assert_eq!(settings.get("logger_antispam"), "Medium");
+}
+
+#[test]
 fn importing_java_ipv6_addresses_adds_required_brackets() {
     let mut settings = Settings::default();
     settings
