@@ -91,6 +91,7 @@ struct Desktop {
     logger_split: bool,
     logger_names: bool,
     logger_hashes: bool,
+    logger_message_id: bool,
     logger_representation: PacketRepresentation,
     logger_timestamp: bool,
     logger_autoscroll: bool,
@@ -308,6 +309,7 @@ impl Default for Desktop {
             logger_split: true,
             logger_names: true,
             logger_hashes: false,
+            logger_message_id: false,
             logger_representation: PacketRepresentation::Expression,
             logger_timestamp: false,
             logger_autoscroll: true,
@@ -1218,6 +1220,11 @@ impl Desktop {
                 self.i18n
                     .text("ext.logger.menu.packets.displaydetails.message.hash"),
             );
+            ui.checkbox(
+                &mut self.logger_message_id,
+                self.i18n
+                    .text("ext.logger.menu.packets.displaydetails.message.id"),
+            );
             let old = self.logger_antispam;
             egui::ComboBox::from_id_salt("logger_antispam")
                 .selected_text(format!(
@@ -1396,7 +1403,7 @@ impl Desktop {
                     } else {
                         String::new()
                     };
-                    let metadata = if self.logger_names || self.logger_hashes {
+                    let mut metadata = if self.logger_names || self.logger_hashes {
                         let (names, hashes) = row.packet_metadata.get_or_init(|| {
                             log_packet_metadata(&self.packet_info, m.direction, m.packet.header())
                         });
@@ -1411,6 +1418,9 @@ impl Desktop {
                     } else {
                         String::new()
                     };
+                    if self.logger_message_id {
+                        metadata.push_str(&format!("[{}] ", m.packet.header()));
+                    }
                     let inline_dump =
                         self.logger_representation == PacketRepresentation::HexDump && !row.skipped;
                     let representation = if inline_dump {
@@ -1884,6 +1894,15 @@ impl Desktop {
             Err(error) => error.to_string(),
         };
     }
+    fn reset_active_schedule_editor(&mut self) {
+        self.schedule_draft.expression.clear();
+        self.schedule_draft.direction = Direction::ToClient;
+        self.interval_ms = 500;
+        self.align_schedule = true;
+        self.schedule_offset_ms = 0;
+        self.repeat_forever = true;
+        self.repeat = 1;
+    }
     fn schedule(&mut self, ui: &mut egui::Ui) {
         ui.heading("Scheduler");
         let mut enabled = self.scheduler_hotkeys.is_some();
@@ -1960,6 +1979,7 @@ impl Desktop {
             )
             .clicked()
         {
+            let mut reset_active_editor = false;
             let valid_offset = !self.align_schedule || self.schedule_offset_ms < self.interval_ms;
             let parsed = expression::parse_with_format(
                 &self.schedule_draft.expression,
@@ -2004,6 +2024,7 @@ impl Desktop {
                 }) {
                     Ok(()) => {
                         if self.active_schedule_edit.take().is_some() {
+                            reset_active_editor = true;
                             "Active schedule updated; saved templates are unchanged".into()
                         } else {
                             let template = ScheduleTemplate {
@@ -2033,14 +2054,23 @@ impl Desktop {
                     Err(e) => e.to_string(),
                 };
             }
+            if reset_active_editor {
+                self.reset_active_schedule_editor();
+            }
         }
         if editing && ui.button("Cancel editing").clicked() {
+            let reset_active_editor = self.active_schedule_edit.is_some();
             self.schedule_edit = None;
             self.active_schedule_edit = None;
+            if reset_active_editor {
+                self.reset_active_schedule_editor();
+            }
         }
         if ui.button("Cancel all schedules").clicked() {
             self.scheduler.jobs.clear();
-            self.active_schedule_edit = None;
+            if self.active_schedule_edit.take().is_some() {
+                self.reset_active_schedule_editor();
+            }
         }
         ui.label(format!("{} active schedules", self.scheduler.jobs.len()));
         if ui
@@ -2100,7 +2130,9 @@ impl Desktop {
                 self.status = match result {
                     Ok(templates) => {
                         let count = templates.len();
-                        self.active_schedule_edit = None;
+                        if self.active_schedule_edit.take().is_some() {
+                            self.reset_active_schedule_editor();
+                        }
                         format!(
                             "Loaded {count} active schedules from {}",
                             self.schedule_path
@@ -2244,6 +2276,7 @@ impl Desktop {
         if let Some(i) = remove {
             if self.active_schedule_edit == Some(self.scheduler.jobs[i].id) {
                 self.active_schedule_edit = None;
+                self.reset_active_schedule_editor();
             }
             self.scheduler.jobs.remove(i);
         }
@@ -2641,6 +2674,12 @@ impl Desktop {
             .get("logger_hashes")
             .copied()
             .unwrap_or(false);
+        self.logger_message_id = self
+            .settings
+            .booleans
+            .get("logger_message_id")
+            .copied()
+            .unwrap_or(false);
         for (key, target) in [
             ("listen", &mut self.listen),
             ("remote", &mut self.remote),
@@ -2745,6 +2784,7 @@ impl Desktop {
             ("logger_split".into(), self.logger_split),
             ("logger_names".into(), self.logger_names),
             ("logger_hashes".into(), self.logger_hashes),
+            ("logger_message_id".into(), self.logger_message_id),
             ("logger_timestamp".into(), self.logger_timestamp),
             ("logger_autoscroll".into(), self.logger_autoscroll),
             (
