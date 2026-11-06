@@ -43,6 +43,16 @@ fn active_export_roundtrips_packets_timing_and_pause_without_templates() {
 }
 
 #[test]
+fn active_export_preserves_the_original_named_expression() {
+    let mut scheduler = active_fixture();
+    scheduler.jobs[0].source_expression = Some("{out:Example}{i:7}".into());
+    let exported = schedule_file::format_active(&scheduler.jobs).unwrap();
+    let restored = schedule_file::parse(&exported).unwrap();
+    assert_eq!(restored[0].expression, "{out:Example}{i:7}");
+    assert_eq!(restored[0].direction, Direction::ToServer);
+}
+
+#[test]
 fn active_export_refuses_timing_that_original_format_cannot_represent() {
     let mut scheduler = active_fixture();
     scheduler.jobs[0].remaining = Some(1);

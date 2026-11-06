@@ -80,7 +80,10 @@ pub fn format_active(jobs: &[Job]) -> io::Result<String> {
         if job.packet.bytes().len() > MAX_SCHEDULE_FILE_BYTES {
             return Err(io::Error::other("schedule packet is too large"));
         }
-        let packet_expression = expression::wire_display(job.packet.bytes());
+        let packet_expression = job
+            .source_expression
+            .clone()
+            .unwrap_or_else(|| expression::wire_display(job.packet.bytes()));
         expression_bytes = expression_bytes
             .checked_add(packet_expression.len())
             .filter(|length| *length <= MAX_SCHEDULE_FILE_BYTES)

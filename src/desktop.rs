@@ -417,6 +417,7 @@ impl Desktop {
                     (
                         ScheduleSpec {
                             packet,
+                            source_expression: Some(template.expression.clone()),
                             direction: template.direction,
                             interval_ms: template.interval_ms,
                             offset_ms: template.offset_ms,
@@ -1974,6 +1975,7 @@ impl Desktop {
                             id,
                             ScheduleSpec {
                                 packet,
+                                source_expression: Some(self.schedule_draft.expression.clone()),
                                 direction: self.schedule_draft.direction,
                                 interval_ms: self.interval_ms,
                                 offset_ms: self.align_schedule.then_some(self.schedule_offset_ms),
@@ -1991,7 +1993,13 @@ impl Desktop {
                             self.align_schedule.then_some(self.schedule_offset_ms),
                             (!self.repeat_forever).then_some(self.repeat),
                             (Instant::now(), SystemTime::now()),
-                        )
+                        )?;
+                        self.scheduler
+                            .jobs
+                            .last_mut()
+                            .expect("newly added schedule")
+                            .source_expression = Some(self.schedule_draft.expression.clone());
+                        Ok(())
                     }
                 }) {
                     Ok(()) => {
@@ -2219,7 +2227,10 @@ impl Desktop {
         }
         if let Some(id) = edit_active {
             if let Some(job) = self.scheduler.jobs.iter().find(|job| job.id == id) {
-                self.schedule_draft.expression = expression::to_lossless_expression(&job.packet);
+                self.schedule_draft.expression = job
+                    .source_expression
+                    .clone()
+                    .unwrap_or_else(|| expression::to_lossless_expression(&job.packet));
                 self.schedule_draft.direction = job.direction;
                 self.interval_ms = job.interval.as_millis() as u64;
                 self.align_schedule = job.alignment_offset_ms.is_some();

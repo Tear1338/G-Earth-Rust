@@ -402,6 +402,7 @@ fn scheduler_batch_failure_is_atomic_and_preserves_existing_jobs() {
         .unwrap();
     let spec = |header, interval_ms| ScheduleSpec {
         packet: Packet::new(header),
+        source_expression: Some(format!("{{h:{header}}}")),
         direction: Direction::ToClient,
         interval_ms,
         offset_ms: None,
@@ -426,6 +427,10 @@ fn scheduler_batch_failure_is_atomic_and_preserves_existing_jobs() {
         vec![0, 1, 2]
     );
     assert!(scheduler.jobs[1].paused);
+    assert_eq!(
+        scheduler.jobs[1].source_expression.as_deref(),
+        Some("{h:2}")
+    );
     assert!(!scheduler.jobs[2].paused);
     assert_eq!(scheduler.tick(now).len(), 2);
 }
@@ -447,6 +452,7 @@ fn scheduler_replacement_is_atomic_and_does_not_reuse_ids() {
         .unwrap();
     let spec = |header, interval_ms| ScheduleSpec {
         packet: Packet::new(header),
+        source_expression: Some(format!("{{h:{header}}}")),
         direction: Direction::ToClient,
         interval_ms,
         offset_ms: Some(0),
@@ -698,6 +704,7 @@ fn scheduler_edit_targets_stable_identity_and_preserves_pause_on_failure() {
     scheduler.jobs.remove(0);
     let spec = |offset_ms| ScheduleSpec {
         packet: Packet::new(7),
+        source_expression: Some("{h:7}".into()),
         direction: Direction::ToClient,
         interval_ms: 500,
         offset_ms,
@@ -713,6 +720,10 @@ fn scheduler_edit_targets_stable_identity_and_preserves_pause_on_failure() {
         .unwrap();
     assert_eq!(scheduler.jobs[0].id, id);
     assert_eq!(scheduler.jobs[0].packet.header(), 7);
+    assert_eq!(
+        scheduler.jobs[0].source_expression.as_deref(),
+        Some("{h:7}")
+    );
     assert_eq!(scheduler.jobs[0].remaining, Some(3));
     assert!(scheduler.jobs[0].paused);
     assert!(scheduler

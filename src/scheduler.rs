@@ -17,6 +17,8 @@ impl Default for ScheduleDraft {
 pub struct Job {
     pub id: u64,
     pub packet: Packet,
+    /// Original user expression, when the schedule was created from text.
+    pub source_expression: Option<String>,
     pub direction: Direction,
     pub interval: Duration,
     pub next: Instant,
@@ -28,6 +30,7 @@ pub struct Job {
 
 pub struct ScheduleSpec {
     pub packet: Packet,
+    pub source_expression: Option<String>,
     pub direction: Direction,
     pub interval_ms: u64,
     pub offset_ms: Option<u64>,
@@ -124,6 +127,7 @@ impl Scheduler {
         self.jobs.push(Job {
             id,
             packet,
+            source_expression: None,
             direction,
             interval,
             next: now,
@@ -197,11 +201,9 @@ impl Scheduler {
                 spec.repeat,
                 clock,
             )?;
-            candidate
-                .jobs
-                .last_mut()
-                .expect("newly added schedule")
-                .paused = paused;
+            let job = candidate.jobs.last_mut().expect("newly added schedule");
+            job.paused = paused;
+            job.source_expression = spec.source_expression;
         }
         self.next_id = candidate.next_id;
         self.jobs.extend(candidate.jobs);
@@ -244,6 +246,7 @@ impl Scheduler {
             clock,
         )?;
         let mut job = candidate.jobs.pop().expect("validated schedule");
+        job.source_expression = spec.source_expression;
         if job.alignment_offset_ms.is_none() {
             job.next = clock
                 .0
