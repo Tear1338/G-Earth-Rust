@@ -1802,11 +1802,15 @@ impl Desktop {
             .max_height(120.0)
             .show(ui, |ui| {
                 for entry in self.injection_history.entries() {
-                    let label = format!(
-                        "{}: {}",
-                        entry.direction,
+                    let label = if entry.direction.is_empty() {
                         entry.expression.replace('\n', " ")
-                    );
+                    } else {
+                        format!(
+                            "{}: {}",
+                            entry.direction,
+                            entry.expression.replace('\n', " ")
+                        )
+                    };
                     if ui
                         .add(
                             egui::Label::new(label)

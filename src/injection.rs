@@ -114,6 +114,8 @@ pub fn enqueue_packets<E>(
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HistoryEntry {
     pub expression: String,
+    /// Empty for imported Java entries, which do not contain a destination.
+    #[serde(default)]
     pub direction: String,
 }
 
@@ -132,9 +134,11 @@ impl InjectionHistory {
         if expression.is_empty() || expression.len() > HISTORY_ENTRY_LIMIT {
             return false;
         }
-        if self.entries.front().is_some_and(|entry| {
-            entry.expression == expression && entry.direction == direction.name()
-        }) {
+        if self
+            .entries
+            .front()
+            .is_some_and(|entry| entry.expression == expression)
+        {
             return true;
         }
         self.entries.push_front(HistoryEntry {
@@ -151,11 +155,38 @@ impl InjectionHistory {
             .filter(|entry| {
                 !entry.expression.is_empty()
                     && entry.expression.len() <= HISTORY_ENTRY_LIMIT
-                    && Direction::parse(&entry.direction).is_ok()
+                    && (entry.direction.is_empty() || Direction::parse(&entry.direction).is_ok())
             })
             .take(HISTORY_LIMIT)
             .collect();
         let mut history = Self { entries };
+        history.trim_to_limits();
+        history
+    }
+
+    /// Import the beta-29 cache's JSON-encoded entries in their existing order.
+    /// Java stores packet text and format but does not record the destination.
+    pub fn from_java_cache(entries: &[serde_json::Value]) -> Self {
+        let mut history = Self::default();
+        for entry in entries.iter().take(HISTORY_LIMIT) {
+            let Some(raw) = entry.as_str() else { continue };
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) else {
+                continue;
+            };
+            let Some(expression) = value
+                .get("packetsAsString")
+                .and_then(serde_json::Value::as_str)
+            else {
+                continue;
+            };
+            if expression.is_empty() || expression.len() > HISTORY_ENTRY_LIMIT {
+                continue;
+            }
+            history.entries.push_back(HistoryEntry {
+                expression: expression.into(),
+                direction: String::new(),
+            });
+        }
         history.trim_to_limits();
         history
     }

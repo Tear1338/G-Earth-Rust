@@ -117,7 +117,8 @@ fn history_roundtrips_is_bounded_deduplicated_and_validates_input() {
     assert!(history.record("{h:1}", Direction::ToServer));
     assert!(history.record("{h:1}", Direction::ToClient));
     assert!(history.record("{h:1}", Direction::ToClient));
-    assert_eq!(history.entries().len(), 2);
+    assert_eq!(history.entries().len(), 1);
+    assert_eq!(history.entries()[0].direction, Direction::ToServer.name());
     for n in 0..80 {
         assert!(history.record(&format!("{{h:{n}}}"), Direction::ToClient));
     }

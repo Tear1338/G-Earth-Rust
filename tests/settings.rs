@@ -48,6 +48,43 @@ fn imports_real_beta29_cache_keys_and_retains_all_original_values() {
 }
 
 #[test]
+fn imports_java_injection_history_without_inventing_destinations() {
+    use gearth_rust::injection::InjectionHistory;
+    let mut settings = Settings::default();
+    let entry = |text: &str| {
+        serde_json::json!({
+            "packetFormat": "EVA_WIRE", "packetsAsString": text, "description": "fixture"
+        })
+        .to_string()
+    };
+    let cache =
+        serde_json::json!({"INJECTED_HISTORY": [entry("{h:42}"), "malformed", entry("{h:9}")]});
+    settings.import_java_cache(cache.clone()).unwrap();
+    let history = InjectionHistory::from_json(settings.get("injection_history"));
+    assert_eq!(history.entries().len(), 2);
+    assert_eq!(history.entries()[0].expression, "{h:42}");
+    assert_eq!(history.entries()[1].expression, "{h:9}");
+    assert!(history
+        .entries()
+        .iter()
+        .all(|entry| entry.direction.is_empty()));
+    let path = path();
+    settings.save(&path).unwrap();
+    let loaded = Settings::read(&path).unwrap();
+    assert_eq!(
+        InjectionHistory::from_json(loaded.get("injection_history")).entries(),
+        history.entries()
+    );
+    assert_eq!(loaded.extra["legacy_java_cache"], cache);
+    fs::remove_file(path).unwrap();
+    let previous = settings.get("injection_history").to_owned();
+    settings
+        .import_java_cache(serde_json::json!({"INJECTED_HISTORY": ["invalid"]}))
+        .unwrap();
+    assert_eq!(settings.get("injection_history"), previous);
+}
+
+#[test]
 fn incompatible_saved_rule_does_not_prevent_other_rules_from_updating() {
     use gearth_rust::{
         packet::{Direction, Message, Packet, PacketFormat},
