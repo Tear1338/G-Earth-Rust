@@ -16,7 +16,7 @@ use std::sync::{
     Arc, Mutex,
 };
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 const MAX_PENDING_BYTES: usize = 64 * 1024 * 1024;
 #[derive(Debug, Clone)]
@@ -380,6 +380,34 @@ impl Output {
         Ok(progress)
     }
 }
+// A blocked peer must not indefinitely prevent stopping or accepting a new session.
+fn drain_outputs(
+    client: &mut TcpStream,
+    server: &mut TcpStream,
+    to_client: &mut Output,
+    to_server: &mut Output,
+    stop: &AtomicBool,
+    closed: &AtomicBool,
+) -> io::Result<()> {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    while !to_client.queue.is_empty() || !to_server.queue.is_empty() {
+        if stop.load(Ordering::Acquire) || closed.load(Ordering::Acquire) {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "timed out flushing queued packets after disconnect",
+            ));
+        }
+        let progress = to_server.flush(server)? | to_client.flush(client)?;
+        if !progress {
+            thread::sleep(Duration::from_millis(1));
+        }
+    }
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_session(
     mut client: TcpStream,
@@ -483,7 +511,16 @@ fn run_session(
             };
             let n = match input.read(&mut buffer) {
                 Ok(0) => {
-                    if flash.is_none() && shockwave.is_none() && decoder.pending_bytes() != 0 {
+                    let pending_bytes = decoder.pending_bytes();
+                    drain_outputs(
+                        &mut client,
+                        &mut server,
+                        &mut to_client,
+                        &mut to_server,
+                        stop,
+                        closed,
+                    )?;
+                    if flash.is_none() && shockwave.is_none() && pending_bytes != 0 {
                         let peer = if direction == Direction::ToServer {
                             "client"
                         } else {
@@ -493,7 +530,7 @@ fn run_session(
                             io::ErrorKind::UnexpectedEof,
                             format!(
                                 "{peer} closed with an incomplete packet ({} buffered bytes)",
-                                decoder.pending_bytes()
+                                pending_bytes
                             ),
                         ));
                     }
@@ -656,6 +693,43 @@ mod tests {
             }
         }
         panic!("timed out waiting for Raw-IP relay event");
+    }
+    #[test]
+    fn orderly_eof_flushes_already_queued_injections() {
+        let client_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let _client_peer = TcpStream::connect(client_listener.local_addr().unwrap()).unwrap();
+        let (client, _) = client_listener.accept().unwrap();
+        let server_listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let server = TcpStream::connect(server_listener.local_addr().unwrap()).unwrap();
+        let (mut server_peer, _) = server_listener.accept().unwrap();
+        server_peer
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        server_peer.shutdown(Shutdown::Write).unwrap();
+        let (commands, receiver) = mpsc::sync_channel(128);
+        for header in 1..=64 {
+            commands
+                .send((Direction::ToServer, Packet::new(header)))
+                .unwrap();
+        }
+        let (events, _) = mpsc::sync_channel(256);
+        let worker = thread::spawn(move || {
+            run_session(
+                client,
+                server,
+                &AtomicBool::new(false),
+                &AtomicBool::new(false),
+                &Mutex::new(Rules::default()),
+                &events,
+                receiver,
+                &mut 0,
+                &RelayOptions::default(),
+            )
+        });
+        for header in 1..=64 {
+            assert_eq!(read_frame(&mut server_peer).unwrap().header(), header);
+        }
+        worker.join().unwrap().unwrap();
     }
     #[test]
     fn raw_relay_consumes_preconnected_sockets_without_direct_fallback() {
