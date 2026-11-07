@@ -94,6 +94,37 @@ pub fn parse_properties(source: &str) -> HashMap<String, String> {
     values
 }
 
+fn unescape(s: &str) -> String {
+    let mut output = Vec::new();
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        let c = if c == '\\' {
+            match chars.next() {
+                Some('u') => {
+                    let hex: String = chars.by_ref().take(4).collect();
+                    if let Ok(n) = u16::from_str_radix(&hex, 16) {
+                        output.push(n);
+                    } else {
+                        output.push(0xfffd);
+                    }
+                    continue;
+                }
+                Some('n') => '\n',
+                Some('r') => '\r',
+                Some('t') => '\t',
+                Some('f') => '\x0c',
+                Some(c) => c,
+                None => '\\',
+            }
+        } else {
+            c
+        };
+        let mut temp = [0; 2];
+        output.extend_from_slice(c.encode_utf16(&mut temp));
+    }
+    String::from_utf16_lossy(&output)
+}
+
 #[cfg(test)]
 mod interface_tests {
     use super::{I18n, LANGUAGES};
@@ -167,34 +198,4 @@ mod interface_tests {
         );
         assert_eq!(I18n::new("de").text("rust.settings.save"), "Save settings");
     }
-}
-fn unescape(s: &str) -> String {
-    let mut output = Vec::new();
-    let mut chars = s.chars();
-    while let Some(c) = chars.next() {
-        let c = if c == '\\' {
-            match chars.next() {
-                Some('u') => {
-                    let hex: String = chars.by_ref().take(4).collect();
-                    if let Ok(n) = u16::from_str_radix(&hex, 16) {
-                        output.push(n);
-                    } else {
-                        output.push(0xfffd);
-                    }
-                    continue;
-                }
-                Some('n') => '\n',
-                Some('r') => '\r',
-                Some('t') => '\t',
-                Some('f') => '\x0c',
-                Some(c) => c,
-                None => '\\',
-            }
-        } else {
-            c
-        };
-        let mut temp = [0; 2];
-        output.extend_from_slice(c.encode_utf16(&mut temp));
-    }
-    String::from_utf16_lossy(&output)
 }
