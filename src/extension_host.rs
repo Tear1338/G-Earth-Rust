@@ -69,6 +69,7 @@ struct Shared {
     peers: Mutex<BTreeMap<u64, Arc<Peer>>>,
     tokens: Mutex<HashMap<String, (String, Instant)>>,
     connection: Mutex<Option<ConnectionDetails>>,
+    connection_epoch: AtomicU64,
     packet_safety: Mutex<Option<Arc<Mutex<crate::packet_safety::PacketSafety>>>>,
     injections: SyncSender<(Direction, Packet)>,
     events: SyncSender<HostEvent>,
@@ -120,6 +121,7 @@ impl ExtensionHost {
             peers: Mutex::new(BTreeMap::new()),
             tokens: Mutex::new(HashMap::new()),
             connection: Mutex::new(None),
+            connection_epoch: AtomicU64::new(0),
             packet_safety: Mutex::new(None),
             injections,
             events,
@@ -241,17 +243,22 @@ impl ExtensionHost {
     }
     pub fn start_connection(&self, details: ConnectionDetails) -> io::Result<()> {
         let packet = details.packet()?;
-        *self
-            .shared
-            .connection
-            .lock()
-            .map_err(|_| io::Error::other("connection lock poisoned"))? = Some(details);
+        {
+            let mut connection = self
+                .shared
+                .connection
+                .lock()
+                .map_err(|_| io::Error::other("connection lock poisoned"))?;
+            self.shared.connection_epoch.fetch_add(1, Ordering::Relaxed);
+            *connection = Some(details);
+        }
         self.broadcast(packet);
         Ok(())
     }
     pub fn end_connection(&self) {
         if let Ok(mut c) = self.shared.connection.lock() {
             *c = None;
+            self.shared.connection_epoch.fetch_add(1, Ordering::Relaxed);
             // Keep the connection lock until pending injections are discarded:
             // extension workers use the same lock while they enqueue, so an
             // old-session packet cannot race this drain into the next session.
@@ -618,6 +625,98 @@ fn initialize(shared: &Shared, peer: &Peer) -> io::Result<()> {
     });
     Ok(())
 }
+
+// A per-extension buffer lets the peer continue answering interception
+// requests while the shared injection channel is temporarily full.
+const MAX_DEFERRED_PACKETS: usize = 128;
+const MAX_DEFERRED_BYTES: usize = 32 * 1024 * 1024;
+#[derive(Default)]
+struct DeferredInjections {
+    epoch: Option<u64>,
+    packets: VecDeque<(Direction, Packet)>,
+    bytes: usize,
+}
+impl DeferredInjections {
+    fn clear(&mut self) {
+        self.packets.clear();
+        self.bytes = 0;
+        self.epoch = None;
+    }
+    fn enqueue(
+        &mut self,
+        sender: &SyncSender<(Direction, Packet)>,
+        epoch: u64,
+        direction: Direction,
+        packet: Packet,
+    ) -> io::Result<bool> {
+        if self.epoch.is_some_and(|old| old != epoch) {
+            self.clear();
+        }
+        let packet = if self.packets.is_empty() {
+            match sender.try_send((direction, packet)) {
+                Ok(()) => return Ok(true),
+                Err(mpsc::TrySendError::Full((_, packet))) => packet,
+                Err(mpsc::TrySendError::Disconnected(_)) => {
+                    return Err(io::Error::other("extension injection queue closed"))
+                }
+            }
+        } else {
+            packet
+        };
+        let bytes = packet.bytes().len();
+        if self.packets.len() >= MAX_DEFERRED_PACKETS
+            || self
+                .bytes
+                .checked_add(bytes)
+                .is_none_or(|size| size > MAX_DEFERRED_BYTES)
+        {
+            return Ok(false);
+        }
+        self.epoch = Some(epoch);
+        self.bytes += bytes;
+        self.packets.push_back((direction, packet));
+        Ok(true)
+    }
+    fn flush(&mut self, shared: &Shared) -> io::Result<bool> {
+        if self.packets.is_empty() {
+            return Ok(false);
+        }
+        let connection = shared
+            .connection
+            .lock()
+            .map_err(|_| io::Error::other("connection lock poisoned"))?;
+        if connection.is_none()
+            || self.epoch != Some(shared.connection_epoch.load(Ordering::Relaxed))
+        {
+            self.clear();
+            return Ok(true);
+        }
+        let mut progress = false;
+        for _ in 0..64 {
+            let Some((direction, packet)) = self.packets.pop_front() else {
+                break;
+            };
+            let bytes = packet.bytes().len();
+            match shared.injections.try_send((direction, packet)) {
+                Ok(()) => {
+                    self.bytes -= bytes;
+                    progress = true;
+                }
+                Err(mpsc::TrySendError::Full(item)) => {
+                    self.packets.push_front(item);
+                    break;
+                }
+                Err(mpsc::TrySendError::Disconnected(_)) => {
+                    return Err(io::Error::other("extension injection queue closed"))
+                }
+            }
+        }
+        if self.packets.is_empty() {
+            self.epoch = None;
+        }
+        Ok(progress)
+    }
+}
 fn serve_peer(mut stream: TcpStream, id: u64, shared: &Arc<Shared>) -> io::Result<()> {
     stream.set_nonblocking(true)?;
     stream.set_nodelay(true)?;
@@ -628,6 +727,7 @@ fn serve_peer(mut stream: TcpStream, id: u64, shared: &Arc<Shared>) -> io::Resul
     let mut peer: Option<Arc<Peer>> = None;
     let mut pending = VecDeque::from([(extension::info_request(), 0usize)]);
     let mut pending_bytes = 6usize;
+    let mut deferred = DeferredInjections::default();
     let mut decoder = FrameDecoder::default();
     let mut buffer = [0u8; 8192];
     let handshake = Instant::now() + Duration::from_secs(30);
@@ -639,6 +739,7 @@ fn serve_peer(mut stream: TcpStream, id: u64, shared: &Arc<Shared>) -> io::Resul
             ));
         }
         let mut progress = false;
+        progress |= deferred.flush(shared)?;
         for p in commands.try_iter().take(64) {
             pending_bytes += p.bytes().len();
             if pending_bytes > 32 * 1024 * 1024 {
@@ -771,18 +872,19 @@ fn serve_peer(mut stream: TcpStream, id: u64, shared: &Arc<Shared>) -> io::Resul
                                     continue;
                                 }
                                 let header = packet.header();
-                                match shared.injections.try_send((direction, packet)) {
-                                    Ok(()) => {}
-                                    Err(mpsc::TrySendError::Full(_)) => {
+                                let epoch = shared.connection_epoch.load(Ordering::Relaxed);
+                                match deferred.enqueue(
+                                    &shared.injections,
+                                    epoch,
+                                    direction,
+                                    packet,
+                                )? {
+                                    true => {}
+                                    false => {
                                         let _ = shared.events.try_send(HostEvent::Console {
                                             id: p.id,
                                             text: format!("Packet {header} not sent: extension injection queue full"),
                                         });
-                                    }
-                                    Err(mpsc::TrySendError::Disconnected(_)) => {
-                                        return Err(io::Error::other(
-                                            "extension injection queue closed",
-                                        ));
                                     }
                                 }
                             }

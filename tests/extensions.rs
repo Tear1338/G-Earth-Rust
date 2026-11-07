@@ -176,26 +176,29 @@ fn a_full_injection_queue_reports_the_dropped_packet_and_keeps_the_extension_con
     host.start_connection(details()).unwrap();
     let (mut stream, id) = connect(&host, &events);
     assert_eq!(read_frame(&mut stream).unwrap().header(), 5);
-    for header in 0..=256 {
+    for header in 0..=384 {
         write_frame(
             &mut stream,
             &extension::send(Direction::ToServer, &Packet::new(header)).unwrap(),
         )
         .unwrap();
     }
-    // This response confirms that all 257 requests were handled in order.
+    // This response confirms that all 385 requests were handled in order.
     write_frame(&mut stream, &Packet::new(3)).unwrap();
     assert_eq!(read_frame(&mut stream).unwrap().header(), 4);
-    assert!(events.try_iter().any(|event| matches!(event, HostEvent::Console { id: source, text } if source == id && text.contains("Packet 256 not sent") && text.contains("queue full"))));
+    assert!(events.try_iter().any(|event| matches!(event, HostEvent::Console { id: source, text } if source == id && text.contains("Packet 384 not sent") && text.contains("queue full"))));
     let mut headers = Vec::new();
-    for _ in 0..4 {
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while headers.len() < 384 {
         headers.extend(
             host.take_injections()
                 .into_iter()
                 .map(|(_, packet)| packet.header()),
         );
+        assert!(Instant::now() < deadline, "deferred packets did not drain");
+        thread::sleep(Duration::from_millis(2));
     }
-    assert_eq!(headers, (0..256).collect::<Vec<_>>());
+    assert_eq!(headers, (0..384).collect::<Vec<_>>());
     assert!(host.take_injections().is_empty());
     write_frame(
         &mut stream,
@@ -273,6 +276,66 @@ fn temporary_transport_backpressure_preserves_order_and_disconnect_clears_pendin
     assert_eq!(read_frame(&mut stream).unwrap().header(), 6);
     host.start_connection(details()).unwrap();
     assert_eq!(read_frame(&mut stream).unwrap().header(), 5);
+    assert!(host.take_injections().is_empty());
+    drop(stream);
+    host.stop();
+}
+
+#[test]
+fn deferred_extension_packets_do_not_block_interception_or_leak_across_reconnects() {
+    let (host, events) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+    host.start_connection(details()).unwrap();
+    let (mut stream, _) = connect(&host, &events);
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 5);
+    for header in 0..257 {
+        write_frame(
+            &mut stream,
+            &extension::send(Direction::ToServer, &Packet::new(header)).unwrap(),
+        )
+        .unwrap();
+    }
+    write_frame(&mut stream, &Packet::new(3)).unwrap();
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 4);
+    let reply = thread::spawn(move || {
+        let mut request = read_frame(&mut stream).unwrap();
+        assert_eq!(request.header(), 3);
+        let mut message = Message::parse(&request.read_long_string().unwrap()).unwrap();
+        message.packet.set_header(88).unwrap();
+        write_frame(&mut stream, &extension::manipulated(&message).unwrap()).unwrap();
+        stream
+    });
+    let mut message = Message {
+        packet: Packet::new(77),
+        direction: Direction::ToServer,
+        index: 10,
+        blocked: false,
+    };
+    host.intercept(&mut message).unwrap();
+    assert_eq!(message.packet.header(), 88);
+    let mut stream = reply.join().unwrap();
+    host.end_connection();
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 6);
+    host.start_connection(details()).unwrap();
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 5);
+    write_frame(
+        &mut stream,
+        &extension::send(Direction::ToServer, &Packet::new(999)).unwrap(),
+    )
+    .unwrap();
+    write_frame(&mut stream, &Packet::new(3)).unwrap();
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 4);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut headers = Vec::new();
+    while headers.is_empty() {
+        headers.extend(
+            host.take_injections()
+                .into_iter()
+                .map(|(_, packet)| packet.header()),
+        );
+        assert!(Instant::now() < deadline);
+        thread::sleep(Duration::from_millis(2));
+    }
+    assert_eq!(headers, [999]);
     assert!(host.take_injections().is_empty());
     drop(stream);
     host.stop();
