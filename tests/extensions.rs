@@ -126,6 +126,66 @@ fn requires_approval_and_supports_flags_click_injection_and_interception() {
 }
 
 #[test]
+fn relay_ends_extension_session_only_after_it_has_started_one() {
+    use gearth_rust::relay::{Config, Event, Relay, RelayOptions};
+    use std::net::TcpListener;
+
+    let (host, host_events) =
+        ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+    host.start_connection(details()).unwrap();
+    let (mut extension, _) = connect(&host, &host_events);
+    assert_eq!(read_frame(&mut extension).unwrap().header(), 5);
+
+    for flash in [true, false] {
+        let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+        let (mut relay, events) = Relay::start_with_options(
+            Config {
+                listen: "127.0.0.1:0".parse().unwrap(),
+                remote: remote.local_addr().unwrap().to_string(),
+            },
+            RelayOptions {
+                flash_process: flash.then_some(1),
+                extensions: Some(host.clone()),
+                connection: Some(details()),
+                ..RelayOptions::default()
+            },
+        )
+        .unwrap();
+        let client = TcpStream::connect(relay.address).unwrap();
+        let (server, _) = remote.accept().unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !matches!(
+            events.recv_timeout(Duration::from_millis(100)),
+            Ok(Event::Connected(_))
+        ) {
+            assert!(Instant::now() < deadline, "relay did not connect");
+        }
+        if !flash {
+            assert_eq!(read_frame(&mut extension).unwrap().header(), 5);
+        }
+        drop(client);
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !matches!(
+            events.recv_timeout(Duration::from_millis(100)),
+            Ok(Event::Disconnected)
+        ) {
+            assert!(Instant::now() < deadline, "relay did not disconnect");
+        }
+        if flash {
+            // A flags response is ordered after any erroneous disconnect.
+            write_frame(&mut extension, &Packet::new(3)).unwrap();
+            assert_eq!(read_frame(&mut extension).unwrap().header(), 4);
+        } else {
+            assert_eq!(read_frame(&mut extension).unwrap().header(), 6);
+        }
+        drop(server);
+        relay.stop();
+    }
+    drop(extension);
+    host.stop();
+}
+
+#[test]
 fn reconnect_does_not_replay_injections_from_a_previous_session() {
     let (host, events) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
     host.start_connection(details()).unwrap();
