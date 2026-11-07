@@ -225,10 +225,12 @@ fn temporary_transport_backpressure_preserves_order_and_disconnect_clears_pendin
     write_frame(&mut stream, &Packet::new(3)).unwrap();
     assert_eq!(read_frame(&mut stream).unwrap().header(), 4);
     let mut accepted = Vec::new();
+    let mut retained_address = None;
     assert_eq!(
         host.forward_injections(|_, packet| {
             if packet.header() == 42 {
-                return Err(std::io::Error::from(std::io::ErrorKind::WouldBlock));
+                retained_address = Some(packet.bytes().as_ptr() as usize);
+                return Err((std::io::Error::from(std::io::ErrorKind::WouldBlock), packet));
             }
             accepted.push(packet.header());
             Ok(())
@@ -239,6 +241,9 @@ fn temporary_transport_backpressure_preserves_order_and_disconnect_clears_pendin
     assert_eq!(accepted, [41]);
     assert_eq!(
         host.forward_injections(|_, packet| {
+            if packet.header() == 42 {
+                assert_eq!(Some(packet.bytes().as_ptr() as usize), retained_address);
+            }
             accepted.push(packet.header());
             Ok(())
         })
@@ -254,11 +259,14 @@ fn temporary_transport_backpressure_preserves_order_and_disconnect_clears_pendin
     write_frame(&mut stream, &Packet::new(3)).unwrap();
     assert_eq!(read_frame(&mut stream).unwrap().header(), 4);
     assert!(host
-        .forward_injections(|_, _| Err(std::io::Error::other("transport failed")))
+        .forward_injections(|_, packet| Err((std::io::Error::other("transport failed"), packet)))
         .is_err());
     assert_eq!(
-        host.forward_injections(|_, _| Err(std::io::Error::from(std::io::ErrorKind::WouldBlock)))
-            .unwrap(),
+        host.forward_injections(|_, packet| Err((
+            std::io::Error::from(std::io::ErrorKind::WouldBlock),
+            packet
+        )))
+        .unwrap(),
         0
     );
     host.end_connection();

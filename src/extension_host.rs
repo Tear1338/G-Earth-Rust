@@ -362,7 +362,7 @@ impl ExtensionHost {
     /// yet be accepted by the transport. No later packet can pass it.
     pub fn forward_injections(
         &self,
-        mut enqueue: impl FnMut(Direction, &Packet) -> io::Result<()>,
+        mut enqueue: impl FnMut(Direction, Packet) -> Result<(), (io::Error, Packet)>,
     ) -> io::Result<usize> {
         let mut queue = self
             .injections
@@ -377,9 +377,9 @@ impl ExtensionHost {
             else {
                 break;
             };
-            match enqueue(direction, &packet) {
+            match enqueue(direction, packet) {
                 Ok(()) => count += 1,
-                Err(error) => {
+                Err((error, packet)) => {
                     queue.pending = Some((direction, packet));
                     if error.kind() == io::ErrorKind::WouldBlock {
                         break;

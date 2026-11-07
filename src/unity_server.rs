@@ -67,34 +67,56 @@ struct Peer {
 }
 impl Peer {
     fn enqueue(&self, direction: Direction, packet: Packet) -> io::Result<()> {
+        self.enqueue_retaining(direction, packet)
+            .map_err(|(error, _)| error)
+    }
+    fn enqueue_retaining(
+        &self,
+        direction: Direction,
+        packet: Packet,
+    ) -> Result<(), (io::Error, Packet)> {
         if !self.ready.load(Ordering::Acquire) || self.closed.load(Ordering::Acquire) {
-            return Err(io::Error::new(
-                io::ErrorKind::NotConnected,
-                "no active Unity client",
+            return Err((
+                io::Error::new(io::ErrorKind::NotConnected, "no active Unity client"),
+                packet,
             ));
         }
         if packet.format() != PacketFormat::EvaWire {
-            return Err(io::Error::other("Unity injection requires EVA_WIRE"));
+            return Err((
+                io::Error::other("Unity injection requires EVA_WIRE"),
+                packet,
+            ));
         }
         let bytes = packet.bytes().len();
-        self.queued
+        if self
+            .queued
             .try_update(Ordering::AcqRel, Ordering::Acquire, |count| {
                 count
                     .checked_add(bytes)
                     .filter(|count| *count <= MAX_QUEUED)
             })
-            .map_err(|_| {
+            .is_err()
+        {
+            return Err((
                 io::Error::new(
                     io::ErrorKind::WouldBlock,
                     "Unity injection byte budget exceeded",
-                )
-            })?;
-        if self.sender.try_send((direction, packet)).is_err() {
-            self.queued.fetch_sub(bytes, Ordering::AcqRel);
-            return Err(io::Error::new(
-                io::ErrorKind::WouldBlock,
-                "Unity injection queue unavailable",
+                ),
+                packet,
             ));
+        }
+        if let Err(error) = self.sender.try_send((direction, packet)) {
+            self.queued.fetch_sub(bytes, Ordering::AcqRel);
+            return Err(match error {
+                asynchronous::error::TrySendError::Full((_, packet)) => (
+                    io::Error::new(io::ErrorKind::WouldBlock, "Unity injection queue full"),
+                    packet,
+                ),
+                asynchronous::error::TrySendError::Closed((_, packet)) => (
+                    io::Error::new(io::ErrorKind::NotConnected, "Unity injection queue closed"),
+                    packet,
+                ),
+            });
         }
         Ok(())
     }
@@ -306,7 +328,7 @@ async fn session(
     let result:io::Result<()>=async {loop {if state.stop.load(Ordering::Acquire)||peer.closed.load(Ordering::Acquire){break;}tokio::select! {
         _=stopped.changed()=>break,
         _=&mut handshake,if !peer.ready.load(Ordering::Acquire)=>return Err(io::Error::new(io::ErrorKind::TimedOut,"Unity revision/hello timed out")),
-        _=tick.tick(),if peer.ready.load(Ordering::Acquire)=>{if let Some(host)=&state.options.extensions {host.forward_injections(|direction,packet|peer.enqueue(direction,packet.clone()))?;}},
+        _=tick.tick(),if peer.ready.load(Ordering::Acquire)=>{if let Some(host)=&state.options.extensions {host.forward_injections(|direction,packet|peer.enqueue_retaining(direction,packet))?;}},
         injection=injections.recv()=>{let Some((direction,packet))=injection else{break;};peer.queued.fetch_sub(packet.bytes().len(),Ordering::AcqRel);if let Some(packet)=state.packet(direction,packet,true,None).await?{tokio::time::timeout(Duration::from_secs(5),socket.send(wire(direction,&packet))).await.map_err(io::Error::other)?.map_err(io::Error::other)?;}},
         message=socket.next()=>{let Some(message)=message else{break;};match message.map_err(io::Error::other)? {
             WsMessage::Binary(bytes)=>{if revision_name.is_none(){revision_name=Some(revision(&bytes)?);continue;}let (&prefix,payload)=bytes.split_first().ok_or_else(||io::Error::other("empty Unity frame"))?;let direction=direction(prefix)?;
@@ -439,5 +461,45 @@ impl UnityServer {
 impl Drop for UnityServer {
     fn drop(&mut self) {
         self.stop();
+    }
+}
+
+#[cfg(test)]
+mod injection_queue_tests {
+    use super::*;
+    #[test]
+    fn full_and_closed_queues_return_the_original_packet_and_restore_budget() {
+        let (sender, mut receiver) = asynchronous::channel(1);
+        let (stop, _) = watch::channel(false);
+        let peer = Peer {
+            ready: AtomicBool::new(true),
+            closed: AtomicBool::new(false),
+            queued: AtomicUsize::new(0),
+            sender,
+            stop,
+        };
+        peer.enqueue(Direction::ToClient, Packet::new(1)).unwrap();
+        let queued_bytes = peer.queued.load(Ordering::Acquire);
+        let packet = Packet::new(2);
+        let address = packet.bytes().as_ptr();
+        let (error, packet) = peer
+            .enqueue_retaining(Direction::ToClient, packet)
+            .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        assert_eq!(packet.bytes().as_ptr(), address);
+        assert_eq!(peer.queued.load(Ordering::Acquire), queued_bytes);
+        let (_, first) = receiver.try_recv().unwrap();
+        peer.queued.fetch_sub(first.bytes().len(), Ordering::AcqRel);
+        peer.enqueue_retaining(Direction::ToClient, packet).unwrap();
+        let (_, packet) = receiver.try_recv().unwrap();
+        peer.queued
+            .fetch_sub(packet.bytes().len(), Ordering::AcqRel);
+        drop(receiver);
+        let (error, packet) = peer
+            .enqueue_retaining(Direction::ToClient, packet)
+            .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::NotConnected);
+        assert_eq!(packet.bytes().as_ptr(), address);
+        assert_eq!(peer.queued.load(Ordering::Acquire), 0);
     }
 }

@@ -107,32 +107,54 @@ impl Peer {
         }
     }
     fn enqueue(&self, direction: Direction, packet: Packet) -> io::Result<()> {
+        self.enqueue_retaining(direction, packet)
+            .map_err(|(error, _)| error)
+    }
+    fn enqueue_retaining(
+        &self,
+        direction: Direction,
+        packet: Packet,
+    ) -> Result<(), (io::Error, Packet)> {
         if !self.active.load(Ordering::Acquire) || self.closed.load(Ordering::Acquire) {
-            return Err(io::Error::new(
-                io::ErrorKind::NotConnected,
-                "no active Nitro client",
+            return Err((
+                io::Error::new(io::ErrorKind::NotConnected, "no active Nitro client"),
+                packet,
             ));
         }
         if packet.format() != PacketFormat::EvaWire {
-            return Err(io::Error::other("Nitro injection requires EVA_WIRE"));
+            return Err((
+                io::Error::other("Nitro injection requires EVA_WIRE"),
+                packet,
+            ));
         }
         let bytes = packet.bytes().len();
-        self.queued
+        if self
+            .queued
             .try_update(Ordering::AcqRel, Ordering::Acquire, |n| {
                 n.checked_add(bytes).filter(|n| *n <= MAX_QUEUED)
             })
-            .map_err(|_| {
+            .is_err()
+        {
+            return Err((
                 io::Error::new(
                     io::ErrorKind::WouldBlock,
                     "Nitro injection byte budget exceeded",
-                )
-            })?;
-        if self.senders[side(direction)].try_send(packet).is_err() {
-            self.queued.fetch_sub(bytes, Ordering::AcqRel);
-            return Err(io::Error::new(
-                io::ErrorKind::WouldBlock,
-                "Nitro injection queue unavailable",
+                ),
+                packet,
             ));
+        }
+        if let Err(error) = self.senders[side(direction)].try_send(packet) {
+            self.queued.fetch_sub(bytes, Ordering::AcqRel);
+            return Err(match error {
+                asynchronous::error::TrySendError::Full(packet) => (
+                    io::Error::new(io::ErrorKind::WouldBlock, "Nitro injection queue full"),
+                    packet,
+                ),
+                asynchronous::error::TrySendError::Closed(packet) => (
+                    io::Error::new(io::ErrorKind::NotConnected, "Nitro injection queue closed"),
+                    packet,
+                ),
+            });
         }
         Ok(())
     }
@@ -622,7 +644,7 @@ impl WebSocketHandler for Handler {
                 tokio::select! {
                     _=stopping.changed()=>break,
                     _=tick.tick(), if direction==Direction::ToServer&&peer.ready.load(Ordering::Acquire)=>{
-                        if let Some(host)=&self.0.options.extensions{host.forward_injections(|direction,packet|peer.enqueue(direction,packet.clone()))?;}
+                        if let Some(host)=&self.0.options.extensions{host.forward_injections(|direction,packet|peer.enqueue_retaining(direction,packet))?;}
                     },
                     packet=injections.recv()=>{let Some(packet)=packet else{break;};peer.queued.fetch_sub(packet.bytes().len(),Ordering::AcqRel);let mut modifier=peer.modifier.lock().await;if let Some(packet)=self.0.packet(direction,packet,true).await?{let bytes=modifier.encode(direction,packet.bytes().to_vec())?;sink.send(WsMessage::Binary(bytes.into())).await.map_err(io::Error::other)?;}},
                     message=stream.next()=>{
@@ -807,5 +829,50 @@ mod unity_http_tests {
             let request=Request::builder().uri(url).body(Body::empty()).unwrap();let _=handler.handle_asset_request(request).await;let response=Response::builder().status(404).header("etag","error-tag").body(Body::from("not found")).unwrap();let response=handler.handle_asset_response(response).await;assert_eq!(response.status(),StatusCode::NOT_FOUND);assert_eq!(response.headers()["etag"],"error-tag");
         });
         proxy.stop();
+    }
+}
+
+#[cfg(test)]
+mod injection_queue_tests {
+    use super::*;
+    #[test]
+    fn full_and_closed_queues_return_the_original_packet_and_restore_budget() {
+        let peer = Peer::new(
+            PeerKey {
+                client: "127.0.0.1:1234".parse().unwrap(),
+                uri: "ws://fixture".into(),
+            },
+            Modifier::new(&crate::nitro::HotelKind::Plain).unwrap(),
+        );
+        peer.active.store(true, Ordering::Release);
+        let mut receiver = peer.receivers.lock().unwrap()[side(Direction::ToClient)]
+            .take()
+            .unwrap();
+        for header in 0..128 {
+            peer.enqueue(Direction::ToClient, Packet::new(header))
+                .unwrap();
+        }
+        let queued_bytes = peer.queued.load(Ordering::Acquire);
+        let packet = Packet::new(500);
+        let address = packet.bytes().as_ptr();
+        let (error, packet) = peer
+            .enqueue_retaining(Direction::ToClient, packet)
+            .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        assert_eq!(packet.bytes().as_ptr(), address);
+        assert_eq!(peer.queued.load(Ordering::Acquire), queued_bytes);
+        let first = receiver.try_recv().unwrap();
+        peer.queued.fetch_sub(first.bytes().len(), Ordering::AcqRel);
+        peer.enqueue_retaining(Direction::ToClient, packet).unwrap();
+        while let Ok(packet) = receiver.try_recv() {
+            peer.queued
+                .fetch_sub(packet.bytes().len(), Ordering::AcqRel);
+        }
+        drop(receiver);
+        let (error, _) = peer
+            .enqueue_retaining(Direction::ToClient, Packet::new(501))
+            .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::NotConnected);
+        assert_eq!(peer.queued.load(Ordering::Acquire), 0);
     }
 }
