@@ -1,5 +1,6 @@
 //! Rust implementation of the EVA_WIRE packet core. See docs/PARITY.md for scope.
 #![forbid(unsafe_code)]
+pub mod admin_service;
 pub mod attachment;
 pub mod connection;
 pub mod crypto;

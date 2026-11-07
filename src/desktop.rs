@@ -148,6 +148,8 @@ struct Desktop {
     packet_database: String,
     packet_info: PacketInfoManager,
     packet_safety: Arc<std::sync::Mutex<gearth_rust::packet_safety::PacketSafety>>,
+    admin_service: Arc<std::sync::Mutex<gearth_rust::admin_service::AdminService>>,
+    always_admin: bool,
     developer_mode: bool,
     developer_mode_confirmation: bool,
     socks_proxy: String,
@@ -621,6 +623,10 @@ impl Default for Desktop {
             packet_safety: Arc::new(std::sync::Mutex::new(
                 gearth_rust::packet_safety::PacketSafety::default(),
             )),
+            admin_service: Arc::new(std::sync::Mutex::new(
+                gearth_rust::admin_service::AdminService::default(),
+            )),
+            always_admin: false,
             developer_mode: false,
             developer_mode_confirmation: false,
             socks_proxy: String::new(),
@@ -1245,6 +1251,7 @@ impl Desktop {
         communicator.extensions = self.extension_host.clone();
         communicator.packet_info = self.packet_info.clone();
         communicator.packet_safety = Some(self.packet_safety.clone());
+        communicator.admin_service = Some(self.admin_service.clone());
         let cache = self
             .settings_path
             .parent()
@@ -1290,6 +1297,7 @@ impl Desktop {
         );
         options.packet_info = self.packet_info.clone();
         options.packet_safety = Some(self.packet_safety.clone());
+        options.admin_service = Some(self.admin_service.clone());
         options.extensions = self.extension_host.clone();
         options.hotels = gearth_rust::nitro::Hotels::load(
             &self
@@ -2764,8 +2772,33 @@ impl Desktop {
         }
     }
 
+    fn set_admin_enabled(&mut self, enabled: bool) {
+        let packet = match self.admin_service.lock() {
+            Ok(mut service) => service.set_enabled(enabled),
+            Err(_) => {
+                self.status = "Client permissions state unavailable".into();
+                return;
+            }
+        };
+        self.always_admin = enabled;
+        if let (Some(relay), Some(packet)) = (&self.relay, packet) {
+            if let Err(error) = relay.inject(Direction::ToClient, packet) {
+                self.status = format!("Could not update client permissions: {error}");
+            }
+        }
+    }
     fn extra(&mut self, ui: &mut egui::Ui) {
         ui.heading(self.i18n.text("tab.extra"));
+        if ui
+            .checkbox(
+                &mut self.always_admin,
+                self.i18n.text("tab.extra.options.staffpermissions"),
+            )
+            .on_hover_text(self.i18n.text("rust.extra.staff_hint"))
+            .changed()
+        {
+            self.set_admin_enabled(self.always_admin);
+        }
         if ui
             .checkbox(
                 &mut self.always_on_top,
@@ -3226,6 +3259,13 @@ impl Desktop {
         }
     }
     fn apply_settings(&mut self) {
+        let enabled = self
+            .settings
+            .booleans
+            .get("always_admin")
+            .copied()
+            .unwrap_or(false);
+        self.set_admin_enabled(enabled);
         self.editing_saved_rule = None;
         self.python_console.restore_settings(&self.settings);
         self.injection_history =
@@ -3461,6 +3501,7 @@ impl Desktop {
             ("logger_hashes".into(), self.logger_hashes),
             ("logger_message_id".into(), self.logger_message_id),
             ("developer_mode".into(), self.developer_mode),
+            ("always_admin".into(), self.always_admin),
             ("logger_extra_legacy".into(), self.logger_extra_legacy),
             ("logger_extra_raw_hex".into(), self.logger_extra_raw_hex),
             ("logger_extra_hex_dump".into(), self.logger_extra_hex_dump),
@@ -3565,6 +3606,7 @@ impl Desktop {
         };
         Ok(RelayOptions {
             packet_safety: Some(self.packet_safety.clone()),
+            admin_service: Some(self.admin_service.clone()),
             flash_process: if self.flash_auto && !self.origins {
                 if self.flash_pid != 0
                     && !gearth_platform::habbo_processes()?

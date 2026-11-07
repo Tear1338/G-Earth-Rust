@@ -45,6 +45,7 @@ pub struct RelayOptions {
     pub incoming_rc4: Option<Rc4>,
     /// Optional session-shared registry for tracking IDs from real traffic.
     pub packet_safety: Option<Arc<Mutex<crate::packet_safety::PacketSafety>>>,
+    pub admin_service: Option<Arc<Mutex<crate::admin_service::AdminService>>>,
 }
 struct Session {
     injections: SyncSender<(Direction, Packet)>,
@@ -197,6 +198,11 @@ impl Relay {
                             }
                         };
                         let (injections, commands) = mpsc::sync_channel(256);
+                        if let Some(service) = &session_options.admin_service {
+                            if let Ok(mut service) = service.lock() {
+                                service.on_connect();
+                            }
+                        }
                         let closed = Arc::new(AtomicBool::new(false));
                         let session = Arc::new(Session {
                             injections,
@@ -641,6 +647,11 @@ fn run_session(
                     blocked: false,
                 };
                 *index = index.wrapping_add(1);
+                if let Some(service) = &options.admin_service {
+                    if let Ok(mut service) = service.lock() {
+                        service.on_message(&mut message);
+                    }
+                }
                 rules
                     .lock()
                     .map_err(|_| io::Error::other("rules lock poisoned"))?

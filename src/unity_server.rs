@@ -43,6 +43,7 @@ pub struct UnityOptions {
     pub identity_directory: PathBuf,
     pub packet_info: PacketInfoManager,
     pub packet_safety: Option<Arc<Mutex<crate::packet_safety::PacketSafety>>>,
+    pub admin_service: Option<Arc<Mutex<crate::admin_service::AdminService>>>,
     pub extensions: Option<Arc<ExtensionHost>>,
 }
 impl UnityOptions {
@@ -52,6 +53,7 @@ impl UnityOptions {
             identity_directory,
             packet_info: PacketInfoManager::default(),
             packet_safety: None,
+            admin_service: None,
             extensions: None,
         }
     }
@@ -185,6 +187,11 @@ impl State {
         }
         self.index[0].store(0, Ordering::Release);
         self.index[1].store(0, Ordering::Release);
+        if let Some(service) = &self.options.admin_service {
+            if let Ok(mut service) = service.lock() {
+                service.on_connect();
+            }
+        }
         peer.ready.store(true, Ordering::Release);
         let _ = self.events.try_send(Event::PacketIdentifiers(packets));
         let _ = self.events.try_send(Event::Identified {
@@ -226,6 +233,11 @@ impl State {
                 {
                     if let Ok(mut safety) = safety.lock() {
                         safety.observe(revision, direction, message.packet.header());
+                    }
+                }
+                if let Some(service) = &state.options.admin_service {
+                    if let Ok(mut service) = service.lock() {
+                        service.on_message(&mut message);
                     }
                 }
                 state

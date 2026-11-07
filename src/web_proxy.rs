@@ -42,6 +42,7 @@ pub struct WebOptions {
     pub identity_directory: PathBuf,
     pub packet_info: PacketInfoManager,
     pub packet_safety: Option<Arc<Mutex<crate::packet_safety::PacketSafety>>>,
+    pub admin_service: Option<Arc<Mutex<crate::admin_service::AdminService>>>,
     pub extensions: Option<Arc<ExtensionHost>>,
     pub extra_roots: Vec<Vec<u8>>,
     pub websocket_urls: Vec<String>,
@@ -58,6 +59,7 @@ impl WebOptions {
             detect_nitro: true,
             packet_info: PacketInfoManager::default(),
             packet_safety: None,
+            admin_service: None,
             extensions: None,
             extra_roots: Vec::new(),
             websocket_urls: Vec::new(),
@@ -292,6 +294,11 @@ impl Shared {
                 packets: database,
             })?;
         }
+        if let Some(service) = &self.options.admin_service {
+            if let Ok(mut service) = service.lock() {
+                service.on_connect();
+            }
+        }
         peer.ready.store(true, Ordering::Release);
         peer.notify.notify_waiters();
         let _ = self.events.try_send(Event::Connected(format!(
@@ -322,6 +329,11 @@ impl Shared {
                 if let Some(safety) = &state.options.packet_safety {
                     if let Ok(mut safety) = safety.lock() {
                         safety.observe(NITRO_REVISION, direction, message.packet.header());
+                    }
+                }
+                if let Some(service) = &state.options.admin_service {
+                    if let Ok(mut service) = service.lock() {
+                        service.on_message(&mut message);
                     }
                 }
                 state

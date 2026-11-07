@@ -413,6 +413,9 @@ impl Settings {
         if let Some(enabled) = value["develop_mode"].as_bool() {
             self.booleans.insert("developer_mode".into(), enabled);
         }
+        if let Some(enabled) = value["always_admin"].as_bool() {
+            self.booleans.insert("always_admin".into(), enabled);
+        }
         // beta-29 stores these in the exact menu order from UiLoggerController.
         // Reject malformed or differently sized lists, as Java does for old layouts.
         if let Some(items) = value["LOGGER_SETTINGS"]
@@ -480,6 +483,16 @@ impl Settings {
 mod tests {
     use super::{ScheduleTemplate, Settings};
     use crate::packet::Direction;
+
+    #[test]
+    fn java_client_permissions_choice_is_imported_and_persisted() {
+        let mut settings = Settings::default();
+        settings
+            .import_java_cache(serde_json::json!({"always_admin": true}))
+            .unwrap();
+        let loaded = Settings::from_json(settings.to_json()).unwrap();
+        assert_eq!(loaded.booleans.get("always_admin"), Some(&true));
+    }
 
     #[test]
     fn java_logger_window_options_round_trip() {

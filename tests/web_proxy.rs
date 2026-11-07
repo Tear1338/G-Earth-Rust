@@ -72,6 +72,70 @@ fn packet(header: u16, value: i32) -> Packet {
     p.put_i32(value).unwrap();
     p
 }
+
+#[test]
+fn client_permissions_are_rewritten_and_restored_through_nitro() {
+    use gearth_rust::admin_service::AdminService;
+    use std::sync::{Arc, Mutex};
+    let directory = Directory::new();
+    let service = Arc::new(Mutex::new(AdminService::default()));
+    service.lock().unwrap().set_enabled(true);
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let upstream_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = upstream_listener.local_addr().unwrap();
+        let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), directory.0.join("ca"));
+        options.admin_service = Some(service.clone());
+        let (mut proxy, _) = WebProxy::start(options).unwrap();
+        let mut original = Packet::new(88);
+        original.append(&[0, 0, 0, 1, 0, 0, 0, 2, 0]).unwrap();
+        let sent = original.clone();
+        let upstream = tokio::spawn(async move {
+            let (stream, _) = upstream_listener.accept().await.unwrap();
+            let mut socket = accept_async(stream).await.unwrap();
+            socket.next().await.unwrap().unwrap();
+            socket
+                .send(WsMessage::Binary(sent.bytes().to_vec().into()))
+                .await
+                .unwrap();
+            let _ = socket.next().await;
+        });
+        let stream = connect_tunnel(proxy.address, &address.to_string()).await;
+        let (mut client, _) = client_async(format!("ws://{address}/game"), stream)
+            .await
+            .unwrap();
+        client
+            .send(WsMessage::Binary(packet(4000, 0).bytes().to_vec().into()))
+            .await
+            .unwrap();
+        let incoming = tokio::time::timeout(Duration::from_secs(5), client.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            Packet::from_bytes(incoming.into_data().to_vec())
+                .unwrap()
+                .body(),
+            &[0, 0, 0, 7, 0, 0, 0, 7, 1]
+        );
+        let restore = service.lock().unwrap().set_enabled(false).unwrap();
+        proxy.inject(Direction::ToClient, restore).unwrap();
+        let incoming = tokio::time::timeout(Duration::from_secs(5), client.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            Packet::from_bytes(incoming.into_data().to_vec())
+                .unwrap()
+                .bytes(),
+            original.bytes()
+        );
+        client.close(None).await.unwrap();
+        upstream.await.unwrap();
+        proxy.stop();
+    });
+}
 #[test]
 fn rejects_untrusted_upstream_tls_even_when_client_trusts_the_local_proxy() {
     use hudsucker::{

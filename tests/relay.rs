@@ -23,6 +23,43 @@ fn wait_for(events: &std::sync::mpsc::Receiver<Event>, predicate: impl Fn(&Event
 }
 
 #[test]
+fn client_permissions_are_rewritten_and_restored_through_tcp() {
+    use gearth_rust::{admin_service::AdminService, relay::RelayOptions};
+    use std::sync::{Arc, Mutex};
+    let service = Arc::new(Mutex::new(AdminService::default()));
+    service.lock().unwrap().set_enabled(true);
+    let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+    let (mut relay, events) = Relay::start_with_options(
+        Config {
+            listen: "127.0.0.1:0".parse().unwrap(),
+            remote: remote.local_addr().unwrap().to_string(),
+        },
+        RelayOptions {
+            admin_service: Some(service.clone()),
+            ..RelayOptions::default()
+        },
+    )
+    .unwrap();
+    let mut client = TcpStream::connect(relay.address).unwrap();
+    client
+        .set_read_timeout(Some(Duration::from_secs(5)))
+        .unwrap();
+    let (mut server, _) = remote.accept().unwrap();
+    wait_for(&events, |e| matches!(e, Event::Connected(_)));
+    let mut original = Packet::new(88);
+    original.append(&[0, 0, 0, 1, 0, 0, 0, 2, 0]).unwrap();
+    write_frame(&mut server, &original).unwrap();
+    assert_eq!(
+        read_frame(&mut client).unwrap().body(),
+        &[0, 0, 0, 7, 0, 0, 0, 7, 1]
+    );
+    let restore = service.lock().unwrap().set_enabled(false).unwrap();
+    relay.inject(Direction::ToClient, restore).unwrap();
+    assert_eq!(read_frame(&mut client).unwrap().bytes(), original.bytes());
+    relay.stop();
+}
+
+#[test]
 fn socks_authentication_failure_is_reported_and_reconnect_succeeds() {
     use gearth_rust::{relay::RelayOptions, socks::SocksConfig};
     let proxy = TcpListener::bind("127.0.0.1:0").unwrap();

@@ -98,6 +98,34 @@ async fn hello(socket: &mut Socket) {
     send(socket, 1, &hello).await;
     assert_eq!(receive(socket).await, (1, hello));
 }
+
+#[test]
+fn client_permissions_are_rewritten_and_restored_through_unity() {
+    use gearth_rust::admin_service::AdminService;
+    use std::sync::{Arc, Mutex};
+    let directory = Directory::new();
+    let service = Arc::new(Mutex::new(AdminService::default()));
+    service.lock().unwrap().set_enabled(true);
+    let mut options = UnityOptions::new("127.0.0.1:0".parse().unwrap(), directory.0.join("ca"));
+    options.admin_service = Some(service.clone());
+    let (mut server, _) = UnityServer::start(options).unwrap();
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let mut client = connect(&server, None).await.unwrap();
+        hello(&mut client).await;
+        let mut original = Packet::new(88);
+        original.append(&[0, 0, 0, 1, 0, 0, 0, 2, 0]).unwrap();
+        send(&mut client, 0, &original).await;
+        assert_eq!(
+            receive(&mut client).await.1.body(),
+            &[0, 0, 0, 7, 0, 0, 0, 7, 1]
+        );
+        let restore = service.lock().unwrap().set_enabled(false).unwrap();
+        server.inject(Direction::ToClient, restore).unwrap();
+        assert_eq!(receive(&mut client).await.1.bytes(), original.bytes());
+        client.close(None).await.unwrap();
+    });
+    server.stop();
+}
 #[test]
 fn tls_communicator_authenticates_and_routes_mutations_injections_and_fragmented_packets() {
     let directory = Directory::new();
