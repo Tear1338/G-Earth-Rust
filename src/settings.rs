@@ -78,6 +78,13 @@ impl Settings {
     pub fn get(&self, key: &str) -> &str {
         self.values.get(key).map(String::as_str).unwrap_or("")
     }
+    /// Preserve the old Rust behavior for settings saved before the checkbox existed.
+    pub fn socks_enabled(&self) -> bool {
+        self.booleans
+            .get("socks_enabled")
+            .copied()
+            .unwrap_or_else(|| !self.get("socks_proxy").trim().is_empty())
+    }
     pub fn read(path: &Path) -> io::Result<Self> {
         use std::io::Read;
         let mut bytes = Vec::new();
@@ -458,6 +465,8 @@ impl Settings {
             if port <= 65535 {
                 self.values
                     .insert("socks_proxy".into(), host_and_port(host, port));
+                // Java saves the address independently of the unchecked-at-startup proxy toggle.
+                self.booleans.insert("socks_enabled".into(), false);
             }
         }
         self.extra.insert("legacy_java_cache".into(), value);
@@ -469,6 +478,28 @@ impl Settings {
 mod tests {
     use super::{ScheduleTemplate, Settings};
     use crate::packet::Direction;
+
+    #[test]
+    fn java_proxy_address_is_imported_without_enabling_proxy() {
+        let mut settings = Settings::default();
+        settings
+            .values
+            .insert("socks_proxy".into(), "old:42".into());
+        assert!(settings.socks_enabled());
+        settings
+            .import_java_cache(serde_json::json!({"socks_config": {"ip": "::1", "port": 1080}}))
+            .unwrap();
+        assert_eq!(settings.get("socks_proxy"), "[::1]:1080");
+        assert!(!settings.socks_enabled());
+        let mut restored = Settings::from_json(settings.to_json()).unwrap();
+        assert!(!restored.socks_enabled());
+        restored.booleans.insert("socks_enabled".into(), true);
+        assert!(restored.socks_enabled());
+        restored.booleans.remove("socks_enabled");
+        assert!(restored.socks_enabled());
+        restored.values.insert("socks_proxy".into(), "  ".into());
+        assert!(!restored.socks_enabled());
+    }
 
     #[test]
     fn repeating_schedule_survives_settings_round_trip() {

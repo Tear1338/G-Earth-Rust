@@ -150,6 +150,7 @@ struct Desktop {
     developer_mode: bool,
     developer_mode_confirmation: bool,
     socks_proxy: String,
+    socks_enabled: bool,
     socks_user: String,
     socks_password: String,
     outgoing_key: String,
@@ -567,6 +568,7 @@ impl Default for Desktop {
             developer_mode: false,
             developer_mode_confirmation: false,
             socks_proxy: String::new(),
+            socks_enabled: false,
             socks_user: String::new(),
             socks_password: String::new(),
             outgoing_key: String::new(),
@@ -1039,6 +1041,7 @@ impl Desktop {
                 ui.end_row();
             });
         egui::CollapsingHeader::new("Connection options").show(ui,|ui|{
+            ui.checkbox(&mut self.socks_enabled, self.i18n.text("tab.extra.options.advanced.socks"));
             egui::Grid::new("connection-options").show(ui,|ui|{
                 for (label,value) in [("Hotel version",&mut self.hotel_version),("Client identifier",&mut self.client_identifier),("Packet identifiers (.tsv / .json)",&mut self.packet_database),("SOCKS5 proxy",&mut self.socks_proxy),("SOCKS username",&mut self.socks_user)] {ui.label(label);ui.text_edit_singleline(value);ui.end_row();}
                 ui.label("SOCKS password");ui.add(egui::TextEdit::singleline(&mut self.socks_password).password(true));ui.end_row();
@@ -1142,8 +1145,8 @@ impl Desktop {
         Ok(())
     }
     fn start_unity(&mut self) -> std::io::Result<()> {
-        if !self.socks_proxy.trim().is_empty() {
-            return Err(std::io::Error::other("Unity upstream SOCKS5 routing is not ported yet; clear the SOCKS setting before using a direct connection"));
+        if self.socks_enabled {
+            return Err(std::io::Error::other("Unity upstream SOCKS5 routing is not ported yet; disable the SOCKS proxy before using a direct connection"));
         }
         self.prepare_certificate()?;
         if self.system_proxy
@@ -1201,8 +1204,8 @@ impl Desktop {
         if self.unity {
             return self.start_unity();
         }
-        if !self.socks_proxy.trim().is_empty() {
-            return Err(std::io::Error::other("Nitro upstream SOCKS5 support is not implemented; clear the SOCKS setting to use a direct connection"));
+        if self.socks_enabled {
+            return Err(std::io::Error::other("Nitro upstream SOCKS5 support is not implemented; disable the SOCKS proxy to use a direct connection"));
         }
         self.prepare_certificate()?;
         self.hotel_version = NITRO_REVISION.into();
@@ -3109,6 +3112,7 @@ impl Desktop {
                 *target = value.clone();
             }
         }
+        self.socks_enabled = self.settings.socks_enabled();
         self.origins = self
             .settings
             .booleans
@@ -3186,6 +3190,7 @@ impl Desktop {
             self.settings.values.insert(key.into(), value.clone());
         }
         self.settings.booleans.extend([
+            ("socks_enabled".into(), self.socks_enabled),
             ("origins".into(), self.origins),
             ("nitro".into(), self.nitro),
             ("unity".into(), self.unity),
@@ -3308,9 +3313,14 @@ impl Desktop {
             shockwave: self.origins,
             extensions: self.extension_host.clone(),
             connection: Some(connection),
-            socks: if self.socks_proxy.trim().is_empty() {
+            socks: if !self.socks_enabled {
                 None
             } else {
+                if self.socks_proxy.trim().is_empty() {
+                    return Err(std::io::Error::other(
+                        "SOCKS5 proxy address is required when enabled",
+                    ));
+                }
                 Some(SocksConfig {
                     proxy: self.socks_proxy.clone(),
                     credentials: if self.socks_user.is_empty() {
