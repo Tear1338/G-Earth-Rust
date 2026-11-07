@@ -2540,7 +2540,11 @@ impl Desktop {
                 self.reset_active_schedule_editor();
             }
         }
-        ui.label(format!("{} active schedules", self.scheduler.jobs.len()));
+        ui.label(format!(
+            "{}: {}",
+            self.i18n.text("rust.scheduler.active_count"),
+            self.scheduler.jobs.len()
+        ));
         if ui
             .add_enabled(
                 self.relay.as_ref().is_some_and(Connection::connected),
@@ -2553,8 +2557,8 @@ impl Desktop {
                 self.scheduler
                     .add_batch_configured(specs, (Instant::now(), SystemTime::now()))
             }) {
-                Ok(()) => "Saved schedules started".into(),
-                Err(e) => format!("No saved schedules started: {e}"),
+                Ok(()) => self.i18n.text("rust.scheduler.started"),
+                Err(e) => format!("{}: {e}", self.i18n.text("rust.scheduler.start_failed")),
             };
         }
         if ui
@@ -2565,28 +2569,29 @@ impl Desktop {
             self.schedule_edit = None;
         }
         ui.horizontal(|ui| {
-            ui.label(".sched file");
+            ui.label(self.i18n.text("rust.scheduler.file"));
             ui.text_edit_singleline(&mut self.schedule_path);
-            if ui.button("Import").clicked() {
+            if ui.button(self.i18n.text("rust.scheduler.import")).clicked() {
                 let result = self.read_schedule_file();
                 self.status = match result {
                     Ok(templates) => {
                         let count = templates.len();
                         self.settings.schedules = templates;
                         self.schedule_edit = None;
-                        format!("Imported {count} templates; save settings to keep them")
+                        format!("{}: {count}", self.i18n.text("rust.scheduler.imported"))
                     }
-                    Err(error) => format!("Import failed: {error}"),
+                    Err(error) => format!(
+                        "{}: {error}",
+                        self.i18n.text("rust.scheduler.import_failed")
+                    ),
                 };
             }
             if ui
                 .add_enabled(
                     self.relay.as_ref().is_some_and(Connection::connected),
-                    egui::Button::new("Load and replace active"),
+                    egui::Button::new(self.i18n.text("rust.scheduler.load_active")),
                 )
-                .on_hover_text(
-                    "Replace active schedules with the .sched file; an empty file clears them",
-                )
+                .on_hover_text(self.i18n.text("rust.scheduler.load_active_hint"))
                 .clicked()
             {
                 let result = self.read_schedule_file().and_then(|templates| {
@@ -2605,25 +2610,38 @@ impl Desktop {
                             self.reset_active_schedule_editor();
                         }
                         format!(
-                            "Loaded {count} active schedules from {}",
+                            "{}: {count} ({})",
+                            self.i18n.text("rust.scheduler.loaded_active"),
                             self.schedule_path
                         )
                     }
-                    Err(error) => format!("Load failed; active schedules unchanged: {error}"),
+                    Err(error) => {
+                        format!("{}: {error}", self.i18n.text("rust.scheduler.load_failed"))
+                    }
                 };
             }
-            if ui.button("Export templates").clicked() {
+            if ui
+                .button(self.i18n.text("rust.scheduler.export_templates"))
+                .clicked()
+            {
                 self.status =
                     match schedule_file::format(&self.settings.schedules).and_then(|text| {
                         schedule_file::write_atomic(Path::new(&self.schedule_path), &text)
                     }) {
-                        Ok(()) => format!("Exported templates to {}", self.schedule_path),
-                        Err(error) => format!("Export failed: {error}"),
+                        Ok(()) => format!(
+                            "{}: {}",
+                            self.i18n.text("rust.scheduler.exported_templates"),
+                            self.schedule_path
+                        ),
+                        Err(error) => format!(
+                            "{}: {error}",
+                            self.i18n.text("rust.scheduler.export_failed")
+                        ),
                     };
             }
             if ui
-                .button("Export active")
-                .on_hover_text("Export active, indefinitely repeating clock-aligned schedules")
+                .button(self.i18n.text("rust.scheduler.export_active"))
+                .on_hover_text(self.i18n.text("rust.scheduler.export_active_hint"))
                 .clicked()
             {
                 self.status =
@@ -2631,16 +2649,20 @@ impl Desktop {
                         schedule_file::write_atomic(Path::new(&self.schedule_path), &text)
                     }) {
                         Ok(()) => format!(
-                            "Exported {} active schedules to {}",
+                            "{}: {} ({})",
+                            self.i18n.text("rust.scheduler.exported_active"),
                             self.scheduler.jobs.len(),
                             self.schedule_path
                         ),
-                        Err(error) => format!("Export failed: {error}"),
+                        Err(error) => format!(
+                            "{}: {error}",
+                            self.i18n.text("rust.scheduler.export_failed")
+                        ),
                     };
             }
         });
         if !self.settings.schedules.is_empty() {
-            ui.label("Saved templates (save settings to keep changes)");
+            ui.label(self.i18n.text("rust.scheduler.saved_hint"));
         }
         let mut edit_template = None;
         let mut remove_template = None;
@@ -2896,7 +2918,8 @@ impl Desktop {
         ui.separator();
         direction_selector(ui, &mut self.direction, &self.i18n);
         ui.label(format!(
-            "Packet format: {:?}",
+            "{}: {:?}",
+            self.i18n.text("rust.tools.packet_format"),
             self.packet_format(self.direction)
         ));
         ui.add(
@@ -2906,7 +2929,10 @@ impl Desktop {
                 .font(egui::TextStyle::Monospace),
         );
         ui.horizontal(|ui| {
-            if ui.button("Expression → wire hex").clicked() {
+            if ui
+                .button(self.i18n.text("rust.tools.expression_to_hex"))
+                .clicked()
+            {
                 self.tool_output = packet_tools::expression_to_hex(
                     &self.tool_input,
                     self.packet_format(self.direction),
@@ -2915,7 +2941,10 @@ impl Desktop {
                 )
                 .unwrap_or_else(|e| e.to_string());
             }
-            if ui.button("Wire hex → lossless expression").clicked() {
+            if ui
+                .button(self.i18n.text("rust.tools.hex_to_expression"))
+                .clicked()
+            {
                 self.tool_output = packet_tools::hex_to_expression(
                     &self.tool_input,
                     self.packet_format(self.direction),
@@ -2924,7 +2953,10 @@ impl Desktop {
             }
         });
         ui.horizontal(|ui| {
-            if ui.button("Expression -> G-Earth packet").clicked() {
+            if ui
+                .button(self.i18n.text("rust.tools.expression_to_packet"))
+                .clicked()
+            {
                 self.tool_output = packet_tools::expression_to_wire(
                     &self.tool_input,
                     self.packet_format(self.direction),
@@ -2933,7 +2965,10 @@ impl Desktop {
                 )
                 .unwrap_or_else(|error| error.to_string());
             }
-            if ui.button("G-Earth packet -> expression").clicked() {
+            if ui
+                .button(self.i18n.text("rust.tools.packet_to_expression"))
+                .clicked()
+            {
                 match packet_tools::wire_to_expression(
                     &self.tool_input,
                     self.packet_format(self.direction),
@@ -2944,9 +2979,9 @@ impl Desktop {
                     Ok((output, structured)) => {
                         self.tool_output = output;
                         self.status = if structured {
-                            "Packet converted to a verified expression".into()
+                            self.i18n.text("rust.tools.converted")
                         } else {
-                            "Structure unavailable; kept the original packet bytes".into()
+                            self.i18n.text("rust.tools.structure_unavailable")
                         };
                     }
                     Err(error) => self.status = error.to_string(),
@@ -2959,10 +2994,16 @@ impl Desktop {
                 .desired_width(f32::INFINITY)
                 .font(egui::TextStyle::Monospace),
         );
-        if ui.button("Copy output").clicked() {
+        if ui
+            .button(self.i18n.text("rust.tools.copy_output"))
+            .clicked()
+        {
             ui.ctx().copy_text(self.tool_output.clone());
         }
-        if ui.button("Use output as input").clicked() {
+        if ui
+            .button(self.i18n.text("rust.tools.reuse_output"))
+            .clicked()
+        {
             self.tool_input.clone_from(&self.tool_output);
         }
         ui.separator();

@@ -1,6 +1,60 @@
 use gearth_rust::i18n::{parse_properties, I18n, LANGUAGES};
 
 #[test]
+fn scheduler_and_tool_controls_have_translations_and_fallbacks() {
+    let keys = [
+        "rust.scheduler.active_count",
+        "rust.scheduler.started",
+        "rust.scheduler.start_failed",
+        "rust.scheduler.file",
+        "rust.scheduler.import",
+        "rust.scheduler.imported",
+        "rust.scheduler.import_failed",
+        "rust.scheduler.load_active",
+        "rust.scheduler.load_active_hint",
+        "rust.scheduler.loaded_active",
+        "rust.scheduler.load_failed",
+        "rust.scheduler.export_templates",
+        "rust.scheduler.exported_templates",
+        "rust.scheduler.export_active",
+        "rust.scheduler.export_active_hint",
+        "rust.scheduler.exported_active",
+        "rust.scheduler.export_failed",
+        "rust.scheduler.saved_hint",
+        "rust.tools.packet_format",
+        "rust.tools.expression_to_hex",
+        "rust.tools.hex_to_expression",
+        "rust.tools.expression_to_packet",
+        "rust.tools.packet_to_expression",
+        "rust.tools.converted",
+        "rust.tools.structure_unavailable",
+        "rust.tools.copy_output",
+        "rust.tools.reuse_output",
+    ];
+    let french = I18n::new("fr");
+    let english = I18n::new("en");
+    for key in keys {
+        assert_ne!(french.text(key), key);
+        assert_ne!(french.text(key), english.text(key), "untranslated: {key}");
+        for (language, _) in LANGUAGES {
+            assert_ne!(
+                I18n::new(language).text(key),
+                key,
+                "missing {key} for {language}"
+            );
+        }
+    }
+    assert_eq!(
+        french.text("rust.scheduler.load_active"),
+        "Charger et remplacer les planifications actives"
+    );
+    assert_eq!(
+        I18n::new("de").text("rust.tools.copy_output"),
+        "Copy output"
+    );
+}
+
+#[test]
 fn extension_controls_have_french_labels_and_english_fallbacks() {
     let keys = [
         "server_unavailable",
