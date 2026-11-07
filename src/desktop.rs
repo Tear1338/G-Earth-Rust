@@ -297,6 +297,60 @@ struct RenderedLogRow {
     structure: Option<String>,
 }
 
+// beta-29 colors incoming traffic red, outgoing traffic blue, and both
+// blocked/replaced markers yellow. Darker variants remain legible on light UI.
+fn log_colors(direction: Direction, dark: bool) -> (egui::Color32, egui::Color32, egui::Color32) {
+    let (normal, hex) = match (direction, dark) {
+        (Direction::ToClient, true) => (
+            egui::Color32::from_rgb(178, 34, 34),
+            egui::Color32::from_rgb(240, 98, 98),
+        ),
+        (Direction::ToServer, true) => (
+            egui::Color32::from_rgb(0, 102, 204),
+            egui::Color32::from_rgb(79, 183, 247),
+        ),
+        (Direction::ToClient, false) => (
+            egui::Color32::from_rgb(155, 30, 30),
+            egui::Color32::from_rgb(155, 30, 30),
+        ),
+        (Direction::ToServer, false) => (
+            egui::Color32::from_rgb(0, 75, 155),
+            egui::Color32::from_rgb(0, 75, 155),
+        ),
+    };
+    let marker = if dark {
+        egui::Color32::YELLOW
+    } else {
+        egui::Color32::from_rgb(130, 70, 0)
+    };
+    (normal, hex, marker)
+}
+
+fn log_header_layout(
+    header: &str,
+    marker: Option<&str>,
+    normal: egui::Color32,
+    highlight: egui::Color32,
+    size: f32,
+) -> egui::text::LayoutJob {
+    let mut job = egui::text::LayoutJob::default();
+    let format = |color| egui::TextFormat {
+        font_id: egui::FontId::monospace(size),
+        color,
+        ..Default::default()
+    };
+    if let Some((start, text)) =
+        marker.and_then(|text| header.find(text).map(|start| (start, text)))
+    {
+        job.append(&header[..start], 0.0, format(normal));
+        job.append(text, 0.0, format(highlight));
+        job.append(&header[start + text.len()..], 0.0, format(normal));
+    } else {
+        job.append(header, 0.0, format(normal));
+    }
+    job
+}
+
 fn render_log_row(
     row: &LogRow,
     info: &PacketInfoManager,
@@ -1703,12 +1757,14 @@ impl Desktop {
                 for i in range {
                     let row = filtered[i];
                     let m = &row.message;
-                    let color = if m.blocked {
-                        egui::Color32::from_rgb(180, 60, 60)
-                    } else if m.direction == Direction::ToServer {
-                        egui::Color32::from_rgb(30, 90, 170)
+                    let (color, hex_color, marker_color) =
+                        log_colors(m.direction, ui.visuals().dark_mode);
+                    let marker = if m.blocked {
+                        Some("BLOCKED")
+                    } else if m.packet.edited {
+                        Some("REPLACED")
                     } else {
-                        egui::Color32::from_rgb(20, 130, 70)
+                        None
                     };
                     let rendered = render_log_row(row, &self.packet_info, display_options);
                     let row_output = ui.allocate_ui_with_layout(
@@ -1716,11 +1772,13 @@ impl Desktop {
                         egui::Layout::top_down(egui::Align::Min),
                         |ui| {
                             let response = ui.add(
-                                egui::Label::new(
-                                    egui::RichText::new(&rendered.header)
-                                        .monospace()
-                                        .color(color),
-                                )
+                                egui::Label::new(log_header_layout(
+                                    &rendered.header,
+                                    marker,
+                                    color,
+                                    marker_color,
+                                    ui.text_style_height(&egui::TextStyle::Monospace),
+                                ))
                                 .truncate()
                                 .sense(egui::Sense::click()),
                             );
@@ -1736,8 +1794,10 @@ impl Desktop {
                             }
                             if let Some(dump) = &rendered.dump {
                                 ui.add(
-                                    egui::Label::new(egui::RichText::new(dump).monospace())
-                                        .wrap_mode(egui::TextWrapMode::Extend),
+                                    egui::Label::new(
+                                        egui::RichText::new(dump).monospace().color(hex_color),
+                                    )
+                                    .wrap_mode(egui::TextWrapMode::Extend),
                                 );
                             }
                             if let Some(structure) = &rendered.structure {
@@ -3621,13 +3681,30 @@ mod rule_editor_tests {
 #[cfg(test)]
 mod logger_prediction_tests {
     use super::{
-        bounded_log_prediction, clear_log_contents, invalidate_log_expressions,
-        log_packet_metadata, log_row_matches, matching_packet_metadata, write_log_capture,
-        LogDisplayOptions, LogRow, PacketRepresentation, LOG_PREDICTION_LIMIT,
+        bounded_log_prediction, clear_log_contents, invalidate_log_expressions, log_colors,
+        log_header_layout, log_packet_metadata, log_row_matches, matching_packet_metadata,
+        write_log_capture, LogDisplayOptions, LogRow, PacketRepresentation, LOG_PREDICTION_LIMIT,
     };
     use gearth_rust::packet::{Direction, Message, Packet};
     use gearth_rust::packet_info::{PacketInfo, PacketInfoManager};
     use std::{collections::VecDeque, sync::OnceLock};
+
+    #[test]
+    fn logger_colors_distinguish_direction_and_highlight_markers() {
+        for dark in [true, false] {
+            let (incoming, _, highlight) = log_colors(Direction::ToClient, dark);
+            let (outgoing, _, _) = log_colors(Direction::ToServer, dark);
+            assert_ne!(incoming, outgoing);
+            let header = "entrée BLOCKED {h:42}";
+            let job = log_header_layout(header, Some("BLOCKED"), incoming, highlight, 14.0);
+            assert_eq!(job.text, header);
+            assert_eq!(job.sections[1].format.color, highlight);
+            assert_eq!(&job.text[job.sections[1].byte_range.clone()], "BLOCKED");
+            let normal = log_header_layout(header, None, incoming, highlight, 14.0);
+            assert_eq!(normal.sections.len(), 1);
+            assert_eq!(normal.sections[0].format.color, incoming);
+        }
+    }
 
     #[test]
     fn large_packet_option_hides_bytes_without_hiding_packet_expression() {
