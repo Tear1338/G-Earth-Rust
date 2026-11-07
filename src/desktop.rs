@@ -2970,17 +2970,46 @@ impl eframe::App for Desktop {
         });
         if self.logger_window.open {
             let mut open = true;
-            egui::Window::new(self.i18n.text("rust.logger.title"))
-                .id(egui::Id::new("floating_logger"))
-                .open(&mut open)
-                .default_width(850.0)
-                .default_height(600.0)
-                .show(ctx, |ui| {
-                    if self.developer_mode_confirmation {
-                        ui.disable();
+            let title = self.i18n.text("rust.logger.title");
+            let previous_tab = self.tab;
+            ctx.show_viewport_immediate(
+                egui::ViewportId::from_hash_of("logger_window"),
+                egui::ViewportBuilder::default()
+                    .with_title(&title)
+                    .with_inner_size([850.0, 600.0])
+                    .with_min_inner_size([480.0, 320.0]),
+                |logger_ctx, class| {
+                    if class == egui::ViewportClass::Embedded {
+                        egui::Window::new(&title)
+                            .id(egui::Id::new("floating_logger"))
+                            .open(&mut open)
+                            .default_width(850.0)
+                            .default_height(600.0)
+                            .show(logger_ctx, |ui| {
+                                if self.developer_mode_confirmation {
+                                    ui.disable();
+                                }
+                                self.logger(ui);
+                            });
+                    } else {
+                        if logger_ctx.input(|i| i.viewport().close_requested()) {
+                            open = false;
+                        }
+                        egui::CentralPanel::default().show(logger_ctx, |ui| {
+                            if self.developer_mode_confirmation {
+                                ui.disable();
+                            }
+                            self.logger(ui);
+                        });
+                        if self.relay.is_some() {
+                            logger_ctx.request_repaint_after(Duration::from_millis(50));
+                        }
                     }
-                    self.logger(ui);
-                });
+                },
+            );
+            if !open || previous_tab != self.tab {
+                ctx.request_repaint_of(egui::ViewportId::ROOT);
+            }
             self.logger_window.open = open;
         }
         self.developer_mode_dialog(ctx);
