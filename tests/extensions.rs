@@ -171,6 +171,46 @@ fn reconnect_does_not_replay_injections_from_a_previous_session() {
 }
 
 #[test]
+fn replacing_a_session_discards_pending_shared_and_deferred_injections() {
+    let (host, events) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+    host.start_connection(details()).unwrap();
+    let (mut stream, _) = connect(&host, &events);
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 5);
+    for header in 0..257 {
+        write_frame(
+            &mut stream,
+            &extension::send(Direction::ToServer, &Packet::new(header)).unwrap(),
+        )
+        .unwrap();
+    }
+    write_frame(&mut stream, &Packet::new(3)).unwrap();
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 4);
+    assert_eq!(
+        host.forward_injections(|_, packet| Err((
+            std::io::Error::from(std::io::ErrorKind::WouldBlock),
+            packet
+        )))
+        .unwrap(),
+        0
+    );
+    host.start_connection(details()).unwrap();
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 5);
+    write_frame(&mut stream, &Packet::new(3)).unwrap();
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 4);
+    assert!(host.take_injections().is_empty());
+    write_frame(
+        &mut stream,
+        &extension::send(Direction::ToServer, &Packet::new(999)).unwrap(),
+    )
+    .unwrap();
+    write_frame(&mut stream, &Packet::new(3)).unwrap();
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 4);
+    assert_eq!(host.take_injections()[0].1.header(), 999);
+    drop(stream);
+    host.stop();
+}
+
+#[test]
 fn a_full_injection_queue_reports_the_dropped_packet_and_keeps_the_extension_connected() {
     let (host, events) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
     host.start_connection(details()).unwrap();

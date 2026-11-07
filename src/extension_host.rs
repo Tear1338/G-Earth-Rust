@@ -249,6 +249,15 @@ impl ExtensionHost {
                 .connection
                 .lock()
                 .map_err(|_| io::Error::other("connection lock poisoned"))?;
+            // A new session can replace an existing one without an explicit
+            // end_connection call. Discard the shared and transport-pending
+            // injections while workers are excluded by the connection lock.
+            let mut injections = self
+                .injections
+                .lock()
+                .map_err(|_| io::Error::other("extension injection lock poisoned"))?;
+            injections.pending = None;
+            while injections.receiver.try_recv().is_ok() {}
             self.shared.connection_epoch.fetch_add(1, Ordering::Relaxed);
             *connection = Some(details);
         }
