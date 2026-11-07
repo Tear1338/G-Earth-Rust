@@ -1016,7 +1016,7 @@ impl Desktop {
         if ui
             .add_enabled(
                 self.relay.is_none() && self.attachment_pending.is_none(),
-                egui::Checkbox::new(&mut self.nitro, "Browser client (Nitro / Unity)"),
+                egui::Checkbox::new(&mut self.nitro, self.i18n.text("rust.connection.browser")),
             )
             .changed()
         {
@@ -1065,16 +1065,16 @@ impl Desktop {
             }
             self.update_rules();
         }
-        egui::CollapsingHeader::new("Official client attachment").default_open(true).show(ui,|ui|{
+        egui::CollapsingHeader::new(self.i18n.text("rust.connection.attachment")).default_open(true).show(ui,|ui|{
             let hotels=if self.origins{gearth_rust::attachment::ORIGINS_HOTELS}else{gearth_rust::attachment::FLASH_HOTELS};
             egui::ComboBox::from_id_salt("attach-hotel").selected_text(&self.attachment_host).show_ui(ui,|ui|{for host in hotels{ui.selectable_value(&mut self.attachment_host,(*host).into(),*host);}});
             ui.text_edit_singleline(&mut self.attachment_host);
             ui.checkbox(&mut self.flash_auto,"Negotiate Flash encryption and discover client RC4 state (Windows)");
             ui.horizontal(|ui|{
-                if ui.button("Refresh Habbo processes").clicked(){match gearth_platform::habbo_processes(){Ok(processes)=>self.client_processes=processes,Err(e)=>self.status=e.to_string()}}
-                egui::ComboBox::from_id_salt("flash-process").selected_text(if self.flash_pid==0{"Automatic (detect connecting client)".into()}else{format!("PID {}",self.flash_pid)}).show_ui(ui,|ui|{ui.selectable_value(&mut self.flash_pid,0,"Automatic (detect connecting client)");for p in &self.client_processes{ui.selectable_value(&mut self.flash_pid,p.pid,format!("{} - PID {}",p.executable,p.pid));}});
+                if ui.button(self.i18n.text("rust.connection.refresh")).clicked(){match gearth_platform::habbo_processes(){Ok(processes)=>self.client_processes=processes,Err(e)=>self.status=e.to_string()}}
+                egui::ComboBox::from_id_salt("flash-process").selected_text(if self.flash_pid==0{self.i18n.text("rust.connection.automatic")}else{format!("PID {}",self.flash_pid)}).show_ui(ui,|ui|{ui.selectable_value(&mut self.flash_pid,0,self.i18n.text("rust.connection.automatic"));for p in &self.client_processes{ui.selectable_value(&mut self.flash_pid,p.pid,format!("{} - PID {}",p.executable,p.pid));}});
             });
-            if ui.add_enabled(self.relay.is_none()&&self.attachment_pending.is_none(),egui::Button::new("Attach official client")).clicked(){
+            if ui.add_enabled(self.relay.is_none()&&self.attachment_pending.is_none(),egui::Button::new(self.i18n.text("rust.connection.attach"))).clicked(){
                 let port=if self.origins{40001}else{30000};self.remote=format!("{}:{port}",self.attachment_host);self.flash_auto = !self.origins;
                 match self.relay_options(){Ok(options)=>{let host=self.attachment_host.clone();let path=gearth_rust::attachment::HostsRedirect::system_path();let (send,receive)=std::sync::mpsc::channel();self.attachment_pending=Some(receive);self.status="Resolving hotel and preparing the local listener...".into();self.attachment_worker=Some(std::thread::spawn(move||{let _=send.send(gearth_rust::attachment::Attachment::start(&host,port,options,&path));}));},Err(e)=>self.status=e.to_string()}
             }
@@ -1085,20 +1085,20 @@ impl Desktop {
         egui::Grid::new("connection-grid")
             .spacing([18.0, 12.0])
             .show(ui, |ui| {
-                ui.label("Local address");
+                ui.label(self.i18n.text("rust.connection.local"));
                 ui.add_enabled(
                     self.relay.is_none(),
                     egui::TextEdit::singleline(&mut self.listen).desired_width(400.0),
                 );
                 ui.end_row();
-                ui.label("Remote host:port");
+                ui.label(self.i18n.text("rust.connection.remote"));
                 ui.add_enabled(
                     self.relay.is_none(),
                     egui::TextEdit::singleline(&mut self.remote).desired_width(400.0),
                 );
                 ui.end_row();
             });
-        egui::CollapsingHeader::new("Connection options").show(ui,|ui|{
+        egui::CollapsingHeader::new(self.i18n.text("rust.connection.options")).show(ui,|ui|{
             ui.checkbox(&mut self.socks_enabled, self.i18n.text("tab.extra.options.advanced.socks"));
             egui::Grid::new("connection-options").show(ui,|ui|{
                 for (label,value) in [("Hotel version",&mut self.hotel_version),("Client identifier",&mut self.client_identifier),("Packet identifiers (.tsv / .json)",&mut self.packet_database),("SOCKS5 proxy",&mut self.socks_proxy),("SOCKS username",&mut self.socks_user)] {ui.label(label);ui.text_edit_singleline(value);ui.end_row();}
@@ -1132,7 +1132,10 @@ impl Desktop {
             ));
         });
         if self.relay.is_none() && self.attachment_pending.is_none() {
-            if ui.button("Start listening").clicked() {
+            if ui
+                .button(self.i18n.text("rust.connection.listen"))
+                .clicked()
+            {
                 match self.listen.parse() {
                     Ok(listen) => match self.relay_options().and_then(|options| {
                         Relay::start_with_options(
@@ -1153,7 +1156,9 @@ impl Desktop {
                     Err(e) => self.status = format!("Invalid local address: {e}"),
                 }
             }
-        } else if self.relay.is_some() && ui.button("Stop").clicked() {
+        } else if self.relay.is_some()
+            && ui.button(self.i18n.text("rust.connection.stop")).clicked()
+        {
             self.stop_connection();
         }
         ui.add_space(20.0);
@@ -1465,7 +1470,7 @@ impl Desktop {
                     self.status = e.to_string();
                 }
             }
-        } else if ui.button("Stop").clicked() {
+        } else if ui.button(self.i18n.text("rust.connection.stop")).clicked() {
             self.stop_connection();
         }
         ui.separator();
@@ -1498,7 +1503,7 @@ impl Desktop {
                 &mut self.incoming,
                 self.i18n.text("ext.logger.menu.view.incoming"),
             );
-            ui.checkbox(&mut self.paused, "Pause display");
+            ui.checkbox(&mut self.paused, self.i18n.text("rust.logger.pause"));
             if ui
                 .button(self.i18n.text("ext.logger.menu.view.cleartext"))
                 .clicked()
@@ -1511,19 +1516,22 @@ impl Desktop {
             }
         });
         ui.horizontal(|ui| {
-            ui.label("Filter");
+            ui.label(self.i18n.text("rust.logger.filter"));
             ui.text_edit_singleline(&mut self.filter);
-            ui.label("Packet display limit (bytes)");
+            ui.label(self.i18n.text("rust.logger.packet_limit"));
             ui.add(egui::DragValue::new(&mut self.packet_limit).range(0..=16 * 1024 * 1024));
         });
         ui.horizontal_wrapped(|ui| {
-            ui.checkbox(&mut self.logger_additional, "Show additional data");
+            ui.checkbox(
+                &mut self.logger_additional,
+                self.i18n.text("rust.logger.additional"),
+            );
             ui.checkbox(
                 &mut self.logger_structure,
                 self.i18n
                     .text("ext.logger.menu.packets.displaydetails.structure"),
             );
-            ui.checkbox(&mut self.logger_split, "Split packets");
+            ui.checkbox(&mut self.logger_split, self.i18n.text("rust.logger.split"));
             ui.checkbox(
                 &mut self.logger_names,
                 self.i18n
@@ -1603,7 +1611,7 @@ impl Desktop {
                 });
         });
         ui.horizontal_wrapped(|ui| {
-            ui.label("Additional representations:");
+            ui.label(self.i18n.text("rust.logger.extra"));
             ui.checkbox(
                 &mut self.logger_skip_big,
                 self.i18n.text("ext.logger.menu.packets.skipbig"),
@@ -1692,9 +1700,9 @@ impl Desktop {
             structure: self.logger_structure,
         };
         ui.horizontal(|ui| {
-            ui.label("Export path");
+            ui.label(self.i18n.text("rust.logger.export_path"));
             ui.text_edit_singleline(&mut self.export_path);
-            if ui.button("Export displayed capture").clicked() {
+            if ui.button(self.i18n.text("rust.logger.export")).clicked() {
                 let visible = self.logs.iter().filter(|row| {
                     log_row_matches(
                         row,
@@ -1895,7 +1903,7 @@ impl Desktop {
                 &mut self.schedule_draft.direction,
             )
         };
-        direction_selector(ui, direction);
+        direction_selector(ui, direction, &self.i18n);
         ui.add(
             egui::TextEdit::multiline(draft)
                 .font(egui::TextStyle::Monospace)
@@ -2042,11 +2050,11 @@ impl Desktop {
                     connected && server_valid,
                     egui::Button::new(self.i18n.text("tab.injection.send.toserver")),
                 )
-                .on_disabled_hover_text(if connected {
-                    "Invalid packet or ID not observed for this hotel version and direction"
+                .on_disabled_hover_text(self.i18n.text(if connected {
+                    "rust.injection.invalid"
                 } else {
-                    "Connect a client first"
-                })
+                    "rust.injection.connect"
+                }))
                 .clicked()
             {
                 self.send_injection(Direction::ToServer);
@@ -2056,11 +2064,11 @@ impl Desktop {
                     connected && client_valid,
                     egui::Button::new(self.i18n.text("tab.injection.send.toclient")),
                 )
-                .on_disabled_hover_text(if connected {
-                    "Invalid packet or ID not observed for this hotel version and direction"
+                .on_disabled_hover_text(self.i18n.text(if connected {
+                    "rust.injection.invalid"
                 } else {
-                    "Connect a client first"
-                })
+                    "rust.injection.connect"
+                }))
                 .clicked()
             {
                 self.send_injection(Direction::ToClient);
@@ -2110,23 +2118,26 @@ impl Desktop {
             });
         ui.add_space(20.0);
         ui.separator();
-        ui.heading("Block rule");
+        ui.heading(self.i18n.text("rust.rule.title"));
         let changed = ui
             .add_enabled(
                 self.editing_saved_rule.is_none(),
-                egui::Checkbox::new(&mut self.block_enabled, "Enable rule"),
+                egui::Checkbox::new(&mut self.block_enabled, self.i18n.text("rust.rule.enabled")),
             )
             .changed();
         let changed = ui
-            .add(egui::DragValue::new(&mut self.block_header).prefix("Header "))
+            .add(
+                egui::DragValue::new(&mut self.block_header)
+                    .prefix(format!("{} ", self.i18n.text("rust.rule.header"))),
+            )
             .changed()
             || changed;
         let before = self.block_direction;
-        direction_selector(ui, &mut self.block_direction);
+        direction_selector(ui, &mut self.block_direction, &self.i18n);
         if changed || before != self.block_direction {
             self.update_rules();
         }
-        ui.label("Replacement expression (empty = block)");
+        ui.label(self.i18n.text("rust.rule.replacement"));
         if ui
             .text_edit_singleline(&mut self.replacement_expression)
             .changed()
@@ -2137,11 +2148,11 @@ impl Desktop {
             ui.label(format!("Editing saved rule {}", index + 1));
         }
         if ui
-            .button(if self.editing_saved_rule.is_some() {
-                "Save rule changes"
+            .button(self.i18n.text(if self.editing_saved_rule.is_some() {
+                "rust.rule.save"
             } else {
-                "Add saved rule"
-            })
+                "rust.rule.add"
+            }))
             .clicked()
         {
             let replacement = Rules::editor_rule(
@@ -2187,7 +2198,9 @@ impl Desktop {
                 Err(error) => self.status = error.to_string(),
             }
         }
-        if self.editing_saved_rule.is_some() && ui.button("Cancel rule editing").clicked() {
+        if self.editing_saved_rule.is_some()
+            && ui.button(self.i18n.text("rust.rule.cancel")).clicked()
+        {
             self.editing_saved_rule = None;
         }
         let mut remove = None;
@@ -2214,16 +2227,22 @@ impl Desktop {
                         ),
                     )
                     .changed();
-                if ui.small_button("Remove").clicked() {
+                if ui
+                    .small_button(self.i18n.text("rust.action.remove"))
+                    .clicked()
+                {
                     remove = Some(index);
                 }
-                if ui.small_button("Edit").clicked() {
+                if ui
+                    .small_button(self.i18n.text("rust.action.edit"))
+                    .clicked()
+                {
                     edit = Some(index);
                 }
                 if ui
                     .add_enabled(
                         self.editing_saved_rule.is_none() && index > 0,
-                        egui::Button::new("Up"),
+                        egui::Button::new(self.i18n.text("rust.action.up")),
                     )
                     .clicked()
                 {
@@ -2232,7 +2251,7 @@ impl Desktop {
                 if ui
                     .add_enabled(
                         self.editing_saved_rule.is_none() && index + 1 < rule_count,
-                        egui::Button::new("Down"),
+                        egui::Button::new(self.i18n.text("rust.action.down")),
                     )
                     .clicked()
                 {
@@ -2337,10 +2356,7 @@ impl Desktop {
         if ui
             .add_enabled(
                 cfg!(windows),
-                egui::Checkbox::new(
-                    &mut enabled,
-                    "Global shortcuts: Ctrl+Shift+0 to 9 (Windows)",
-                ),
+                egui::Checkbox::new(&mut enabled, self.i18n.text("tab.scheduler.hotkeys")),
             )
             .changed()
         {
@@ -2375,35 +2391,44 @@ impl Desktop {
             ui.add(
                 egui::DragValue::new(&mut self.interval_ms)
                     .range(1..=86_400_000)
-                    .prefix("Interval ms "),
+                    .prefix(format!(
+                        "{} (ms) ",
+                        self.i18n.text("tab.scheduler.setup.interval")
+                    )),
             );
             ui.add(
                 egui::DragValue::new(&mut self.repeat)
                     .range(1..=1_000_000)
-                    .prefix("Count "),
+                    .prefix(format!("{} ", self.i18n.text("rust.scheduler.count"))),
             );
-            ui.checkbox(&mut self.repeat_forever, "Repeat until cancelled");
+            ui.checkbox(
+                &mut self.repeat_forever,
+                self.i18n.text("rust.scheduler.forever"),
+            );
         });
         ui.horizontal(|ui| {
-            ui.checkbox(&mut self.align_schedule, "Align interval to clock");
+            ui.checkbox(
+                &mut self.align_schedule,
+                self.i18n.text("rust.scheduler.align"),
+            );
             ui.add_enabled(
                 self.align_schedule,
                 egui::DragValue::new(&mut self.schedule_offset_ms)
                     .range(0..=self.interval_ms.saturating_sub(1))
-                    .prefix("Offset ms "),
+                    .prefix(format!("{} ", self.i18n.text("rust.scheduler.offset"))),
             );
         });
         let editing = self.schedule_edit.is_some() || self.active_schedule_edit.is_some();
         if ui
             .add_enabled(
                 editing || self.relay.as_ref().is_some_and(Connection::connected),
-                egui::Button::new(if self.active_schedule_edit.is_some() {
-                    "Save active schedule changes"
+                egui::Button::new(self.i18n.text(if self.active_schedule_edit.is_some() {
+                    "rust.scheduler.active_save"
                 } else if editing {
-                    "Save template changes"
+                    "rust.scheduler.template_save"
                 } else {
-                    "Add schedule"
-                }),
+                    "rust.scheduler.add"
+                })),
             )
             .clicked()
         {
@@ -2486,7 +2511,11 @@ impl Desktop {
                 self.reset_active_schedule_editor();
             }
         }
-        if editing && ui.button("Cancel editing").clicked() {
+        if editing
+            && ui
+                .button(self.i18n.text("rust.scheduler.cancel_edit"))
+                .clicked()
+        {
             let reset_active_editor = self.active_schedule_edit.is_some();
             self.schedule_edit = None;
             self.active_schedule_edit = None;
@@ -2494,7 +2523,10 @@ impl Desktop {
                 self.reset_active_schedule_editor();
             }
         }
-        if ui.button("Cancel all schedules").clicked() {
+        if ui
+            .button(self.i18n.text("rust.scheduler.cancel_all"))
+            .clicked()
+        {
             self.scheduler.jobs.clear();
             if self.active_schedule_edit.take().is_some() {
                 self.reset_active_schedule_editor();
@@ -2504,7 +2536,7 @@ impl Desktop {
         if ui
             .add_enabled(
                 self.relay.as_ref().is_some_and(Connection::connected),
-                egui::Button::new("Run saved schedules"),
+                egui::Button::new(self.i18n.text("rust.scheduler.run_saved")),
             )
             .clicked()
         {
@@ -2517,7 +2549,10 @@ impl Desktop {
                 Err(e) => format!("No saved schedules started: {e}"),
             };
         }
-        if ui.button("Clear saved schedules").clicked() {
+        if ui
+            .button(self.i18n.text("rust.scheduler.clear_saved"))
+            .clicked()
+        {
             self.settings.schedules.clear();
             self.schedule_edit = None;
         }
@@ -2603,13 +2638,22 @@ impl Desktop {
         let mut remove_template = None;
         for (i, template) in self.settings.schedules.iter_mut().enumerate() {
             ui.horizontal(|ui| {
-                if ui.small_button("Edit").clicked() {
+                if ui
+                    .small_button(self.i18n.text("rust.action.edit"))
+                    .clicked()
+                {
                     edit_template = Some(i);
                 }
-                if ui.small_button("Remove").clicked() {
+                if ui
+                    .small_button(self.i18n.text("rust.action.remove"))
+                    .clicked()
+                {
                     remove_template = Some(i);
                 }
-                ui.checkbox(&mut template.paused, "Paused on start");
+                ui.checkbox(
+                    &mut template.paused,
+                    self.i18n.text("rust.scheduler.paused_start"),
+                );
                 ui.label(format!(
                     "{}: {} every {} ms",
                     i + 1,
@@ -2645,15 +2689,25 @@ impl Desktop {
         for (i, job) in self.scheduler.jobs.iter().enumerate() {
             ui.horizontal(|ui| {
                 if ui
-                    .small_button(if job.paused { "Resume" } else { "Pause" })
+                    .small_button(self.i18n.text(if job.paused {
+                        "rust.scheduler.resume"
+                    } else {
+                        "rust.scheduler.pause"
+                    }))
                     .clicked()
                 {
                     pause_change = Some((i, !job.paused));
                 }
-                if ui.small_button("Remove").clicked() {
+                if ui
+                    .small_button(self.i18n.text("rust.action.remove"))
+                    .clicked()
+                {
                     remove = Some(i);
                 }
-                if ui.small_button("Edit").clicked() {
+                if ui
+                    .small_button(self.i18n.text("rust.action.edit"))
+                    .clicked()
+                {
                     edit_active = Some(job.id);
                 }
                 let remaining = job
@@ -2784,7 +2838,7 @@ impl Desktop {
             ui.add(egui::TextEdit::singleline(&mut self.tool_ushort_encoded).desired_width(240.0));
         });
         ui.separator();
-        direction_selector(ui, &mut self.direction);
+        direction_selector(ui, &mut self.direction, &self.i18n);
         ui.label(format!(
             "Packet format: {:?}",
             self.packet_format(self.direction)
@@ -2894,10 +2948,18 @@ impl Desktop {
         });
     }
 }
-fn direction_selector(ui: &mut egui::Ui, direction: &mut Direction) {
+fn direction_selector(ui: &mut egui::Ui, direction: &mut Direction, i18n: &I18n) {
     ui.horizontal(|ui| {
-        ui.selectable_value(direction, Direction::ToServer, "To server");
-        ui.selectable_value(direction, Direction::ToClient, "To client");
+        ui.selectable_value(
+            direction,
+            Direction::ToServer,
+            i18n.text("rust.direction.server"),
+        );
+        ui.selectable_value(
+            direction,
+            Direction::ToClient,
+            i18n.text("rust.direction.client"),
+        );
     });
 }
 impl eframe::App for Desktop {
@@ -2915,13 +2977,13 @@ impl eframe::App for Desktop {
             ui.horizontal(|ui| {
                 ui.strong("G-Earth Rust");
                 ui.label("0.1.0 · development");
-                if ui.button("Save settings").clicked() {
+                if ui.button(self.i18n.text("rust.settings.save")).clicked() {
                     self.save_settings();
                 }
-                if ui.button("Reload settings").clicked() {
+                if ui.button(self.i18n.text("rust.settings.reload")).clicked() {
                     self.load_settings();
                 }
-                ui.checkbox(&mut self.dark_mode, "Dark theme");
+                ui.checkbox(&mut self.dark_mode, self.i18n.text("rust.settings.dark"));
                 let before = self.language.clone();
                 egui::ComboBox::from_id_salt("language")
                     .selected_text(&self.language)

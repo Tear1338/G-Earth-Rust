@@ -93,6 +93,81 @@ pub fn parse_properties(source: &str) -> HashMap<String, String> {
     }
     values
 }
+
+#[cfg(test)]
+mod interface_tests {
+    use super::{I18n, LANGUAGES};
+
+    #[test]
+    fn main_controls_are_localized_with_an_english_fallback() {
+        let keys = [
+            "rust.logger.pause",
+            "rust.logger.filter",
+            "rust.logger.packet_limit",
+            "rust.logger.additional",
+            "rust.logger.split",
+            "rust.logger.extra",
+            "rust.logger.export_path",
+            "rust.logger.export",
+            "rust.direction.server",
+            "rust.direction.client",
+            "rust.rule.title",
+            "rust.rule.enabled",
+            "rust.rule.header",
+            "rust.rule.replacement",
+            "rust.rule.save",
+            "rust.rule.add",
+            "rust.rule.cancel",
+            "rust.action.remove",
+            "rust.action.edit",
+            "rust.action.up",
+            "rust.action.down",
+            "rust.scheduler.count",
+            "rust.scheduler.forever",
+            "rust.scheduler.align",
+            "rust.scheduler.offset",
+            "rust.scheduler.active_save",
+            "rust.scheduler.template_save",
+            "rust.scheduler.add",
+            "rust.scheduler.cancel_edit",
+            "rust.scheduler.cancel_all",
+            "rust.scheduler.run_saved",
+            "rust.scheduler.clear_saved",
+            "rust.scheduler.paused_start",
+            "rust.scheduler.pause",
+            "rust.scheduler.resume",
+            "rust.settings.save",
+            "rust.settings.reload",
+            "rust.settings.dark",
+            "rust.connection.browser",
+            "rust.connection.attachment",
+            "rust.connection.refresh",
+            "rust.connection.automatic",
+            "rust.connection.attach",
+            "rust.connection.local",
+            "rust.connection.remote",
+            "rust.connection.options",
+            "rust.connection.listen",
+            "rust.connection.stop",
+            "rust.injection.invalid",
+            "rust.injection.connect",
+        ];
+        for (language, _) in LANGUAGES {
+            let bundle = I18n::new(language);
+            for key in keys {
+                assert_ne!(bundle.text(key), key, "missing {key} for {language}");
+            }
+        }
+        let french = I18n::new("fr");
+        assert_eq!(french.text("rust.direction.server"), "Vers le serveur");
+        assert_eq!(french.text("rust.scheduler.resume"), "Reprendre");
+        assert_eq!(
+            french.text("rust.settings.save"),
+            "Enregistrer les paramètres"
+        );
+        assert_eq!(I18n::new("de").text("rust.settings.save"), "Save settings");
+    }
+}
 fn unescape(s: &str) -> String {
     let mut output = Vec::new();
     let mut chars = s.chars();
