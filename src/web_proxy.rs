@@ -622,7 +622,7 @@ impl WebSocketHandler for Handler {
                 tokio::select! {
                     _=stopping.changed()=>break,
                     _=tick.tick(), if direction==Direction::ToServer&&peer.ready.load(Ordering::Acquire)=>{
-                        if direction==Direction::ToServer&&peer.ready.load(Ordering::Acquire){if let Some(host)=&self.0.options.extensions{for (direction,packet) in host.take_injections(){peer.enqueue(direction,packet)?;}}}
+                        if let Some(host)=&self.0.options.extensions{host.forward_injections(|direction,packet|peer.enqueue(direction,packet.clone()))?;}
                     },
                     packet=injections.recv()=>{let Some(packet)=packet else{break;};peer.queued.fetch_sub(packet.bytes().len(),Ordering::AcqRel);let mut modifier=peer.modifier.lock().await;if let Some(packet)=self.0.packet(direction,packet,true).await?{let bytes=modifier.encode(direction,packet.bytes().to_vec())?;sink.send(WsMessage::Binary(bytes.into())).await.map_err(io::Error::other)?;}},
                     message=stream.next()=>{

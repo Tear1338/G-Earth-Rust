@@ -210,6 +210,67 @@ fn a_full_injection_queue_reports_the_dropped_packet_and_keeps_the_extension_con
 }
 
 #[test]
+fn temporary_transport_backpressure_preserves_order_and_disconnect_clears_pending() {
+    let (host, events) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+    host.start_connection(details()).unwrap();
+    let (mut stream, _) = connect(&host, &events);
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 5);
+    for header in [41, 42, 43] {
+        write_frame(
+            &mut stream,
+            &extension::send(Direction::ToClient, &Packet::new(header)).unwrap(),
+        )
+        .unwrap();
+    }
+    write_frame(&mut stream, &Packet::new(3)).unwrap();
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 4);
+    let mut accepted = Vec::new();
+    assert_eq!(
+        host.forward_injections(|_, packet| {
+            if packet.header() == 42 {
+                return Err(std::io::Error::from(std::io::ErrorKind::WouldBlock));
+            }
+            accepted.push(packet.header());
+            Ok(())
+        })
+        .unwrap(),
+        1
+    );
+    assert_eq!(accepted, [41]);
+    assert_eq!(
+        host.forward_injections(|_, packet| {
+            accepted.push(packet.header());
+            Ok(())
+        })
+        .unwrap(),
+        2
+    );
+    assert_eq!(accepted, [41, 42, 43]);
+    write_frame(
+        &mut stream,
+        &extension::send(Direction::ToClient, &Packet::new(44)).unwrap(),
+    )
+    .unwrap();
+    write_frame(&mut stream, &Packet::new(3)).unwrap();
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 4);
+    assert!(host
+        .forward_injections(|_, _| Err(std::io::Error::other("transport failed")))
+        .is_err());
+    assert_eq!(
+        host.forward_injections(|_, _| Err(std::io::Error::from(std::io::ErrorKind::WouldBlock)))
+            .unwrap(),
+        0
+    );
+    host.end_connection();
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 6);
+    host.start_connection(details()).unwrap();
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 5);
+    assert!(host.take_injections().is_empty());
+    drop(stream);
+    host.stop();
+}
+
+#[test]
 fn packet_safety_blocks_unseen_extension_packets_without_disconnecting() {
     use gearth_rust::packet_safety::PacketSafety;
     use std::sync::{Arc, Mutex};

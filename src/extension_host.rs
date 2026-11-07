@@ -78,9 +78,13 @@ struct Shared {
 }
 pub struct ExtensionHost {
     shared: Arc<Shared>,
-    injections: Mutex<Receiver<(Direction, Packet)>>,
+    injections: Mutex<InjectionQueue>,
     worker: Mutex<Option<JoinHandle<()>>>,
     pub address: SocketAddr,
+}
+struct InjectionQueue {
+    receiver: Receiver<(Direction, Packet)>,
+    pending: Option<(Direction, Packet)>,
 }
 impl ExtensionHost {
     /// Use the same observed-ID and developer-mode state as the desktop.
@@ -165,7 +169,10 @@ impl ExtensionHost {
         Ok((
             Arc::new(Self {
                 shared,
-                injections: Mutex::new(injection_rx),
+                injections: Mutex::new(InjectionQueue {
+                    receiver: injection_rx,
+                    pending: None,
+                }),
                 worker: Mutex::new(Some(worker)),
                 address,
             }),
@@ -248,8 +255,9 @@ impl ExtensionHost {
             // Keep the connection lock until pending injections are discarded:
             // extension workers use the same lock while they enqueue, so an
             // old-session packet cannot race this drain into the next session.
-            if let Ok(injections) = self.injections.lock() {
-                while injections.try_recv().is_ok() {}
+            if let Ok(mut injections) = self.injections.lock() {
+                injections.pending = None;
+                while injections.receiver.try_recv().is_ok() {}
             }
         }
         self.broadcast(Packet::new(6));
@@ -340,8 +348,47 @@ impl ExtensionHost {
     pub fn take_injections(&self) -> Vec<(Direction, Packet)> {
         self.injections
             .lock()
-            .map(|r| r.try_iter().take(64).collect())
+            .map(|mut queue| {
+                let mut packets = Vec::new();
+                if let Some(packet) = queue.pending.take() {
+                    packets.push(packet);
+                }
+                packets.extend(queue.receiver.try_iter().take(64 - packets.len()));
+                packets
+            })
             .unwrap_or_default()
+    }
+    /// Forward up to 64 queued packets, retaining the first one that cannot
+    /// yet be accepted by the transport. No later packet can pass it.
+    pub fn forward_injections(
+        &self,
+        mut enqueue: impl FnMut(Direction, &Packet) -> io::Result<()>,
+    ) -> io::Result<usize> {
+        let mut queue = self
+            .injections
+            .lock()
+            .map_err(|_| io::Error::other("extension injection lock poisoned"))?;
+        let mut count = 0;
+        while count < 64 {
+            let Some((direction, packet)) = queue
+                .pending
+                .take()
+                .or_else(|| queue.receiver.try_recv().ok())
+            else {
+                break;
+            };
+            match enqueue(direction, &packet) {
+                Ok(()) => count += 1,
+                Err(error) => {
+                    queue.pending = Some((direction, packet));
+                    if error.kind() == io::ErrorKind::WouldBlock {
+                        break;
+                    }
+                    return Err(error);
+                }
+            }
+        }
+        Ok(count)
     }
     pub fn launch(&self, executable: &Path, path: &Path) -> io::Result<Child> {
         let path = path.canonicalize()?;
