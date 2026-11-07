@@ -2,6 +2,50 @@
 use crate::expression;
 use std::{fs::OpenOptions, io, path::Path};
 
+/// Visibility of the optional logger panel and its connection lifecycle options.
+#[derive(Default)]
+pub struct LoggerWindow {
+    pub open: bool,
+    pub open_on_connect: bool,
+    pub hide_on_disconnect: bool,
+}
+impl LoggerWindow {
+    pub fn on_connect(&mut self) {
+        if self.open_on_connect {
+            self.open = true;
+        }
+    }
+    pub fn on_disconnect(&mut self) {
+        if self.hide_on_disconnect {
+            self.open = false;
+        }
+    }
+}
+
+#[cfg(test)]
+mod window_tests {
+    use super::LoggerWindow;
+
+    #[test]
+    fn visibility_follows_enabled_lifecycle_options() {
+        let mut window = LoggerWindow::default();
+        window.on_connect();
+        assert!(!window.open);
+        window.open_on_connect = true;
+        window.on_connect();
+        assert!(window.open);
+        window.on_disconnect();
+        assert!(window.open);
+        window.hide_on_disconnect = true;
+        window.on_disconnect();
+        assert!(!window.open);
+        window.open_on_connect = false;
+        window.open = true;
+        window.on_connect();
+        assert!(window.open);
+    }
+}
+
 /// Replace a capture only after its complete contents have been written and flushed.
 pub fn write_atomic(
     path: &Path,

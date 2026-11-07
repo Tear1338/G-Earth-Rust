@@ -428,7 +428,9 @@ impl Settings {
                 (5, "logger_names"),
                 (6, "logger_hashes"),
                 (7, "logger_message_id"),
+                (8, "logger_open_on_connect"),
                 (9, "logger_clear_on_connect"),
+                (10, "logger_hide_on_disconnect"),
                 (11, "logger_clear_on_disconnect"),
                 (17, "logger_timestamp"),
                 (18, "logger_extra_hex_dump"),
@@ -478,6 +480,23 @@ impl Settings {
 mod tests {
     use super::{ScheduleTemplate, Settings};
     use crate::packet::Direction;
+
+    #[test]
+    fn java_logger_window_options_round_trip() {
+        let mut items = vec![false; 21];
+        items[8] = true;
+        items[10] = true;
+        let mut settings = Settings::default();
+        settings
+            .import_java_cache(serde_json::json!({"LOGGER_SETTINGS": items}))
+            .unwrap();
+        let loaded = Settings::from_json(settings.to_json()).unwrap();
+        assert_eq!(loaded.booleans.get("logger_open_on_connect"), Some(&true));
+        assert_eq!(
+            loaded.booleans.get("logger_hide_on_disconnect"),
+            Some(&true)
+        );
+    }
 
     #[test]
     fn java_proxy_address_is_imported_without_enabling_proxy() {

@@ -103,6 +103,7 @@ struct Desktop {
     logger_autoscroll: bool,
     logger_clear_on_connect: bool,
     logger_clear_on_disconnect: bool,
+    logger_window: logger_display::LoggerWindow,
     logger_connection_active: bool,
     logger_antispam: AntiSpam,
     logger_filter: LoggerFilter,
@@ -519,6 +520,7 @@ impl Default for Desktop {
             logger_autoscroll: true,
             logger_clear_on_connect: false,
             logger_clear_on_disconnect: false,
+            logger_window: logger_display::LoggerWindow::default(),
             logger_connection_active: false,
             logger_antispam: AntiSpam::None,
             logger_filter: LoggerFilter::default(),
@@ -867,6 +869,7 @@ impl Desktop {
                     Event::Listening(a) => self.status = format!("Listening on {a}"),
                     Event::Connected(a) => {
                         self.logger_connection_active = true;
+                        self.logger_window.on_connect();
                         if self.logger_clear_on_connect {
                             clear_log_contents(
                                 &mut self.logs,
@@ -907,6 +910,7 @@ impl Desktop {
                     }
                     Event::Disconnected => {
                         self.logger_connection_active = false;
+                        self.logger_window.on_disconnect();
                         if self.logger_clear_on_disconnect {
                             clear_log_contents(
                                 &mut self.logs,
@@ -1104,6 +1108,9 @@ impl Desktop {
         });
     }
     fn stop_connection(&mut self) {
+        if self.logger_connection_active || self.relay.as_ref().is_some_and(Connection::connected) {
+            self.logger_window.on_disconnect();
+        }
         if self.logger_clear_on_disconnect
             && (self.logger_connection_active
                 || self.relay.as_ref().is_some_and(Connection::connected))
@@ -1412,6 +1419,13 @@ impl Desktop {
     }
     fn logger(&mut self, ui: &mut egui::Ui) {
         ui.heading(self.i18n.text("rust.logger.title"));
+        if !self.logger_window.open
+            && ui
+                .button(self.i18n.text("rust.logger.open_panel"))
+                .clicked()
+        {
+            self.logger_window.open = true;
+        }
         ui.horizontal(|ui| {
             ui.checkbox(
                 &mut self.outgoing,
@@ -1548,6 +1562,24 @@ impl Desktop {
             );
         });
         ui.horizontal_wrapped(|ui| {
+            ui.checkbox(
+                &mut self.logger_window.open_on_connect,
+                format!(
+                    "{}: {}",
+                    self.i18n.text("ext.logger.menu.window.onconnect"),
+                    self.i18n
+                        .text("ext.logger.menu.window.onconnect.openwindow")
+                ),
+            );
+            ui.checkbox(
+                &mut self.logger_window.hide_on_disconnect,
+                format!(
+                    "{}: {}",
+                    self.i18n.text("ext.logger.menu.window.ondisconnect"),
+                    self.i18n
+                        .text("ext.logger.menu.window.ondisconnect.hidewindow")
+                ),
+            );
             ui.checkbox(
                 &mut self.logger_clear_on_connect,
                 format!(
@@ -2891,6 +2923,9 @@ impl eframe::App for Desktop {
             }
             match self.tab {
                 Tab::Connection => self.connection(ui),
+                Tab::Logger if self.logger_window.open => {
+                    ui.label(self.i18n.text("rust.logger.panel_open"));
+                }
                 Tab::Logger => self.logger(ui),
                 Tab::Injection => {
                     egui::ScrollArea::vertical()
@@ -2933,6 +2968,21 @@ impl eframe::App for Desktop {
                 }
             }
         });
+        if self.logger_window.open {
+            let mut open = true;
+            egui::Window::new(self.i18n.text("rust.logger.title"))
+                .id(egui::Id::new("floating_logger"))
+                .open(&mut open)
+                .default_width(850.0)
+                .default_height(600.0)
+                .show(ctx, |ui| {
+                    if self.developer_mode_confirmation {
+                        ui.disable();
+                    }
+                    self.logger(ui);
+                });
+            self.logger_window.open = open;
+        }
         self.developer_mode_dialog(ctx);
         if self.relay.is_some()
             || self.attachment_pending.is_some()
@@ -3039,6 +3089,18 @@ impl Desktop {
             .settings
             .booleans
             .get("logger_clear_on_disconnect")
+            .copied()
+            .unwrap_or(false);
+        self.logger_window.open_on_connect = self
+            .settings
+            .booleans
+            .get("logger_open_on_connect")
+            .copied()
+            .unwrap_or(false);
+        self.logger_window.hide_on_disconnect = self
+            .settings
+            .booleans
+            .get("logger_hide_on_disconnect")
             .copied()
             .unwrap_or(false);
         self.logger_antispam = AntiSpam::from_setting(self.settings.get("logger_antispam"));
@@ -3210,6 +3272,14 @@ impl Desktop {
             ("logger_skip_big".into(), self.logger_skip_big),
             ("logger_timestamp".into(), self.logger_timestamp),
             ("logger_autoscroll".into(), self.logger_autoscroll),
+            (
+                "logger_open_on_connect".into(),
+                self.logger_window.open_on_connect,
+            ),
+            (
+                "logger_hide_on_disconnect".into(),
+                self.logger_window.hide_on_disconnect,
+            ),
             (
                 "logger_clear_on_connect".into(),
                 self.logger_clear_on_connect,
