@@ -161,6 +161,17 @@ fn original_gpython_kernel_authenticates_and_injects_through_the_rust_host() {
                 }
                 93 => {
                     assert_eq!(packet.read_i32().unwrap(), 3);
+                    let mut acknowledgment = Packet::new(78);
+                    acknowledgment.put_i32(99).unwrap();
+                    let mut message = Message {
+                        packet: acknowledgment,
+                        direction: Direction::ToClient,
+                        index: 99,
+                        blocked: false,
+                    };
+                    host.intercept(&mut message).unwrap();
+                    assert!(!message.blocked);
+                    assert_eq!(message.packet.read_i32().unwrap(), 199);
                     finished = true;
                 }
                 header => panic!("Unexpected Python injection {header}"),

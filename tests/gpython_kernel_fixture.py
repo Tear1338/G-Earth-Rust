@@ -25,3 +25,9 @@ while len(seen) < 3 and time.monotonic() < deadline:
     time.sleep(0.01)
 assert seen == [5, 13, 7], seen
 send_to_server(HPacket(93, len(seen)))
+# Keep the kernel and extension alive until the Rust host has received the
+# final injection and acknowledged it through the actual interception path.
+deadline = time.monotonic() + 10
+while len(seen) < 4 and time.monotonic() < deadline:
+    time.sleep(0.01)
+assert seen == [5, 13, 7, 99], seen
