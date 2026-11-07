@@ -802,6 +802,11 @@ pub struct FrameDecoder {
     start: usize,
 }
 impl FrameDecoder {
+    /// Number of bytes retained for an incomplete or not-yet-consumed frame.
+    pub fn pending_bytes(&self) -> usize {
+        self.bytes.len() - self.start
+    }
+
     pub fn push(&mut self, bytes: &[u8]) -> Result<()> {
         // Leave room for a transport read containing the tail of a maximum-size
         // frame followed by the start of the next frame.

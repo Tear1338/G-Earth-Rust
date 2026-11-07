@@ -482,7 +482,23 @@ fn run_session(
                 Direction::ToClient => (&mut server, &mut from_server, &mut to_client),
             };
             let n = match input.read(&mut buffer) {
-                Ok(0) => return Ok(()),
+                Ok(0) => {
+                    if flash.is_none() && shockwave.is_none() && decoder.pending_bytes() != 0 {
+                        let peer = if direction == Direction::ToServer {
+                            "client"
+                        } else {
+                            "server"
+                        };
+                        return Err(io::Error::new(
+                            io::ErrorKind::UnexpectedEof,
+                            format!(
+                                "{peer} closed with an incomplete packet ({} buffered bytes)",
+                                decoder.pending_bytes()
+                            ),
+                        ));
+                    }
+                    return Ok(());
+                }
                 Ok(n) => {
                     progress = true;
                     n

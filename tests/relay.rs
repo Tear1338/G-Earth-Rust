@@ -297,6 +297,31 @@ fn truncated_frame_closes_both_sockets() {
     let mut b = [0; 1];
     assert_eq!(server.read(&mut b).unwrap(), 0);
     wait_for(&events, |e| matches!(e, Event::Disconnected));
+    wait_for(
+        &events,
+        |e| matches!(e, Event::Error(error) if error.contains("client closed with an incomplete packet (7 buffered bytes)")),
+    );
+    relay.stop();
+}
+
+#[test]
+fn truncated_server_frame_reports_buffered_prefix() {
+    let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+    let (mut relay, events) = Relay::start(Config {
+        listen: "127.0.0.1:0".parse().unwrap(),
+        remote: remote.local_addr().unwrap().to_string(),
+    })
+    .unwrap();
+    let _client = TcpStream::connect(relay.address).unwrap();
+    let (mut server, _) = remote.accept().unwrap();
+    wait_for(&events, |e| matches!(e, Event::Connected(_)));
+    server.write_all(&[0, 0]).unwrap();
+    server.shutdown(Shutdown::Write).unwrap();
+    wait_for(&events, |e| matches!(e, Event::Disconnected));
+    wait_for(
+        &events,
+        |e| matches!(e, Event::Error(error) if error.contains("server closed with an incomplete packet (2 buffered bytes)")),
+    );
     relay.stop();
 }
 
