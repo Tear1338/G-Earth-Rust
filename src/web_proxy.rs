@@ -216,10 +216,12 @@ impl Shared {
         if let Ok(mut active) = self.active.lock() {
             if active.as_ref().is_some_and(|p| p.key == peer.key) {
                 *active = None;
-                if let Some(host) = &self.options.extensions {
-                    host.end_connection();
+                if peer.ready.load(Ordering::Acquire) {
+                    if let Some(host) = &self.options.extensions {
+                        host.end_connection();
+                    }
+                    let _ = self.events.try_send(Event::Disconnected);
                 }
-                let _ = self.events.try_send(Event::Disconnected);
             }
         }
     }
@@ -874,5 +876,99 @@ mod injection_queue_tests {
             .unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::NotConnected);
         assert_eq!(peer.queued.load(Ordering::Acquire), 0);
+    }
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+    use crate::{
+        extension::{self, ExtensionInfo},
+        extension_host::HostEvent,
+        packet::{read_frame, write_frame},
+    };
+    use std::net::TcpStream;
+
+    #[test]
+    fn closing_an_uninitialized_peer_does_not_disconnect_extensions() {
+        let (host, host_events) =
+            ExtensionHost::start("127.0.0.1:0".parse().unwrap(), vec![]).unwrap();
+        host.start_connection(ConnectionDetails {
+            host: "fixture".into(),
+            port: 1,
+            version: "test".into(),
+            identifier: "test".into(),
+            client_type: "FLASH".into(),
+            packets: PacketInfoManager::default(),
+        })
+        .unwrap();
+        let mut stream = TcpStream::connect(host.address).unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        assert_eq!(read_frame(&mut stream).unwrap().header(), 2);
+        let info = ExtensionInfo {
+            title: "fixture".into(),
+            author: "test".into(),
+            version: "1".into(),
+            description: String::new(),
+            on_click: false,
+            file: None,
+            cookie: String::new(),
+            can_leave: true,
+            can_delete: true,
+        };
+        write_frame(&mut stream, &extension::info_response(&info).unwrap()).unwrap();
+        let HostEvent::Pending { id, .. } =
+            host_events.recv_timeout(Duration::from_secs(3)).unwrap()
+        else {
+            panic!("extension not pending")
+        };
+        host.approve(id).unwrap();
+        assert_eq!(read_frame(&mut stream).unwrap().header(), 7);
+        assert_eq!(read_frame(&mut stream).unwrap().header(), 5);
+
+        let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), PathBuf::new());
+        options.extensions = Some(host.clone());
+        let (events, receiver) = mpsc::sync_channel(8);
+        let state = Shared {
+            options,
+            hartico_key: Mutex::new(None),
+            city_keys: Mutex::new(None),
+            peers: Mutex::new(HashMap::new()),
+            active: Mutex::new(None),
+            rules: Mutex::new(Rules::default()),
+            pipeline: Mutex::new(()),
+            events,
+            index: AtomicI32::new(0),
+            stop: AtomicBool::new(false),
+        };
+        let peer = Arc::new(Peer::new(
+            PeerKey {
+                client: "127.0.0.1:1234".parse().unwrap(),
+                uri: "ws://fixture".into(),
+            },
+            Modifier::new(&crate::nitro::HotelKind::Plain).unwrap(),
+        ));
+        *state.active.lock().unwrap() = Some(peer.clone());
+        state.close(&peer);
+        assert!(receiver.try_recv().is_err());
+        write_frame(&mut stream, &Packet::new(3)).unwrap();
+        assert_eq!(read_frame(&mut stream).unwrap().header(), 4);
+
+        let ready_peer = Arc::new(Peer::new(
+            PeerKey {
+                client: "127.0.0.1:1235".parse().unwrap(),
+                uri: "ws://fixture".into(),
+            },
+            Modifier::new(&crate::nitro::HotelKind::Plain).unwrap(),
+        ));
+        ready_peer.ready.store(true, Ordering::Release);
+        *state.active.lock().unwrap() = Some(ready_peer.clone());
+        state.close(&ready_peer);
+        assert!(matches!(receiver.try_recv(), Ok(Event::Disconnected)));
+        assert_eq!(read_frame(&mut stream).unwrap().header(), 6);
+        drop(stream);
+        host.stop();
     }
 }
