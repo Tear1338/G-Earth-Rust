@@ -952,7 +952,7 @@ impl Desktop {
         }
     }
     fn connection(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Connection");
+        ui.heading(self.i18n.text("tab.connection"));
         if ui
             .add_enabled(
                 self.relay.is_none() && self.attachment_pending.is_none(),
@@ -1096,10 +1096,8 @@ impl Desktop {
             self.stop_connection();
         }
         ui.add_space(20.0);
-        ui.group(|ui|{
-            ui.label("Development scope");
-            ui.label("Point a compatible test client at the local address. The relay forwards framed packets to the explicit remote address.");
-            ui.label("Hosts-based Flash/Origins attachment is implemented. Raw-IP attachment and Unity integration are still outstanding. Nitro has a separate browser connection mode.");
+        ui.group(|ui| {
+            ui.label(self.i18n.text("rust.connection.test_client_hint"));
         });
     }
     fn stop_connection(&mut self) {
@@ -1410,7 +1408,7 @@ impl Desktop {
         ui.label(if self.unity {"Unity WebGL hooks and communicator are validated on controlled fixtures; official client sessions still need regression testing."}else{"Nitro transport and beta-29 hotel adapters are implemented with finite fixture tests. Real hotel sessions and Chrome TLS emulation still need validation and work."});
     }
     fn logger(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Packet logger");
+        ui.heading(self.i18n.text("rust.logger.title"));
         ui.horizontal(|ui| {
             ui.checkbox(
                 &mut self.outgoing,
@@ -1904,7 +1902,7 @@ impl Desktop {
         }
     }
     fn injection(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Packet injection");
+        ui.heading(self.i18n.text("tab.injection"));
         self.developer_mode_control(ui);
         self.editor(ui, true);
         // Large inputs are checked on submission to keep the editor responsive.
@@ -2230,7 +2228,7 @@ impl Desktop {
         self.repeat = 1;
     }
     fn schedule(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Scheduler");
+        ui.heading(self.i18n.text("tab.scheduler"));
         let mut enabled = self.scheduler_hotkeys.is_some();
         if ui
             .add_enabled(
@@ -2634,7 +2632,7 @@ impl Desktop {
         );
     }
     fn tools(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Packet tools");
+        ui.heading(self.i18n.text("tab.tools"));
         ui.horizontal(|ui| {
             ui.label(self.i18n.text("tab.tools.type.integer"));
             ui.add(egui::TextEdit::singleline(&mut self.tool_int).desired_width(110.0));
@@ -2754,7 +2752,7 @@ impl Desktop {
             self.tool_input.clone_from(&self.tool_output);
         }
         ui.separator();
-        ui.label("Notepad");
+        ui.label(self.i18n.text("tab.extra.notepad"));
         ui.add(
             egui::TextEdit::multiline(&mut self.notepad)
                 .desired_rows(5)
@@ -2840,15 +2838,15 @@ impl eframe::App for Desktop {
             ui.horizontal_wrapped(|ui| {
                 for (tab, name) in [
                     (Tab::Connection, "tab.connection"),
-                    (Tab::Logger, "Logger"),
+                    (Tab::Logger, "rust.logger.tab"),
                     (Tab::Injection, "tab.injection"),
                     (Tab::Scheduler, "tab.scheduler"),
                     (Tab::Tools, "tab.tools"),
                     (Tab::Extensions, "tab.extensions"),
                     (Tab::Extra, "tab.extra"),
-                    (Tab::Info, "Info"),
+                    (Tab::Info, "tab.info"),
                 ] {
-                    let label = if name.starts_with("tab.") {
+                    let label = if name.starts_with("tab.") || name.starts_with("rust.") {
                         self.i18n.text(name)
                     } else {
                         name.to_owned()
@@ -3336,7 +3334,7 @@ impl Desktop {
             &mut self.status,
             &mut self.extension_processes,
         );
-        ui.heading("Extensions");
+        ui.heading(self.i18n.text("tab.extensions"));
         let Some(host) = &self.extension_host else {
             ui.label("Unable to bind the extension server on ports 9092–9107.");
             return;

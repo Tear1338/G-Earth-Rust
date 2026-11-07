@@ -78,11 +78,17 @@ fn every_original_language_has_core_tabs() {
             "tab.injection",
             "tab.extensions",
             "tab.scheduler",
+            "tab.info",
+            "rust.logger.tab",
+            "rust.logger.title",
+            "rust.connection.test_client_hint",
         ] {
             assert_ne!(bundle.text(key), key, "{language}");
         }
     }
     assert_eq!(I18n::new("fr").text("tab.connection"), "Connexion");
+    assert_eq!(I18n::new("fr").text("rust.logger.tab"), "Journal");
+    assert_eq!(I18n::new("fr").text("tab.extra.notepad"), "Bloc-notes");
 }
 
 #[test]
