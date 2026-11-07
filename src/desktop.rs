@@ -1426,6 +1426,15 @@ impl Desktop {
         {
             self.logger_window.open = true;
         }
+        if ui
+            .checkbox(
+                &mut self.logger_window.always_on_top,
+                self.i18n.text("ext.logger.menu.window.alwaysontop"),
+            )
+            .changed()
+        {
+            ui.ctx().request_repaint_of(egui::ViewportId::ROOT);
+        }
         ui.horizontal(|ui| {
             ui.checkbox(
                 &mut self.outgoing,
@@ -2972,10 +2981,16 @@ impl eframe::App for Desktop {
             let mut open = true;
             let title = self.i18n.text("rust.logger.title");
             let previous_tab = self.tab;
+            let level = if self.logger_window.always_on_top {
+                egui::WindowLevel::AlwaysOnTop
+            } else {
+                egui::WindowLevel::Normal
+            };
             ctx.show_viewport_immediate(
                 egui::ViewportId::from_hash_of("logger_window"),
                 egui::ViewportBuilder::default()
                     .with_title(&title)
+                    .with_window_level(level)
                     .with_inner_size([850.0, 600.0])
                     .with_min_inner_size([480.0, 320.0]),
                 |logger_ctx, class| {
@@ -3130,6 +3145,12 @@ impl Desktop {
             .settings
             .booleans
             .get("logger_hide_on_disconnect")
+            .copied()
+            .unwrap_or(false);
+        self.logger_window.always_on_top = self
+            .settings
+            .booleans
+            .get("logger_always_on_top")
             .copied()
             .unwrap_or(false);
         self.logger_antispam = AntiSpam::from_setting(self.settings.get("logger_antispam"));
@@ -3308,6 +3329,10 @@ impl Desktop {
             (
                 "logger_hide_on_disconnect".into(),
                 self.logger_window.hide_on_disconnect,
+            ),
+            (
+                "logger_always_on_top".into(),
+                self.logger_window.always_on_top,
             ),
             (
                 "logger_clear_on_connect".into(),

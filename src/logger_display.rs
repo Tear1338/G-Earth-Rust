@@ -8,6 +8,7 @@ pub struct LoggerWindow {
     pub open: bool,
     pub open_on_connect: bool,
     pub hide_on_disconnect: bool,
+    pub always_on_top: bool,
 }
 impl LoggerWindow {
     pub fn on_connect(&mut self) {
@@ -32,6 +33,7 @@ mod window_tests {
         window.on_connect();
         assert!(!window.open);
         window.open_on_connect = true;
+        window.always_on_top = true;
         window.on_connect();
         assert!(window.open);
         window.on_disconnect();
@@ -39,6 +41,7 @@ mod window_tests {
         window.hide_on_disconnect = true;
         window.on_disconnect();
         assert!(!window.open);
+        assert!(window.always_on_top);
         window.open_on_connect = false;
         window.open = true;
         window.on_connect();
