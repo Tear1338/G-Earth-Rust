@@ -3657,26 +3657,33 @@ impl Desktop {
         );
         ui.heading(self.i18n.text("tab.extensions"));
         let Some(host) = &self.extension_host else {
-            ui.label("Unable to bind the extension server on ports 9092–9107.");
+            ui.label(self.i18n.text("rust.extensions.server_unavailable"));
             return;
         };
-        ui.label(format!("Extension server: {}", host.address));
+        ui.label(format!(
+            "{}: {}",
+            self.i18n.text("rust.extensions.server"),
+            host.address
+        ));
         ui.horizontal(|ui| {
-            ui.label("Runtime (Java / Python / Node)");
+            ui.label(self.i18n.text("rust.extensions.runtime"));
             ui.text_edit_singleline(&mut self.extension_runtime);
         });
         ui.horizontal(|ui| {
-            ui.label("Extension file");
+            ui.label(self.i18n.text("rust.extensions.file"));
             ui.text_edit_singleline(&mut self.extension_path);
         });
-        if ui.button("Launch extension").clicked() {
+        if ui
+            .button(self.i18n.text("rust.extensions.launch"))
+            .clicked()
+        {
             match host.launch(
                 Path::new(&self.extension_runtime),
                 Path::new(&self.extension_path),
             ) {
                 Ok(child) => {
                     self.extension_processes.push(child);
-                    self.status = "Extension process launched".into();
+                    self.status = self.i18n.text("rust.extensions.launched");
                 }
                 Err(e) => self.status = e.to_string(),
             }
@@ -3688,17 +3695,25 @@ impl Desktop {
                     "{} {} · {}",
                     extension.info.title, extension.info.version, extension.info.author
                 ));
-                if !extension.approved && ui.button("Allow connection").clicked() {
+                if !extension.approved
+                    && ui.button(self.i18n.text("rust.extensions.allow")).clicked()
+                {
                     if let Err(e) = host.approve(extension.id) {
                         self.status = e.to_string();
                     }
                 }
-                if extension.approved && extension.info.on_click && ui.button("Open").clicked() {
+                if extension.approved
+                    && extension.info.on_click
+                    && ui.button(self.i18n.text("rust.extensions.open")).clicked()
+                {
                     if let Err(e) = host.click(extension.id) {
                         self.status = e.to_string();
                     }
                 }
-                if ui.button("Disconnect").clicked() {
+                if ui
+                    .button(self.i18n.text("rust.extensions.disconnect"))
+                    .clicked()
+                {
                     if let Err(e) = host.disconnect(extension.id) {
                         self.status = e.to_string();
                     }
@@ -3706,7 +3721,7 @@ impl Desktop {
             });
         }
         ui.separator();
-        ui.label("Extension console");
+        ui.label(self.i18n.text("rust.extensions.console"));
         egui::ScrollArea::vertical()
             .stick_to_bottom(true)
             .show(ui, |ui| {

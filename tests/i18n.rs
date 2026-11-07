@@ -1,6 +1,41 @@
 use gearth_rust::i18n::{parse_properties, I18n, LANGUAGES};
 
 #[test]
+fn extension_controls_have_french_labels_and_english_fallbacks() {
+    let keys = [
+        "server_unavailable",
+        "server",
+        "runtime",
+        "file",
+        "launch",
+        "launched",
+        "allow",
+        "open",
+        "disconnect",
+        "console",
+    ];
+    for (language, _) in LANGUAGES {
+        let bundle = I18n::new(language);
+        for key in keys {
+            let key = format!("rust.extensions.{key}");
+            assert_ne!(bundle.text(&key), key, "missing {key} for {language}");
+        }
+    }
+    assert_eq!(
+        I18n::new("fr").text("rust.extensions.launch"),
+        "Lancer l'extension"
+    );
+    assert_eq!(
+        I18n::new("fr").text("rust.extensions.disconnect"),
+        "D\u{e9}connecter"
+    );
+    assert_eq!(
+        I18n::new("de").text("rust.extensions.launch"),
+        "Launch extension"
+    );
+}
+
+#[test]
 fn properties_comments_line_endings_and_final_continuation_match_java() {
     let cases: &[(&str, &[(&str, &str)])] = &[
         ("# comment\\\nhello=world\n", &[("hello", "world")]),
