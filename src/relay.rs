@@ -240,13 +240,15 @@ impl Relay {
                             host.end_connection();
                         }
                         closed.store(true, Ordering::Release);
-                        if let Err(e) = result {
-                            let _ = events.try_send(Event::Error(e.to_string()));
-                        }
                         if let Ok(mut slot) = worker_active.lock() {
                             *slot = None;
                         }
                         let _ = events.try_send(Event::Disconnected);
+                        // Report the cause last so a desktop processing both
+                        // events keeps the actionable error in its status bar.
+                        if let Err(e) = result {
+                            let _ = events.try_send(Event::Error(e.to_string()));
+                        }
                     }
                     Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                         thread::sleep(Duration::from_millis(5))

@@ -299,6 +299,35 @@ fn truncated_frame_closes_both_sockets() {
     wait_for(&events, |e| matches!(e, Event::Disconnected));
     relay.stop();
 }
+
+#[test]
+fn invalid_frame_reports_error_after_disconnect_and_allows_reconnection() {
+    let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+    let (mut relay, events) = Relay::start(Config {
+        listen: "127.0.0.1:0".parse().unwrap(),
+        remote: remote.local_addr().unwrap().to_string(),
+    })
+    .unwrap();
+    let mut client = TcpStream::connect(relay.address).unwrap();
+    let (_server, _) = remote.accept().unwrap();
+    wait_for(&events, |event| matches!(event, Event::Connected(_)));
+    client.write_all(&[0, 0, 0, 1]).unwrap();
+    wait_for(&events, |event| matches!(event, Event::Disconnected));
+    wait_for(
+        &events,
+        |event| matches!(event, Event::Error(error) if error.contains("invalid frame length")),
+    );
+
+    let mut client = TcpStream::connect(relay.address).unwrap();
+    let (mut server, _) = remote.accept().unwrap();
+    server
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    wait_for(&events, |event| matches!(event, Event::Connected(_)));
+    write_frame(&mut client, &Packet::new(22)).unwrap();
+    assert_eq!(read_frame(&mut server).unwrap().header(), 22);
+    relay.stop();
+}
 #[test]
 fn reconnect_after_client_disconnect() {
     let remote = TcpListener::bind("127.0.0.1:0").unwrap();
