@@ -2793,49 +2793,72 @@ impl Desktop {
         ui.heading(self.i18n.text("tab.tools"));
         ui.horizontal(|ui| {
             ui.label(self.i18n.text("tab.tools.type.integer"));
-            ui.add(egui::TextEdit::singleline(&mut self.tool_int).desired_width(110.0));
-            if ui
-                .button(self.i18n.text("tab.tools.button.encode"))
+            let decoded =
+                ui.add(egui::TextEdit::singleline(&mut self.tool_int).desired_width(110.0));
+            let encoded_value = packet_tools::encode_i32(&self.tool_int).ok();
+            let encode = ui
+                .add_enabled(
+                    encoded_value.is_some(),
+                    egui::Button::new(self.i18n.text("tab.tools.button.encode")),
+                )
                 .clicked()
-            {
-                match packet_tools::encode_i32(&self.tool_int) {
-                    Ok(value) => self.tool_int_encoded = value,
-                    Err(error) => self.status = error.to_string(),
+                || (decoded.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)));
+            if encode {
+                if let Some(value) = encoded_value {
+                    self.tool_int_encoded = value;
                 }
             }
-            if ui
-                .button(self.i18n.text("tab.tools.button.decode"))
-                .clicked()
+            let decoded_value = packet_tools::decode_i32(&self.tool_int_encoded).ok();
+            let decode = ui
+                .add_enabled(
+                    decoded_value.is_some(),
+                    egui::Button::new(self.i18n.text("tab.tools.button.decode")),
+                )
+                .clicked();
+            let encoded =
+                ui.add(egui::TextEdit::singleline(&mut self.tool_int_encoded).desired_width(240.0));
+            if decode
+                || (encoded.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)))
             {
-                match packet_tools::decode_i32(&self.tool_int_encoded) {
-                    Ok(value) => self.tool_int = value.to_string(),
-                    Err(error) => self.status = error.to_string(),
+                if let Ok(value) = packet_tools::decode_i32(&self.tool_int_encoded) {
+                    self.tool_int = value.to_string();
                 }
             }
-            ui.add(egui::TextEdit::singleline(&mut self.tool_int_encoded).desired_width(240.0));
         });
         ui.horizontal(|ui| {
             ui.label(self.i18n.text("tab.tools.type.ushort"));
-            ui.add(egui::TextEdit::singleline(&mut self.tool_ushort).desired_width(110.0));
-            if ui
-                .button(self.i18n.text("tab.tools.button.encode"))
+            let decoded =
+                ui.add(egui::TextEdit::singleline(&mut self.tool_ushort).desired_width(110.0));
+            let encoded_value = packet_tools::encode_u16(&self.tool_ushort).ok();
+            let encode = ui
+                .add_enabled(
+                    encoded_value.is_some(),
+                    egui::Button::new(self.i18n.text("tab.tools.button.encode")),
+                )
                 .clicked()
-            {
-                match packet_tools::encode_u16(&self.tool_ushort) {
-                    Ok(value) => self.tool_ushort_encoded = value,
-                    Err(error) => self.status = error.to_string(),
+                || (decoded.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)));
+            if encode {
+                if let Some(value) = encoded_value {
+                    self.tool_ushort_encoded = value;
                 }
             }
-            if ui
-                .button(self.i18n.text("tab.tools.button.decode"))
-                .clicked()
+            let decoded_value = packet_tools::decode_u16(&self.tool_ushort_encoded).ok();
+            let decode = ui
+                .add_enabled(
+                    decoded_value.is_some(),
+                    egui::Button::new(self.i18n.text("tab.tools.button.decode")),
+                )
+                .clicked();
+            let encoded = ui.add(
+                egui::TextEdit::singleline(&mut self.tool_ushort_encoded).desired_width(240.0),
+            );
+            if decode
+                || (encoded.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)))
             {
-                match packet_tools::decode_u16(&self.tool_ushort_encoded) {
-                    Ok(value) => self.tool_ushort = value.to_string(),
-                    Err(error) => self.status = error.to_string(),
+                if let Ok(value) = packet_tools::decode_u16(&self.tool_ushort_encoded) {
+                    self.tool_ushort = value.to_string();
                 }
             }
-            ui.add(egui::TextEdit::singleline(&mut self.tool_ushort_encoded).desired_width(240.0));
         });
         ui.separator();
         direction_selector(ui, &mut self.direction, &self.i18n);
