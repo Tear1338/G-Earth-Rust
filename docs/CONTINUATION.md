@@ -74,6 +74,8 @@ The logger additionally offers selectable Expression, Legacy and Raw hex display
 
 The displayed-capture export now shares row formatting with the on-screen logger and respects the current direction/search filters, representation, timestamps, metadata, structure and separator options. Its text preserves full generated lines rather than the window's width-based clipping, and applies the same representation size limits as the display. This replaces the earlier Rust-only tab-separated capture format; it is not a lossless capture format. Tests cover metadata, timestamps, blocking, raw hex, hexdump and write errors. Exact formatting against the original Java text area and interactive use remain unverified.
 
+The Windows logger export path now has a native save-file chooser with a .txt filter and default extension, alongside manual path entry. Unlike Java's one-step export, selection and export remain separate actions. The Windows filter fixture, capture tests and desktop Clippy pass; the native dialog has not been exercised interactively.
+
 The logger context menu can copy an individual displayed entry using the same formatting as the text export, including enabled metadata and representations. The copy is not clipped to the window width and remains subject to display representation limits. Inspection and copy controls have French and English labels. Actual clipboard and context-menu interaction remain unverified.
 
 Displayed-capture export now writes to an exclusively created temporary file beside the destination, flushes it and replaces the destination only on success. A local Windows test confirms that a simulated partial-write error keeps the previous capture and removes the temporary file; behavior across all filesystems is not established.

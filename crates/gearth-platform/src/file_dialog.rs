@@ -12,6 +12,7 @@ pub enum FileKind {
     Extension,
     Schedule,
     Json,
+    Text,
 }
 
 fn filter(kind: FileKind) -> Vec<u16> {
@@ -21,6 +22,7 @@ fn filter(kind: FileKind) -> Vec<u16> {
         }
         FileKind::Schedule => "Schedule files (*.sched)\0*.sched\0All files (*.*)\0*.*\0\0",
         FileKind::Json => "JSON files (*.json)\0*.json\0All files (*.*)\0*.*\0\0",
+        FileKind::Text => "Text files (*.txt)\0*.txt\0All files (*.*)\0*.*\0\0",
     };
     text.encode_utf16().collect()
 }
@@ -31,6 +33,7 @@ pub fn choose_file(kind: FileKind, save: bool) -> io::Result<Option<PathBuf>> {
     let default_extension: Vec<u16> = match kind {
         FileKind::Schedule => "sched\0".encode_utf16().collect(),
         FileKind::Json => "json\0".encode_utf16().collect(),
+        FileKind::Text => "txt\0".encode_utf16().collect(),
         FileKind::Extension => vec![0],
     };
     let mut file = vec![0u16; 32768];
@@ -81,7 +84,12 @@ mod tests {
 
     #[test]
     fn filters_are_double_nul_terminated_and_have_pairs() {
-        for kind in [FileKind::Extension, FileKind::Schedule, FileKind::Json] {
+        for kind in [
+            FileKind::Extension,
+            FileKind::Schedule,
+            FileKind::Json,
+            FileKind::Text,
+        ] {
             let value = filter(kind);
             assert!(value.ends_with(&[0, 0]));
             let pairs: Vec<_> = value[..value.len() - 2].split(|c| *c == 0).collect();

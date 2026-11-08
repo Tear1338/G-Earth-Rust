@@ -1878,6 +1878,15 @@ impl Desktop {
         ui.horizontal(|ui| {
             ui.label(self.i18n.text("rust.logger.export_path"));
             ui.text_edit_singleline(&mut self.export_path);
+            #[cfg(windows)]
+            browse_path(
+                ui,
+                &mut self.export_path,
+                gearth_platform::FileKind::Text,
+                true,
+                &self.i18n,
+                &mut self.status,
+            );
             if ui.button(self.i18n.text("rust.logger.export")).clicked() {
                 let visible = self.logs.iter().filter(|row| {
                     log_row_matches(

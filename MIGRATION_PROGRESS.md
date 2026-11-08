@@ -15,6 +15,7 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Manual extension launches now capture stdout/stderr for the extension console, like store launches. Host unit tests, a manually launched Python fixture and all-targets Clippy pass locally. All eight validation jobs in Actions run 42511342499 passed, including the new Python fixture on Windows and Linux; real extensions still need validation.
 - A deterministic test compares selected anti-spam level transitions, including disabled mode, with a direct model of the pinned Java queue algorithm. Seven local filter tests and a 10,000-packet bounded-memory test pass. This is a behavioral model, not execution of the original JavaFX controller; extreme unbounded traffic is deliberately different.
 - Comparing the original Java logger confirmed clearing displayed packets does not reset the filtered counter. Rust now preserves that counter and offers a separate reset button. Seven desktop logger tests, eleven translation tests and desktop Clippy pass locally; interactive use remains unverified.
+- The Windows logger can choose a .txt export path in a native save dialog. Windows filter tests, five capture tests and desktop Clippy pass; selecting the path and exporting still require separate actions and the dialog remains untested interactively.
 
 ## Remaining work
 
@@ -33,4 +34,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect the latest GitHub Actions validation and fix any failures. Then compare the original Java logger's view filters and export behavior with Rust, and implement the next verified compatibility gap with a focused test.
+Inspect the latest GitHub Actions validation and fix any failures. Then compare Java and Rust logger direction filtering: Java drops hidden directions at capture time, whereas Rust currently retains them for later display. Design a compatibility option that preserves existing Rust behavior and verify both modes before changing defaults.
