@@ -196,6 +196,7 @@ fn importing_java_logger_settings_preserves_menu_choices() {
         ("logger_java_structure_clean", true),
         ("logger_export_separators", true),
         ("logger_export_hide_empty_header", true),
+        ("logger_display_hide_empty_header", true),
         ("logger_structure", true),
         ("logger_autoscroll", false),
         ("logger_names", false),

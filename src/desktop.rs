@@ -153,6 +153,7 @@ struct Desktop {
     logger_split: bool,
     logger_export_separators: bool,
     logger_export_hide_empty_header: bool,
+    logger_display_hide_empty_header: bool,
     logger_names: bool,
     logger_hashes: bool,
     logger_message_id: bool,
@@ -606,11 +607,13 @@ fn write_log_capture<'a>(
         if let Some(marker) = rendered.marker {
             writeln!(output, "{marker}")?;
         }
-        let no_byte_views = options.representation == PacketRepresentation::NoBytes
-            && !options.extra_legacy
-            && !options.extra_hex_dump
-            && !options.extra_raw_hex;
-        if !(options.export_hide_empty_header && no_byte_views) {
+        if !logger_display::hide_empty_byte_header(
+            options.export_hide_empty_header,
+            options.representation,
+            options.extra_legacy,
+            options.extra_hex_dump,
+            options.extra_raw_hex,
+        ) {
             writeln!(output, "{}", rendered.header)?;
         }
         for representation in rendered.extra_representations {
@@ -681,6 +684,7 @@ impl Default for Desktop {
             logger_split: true,
             logger_export_separators: false,
             logger_export_hide_empty_header: false,
+            logger_display_hide_empty_header: false,
             logger_names: true,
             logger_hashes: false,
             logger_message_id: false,
@@ -1792,6 +1796,10 @@ impl Desktop {
                 self.i18n.text("rust.logger.export_hide_empty_header"),
             );
             ui.checkbox(
+                &mut self.logger_display_hide_empty_header,
+                self.i18n.text("rust.logger.display_hide_empty_header"),
+            );
+            ui.checkbox(
                 &mut self.logger_names,
                 self.i18n
                     .text("ext.logger.menu.packets.displaydetails.message.name"),
@@ -2073,6 +2081,13 @@ impl Desktop {
                 0.0
             };
         let mut inspection = None;
+        let hide_empty_header = logger_display::hide_empty_byte_header(
+            self.logger_display_hide_empty_header,
+            self.logger_representation,
+            self.logger_extra_legacy,
+            self.logger_extra_hex_dump,
+            self.logger_extra_raw_hex,
+        );
         egui::ScrollArea::vertical()
             .stick_to_bottom(self.logger_autoscroll)
             .show_rows(ui, row_height, filtered.len(), |ui, range| {
@@ -2102,17 +2117,24 @@ impl Desktop {
                                     egui::RichText::new(marker).monospace().color(marker_color),
                                 );
                             }
-                            let response = ui.add(
-                                egui::Label::new(log_header_layout(
-                                    &rendered.header,
-                                    None,
-                                    color,
-                                    marker_color,
-                                    ui.text_style_height(&egui::TextStyle::Monospace),
-                                ))
-                                .truncate()
-                                .sense(egui::Sense::click()),
-                            );
+                            let response = if hide_empty_header {
+                                ui.allocate_response(
+                                    egui::vec2(ui.available_width(), 2.0),
+                                    egui::Sense::click(),
+                                )
+                            } else {
+                                ui.add(
+                                    egui::Label::new(log_header_layout(
+                                        &rendered.header,
+                                        None,
+                                        color,
+                                        marker_color,
+                                        ui.text_style_height(&egui::TextStyle::Monospace),
+                                    ))
+                                    .truncate()
+                                    .sense(egui::Sense::click()),
+                                )
+                            };
                             for representation in &rendered.extra_representations {
                                 ui.add(
                                     egui::Label::new(
@@ -2150,7 +2172,13 @@ impl Desktop {
                             response
                         },
                     );
-                    let response = row_output.inner;
+                    let response = if hide_empty_header {
+                        row_output
+                            .inner
+                            .union(row_output.response.clone().interact(egui::Sense::click()))
+                    } else {
+                        row_output.inner
+                    };
                     response.context_menu(|ui| {
                         if ui
                             .button(self.i18n.text("rust.logger.copy_displayed"))
@@ -2162,7 +2190,7 @@ impl Desktop {
                                 std::iter::once(row),
                                 &self.packet_info,
                                 LogDisplayOptions {
-                                    export_hide_empty_header: false,
+                                    export_hide_empty_header: hide_empty_header,
                                     ..display_options
                                 },
                                 false,
@@ -3856,6 +3884,12 @@ impl Desktop {
             .get("logger_export_hide_empty_header")
             .copied()
             .unwrap_or(false);
+        self.logger_display_hide_empty_header = self
+            .settings
+            .booleans
+            .get("logger_display_hide_empty_header")
+            .copied()
+            .unwrap_or(false);
         self.logger_names = self
             .settings
             .booleans
@@ -4003,6 +4037,10 @@ impl Desktop {
             (
                 "logger_export_hide_empty_header".into(),
                 self.logger_export_hide_empty_header,
+            ),
+            (
+                "logger_display_hide_empty_header".into(),
+                self.logger_display_hide_empty_header,
             ),
             ("logger_names".into(), self.logger_names),
             ("logger_hashes".into(), self.logger_hashes),

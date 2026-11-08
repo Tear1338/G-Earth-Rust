@@ -488,6 +488,9 @@ impl Settings {
             self.booleans
                 .entry("logger_export_hide_empty_header".into())
                 .or_insert(true);
+            self.booleans
+                .entry("logger_display_hide_empty_header".into())
+                .or_insert(true);
             for (index, key) in [
                 (0, "incoming"),
                 (1, "outgoing"),

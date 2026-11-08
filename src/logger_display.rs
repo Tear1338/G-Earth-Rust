@@ -2,6 +2,21 @@
 use crate::{expression, packet::Direction};
 use std::{fs::OpenOptions, io, path::Path};
 
+/// Java shows no byte header when all byte views are disabled.
+pub fn hide_empty_byte_header(
+    enabled: bool,
+    representation: PacketRepresentation,
+    extra_legacy: bool,
+    extra_hex_dump: bool,
+    extra_raw_hex: bool,
+) -> bool {
+    enabled
+        && representation == PacketRepresentation::NoBytes
+        && !extra_legacy
+        && !extra_hex_dump
+        && !extra_raw_hex
+}
+
 /// Keep the display choice while optionally including separators in exports.
 pub fn export_separators(display_separators: bool, force_export: bool) -> bool {
     display_separators || force_export

@@ -1,6 +1,45 @@
 use gearth_rust::logger_display::{hex_dump, represent, PacketRepresentation};
 
 #[test]
+fn empty_byte_header_is_hidden_only_when_every_view_is_off() {
+    use gearth_rust::logger_display::hide_empty_byte_header as hide;
+    assert!(hide(
+        true,
+        PacketRepresentation::NoBytes,
+        false,
+        false,
+        false
+    ));
+    assert!(!hide(
+        false,
+        PacketRepresentation::NoBytes,
+        false,
+        false,
+        false
+    ));
+    for (legacy, dump, raw) in [
+        (true, false, false),
+        (false, true, false),
+        (false, false, true),
+    ] {
+        assert!(!hide(
+            true,
+            PacketRepresentation::NoBytes,
+            legacy,
+            dump,
+            raw
+        ));
+    }
+    assert!(!hide(
+        true,
+        PacketRepresentation::Expression,
+        false,
+        false,
+        false
+    ));
+}
+
+#[test]
 fn export_separators_can_be_forced_independently_of_display() {
     use gearth_rust::logger_display::export_separators;
     assert!(!export_separators(false, false));
