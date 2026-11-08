@@ -78,7 +78,9 @@ The Windows logger export path now has a native save-file chooser with a .txt fi
 
 When timestamps are enabled, the logger and exported capture now put `(timestamp: milliseconds)` on a separate line using the original localized label, matching the beta-29 controller's layout for this element. Local desktop tests cover English/French labels and the exported line; rendered layout and timestamp timing in a real session remain unverified.
 
-Blocked and replaced packet markers also use the original localized labels in brackets on a separate line, with blocked taking precedence when both flags are set. Display and export share this formatting; local desktop tests cover English and French markers. Original Java metadata and full packet layout still differ, and visual interaction remains unverified.
+Blocked and replaced packet markers also use the original localized labels in brackets on a separate line, with blocked taking precedence when both flags are set. Display and export share this formatting; local desktop tests cover English and French markers. Full packet layout still differs, and visual interaction remains unverified.
+
+Logger packet names, hashes and IDs now appear as separate bracketed values on a metadata line before the blocked/replaced marker, matching beta-29's ordering and deduplication for the tested examples. Multiple names and hashes and export ordering have local tests. Long metadata remains bounded and may be clipped visually; complete Java text layout and live rendering remain unverified.
 
 The logger offers an optional "capture selected directions only" setting: after anti-spam processing, packets in unchecked directions are not retained, as in Java. In this mode previously captured rows remain visible when direction choices change, also matching the Java behavior; text search still filters rows. The setting defaults off to preserve existing Rust behavior and is saved with settings. When off, packets can be hidden and later redisplayed. Tests cover all direction combinations, settings persistence and translations; real UI and client behavior remain unverified.
 

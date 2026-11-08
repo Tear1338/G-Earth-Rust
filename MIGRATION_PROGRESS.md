@@ -19,6 +19,7 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Logger has an optional Java-like capture mode that discards unchecked directions after anti-spam while leaving previously captured rows visible; the default retains Rust's existing reversible display filter. Direction combinations, preference persistence, translations and desktop Clippy pass locally; interactive validation remains outstanding.
 - Logger timestamps use the original localized label on their own line in the display and text export. Seven desktop logger tests and desktop Clippy pass; visual layout and timing in a live session remain unverified.
 - Blocked/replaced markers now use localized bracketed labels on their own line in the logger and export, as in the Java controller. Seven desktop tests and Clippy pass locally; full metadata layout and live visuals remain unfinished.
+- Logger names, hashes and IDs use individual brackets on a line preceding blocked/replaced markers, following the original Java ordering for tested cases. Desktop tests cover multiple names and hashes; metadata remains size bounded and visual behavior is unverified.
 
 ## Remaining work
 
@@ -37,4 +38,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect the latest GitHub Actions validation and fix any failures. Then compare Java and Rust logger metadata ordering and formatting, including multiple names and hashes, and implement one bounded, tested compatibility improvement.
+Inspect the latest GitHub Actions validation and fix any failures. Then compare the original logger's packet representation and export line endings with Rust, and implement one verified difference with a focused regression test.

@@ -330,8 +330,8 @@ fn log_packet_metadata(
         }
     }
     (
-        bounded_log_prediction(names.join(", ")),
-        bounded_log_prediction(hashes.join(", ")),
+        bounded_log_prediction(names.join("][")),
+        bounded_log_prediction(hashes.join("][")),
     )
 }
 
@@ -356,6 +356,7 @@ struct LogDisplayOptions<'a> {
 
 struct RenderedLogRow {
     timestamp: Option<String>,
+    metadata: Option<String>,
     marker: Option<String>,
     header: String,
     extra_representations: Vec<String>,
@@ -440,14 +441,14 @@ fn render_log_row(
             .packet_metadata
             .get_or_init(|| log_packet_metadata(info, message.direction, packet.header()));
         if options.names && !names.is_empty() {
-            metadata.push_str(&format!("[{names}] "));
+            metadata.push_str(&format!("[{names}]"));
         }
         if options.hashes && !hashes.is_empty() {
-            metadata.push_str(&format!("[{hashes}] "));
+            metadata.push_str(&format!("[{hashes}]"));
         }
     }
     if options.message_id {
-        metadata.push_str(&format!("[{}] ", packet.header()));
+        metadata.push_str(&format!("[{}]", packet.header()));
     }
     let has_byte_representation = options.representation != PacketRepresentation::Expression
         || options.extra_legacy
@@ -493,7 +494,7 @@ fn render_log_row(
         None
     };
     let header = format!(
-        "#{:06}  {:8}  {}{}{}",
+        "#{:06}  {:8}  {}{}",
         message.index,
         if message.direction == Direction::ToServer {
             "→ SERVER"
@@ -501,7 +502,6 @@ fn render_log_row(
             "← CLIENT"
         },
         additional,
-        metadata,
         representation
     );
     let dump = inline_dump.then(|| logger_display::hex_dump(packet.bytes(), 128));
@@ -548,6 +548,7 @@ fn render_log_row(
     };
     RenderedLogRow {
         timestamp,
+        metadata: (!metadata.is_empty()).then_some(metadata),
         marker,
         header,
         extra_representations,
@@ -567,6 +568,9 @@ fn write_log_capture<'a>(
         let rendered = render_log_row(row, info, options);
         if let Some(timestamp) = rendered.timestamp {
             writeln!(output, "{timestamp}")?;
+        }
+        if let Some(metadata) = rendered.metadata {
+            writeln!(output, "{metadata}")?;
         }
         if let Some(marker) = rendered.marker {
             writeln!(output, "{marker}")?;
@@ -1984,6 +1988,11 @@ impl Desktop {
             } else {
                 0.0
             }
+            + if self.logger_names || self.logger_hashes || self.logger_message_id {
+                ui.text_style_height(&egui::TextStyle::Monospace) + ui.spacing().item_spacing.y
+            } else {
+                0.0
+            }
             + if filtered
                 .iter()
                 .any(|row| row.message.blocked || row.message.packet.edited)
@@ -2008,6 +2017,14 @@ impl Desktop {
                         |ui| {
                             if let Some(timestamp) = &rendered.timestamp {
                                 ui.monospace(timestamp);
+                            }
+                            if let Some(metadata) = &rendered.metadata {
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(metadata).monospace().color(color),
+                                    )
+                                    .truncate(),
+                                );
                             }
                             if let Some(marker) = &rendered.marker {
                                 ui.label(
@@ -4318,19 +4335,29 @@ mod logger_prediction_tests {
         };
         let info = PacketInfoManager::new(
             "test",
-            vec![PacketInfo {
-                header: 42,
-                direction: Direction::ToClient,
-                name: Some("Example".into()),
-                hash: Some("abc".into()),
-                structure: None,
-                source: "test".into(),
-            }],
+            vec![
+                PacketInfo {
+                    header: 42,
+                    direction: Direction::ToClient,
+                    name: Some("Example".into()),
+                    hash: Some("abc".into()),
+                    structure: None,
+                    source: "test".into(),
+                },
+                PacketInfo {
+                    header: 42,
+                    direction: Direction::ToClient,
+                    name: Some("Another".into()),
+                    hash: Some("def".into()),
+                    structure: None,
+                    source: "test".into(),
+                },
+            ],
         );
         let mut options = LogDisplayOptions {
             additional: false,
             names: true,
-            hashes: false,
+            hashes: true,
             message_id: true,
             representation: PacketRepresentation::RawHex,
             extra_legacy: false,
@@ -4349,7 +4376,7 @@ mod logger_prediction_tests {
         let text = String::from_utf8(output).unwrap();
         assert!(text.starts_with("(timestamp: 123)\n"));
         assert!(text.contains("[Blocked]\n"));
-        assert!(text.contains("[Example] [42]"));
+        assert!(text.contains("[Example][Another][abc][def][42]\n[Blocked]\n"));
         assert!(text.contains("00000002002a"));
         assert!(text.ends_with("--------------------\n"));
         options.extra_legacy = true;
@@ -4458,7 +4485,7 @@ mod logger_prediction_tests {
         );
         assert_eq!(
             log_packet_metadata(&info, Direction::ToClient, 42),
-            ("Room, Other".into(), "abc, def".into())
+            ("Room][Other".into(), "abc][def".into())
         );
         assert_eq!(
             log_packet_metadata(&info, Direction::ToServer, 42),
