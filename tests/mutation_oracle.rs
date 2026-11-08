@@ -18,6 +18,18 @@ fn mutations_match_original_java_packets_and_cursor() {
         );
         assert_eq!(packet.cursor(), cursor.parse::<usize>().unwrap(), "{name}");
     };
+    let cases = [
+        "eda080", "eda041", "eda0", "eda0ff", "edbf80", "ed9f80", "f0808080", "e08080", "f4908080",
+        "e282", "e28241", "c080", "80",
+    ];
+    for (i, value) in cases.iter().enumerate() {
+        let mut p = Packet::new(18);
+        p.put_short_bytes(&expression::parse_hex(value).unwrap())
+            .unwrap();
+        let java = expression::parse_hex(expected[format!("utf8_case_{i}").as_str()]).unwrap();
+        assert_eq!(p.read_utf8_lossy_at(6).unwrap().as_bytes(), java, "{value}");
+        assert_eq!(p.read_utf8_lossy().unwrap().as_bytes(), java, "{value}");
+    }
     let mut malformed = Packet::new(16);
     malformed
         .put_short_bytes(&[0xe2, 0x82, 0x41])

@@ -1,5 +1,44 @@
+use std::borrow::Cow;
 use std::fmt;
 use std::io::{self, Read, Write};
+
+// Java's UTF-8 decoder consumes a whole encoded surrogate as one malformed
+// sequence; Rust's standard lossy decoder replaces its bytes separately.
+fn java_utf8_lossy(bytes: &[u8]) -> Cow<'_, str> {
+    if let Ok(valid) = std::str::from_utf8(bytes) {
+        return Cow::Borrowed(valid);
+    }
+    let mut output = String::new();
+    let mut remaining = bytes;
+    while !remaining.is_empty() {
+        match std::str::from_utf8(remaining) {
+            Ok(valid) => {
+                output.push_str(valid);
+                break;
+            }
+            Err(error) => {
+                let prefix = error.valid_up_to();
+                output.push_str(std::str::from_utf8(&remaining[..prefix]).expect("UTF-8 prefix"));
+                remaining = &remaining[prefix..];
+                let consumed = if remaining.len() >= 2
+                    && remaining[0] == 0xed
+                    && (0xa0..=0xbf).contains(&remaining[1])
+                {
+                    if remaining.len() >= 3 && (0x80..=0xbf).contains(&remaining[2]) {
+                        3
+                    } else {
+                        2
+                    }
+                } else {
+                    error.error_len().unwrap_or(remaining.len())
+                };
+                output.push('\u{fffd}');
+                remaining = &remaining[consumed..];
+            }
+        }
+    }
+    Cow::Owned(output)
+}
 pub const MAX_FRAME: usize = 16 * 1024 * 1024;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PacketError(pub String);
@@ -331,11 +370,11 @@ impl Packet {
     }
     /// Read UTF-8 at an EVA offset, replacing malformed sequences.
     pub fn read_utf8_lossy_at(&self, offset: usize) -> Result<std::borrow::Cow<'_, str>> {
-        Ok(String::from_utf8_lossy(self.read_short_bytes_at(offset)?))
+        Ok(java_utf8_lossy(self.read_short_bytes_at(offset)?))
     }
     /// Read a long UTF-8 EVA field at an offset, replacing malformed sequences.
     pub fn read_utf8_long_lossy_at(&self, offset: usize) -> Result<std::borrow::Cow<'_, str>> {
-        Ok(String::from_utf8_lossy(self.read_long_bytes_at(offset)?))
+        Ok(java_utf8_lossy(self.read_long_bytes_at(offset)?))
     }
     pub fn read_u8(&mut self) -> Result<u8> {
         Ok(self.read_bytes(1)?[0])
@@ -452,7 +491,7 @@ impl Packet {
     }
     /// Read an EVA UTF-8 field with replacement decoding for malformed bytes.
     pub fn read_utf8_lossy(&mut self) -> Result<String> {
-        Ok(String::from_utf8_lossy(self.read_short_bytes()?).into_owned())
+        Ok(java_utf8_lossy(self.read_short_bytes()?).into_owned())
     }
     /// Read an EVA four-byte-length-prefixed field without copying its bytes.
     /// Invalid or truncated fields leave the cursor unchanged.
@@ -497,7 +536,7 @@ impl Packet {
     }
     /// Read a long EVA UTF-8 field with replacement decoding for malformed bytes.
     pub fn read_utf8_long_lossy(&mut self) -> Result<String> {
-        Ok(String::from_utf8_lossy(self.read_long_bytes()?).into_owned())
+        Ok(java_utf8_lossy(self.read_long_bytes()?).into_owned())
     }
     pub fn append(&mut self, bytes: &[u8]) -> Result<&mut Self> {
         let n = self

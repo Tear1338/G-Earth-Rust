@@ -7,6 +7,13 @@ public class JavaMutationOracle {
         System.out.println(name + "=" + HexFormat.of().formatHex(packet.toBytes()) + "," + packet.getReadIndex());
     }
     public static void main(String[] args) {
+        String[] malformedCases = {"eda080", "eda041", "eda0", "eda0ff", "edbf80", "ed9f80", "f0808080", "e08080", "f4908080", "e282", "e28241", "c080", "80"};
+        for (int i = 0; i < malformedCases.length; i++) {
+            byte[] bytes = HexFormat.of().parseHex(malformedCases[i]);
+            HPacket p = new HPacket(18);
+            p.appendUShort(bytes.length).appendBytes(bytes);
+            System.out.println("utf8_case_" + i + "=" + HexFormat.of().formatHex(p.readString(6, StandardCharsets.UTF_8).getBytes(StandardCharsets.UTF_8)));
+        }
         HPacket malformedUtf = new HPacket(16);
         malformedUtf.appendUShort(3).appendBytes(new byte[]{(byte)0xe2, (byte)0x82, 0x41});
         malformedUtf.appendInt(2).appendBytes(new byte[]{(byte)0xff, 0x61});

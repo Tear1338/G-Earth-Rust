@@ -37,6 +37,7 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Signed-byte sequential/absolute reads and append now complement unsigned byte operations, with EVA replacement. Selected negative and boundary values, replacement bytes and cursor behavior match the beta-29 Java API oracle. Local mutation tests, 41 available library tests, all-targets Clippy and a debug CLI build pass; WEDGIE and real extensions remain unverified.
 - EVA packets support short/long prefixed byte reads and UTF-8 reads at an absolute offset without changing the cursor. Valid short and long UTF-8 strings match the beta-29 Java API oracle, including a non-BMP character. Bounds and invalid UTF-8 have local tests; the strict reads reject invalid UTF-8 where Java replaces malformed input. WEDGIE and real extensions are unverified. Mutation tests, Java oracle, 41 available library tests, all-targets Clippy and debug CLI build pass.
 - Added optional replacement-decoding UTF-8 reads for short/long EVA fields, sequentially and at absolute offsets, alongside existing strict reads. Two malformed byte examples and cursor behavior match the beta-29 Java API; exhaustive equivalence for all malformed sequences is not established. Local mutation tests, Java oracle, 41 available library tests, all-targets Clippy and debug CLI build pass; WEDGIE remains unsupported for these methods.
+- Java differential tests exposed a difference in decoding encoded surrogate values: Java consumes them as a single malformed sequence. The replacement decoder now handles that case, and 13 selected surrogate, incomplete, overlong and invalid sequences match the original API. This is finite coverage, not proof of equivalence for every malformed input. Mutation tests, Java oracle, 41 available library tests, all-targets Clippy and debug CLI build pass.
 
 ## Remaining work
 
@@ -57,4 +58,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect GitHub Actions for the latest code commit and fix any failures. Expand malformed UTF-8 comparisons against Java across incomplete, overlong and surrogate sequences, then address any observed differences; validate the no-byte-view logger interaction visually when a safe desktop test session is available.
+Inspect GitHub Actions for the latest code commit and fix any failures. Expand the Java UTF-8 differential corpus beyond the 13 selected malformed sequences, including mixed valid and invalid input and length boundaries; validate the no-byte-view logger interaction visually when a safe desktop test session is available.

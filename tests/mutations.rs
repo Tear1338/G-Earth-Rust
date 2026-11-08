@@ -50,6 +50,14 @@ fn lossy_utf8_reads_replace_invalid_bytes_and_validate_lengths() {
 }
 
 #[test]
+fn malformed_utf8_surrogate_is_one_replacement_like_java() {
+    let mut packet = Packet::new(18);
+    packet.put_short_bytes(&[0xed, 0xa0, 0x80, b'A']).unwrap();
+    assert_eq!(packet.read_utf8_lossy_at(6).unwrap(), "�A");
+    assert_eq!(packet.read_utf8_lossy().unwrap(), "�A");
+}
+
+#[test]
 fn signed_bytes_roundtrip_and_preserve_cursor_on_errors() {
     let mut packet = Packet::new(14);
     for value in [i8::MIN, -1, 0, i8::MAX] {

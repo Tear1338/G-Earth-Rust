@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- EVA UTF-8 replacement decoding now treats malformed surrogate encodings like Java for the tested cases, instead of replacing each byte separately.
 - EVA packets: add optional replacement-decoding UTF-8 reads for malformed short/long fields, including cursor-preserving offset reads.
 - EVA packets: add cursor-preserving short/long byte and strict UTF-8 reads at an absolute offset, with Java API comparisons for valid strings.
 - Packet core: add signed-byte read, random-access read, append and EVA replacement; compare negative boundary values with the original Java API.
