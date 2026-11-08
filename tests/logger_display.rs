@@ -2,7 +2,10 @@ use gearth_rust::logger_display::{hex_dump, represent, PacketRepresentation};
 
 #[test]
 fn selected_direction_capture_can_match_java_or_keep_hidden_packets() {
-    use gearth_rust::{logger_display::capture_direction, packet::Direction};
+    use gearth_rust::{
+        logger_display::{capture_direction, displayed_directions},
+        packet::Direction,
+    };
     for incoming in [false, true] {
         for outgoing in [false, true] {
             assert!(capture_direction(
@@ -25,6 +28,11 @@ fn selected_direction_capture_can_match_java_or_keep_hidden_packets() {
                 capture_direction(Direction::ToServer, incoming, outgoing, true),
                 outgoing
             );
+            assert_eq!(
+                displayed_directions(incoming, outgoing, false),
+                (incoming, outgoing)
+            );
+            assert_eq!(displayed_directions(incoming, outgoing, true), (true, true));
         }
     }
 }

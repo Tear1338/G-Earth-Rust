@@ -16,6 +16,15 @@ pub fn capture_direction(
         }
 }
 
+/// In capture-only mode direction choices affect future packets, not retained rows.
+pub fn displayed_directions(incoming: bool, outgoing: bool, selected_only: bool) -> (bool, bool) {
+    if selected_only {
+        (true, true)
+    } else {
+        (incoming, outgoing)
+    }
+}
+
 /// Visibility of the optional logger panel and its connection lifecycle options.
 #[derive(Default)]
 pub struct LoggerWindow {

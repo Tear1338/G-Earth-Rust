@@ -16,7 +16,7 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - A deterministic test compares selected anti-spam level transitions, including disabled mode, with a direct model of the pinned Java queue algorithm. Seven local filter tests and a 10,000-packet bounded-memory test pass. This is a behavioral model, not execution of the original JavaFX controller; extreme unbounded traffic is deliberately different.
 - Comparing the original Java logger confirmed clearing displayed packets does not reset the filtered counter. Rust now preserves that counter and offers a separate reset button. Seven desktop logger tests, eleven translation tests and desktop Clippy pass locally; interactive use remains unverified.
 - The Windows logger can choose a .txt export path in a native save dialog. Windows filter tests, five capture tests and desktop Clippy pass; selecting the path and exporting still require separate actions and the dialog remains untested interactively.
-- Logger has an optional Java-like capture mode that discards unchecked directions after anti-spam; the default retains Rust's existing reversible display filter. Direction combinations, preference persistence, translations and desktop Clippy pass locally. Previously retained rows are still filtered dynamically, unlike Java.
+- Logger has an optional Java-like capture mode that discards unchecked directions after anti-spam while leaving previously captured rows visible; the default retains Rust's existing reversible display filter. Direction combinations, preference persistence, translations and desktop Clippy pass locally; interactive validation remains outstanding.
 
 ## Remaining work
 
@@ -35,4 +35,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect the latest GitHub Actions validation and fix any failures. Then review the original logger's direction filter effect on already displayed rows, and design a way to preserve both Java behavior and Rust's existing dynamic filtering without silently losing prior captures.
+Inspect the latest GitHub Actions validation and fix any failures. Then compare the Java logger's timestamp and export formatting with Rust and add focused compatibility tests for a concrete gap.

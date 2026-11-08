@@ -1890,6 +1890,11 @@ impl Desktop {
             timestamp: self.logger_timestamp,
             structure: self.logger_structure,
         };
+        let (display_incoming, display_outgoing) = logger_display::displayed_directions(
+            self.incoming,
+            self.outgoing,
+            self.logger_capture_selected_only,
+        );
         ui.horizontal(|ui| {
             ui.label(self.i18n.text("rust.logger.export_path"));
             ui.text_edit_singleline(&mut self.export_path);
@@ -1908,8 +1913,8 @@ impl Desktop {
                         row,
                         &filter,
                         matching_metadata,
-                        self.outgoing,
-                        self.incoming,
+                        display_outgoing,
+                        display_incoming,
                     )
                 });
                 let result = logger_display::write_atomic(Path::new(&self.export_path), |file| {
@@ -1936,8 +1941,8 @@ impl Desktop {
                     row,
                     &filter,
                     matching_metadata,
-                    self.outgoing,
-                    self.incoming,
+                    display_outgoing,
+                    display_incoming,
                 )
             })
             .collect();
