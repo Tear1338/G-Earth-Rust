@@ -989,7 +989,6 @@ impl Desktop {
                     Event::Listening(a) => self.status = format!("Listening on {a}"),
                     Event::Connected(a) => {
                         self.logger_connection_active = true;
-                        self.logger_filter.reset();
                         self.logger_window.on_connect();
                         if self.logger_clear_on_connect {
                             clear_log_contents(

@@ -62,7 +62,7 @@ pub struct LoggerFilter {
 }
 
 impl LoggerFilter {
-    /// Start a new connection without carrying packet frequencies from the old one.
+    /// Clear the accumulated packet frequencies without changing the selected mode.
     pub fn reset(&mut self) {
         self.timestamps.clear();
         self.last_cleanup = None;

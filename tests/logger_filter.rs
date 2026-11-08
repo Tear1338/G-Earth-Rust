@@ -79,7 +79,7 @@ fn mode_changes_clear_old_history_and_none_never_suppresses() {
 }
 
 #[test]
-fn new_session_discards_previous_frequencies_without_disabling_filter() {
+fn explicit_reset_discards_frequencies_without_disabling_filter() {
     let now = Instant::now();
     let packet = message(42, Direction::ToClient);
     let mut filter = LoggerFilter::default();
@@ -89,4 +89,16 @@ fn new_session_discards_previous_frequencies_without_disabling_filter() {
     filter.reset();
     assert!(!filter.suppress(&packet, now + Duration::from_millis(10)));
     assert!(filter.suppress(&packet, now + Duration::from_millis(20)));
+}
+
+#[test]
+fn history_remains_active_over_a_quick_reconnect_until_window_expires() {
+    let now = Instant::now();
+    let packet = message(42, Direction::ToClient);
+    let mut filter = LoggerFilter::default();
+    filter.set_mode(AntiSpam::Ultra);
+    assert!(!filter.suppress(&packet, now));
+    assert!(filter.suppress(&packet, now + Duration::from_millis(10)));
+    assert!(filter.suppress(&packet, now + Duration::from_millis(100)));
+    assert!(!filter.suppress(&packet, now + Duration::from_secs(6)));
 }

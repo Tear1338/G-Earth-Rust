@@ -11,6 +11,7 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Rust desktop interface, Windows attachment helpers, G-Python integration, extension store and native data parsers.
 - Selected original Java API and G-Presets binary compatibility fixtures; no live G-Presets or official hotel session established.
 - Latest published commit adds scheduler/settings fixes, logger, extension handling, UI translations and additional Java differential tests.
+- Compared logger reconnection against pinned beta-29 source: anti-spam history survives reconnects in Java. Rust now retains it as well; 5 local filter tests and desktop Clippy pass. Mode-switch semantics remain different.
 
 ## Remaining work
 
@@ -22,11 +23,11 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Current issues and validation
 
-- GitHub Actions run 42510568958 failed in the Linux/Windows core and web jobs: a settings unit test still rejected an offset equal to the interval after Java-compatible support was added. The test now checks equality is accepted and larger offsets rejected; the corrected unit passes locally. Java compatibility, G-Presets fixture and both G-Python jobs passed; desktop is still running.
+- GitHub Actions run 42510568958 failed in the Linux/Windows core and web jobs: a settings unit test still rejected an offset equal to the interval after Java-compatible support was added. The test now checks equality is accepted and larger offsets rejected. In follow-up run 42510869830, web, Linux core, Java compatibility and G-Presets passed; Windows core, desktop and Windows G-Python are still running as of this update.
 - Local Git metadata remains behind GitHub main because the workspace `.git` is read-only. The working tree contains previously published changes; compare against the actual remote tree before publishing any new files.
 - The complete local library run passed 39 of 41 tests; two relay socket tests failed because this environment denied local loopback connections (Windows error 10013). GitHub Actions is the independent network-fixture check.
 - Official client/game workflows, performance benefit and full visual equivalence remain unverified.
 
 ## Exact next step
 
-Inspect the GitHub Actions run for the scheduler boundary correction and resolve any remaining failures. Then compare the logger's automatic reconnection behavior with beta-29 and implement a verified missing behavior without depending on live-client access.
+Inspect run 42510869830 and resolve remaining failures. Then compare Java and Rust logger anti-spam behavior when changing levels, including bounded memory and representative Java oracle cases.
