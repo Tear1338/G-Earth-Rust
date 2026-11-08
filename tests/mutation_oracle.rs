@@ -52,6 +52,40 @@ fn mutations_match_original_java_packets_and_cursor() {
     raw_bytes.set_cursor(8).unwrap();
     raw_bytes.replace_bytes(7, &[0xff, 0x80, 42]).unwrap();
     check("fixed_bytes", &raw_bytes);
+    let mut random = Packet::new(77);
+    random
+        .put_u8(0xff)
+        .unwrap()
+        .put_u16(65000)
+        .unwrap()
+        .put_i32(-123456)
+        .unwrap()
+        .put_i64(-9000000000)
+        .unwrap()
+        .put_f32(-3.25)
+        .unwrap()
+        .put_f64(0.125)
+        .unwrap()
+        .put_string("cafe")
+        .unwrap()
+        .put_long_string("long")
+        .unwrap();
+    random.set_cursor(8).unwrap();
+    let result = format!(
+        "{},{},{},{},{},{},{},{},{},{},{}",
+        random.read_u8_at(6).unwrap(),
+        random.read_bool_at(6).unwrap(),
+        random.read_u16_at(7).unwrap(),
+        random.read_i32_at(9).unwrap(),
+        random.read_i64_at(13).unwrap(),
+        random.read_f32_at(21).unwrap(),
+        random.read_f64_at(25).unwrap(),
+        random.read_string_at(33).unwrap(),
+        random.read_long_string_at(39).unwrap(),
+        random.read_i32_at(0).unwrap(),
+        random.cursor()
+    );
+    assert_eq!(result, expected["random_reads"]);
     for (name, original, replacement) in [
         ("growth", "cat", "caterpillar"),
         ("shrink", "elephant", "x"),

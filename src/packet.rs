@@ -174,6 +174,61 @@ impl Packet {
         self.cursor = end;
         Ok(&self.bytes[start..end])
     }
+    /// Read at an absolute packet offset without moving the current cursor.
+    pub fn read_bytes_at(&self, offset: usize, n: usize) -> Result<&[u8]> {
+        let end = offset
+            .checked_add(n)
+            .ok_or_else(|| error("length overflow"))?;
+        self.bytes
+            .get(offset..end)
+            .ok_or_else(|| error("truncated packet field"))
+    }
+    fn eva_bytes_at(&self, offset: usize, n: usize) -> Result<&[u8]> {
+        self.ensure_eva()?;
+        self.read_bytes_at(offset, n)
+    }
+    pub fn read_u8_at(&self, offset: usize) -> Result<u8> {
+        Ok(self.eva_bytes_at(offset, 1)?[0])
+    }
+    pub fn read_bool_at(&self, offset: usize) -> Result<bool> {
+        Ok(self.read_u8_at(offset)? != 0)
+    }
+    pub fn read_u16_at(&self, offset: usize) -> Result<u16> {
+        Ok(u16::from_be_bytes(
+            self.eva_bytes_at(offset, 2)?.try_into().unwrap(),
+        ))
+    }
+    pub fn read_i32_at(&self, offset: usize) -> Result<i32> {
+        Ok(i32::from_be_bytes(
+            self.eva_bytes_at(offset, 4)?.try_into().unwrap(),
+        ))
+    }
+    pub fn read_i64_at(&self, offset: usize) -> Result<i64> {
+        Ok(i64::from_be_bytes(
+            self.eva_bytes_at(offset, 8)?.try_into().unwrap(),
+        ))
+    }
+    pub fn read_f32_at(&self, offset: usize) -> Result<f32> {
+        Ok(f32::from_bits(self.read_i32_at(offset)? as u32))
+    }
+    pub fn read_f64_at(&self, offset: usize) -> Result<f64> {
+        Ok(f64::from_bits(self.read_i64_at(offset)? as u64))
+    }
+    pub fn read_string_at(&self, offset: usize) -> Result<String> {
+        let length = usize::from(self.read_u16_at(offset)?);
+        let start = offset
+            .checked_add(2)
+            .ok_or_else(|| error("length overflow"))?;
+        Ok(latin1_decode(self.read_bytes_at(start, length)?))
+    }
+    pub fn read_long_string_at(&self, offset: usize) -> Result<String> {
+        let length = usize::try_from(self.read_i32_at(offset)?)
+            .map_err(|_| error("negative string length"))?;
+        let start = offset
+            .checked_add(4)
+            .ok_or_else(|| error("length overflow"))?;
+        Ok(latin1_decode(self.read_bytes_at(start, length)?))
+    }
     pub fn read_u8(&mut self) -> Result<u8> {
         Ok(self.read_bytes(1)?[0])
     }

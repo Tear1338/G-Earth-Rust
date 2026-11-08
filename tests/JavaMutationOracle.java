@@ -17,6 +17,17 @@ public class JavaMutationOracle {
         rawBytes.setReadIndex(8);
         rawBytes.replaceBytes(7, new byte[]{(byte) 0xff, (byte) 0x80, 42});
         emit("fixed_bytes", rawBytes);
+        HPacket randomReads = new HPacket(77);
+        randomReads.appendByte((byte) 0xff).appendUShort(65000).appendInt(-123456)
+            .appendLong(-9000000000L).appendFloat(-3.25f).appendDouble(0.125)
+            .appendString("cafe").appendLongString("long");
+        randomReads.setReadIndex(8);
+        System.out.println("random_reads=" + Byte.toUnsignedInt(randomReads.readByte(6)) + ","
+            + randomReads.readBoolean(6) + "," + randomReads.readUshort(7) + ","
+            + randomReads.readInteger(9) + "," + randomReads.readLong(13) + ","
+            + randomReads.readFloat(21) + "," + randomReads.readDouble(25) + ","
+            + randomReads.readString(33) + "," + randomReads.readLongString(39) + ","
+            + randomReads.readInteger(0) + "," + randomReads.getReadIndex());
         HPacket growth = new HPacket(2);
         growth.appendString("cat").appendInt(42).appendString("end");
         growth.setReadIndex(7);

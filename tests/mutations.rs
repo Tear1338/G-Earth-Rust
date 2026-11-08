@@ -1,6 +1,32 @@
 use gearth_rust::packet::{Packet, PacketFormat};
 
 #[test]
+fn absolute_reads_preserve_cursor_and_validate_bounds() {
+    let mut packet = Packet::new(77);
+    packet
+        .put_i32(42)
+        .unwrap()
+        .put_string("hi")
+        .unwrap()
+        .put_long_string("world")
+        .unwrap();
+    packet.set_cursor(8).unwrap();
+    assert_eq!(packet.read_i32_at(6).unwrap(), 42);
+    assert_eq!(packet.read_string_at(10).unwrap(), "hi");
+    assert_eq!(packet.read_long_string_at(14).unwrap(), "world");
+    assert_eq!(packet.read_u16_at(4).unwrap(), 77);
+    assert!(packet.read_i64_at(packet.bytes().len() - 1).is_err());
+    assert!(packet.read_bytes_at(usize::MAX, 2).is_err());
+    assert!(packet.read_string_at(packet.bytes().len() - 1).is_err());
+    assert_eq!(packet.cursor(), 8);
+    let mut invalid = Packet::new(1);
+    invalid.put_i32(-1).unwrap();
+    assert!(invalid.read_long_string_at(6).is_err());
+    let wedgie = Packet::new_with_format(PacketFormat::WedgieOutgoing, 1).unwrap();
+    assert!(wedgie.read_i32_at(0).is_err());
+}
+
+#[test]
 fn replacing_raw_bytes_keeps_length_and_cursor_and_rejects_partial_writes() {
     let mut packet = Packet::new(10);
     packet.append(&[0, 1, 2, 3, 4, 5]).unwrap();
