@@ -9,6 +9,16 @@ fn java_structure_limit_excludes_the_eva_prefix() {
 }
 
 #[test]
+fn java_structure_filter_rejects_only_text_changed_by_java_cleaning() {
+    use gearth_rust::logger_display::java_structure_is_clean as clean;
+    assert!(clean("{h:42}\tvalue\nnext"));
+    assert!(clean("é\u{0085}"));
+    for value in [" x", "x ", "x\r", "x\0y", "x\u{007f}y", "\tx"] {
+        assert!(!clean(value));
+    }
+}
+
+#[test]
 fn selected_direction_capture_can_match_java_or_keep_hidden_packets() {
     use gearth_rust::{
         logger_display::{capture_direction, displayed_directions},

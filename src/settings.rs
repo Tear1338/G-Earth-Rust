@@ -479,6 +479,9 @@ impl Settings {
             self.booleans
                 .entry("logger_java_structure_limit".into())
                 .or_insert(true);
+            self.booleans
+                .entry("logger_java_structure_clean".into())
+                .or_insert(true);
             for (index, key) in [
                 (0, "incoming"),
                 (1, "outgoing"),

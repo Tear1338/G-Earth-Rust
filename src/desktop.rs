@@ -149,6 +149,7 @@ struct Desktop {
     logger_additional: bool,
     logger_structure: bool,
     logger_java_structure_limit: bool,
+    logger_java_structure_clean: bool,
     logger_split: bool,
     logger_names: bool,
     logger_hashes: bool,
@@ -259,7 +260,7 @@ struct LogRow {
     skipped: bool,
     unity: bool,
     predicted_structure: OnceLock<String>,
-    packet_expression: OnceLock<(String, bool)>,
+    packet_expression: OnceLock<(String, bool, bool)>,
     packet_metadata: OnceLock<(String, String)>,
 }
 fn invalidate_log_expressions(logs: &mut VecDeque<LogRow>) {
@@ -354,6 +355,7 @@ struct LogDisplayOptions<'a> {
     replaced_label: &'a str,
     structure: bool,
     java_structure_limit: bool,
+    java_structure_clean: bool,
 }
 
 struct RenderedLogRow {
@@ -537,7 +539,7 @@ fn render_log_row(
                 packet.bytes().len(),
                 options.java_structure_limit,
             )) {
-        let (expression, known) = row.packet_expression.get_or_init(|| {
+        let (expression, known, clean) = row.packet_expression.get_or_init(|| {
             let (expression, known) = gearth_rust::structure_prediction::expression_with_metadata(
                 packet,
                 message.direction,
@@ -545,9 +547,10 @@ fn render_log_row(
                 row.unity,
             )
             .unwrap_or_default();
-            (bounded_log_prediction(expression), known)
+            let clean = logger_display::java_structure_is_clean(&expression);
+            (bounded_log_prediction(expression), known, clean)
         });
-        (!expression.is_empty()).then(|| {
+        (!expression.is_empty() && (!options.java_structure_clean || *clean)).then(|| {
             format!(
                 "{}: {expression}",
                 if *known { "Structure" } else { "Predicted" }
@@ -647,6 +650,7 @@ impl Default for Desktop {
             logger_additional: true,
             logger_structure: true,
             logger_java_structure_limit: false,
+            logger_java_structure_clean: false,
             logger_split: true,
             logger_names: true,
             logger_hashes: false,
@@ -1745,6 +1749,10 @@ impl Desktop {
                 &mut self.logger_java_structure_limit,
                 self.i18n.text("rust.logger.java_structure_limit"),
             );
+            ui.checkbox(
+                &mut self.logger_java_structure_clean,
+                self.i18n.text("rust.logger.java_structure_clean"),
+            );
             ui.checkbox(&mut self.logger_split, self.i18n.text("rust.logger.split"));
             ui.checkbox(
                 &mut self.logger_names,
@@ -1926,6 +1934,7 @@ impl Desktop {
             replaced_label: &replaced_label,
             structure: self.logger_structure,
             java_structure_limit: self.logger_java_structure_limit,
+            java_structure_clean: self.logger_java_structure_clean,
         };
         let (display_incoming, display_outgoing) = logger_display::displayed_directions(
             self.incoming,
@@ -3767,6 +3776,12 @@ impl Desktop {
             .get("logger_java_structure_limit")
             .copied()
             .unwrap_or(false);
+        self.logger_java_structure_clean = self
+            .settings
+            .booleans
+            .get("logger_java_structure_clean")
+            .copied()
+            .unwrap_or(false);
         self.logger_split = self
             .settings
             .booleans
@@ -3907,6 +3922,10 @@ impl Desktop {
             (
                 "logger_java_structure_limit".into(),
                 self.logger_java_structure_limit,
+            ),
+            (
+                "logger_java_structure_clean".into(),
+                self.logger_java_structure_clean,
             ),
             ("logger_split".into(), self.logger_split),
             ("logger_names".into(), self.logger_names),
@@ -4318,12 +4337,13 @@ mod logger_prediction_tests {
             replaced_label: "Replaced",
             structure: false,
             java_structure_limit: false,
+            java_structure_clean: false,
         };
         let info = PacketInfoManager::default();
         for payload_len in [1998, 1999] {
             let mut packet = Packet::new(42);
             packet.append(&vec![b'a'; payload_len]).unwrap();
-            let long_row = LogRow {
+            let mut long_row = LogRow {
                 message: Message {
                     packet,
                     direction: Direction::ToClient,
@@ -4337,7 +4357,7 @@ mod logger_prediction_tests {
                 skipped: false,
                 unity: false,
                 predicted_structure: OnceLock::new(),
-                packet_expression: OnceLock::from(("fixture structure".into(), true)),
+                packet_expression: OnceLock::from(("fixture structure".into(), true, true)),
                 packet_metadata: OnceLock::new(),
             };
             options.structure = true;
@@ -4356,6 +4376,19 @@ mod logger_prediction_tests {
             assert!(String::from_utf8(output)
                 .unwrap()
                 .contains("fixture structure"));
+            long_row.packet_expression.take();
+            long_row
+                .packet_expression
+                .set(("unsafe\rtext".into(), true, false))
+                .unwrap();
+            options.java_structure_clean = true;
+            let mut output = Vec::new();
+            write_log_capture(&mut output, [&long_row], &info, options, false).unwrap();
+            assert!(!String::from_utf8(output).unwrap().contains("unsafe"));
+            options.java_structure_clean = false;
+            let mut output = Vec::new();
+            write_log_capture(&mut output, [&long_row], &info, options, false).unwrap();
+            assert!(String::from_utf8(output).unwrap().contains("unsafe"));
         }
         options.structure = false;
         let mut output = Vec::new();
@@ -4437,6 +4470,7 @@ mod logger_prediction_tests {
             replaced_label: "Replaced",
             structure: false,
             java_structure_limit: false,
+            java_structure_clean: false,
         };
         let mut output = Vec::new();
         write_log_capture(&mut output, [&row], &info, options, true).unwrap();
@@ -4512,7 +4546,9 @@ mod logger_prediction_tests {
     #[test]
     fn packet_metadata_refresh_invalidates_cached_expressions() {
         let cached = OnceLock::new();
-        cached.set(("old expression".to_owned(), true)).unwrap();
+        cached
+            .set(("old expression".to_owned(), true, true))
+            .unwrap();
         let metadata = OnceLock::new();
         metadata
             .set(("old name".into(), "old hash".into()))

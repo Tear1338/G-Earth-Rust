@@ -193,6 +193,7 @@ fn importing_java_logger_settings_preserves_menu_choices() {
         ("outgoing", false),
         ("logger_capture_selected_only", true),
         ("logger_java_structure_limit", true),
+        ("logger_java_structure_clean", true),
         ("logger_structure", true),
         ("logger_autoscroll", false),
         ("logger_names", false),

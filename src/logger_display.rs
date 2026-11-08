@@ -125,6 +125,14 @@ pub fn allow_eva_structure(frame_len: usize, java_limit: bool) -> bool {
     !java_limit || frame_len.saturating_sub(4) <= 2000
 }
 
+/// Whether Java's cleanTextContent would leave this expression unchanged.
+pub fn java_structure_is_clean(value: &str) -> bool {
+    value.trim_matches(|c: char| c <= '\u{20}') == value
+        && !value
+            .chars()
+            .any(|c| (c <= '\u{1f}' || c == '\u{7f}') && c != '\n' && c != '\t')
+}
+
 impl PacketRepresentation {
     pub fn translation_key(self) -> &'static str {
         match self {
