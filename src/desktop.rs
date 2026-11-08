@@ -266,10 +266,9 @@ fn invalidate_log_expressions(logs: &mut VecDeque<LogRow>) {
         row.packet_metadata.take();
     }
 }
-fn clear_log_contents(logs: &mut VecDeque<LogRow>, bytes: &mut usize, filtered: &mut u64) {
+fn clear_log_contents(logs: &mut VecDeque<LogRow>, bytes: &mut usize) {
     logs.clear();
     *bytes = 0;
-    *filtered = 0;
 }
 fn matching_packet_metadata(info: &PacketInfoManager, filter: &str) -> HashSet<(Direction, u16)> {
     if filter.is_empty() {
@@ -991,11 +990,7 @@ impl Desktop {
                         self.logger_connection_active = true;
                         self.logger_window.on_connect();
                         if self.logger_clear_on_connect {
-                            clear_log_contents(
-                                &mut self.logs,
-                                &mut self.logs_bytes,
-                                &mut self.logger_filtered,
-                            );
+                            clear_log_contents(&mut self.logs, &mut self.logs_bytes);
                         }
                         self.status = format!("Connected to {a}");
                         if let Some(guard) = &mut self.proxy_guard {
@@ -1032,11 +1027,7 @@ impl Desktop {
                         self.logger_connection_active = false;
                         self.logger_window.on_disconnect();
                         if self.logger_clear_on_disconnect {
-                            clear_log_contents(
-                                &mut self.logs,
-                                &mut self.logs_bytes,
-                                &mut self.logger_filtered,
-                            );
+                            clear_log_contents(&mut self.logs, &mut self.logs_bytes);
                         }
                         self.status = "Client disconnected; listening".into();
                     }
@@ -1344,11 +1335,7 @@ impl Desktop {
             && (self.logger_connection_active
                 || self.relay.as_ref().is_some_and(Connection::connected))
         {
-            clear_log_contents(
-                &mut self.logs,
-                &mut self.logs_bytes,
-                &mut self.logger_filtered,
-            );
+            clear_log_contents(&mut self.logs, &mut self.logs_bytes);
         }
         self.logger_connection_active = false;
         self.status = "Disconnected".into();
@@ -1695,11 +1682,7 @@ impl Desktop {
                 .button(self.i18n.text("ext.logger.menu.view.cleartext"))
                 .clicked()
             {
-                clear_log_contents(
-                    &mut self.logs,
-                    &mut self.logs_bytes,
-                    &mut self.logger_filtered,
-                );
+                clear_log_contents(&mut self.logs, &mut self.logs_bytes);
             }
         });
         ui.horizontal(|ui| {
@@ -1764,6 +1747,12 @@ impl Desktop {
                 self.i18n.text("ext.logger.state.filtered"),
                 self.logger_filtered
             ));
+            if ui
+                .button(self.i18n.text("rust.logger.reset_filtered"))
+                .clicked()
+            {
+                self.logger_filtered = 0;
+            }
         });
         ui.horizontal(|ui| {
             ui.checkbox(
@@ -4357,10 +4346,10 @@ mod logger_prediction_tests {
         assert!(rows[0].packet_expression.get().is_none());
         assert!(rows[0].packet_metadata.get().is_none());
         let mut accounted_bytes = 500;
-        let mut filtered = 7;
-        clear_log_contents(&mut rows, &mut accounted_bytes, &mut filtered);
+        let filtered = 7;
+        clear_log_contents(&mut rows, &mut accounted_bytes);
         assert!(rows.is_empty());
-        assert_eq!((accounted_bytes, filtered), (0, 0));
+        assert_eq!((accounted_bytes, filtered), (0, 7));
     }
 
     #[test]

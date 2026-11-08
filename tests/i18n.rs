@@ -46,6 +46,7 @@ fn logger_copy_and_inspection_controls_have_french_labels() {
         "rust.logger.inspect_bytes",
         "rust.logger.packet_bytes",
         "rust.logger.copy_dump",
+        "rust.logger.reset_filtered",
     ] {
         assert_ne!(en.text(key), key);
         assert_ne!(fr.text(key), en.text(key));

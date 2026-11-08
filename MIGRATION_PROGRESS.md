@@ -14,6 +14,7 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Compared logger reconnection and level switching against pinned beta-29 source. Rust retains anti-spam history across reconnects and all level switches, including disabled mode. The per-header queue is deliberately capped at 15 timestamps, unlike Java, so extreme traffic can differ.
 - Manual extension launches now capture stdout/stderr for the extension console, like store launches. Host unit tests, a manually launched Python fixture and all-targets Clippy pass locally. All eight validation jobs in Actions run 42511342499 passed, including the new Python fixture on Windows and Linux; real extensions still need validation.
 - A deterministic test compares selected anti-spam level transitions, including disabled mode, with a direct model of the pinned Java queue algorithm. Seven local filter tests and a 10,000-packet bounded-memory test pass. This is a behavioral model, not execution of the original JavaFX controller; extreme unbounded traffic is deliberately different.
+- Comparing the original Java logger confirmed clearing displayed packets does not reset the filtered counter. Rust now preserves that counter and offers a separate reset button. Seven desktop logger tests, eleven translation tests and desktop Clippy pass locally; interactive use remains unverified.
 
 ## Remaining work
 
@@ -32,4 +33,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect the latest GitHub Actions validation and fix failures. Then compare the logger's clear/reset behavior and filtered count with the pinned Java controller, preserving bounded memory and checking both manual clear and connection events.
+Inspect the latest GitHub Actions validation and fix any failures. Then compare the original Java logger's view filters and export behavior with Rust, and implement the next verified compatibility gap with a focused test.
