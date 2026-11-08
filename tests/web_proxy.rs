@@ -426,6 +426,18 @@ fn nitro_websocket_supports_block_replace_and_bidirectional_injection() {
     ));
     let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), dir.0.join("ca"));
     options.packet_safety = Some(safety.clone());
+    options.packet_info = gearth_rust::packet_info::PacketInfoManager::new(
+        "fixture",
+        vec![gearth_rust::packet_info::PacketInfo {
+            header: 444,
+            name: Some("Known".into()),
+            hash: None,
+            structure: None,
+            direction: Direction::ToServer,
+            source: "fixture".into(),
+        }],
+    );
+
     let (mut proxy, events) = WebProxy::start(options).unwrap();
     proxy
         .set_rules(Rules {
@@ -547,6 +559,8 @@ fn nitro_websocket_supports_block_replace_and_bidirectional_injection() {
     assert!(blocked_seen);
     let observed = safety.lock().unwrap();
     let revision = Some(gearth_rust::web_proxy::NITRO_REVISION);
+    assert!(observed.is_safe(revision, Direction::ToServer, 444));
+    assert!(!observed.is_safe(revision, Direction::ToClient, 444));
     assert!(observed.is_safe(revision, Direction::ToServer, 77));
     assert!(observed.is_safe(revision, Direction::ToServer, 78));
     assert!(observed.is_safe(revision, Direction::ToClient, 88));

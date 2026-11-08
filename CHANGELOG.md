@@ -1,5 +1,6 @@
 # Changelog
 
+- Register metadata packet identifiers as safe by revision and direction for TCP, Flash, Nitro and Unity, matching the Java connection.
 - Added a controlled Flash relay and extension lifecycle fixture for identity variants.
 - Flash identification accepts empty revisions and trailing fields like the pinned Java handler; the oracle also documents fragmentation differences.
 - Added 36,864 targeted UTF-8 boundary combinations to the Java decoding oracle.

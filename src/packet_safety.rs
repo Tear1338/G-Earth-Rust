@@ -1,9 +1,5 @@
-//! Tracking of packet IDs observed for each hotel revision.
-//!
-//! The Java connection uses this information to distinguish observed packet
-//! IDs from IDs that have not appeared in normal traffic. This registry is an
-//! in-memory building block; transport enforcement is not yet wired up.
-use crate::packet::Direction;
+//! Tracking packet IDs observed in traffic or supplied by packet metadata per revision.
+use crate::{packet::Direction, packet_info::PacketInfoManager};
 use std::collections::{HashMap, HashSet};
 
 const MAX_REVISIONS: usize = 64;
@@ -45,6 +41,26 @@ impl PacketSafety {
             .entry(revision.to_owned())
             .or_default()
             .insert((direction, header));
+        true
+    }
+
+    /// Register identifiers supplied by the connection's packet metadata.
+    /// Java also registers metadata for an empty revision; traffic observations
+    /// alone do not create that entry. Returns false when revision bounds are hit.
+    pub fn register_metadata(&mut self, revision: &str, metadata: &PacketInfoManager) -> bool {
+        if revision.len() > MAX_REVISION_BYTES {
+            return false;
+        }
+        if !self.revisions.contains_key(revision) && self.revisions.len() >= MAX_REVISIONS {
+            return false;
+        }
+        let entries = self.revisions.entry(revision.to_owned()).or_default();
+        entries.extend(
+            metadata
+                .entries()
+                .iter()
+                .map(|entry| (entry.direction, entry.header)),
+        );
         true
     }
 

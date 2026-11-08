@@ -203,6 +203,11 @@ impl State {
         }
         let mut packets = self.options.packet_info.clone();
         packets.version = revision.clone();
+        if let Some(safety) = &self.options.packet_safety {
+            if let Ok(mut safety) = safety.lock() {
+                safety.register_metadata(&revision, &packets);
+            }
+        }
         if let Some(host) = &self.options.extensions {
             let mut session = peer
                 .extension_session

@@ -170,13 +170,20 @@ fn closing_an_old_relay_preserves_a_replacement_session() {
 
 #[test]
 fn flash_relay_identifies_fragmented_hello_and_starts_extension_session() {
+    use gearth_rust::packet_safety::PacketSafety;
     use gearth_rust::relay::{Config, Event, Relay, RelayOptions};
-    use std::{io::Write, net::TcpListener};
+    use std::{
+        io::Write,
+        net::TcpListener,
+        sync::{Arc, Mutex},
+    };
 
     for version in ["TEST-2026", ""] {
         let (host, host_events) =
             ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
         let (mut extension, _) = connect(&host, &host_events);
+        let safety = Arc::new(Mutex::new(PacketSafety::default()));
+        host.set_packet_safety(safety.clone()).unwrap();
         let remote = TcpListener::bind("127.0.0.1:0").unwrap();
         let (mut relay, events) = Relay::start_with_options(
             Config {
@@ -186,6 +193,7 @@ fn flash_relay_identifies_fragmented_hello_and_starts_extension_session() {
             RelayOptions {
                 flash_process: Some(1),
                 extensions: Some(host.clone()),
+                packet_safety: Some(safety.clone()),
                 connection: Some(details()),
                 ..RelayOptions::default()
             },
@@ -227,12 +235,26 @@ fn flash_relay_identifies_fragmented_hello_and_starts_extension_session() {
         assert_eq!(start.read_i32().unwrap(), 30000);
         assert_eq!(start.read_string().unwrap(), version);
         assert_eq!(start.read_string().unwrap(), "FLASH");
+        assert!(safety
+            .lock()
+            .unwrap()
+            .is_safe(Some(version), Direction::ToServer, 77));
+        assert!(!safety
+            .lock()
+            .unwrap()
+            .is_safe(Some(version), Direction::ToClient, 77));
         let mut intercepted = read_frame(&mut extension).unwrap();
         assert_eq!(intercepted.header(), 3);
         let message = Message::parse(&intercepted.read_long_string().unwrap()).unwrap();
         assert_eq!(message.packet.bytes(), hello.bytes());
         write_frame(&mut extension, &extension::manipulated(&message).unwrap()).unwrap();
         assert_eq!(read_frame(&mut server).unwrap().bytes(), hello.bytes());
+        write_frame(
+            &mut extension,
+            &extension::send(Direction::ToServer, &Packet::new(77)).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(read_frame(&mut server).unwrap().header(), 77);
         drop(client);
         assert_eq!(read_frame(&mut extension).unwrap().header(), 6);
         relay.stop();

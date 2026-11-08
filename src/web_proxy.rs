@@ -308,6 +308,11 @@ impl Shared {
                 "Nitro connection stopped",
             ));
         }
+        if let Some(safety) = &self.options.packet_safety {
+            if let Ok(mut safety) = safety.lock() {
+                safety.register_metadata(NITRO_REVISION, &database);
+            }
+        }
         if let Some(host) = &self.options.extensions {
             let mut session = peer
                 .extension_session

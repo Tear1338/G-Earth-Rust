@@ -216,6 +216,15 @@ impl Relay {
                         } else {
                             break;
                         }
+                        if options.flash_process.is_none() {
+                            if let (Some(safety), Some(details)) =
+                                (&options.packet_safety, &options.connection)
+                            {
+                                if let Ok(mut safety) = safety.lock() {
+                                    safety.register_metadata(&details.version, &details.packets);
+                                }
+                            }
+                        }
                         let _ = events.try_send(Event::Connected(
                             server
                                 .peer_addr()
@@ -636,7 +645,18 @@ fn run_session(
                                 return Ok(());
                             }
                         }
+                        if let Some(safety) = &options.packet_safety {
+                            if let Ok(mut safety) = safety.lock() {
+                                safety.register_metadata(&details.version, &details.packets);
+                            }
+                        }
                         *extension_session = Some(host.start_owned_connection(details)?);
+                    } else if let (Some(safety), Some(details)) =
+                        (&options.packet_safety, &options.connection)
+                    {
+                        if let Ok(mut safety) = safety.lock() {
+                            safety.register_metadata(&safety_revision, &details.packets);
+                        }
                     }
                 }
             }

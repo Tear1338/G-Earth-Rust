@@ -54,6 +54,9 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - A controlled loopback Flash relay and extension protocol fixture now covers two-field hellos with a trailing byte and both normal and empty revisions. It checks the identification event, extension connection details, interception, unchanged forwarding and disconnect. The packet is sent in two writes which TCP may coalesce; deterministic reassembly is separately covered by the session test. Metadata is preloaded in this fixture and no real client or extension is involved. All 16 extension integration tests and all-target Clippy pass locally. GitHub Actions run 42532727954 passed all eight validation jobs for the prior Flash oracle commit.
 
+- Java `HProxy.verifyProxy` registers metadata packet IDs as safe before traffic is observed. Rust now registers supplied metadata by revision and direction for TCP/Flash, Nitro and Unity, including empty revisions as Java does. Controlled tests cover all three transports and extension injection of a known but unseen Flash ID; 16 extension tests, 12 relay tests, 7 Nitro tests, 3 Unity tests, packet-safety tests and desktop/web Clippy pass locally. Metadata is trusted: stale or wrong user-supplied data can allow the wrong IDs. The registry remains limited to 64 revisions; live clients and extensions remain untested.
+- GitHub Actions run 42532954255 passed all eight validation jobs for the Flash identification change.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -73,4 +76,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect CI for the Flash identification and relay fixture commits. Investigate Flash metadata lookup failure and cancellation when the identifier database is empty, using a deterministic offline fixture; assess false identification with representative non-handshake traffic. Validate the no-byte-view logger interaction visually when a safe desktop test session is available.
+Inspect CI for the packet metadata safety and Flash relay commits. Investigate Flash metadata lookup failure and cancellation when the identifier database is empty using a deterministic offline fixture; assess false identification with representative non-handshake traffic. Validate the no-byte-view logger interaction visually when a safe desktop test session is available.

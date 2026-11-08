@@ -134,6 +134,18 @@ fn tls_communicator_authenticates_and_routes_mutations_injections_and_fragmented
     ));
     let mut options = UnityOptions::new("127.0.0.1:0".parse().unwrap(), directory.0.join("ca"));
     options.packet_safety = Some(safety.clone());
+    options.packet_info = gearth_rust::packet_info::PacketInfoManager::new(
+        "fixture",
+        vec![gearth_rust::packet_info::PacketInfo {
+            header: 444,
+            name: Some("Known".into()),
+            hash: None,
+            structure: None,
+            direction: Direction::ToServer,
+            source: "fixture".into(),
+        }],
+    );
+
     let (mut server, events) = UnityServer::start(options).unwrap();
     server
         .set_rules(Rules {
@@ -204,6 +216,8 @@ fn tls_communicator_authenticates_and_routes_mutations_injections_and_fragmented
     assert!(events.iter().any(|e|matches!(e,Event::Identified {version,identifier} if version=="TEST-UNITY-1"&&identifier=="UNITY-FIXTURE")));
     let observed = safety.lock().unwrap();
     let revision = Some("TEST-UNITY-1");
+    assert!(observed.is_safe(revision, Direction::ToServer, 444));
+    assert!(!observed.is_safe(revision, Direction::ToClient, 444));
     assert!(observed.is_safe(revision, Direction::ToServer, 77));
     assert!(observed.is_safe(revision, Direction::ToServer, 78));
     assert!(observed.is_safe(revision, Direction::ToClient, 88));

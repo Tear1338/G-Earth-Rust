@@ -193,3 +193,5 @@ A deterministic sample of 20,000 byte strings of lengths 3–12 also matches Jav
 An additional 36,864 combinations target E0, ED, F0 and F4 boundary sequences; the local Java comparison passes. These tests do not establish exhaustive UTF-8 or real extension compatibility.
 
 Flash identification now accepts an empty revision or trailing fields like the pinned Java method. A Java method oracle with a stub superclass and Rust fragmented-frame test show a difference for all two-part splits of one sample hello: Rust reassembles it; Java does not. This change broadens the identification heuristic and may identify another short packet by mistake; real sessions and full Java forwarding have not been tested.
+
+Packet safety now registers metadata IDs as well as observed IDs for TCP/Flash, Nitro and Unity; Java does this in `HProxy.verifyProxy`. Local transport fixtures and a Flash extension injection cover the change. Metadata is trusted, so stale or incorrect metadata can allow wrong IDs. The 64-revision limit and real-client limitations remain.

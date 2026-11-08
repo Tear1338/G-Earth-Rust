@@ -192,7 +192,17 @@ fn tracks_only_original_traffic_before_rules_not_injections() {
             version: "fixture-v1".into(),
             identifier: "fixture".into(),
             client_type: "FLASH".into(),
-            packets: PacketInfoManager::default(),
+            packets: PacketInfoManager::new(
+                "fixture-v1",
+                vec![gearth_rust::packet_info::PacketInfo {
+                    header: 444,
+                    name: Some("Known".into()),
+                    hash: None,
+                    structure: None,
+                    direction: Direction::ToServer,
+                    source: "fixture".into(),
+                }],
+            ),
         }),
         ..Default::default()
     };
@@ -228,6 +238,8 @@ fn tracks_only_original_traffic_before_rules_not_injections() {
     relay.inject(Direction::ToClient, Packet::new(99)).unwrap();
     assert_eq!(read_frame(&mut client).unwrap().header(), 99);
     let observed = safety.lock().unwrap();
+    assert!(observed.is_safe(Some("fixture-v1"), Direction::ToServer, 444));
+    assert!(!observed.is_safe(Some("fixture-v1"), Direction::ToClient, 444));
     assert!(observed.is_safe(Some("fixture-v1"), Direction::ToServer, 77));
     assert!(!observed.is_safe(Some("fixture-v1"), Direction::ToServer, 78));
     assert!(!observed.is_safe(Some("fixture-v1"), Direction::ToClient, 99));
