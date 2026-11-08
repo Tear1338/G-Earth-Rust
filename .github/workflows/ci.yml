@@ -323,4 +323,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: 'python -m pip install --require-hashes --only-binary=:all: --no-deps -r tests/gpython-requirements.txt'
       - run: python -m pip install ipykernel jupyter-client qtconsole PyQt5 jupyter-console psutil
+      - name: Verify manual extension console output
+        run: cargo test --locked --lib manual_python_launch_captures_stdout_and_stderr -- --ignored
+        env:
+          GEARTH_TEST_PYTHON: python
       - run: cargo test --locked --test gpython -- --ignored --nocapture

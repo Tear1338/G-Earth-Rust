@@ -563,15 +563,21 @@ impl ExtensionHost {
             .arg(&token.token);
         command
             .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null());
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
             command.creation_flags(0x08000000);
         }
-        let process = command.spawn()?;
+        let mut process = command.spawn()?;
         token.committed = true;
+        if let Some(output) = process.stdout.take() {
+            self.capture_output(output, format!("{filename} stdout"));
+        }
+        if let Some(output) = process.stderr.take() {
+            self.capture_output(output, format!("{filename} stderr"));
+        }
         Ok(process)
     }
     pub fn register_launch(&self, filename: &str) -> io::Result<String> {
@@ -762,6 +768,62 @@ fn initialize(shared: &Shared, peer: &Peer) -> io::Result<()> {
 #[cfg(test)]
 mod initialization_tests {
     use super::*;
+
+    #[test]
+    fn captured_process_output_emits_labelled_console_events() {
+        let (host, events) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), vec![]).unwrap();
+        host.capture_output(
+            std::io::Cursor::new("first\nlast".as_bytes().to_vec()),
+            "fixture.jar stdout".into(),
+        );
+        let mut messages = Vec::new();
+        for _ in 0..2 {
+            match events.recv_timeout(Duration::from_secs(2)).unwrap() {
+                HostEvent::Console { id, text } => {
+                    assert_eq!(id, 0);
+                    messages.push(text);
+                }
+                other => panic!("unexpected event: {other:?}"),
+            }
+        }
+        assert_eq!(
+            messages,
+            ["fixture.jar stdout: first", "fixture.jar stdout: last"]
+        );
+        host.stop();
+    }
+
+    #[test]
+    #[ignore = "requires GEARTH_TEST_PYTHON to name a Python interpreter"]
+    fn manual_python_launch_captures_stdout_and_stderr() {
+        let python = std::env::var_os("GEARTH_TEST_PYTHON").expect("Python path required");
+        let (host, events) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), vec![]).unwrap();
+        let mut random = [0u8; 16];
+        getrandom::fill(&mut random).unwrap();
+        let suffix = random
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>();
+        let path = std::env::temp_dir().join(format!("gearth-output-{suffix}.py"));
+        std::fs::write(&path, "import sys\nprint('hello stdout', flush=True)\nprint('hello stderr', file=sys.stderr, flush=True)\n").unwrap();
+        let mut child = host.launch(Path::new(&python), &path).unwrap();
+        assert!(child.wait().unwrap().success());
+        let mut messages = Vec::new();
+        for _ in 0..2 {
+            match events.recv_timeout(Duration::from_secs(5)).unwrap() {
+                HostEvent::Console { text, .. } => messages.push(text),
+                other => panic!("unexpected event: {other:?}"),
+            }
+        }
+        assert!(messages
+            .iter()
+            .any(|s| s.ends_with(" stdout: hello stdout")));
+        assert!(messages
+            .iter()
+            .any(|s| s.ends_with(" stderr: hello stderr")));
+        host.stop();
+        std::fs::remove_file(path).unwrap();
+    }
 
     #[test]
     fn console_lines_preserve_utf8_across_reads_and_bound_long_lines() {
