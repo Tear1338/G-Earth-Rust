@@ -1,5 +1,6 @@
 # Changelog
 
+- Added a pinned-source Flash identification oracle documenting Java and Rust differences.
 - Added 36,864 targeted UTF-8 boundary combinations to the Java decoding oracle.
 - Added 20,000 deterministic mixed byte strings of lengths 3–12 to the Java UTF-8 differential oracle.
 - Expanded the beta-29 Java UTF-8 differential oracle to every two-byte sequence and mixed input at six short-field length boundaries; this is finite coverage.

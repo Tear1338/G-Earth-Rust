@@ -126,3 +126,51 @@ fn ambiguous_reverse_snapshot_never_silently_corrupts_a_packet() {
     .unwrap()
     .is_none());
 }
+
+#[test]
+#[ignore = "requires the pinned Java Flash identification oracle"]
+fn identification_compares_with_java_and_records_stricter_rust_checks() {
+    let java =
+        std::fs::read_to_string(std::env::var("GEARTH_FLASH_IDENTITY_ORACLE").unwrap()).unwrap();
+    let expected: std::collections::BTreeMap<_, _> = java
+        .lines()
+        .map(|line| line.split_once('=').unwrap())
+        .collect();
+    for case in 0..3 {
+        let mut packet = Packet::new(1);
+        packet
+            .put_string(if case == 2 { "" } else { "TEST-2026" })
+            .unwrap()
+            .put_string("FLASH")
+            .unwrap();
+        if case == 1 {
+            packet.put_u8(42).unwrap();
+        }
+        let mut session = FlashSession::default();
+        for fragment in packet.bytes().chunks(2) {
+            session.feed(Direction::ToServer, fragment).unwrap();
+        }
+        let identity = session.take_identity();
+        let key = format!("identity_{case}");
+        match case {
+            0 => {
+                let identity = identity.unwrap();
+                assert_eq!(
+                    format!("{},{}", identity.version, identity.identifier),
+                    expected[key.as_str()]
+                );
+            }
+            _ => {
+                assert!(identity.is_none());
+                assert_eq!(
+                    expected[key.as_str()],
+                    if case == 1 {
+                        "TEST-2026,FLASH"
+                    } else {
+                        ",FLASH"
+                    }
+                );
+            }
+        }
+    }
+}

@@ -49,6 +49,9 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Revision investigation: beta-29 `OutgoingFlashPacketHandler.dataStreamCheck` extracts two strings from a short outbound Flash packet, while the CLI is a generic plaintext EVA relay and does not activate `FlashSession`; arbitrary EVA traffic cannot safely be assumed to be a Flash handshake. `--revision` remains necessary for its observed-ID checks. Rust Flash identification additionally requires a nonempty version and no trailing payload; Java source does not impose those two checks. Real handshake variants and the impact of changing that heuristic are unverified.
 
+- A focused oracle executes the pinned Java `OutgoingFlashPacketHandler.dataStreamCheck` using a minimal stub superclass. Normal identification agrees with Rust; Java accepts trailing data and empty revisions, which Rust rejects. Rust is fed fragmented frames in this test; Java receives complete packets, so Java fragmentation and actual transport behavior are not compared. Three existing Flash tests and this oracle pass locally. CI now includes the oracle.
+- GitHub Actions runs 42532312161 and 42532419969 succeeded for the first two UTF-8 commits.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -68,4 +71,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect CI for the three UTF-8 corpus commits. Build a focused Java-versus-Rust Flash identification fixture covering valid hello packets, trailing fields, empty revision and fragmentation; assess the stricter Rust heuristic before changing it. Validate the no-byte-view logger interaction visually when a safe desktop test session is available.
+Inspect CI for the Flash oracle and remaining UTF-8 commits. Compare Flash handshake fragmentation and identification lifecycle with the full beta-29 handler and captured or controlled traffic; assess whether to accept trailing fields without creating false identifications. Validate the no-byte-view logger interaction visually when a safe desktop test session is available.

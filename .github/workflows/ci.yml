@@ -150,6 +150,19 @@ jobs:
           cargo test --locked --test mutation_oracle -- --ignored
         env:
           GEARTH_MUTATION_ORACLE: /tmp/mutation-oracle.txt
+      - name: Compare Flash identification against pinned Java source
+        run: |
+          api_jar=$(find /tmp/upstream-gearth -name 'G-Earth-Api-1.5.4-beta-29.jar' -print -quit)
+          test -n "$api_jar"
+          mkdir -p /tmp/flash-source /tmp/flash-classes
+          for source in OutgoingFlashPacketHandler OnDatastreamConfirmedListener; do
+            curl --fail --location --retry 3 "https://raw.githubusercontent.com/G-Realm/G-Earth/242155c291b1109d6c9a02370f6a2af1ead41ea8/G-Earth/src/main/java/gearth/app/protocol/packethandler/flash/$source.java" -o "/tmp/flash-source/$source.java"
+          done
+          javac -encoding UTF-8 -cp "$api_jar" -d /tmp/flash-classes $(find tests/java_flash -name '*.java') /tmp/flash-source/*.java
+          java -cp "$api_jar:/tmp/flash-classes" JavaFlashIdentityOracle > /tmp/flash-identity-oracle.txt
+          cargo test --locked --test flash identification_compares_with_java -- --ignored
+        env:
+          GEARTH_FLASH_IDENTITY_ORACLE: /tmp/flash-identity-oracle.txt
       - name: Compare extension versions against the original Maven library
         run: |
           maven_jar=$(find /tmp/upstream-gearth -name 'maven-artifact-*.jar' -print -quit)

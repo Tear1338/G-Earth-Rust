@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: inspect CI for the expanded UTF-8 oracle and compare Flash identification behavior using a Java-versus-Rust fixture, including trailing fields and empty revisions; validate on-screen logger interaction when a safe desktop session is available.
+Next: inspect CI for the Flash identification oracle and compare the full Java handler lifecycle and fragmentation with controlled traffic; validate on-screen logger interaction when a safe desktop session is available.
