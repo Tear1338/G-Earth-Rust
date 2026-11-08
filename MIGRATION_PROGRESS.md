@@ -22,6 +22,7 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Logger names, hashes and IDs use individual brackets on a line preceding blocked/replaced markers, following the original Java ordering for tested cases. Desktop tests cover multiple names and hashes; metadata remains size bounded and visual behavior is unverified.
 - Importing valid Java logger settings now enables Java-like direction capture unless an explicit Rust preference already exists. Fourteen settings integration tests, seven settings unit tests and all-targets Clippy pass locally.
 - The logger can select no primary byte representation, as in Java; importing valid Java logger settings selects it while preserving independently enabled byte views. Existing Rust installations retain their default expression view. Focused representation, settings, translation and desktop tests and desktop Clippy pass locally; interactive behavior remains unverified.
+- Source comparison identified another logger difference: beta-29 only generates a structure when `HPacket.length() <= 2000`; that length is read from the packet's first four bytes. Rust currently uses its configurable capture-size limit instead. This difference has not yet been fixed; behavior for non-EVA formats needs separate verification.
 
 ## Remaining work
 
@@ -34,10 +35,11 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 ## Current issues and validation
 
 - GitHub Actions run 42510568958 failed in the Linux/Windows core and web jobs because a settings unit test still rejected an offset equal to the interval. The test was corrected. Follow-up run 42510869830 passed all eight validation jobs (Windows/Linux core, desktop, web, Java compatibility, G-Presets and G-Python on both systems); development publishing was skipped.
+- GitHub Actions run 42513347986 passed all eight validation jobs; its development publishing job was skipped. This run predates the no-byte-representation change, which has been validated locally but still needs its own complete CI result.
 - Local Git metadata remains behind GitHub main because the workspace `.git` is read-only. The working tree contains previously published changes; compare against the actual remote tree before publishing any new files.
 - The complete local library run passed 39 of 41 tests; two relay socket tests failed because this environment denied local loopback connections (Windows error 10013). GitHub Actions is the independent network-fixture check.
 - Official client/game workflows, performance benefit and full visual equivalence remain unverified.
 
 ## Exact next step
 
-Inspect the latest GitHub Actions validation and fix any failures. Then compare Java and Rust logger structure prediction limits and add a regression test for a verified difference while preserving existing Rust behavior.
+Inspect Actions for commit `72452be52aae24351e368e764c04b13f6f753821` and fix any failures. Then implement and test an optional beta-29 structure limit for valid EVA packets at lengths 2000 and 2001, preserving the existing Rust default; verify non-EVA semantics before extending it.
