@@ -11,8 +11,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Rust desktop interface, Windows attachment helpers, G-Python integration, extension store and native data parsers.
 - Selected original Java API and G-Presets binary compatibility fixtures; no live G-Presets or official hotel session established.
 - Latest published commit adds scheduler/settings fixes, logger, extension handling, UI translations and additional Java differential tests.
-- Compared logger reconnection against pinned beta-29 source: anti-spam history survives reconnects in Java. Rust now retains it as well; 5 local filter tests and desktop Clippy pass. Mode-switch semantics remain different.
-- Manual extension launches now capture stdout/stderr for the extension console, like store launches. Host unit tests, a manually launched Python fixture and all-targets Clippy pass locally; real extensions still need validation. CI includes the Python fixture on Windows and Linux.
+- Compared logger reconnection and level switching against pinned beta-29 source. Rust now retains anti-spam history across reconnects and switches between active levels; six filter tests and desktop Clippy pass locally. Disabled-mode history and timestamp bounds deliberately differ to keep memory bounded.
+- Manual extension launches now capture stdout/stderr for the extension console, like store launches. Host unit tests, a manually launched Python fixture and all-targets Clippy pass locally. The new fixture also passed on Windows and Linux in Actions run 42511342499; real extensions still need validation.
 
 ## Remaining work
 
@@ -31,4 +31,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect the GitHub Actions run for the manual-extension console capture and fix any failures. Then compare Java and Rust logger anti-spam behavior when changing levels, including bounded memory and representative Java oracle cases; preserve the current implementation if exact behavior would introduce unbounded memory use.
+Check all jobs in Actions run 42511342499 and resolve failures. Then add a differential test for switching anti-spam levels against the beta-29 algorithm, clearly documenting the bounded-memory and disabled-mode differences; verify the latest published anti-spam change on GitHub Actions.

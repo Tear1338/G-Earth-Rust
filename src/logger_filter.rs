@@ -70,8 +70,12 @@ impl LoggerFilter {
 
     pub fn set_mode(&mut self, mode: AntiSpam) {
         if self.mode != mode {
+            // Retain recent history when changing between active levels, as Java does.
+            // Disabled filtering deliberately retains no history to bound memory.
+            if self.mode == AntiSpam::None || mode == AntiSpam::None {
+                self.reset();
+            }
             self.mode = mode;
-            self.reset();
         }
     }
 
@@ -102,7 +106,7 @@ impl LoggerFilter {
         {
             timestamps.pop_front();
         }
-        while timestamps.len() >= threshold {
+        if timestamps.len() == threshold || timestamps.len() >= 15 {
             timestamps.pop_front();
         }
         timestamps.push_back(now);

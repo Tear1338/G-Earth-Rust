@@ -102,3 +102,21 @@ fn history_remains_active_over_a_quick_reconnect_until_window_expires() {
     assert!(filter.suppress(&packet, now + Duration::from_millis(100)));
     assert!(!filter.suppress(&packet, now + Duration::from_secs(6)));
 }
+
+#[test]
+fn switching_active_levels_preserves_recent_incoming_history() {
+    let now = Instant::now();
+    let packet = message(42, Direction::ToClient);
+    let mut filter = LoggerFilter::default();
+    filter.set_mode(AntiSpam::Low);
+    for _ in 0..4 {
+        assert!(!filter.suppress(&packet, now));
+    }
+    filter.set_mode(AntiSpam::High);
+    assert!(filter.suppress(&packet, now + Duration::from_millis(1)));
+    filter.set_mode(AntiSpam::Low);
+    assert!(!filter.suppress(&packet, now + Duration::from_millis(2)));
+    filter.set_mode(AntiSpam::None);
+    filter.set_mode(AntiSpam::Ultra);
+    assert!(!filter.suppress(&packet, now + Duration::from_millis(3)));
+}
