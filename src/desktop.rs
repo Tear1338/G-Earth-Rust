@@ -152,6 +152,7 @@ struct Desktop {
     logger_java_structure_clean: bool,
     logger_split: bool,
     logger_export_separators: bool,
+    logger_export_hide_empty_header: bool,
     logger_names: bool,
     logger_hashes: bool,
     logger_message_id: bool,
@@ -359,6 +360,7 @@ struct LogDisplayOptions<'a> {
     structure: bool,
     java_structure_limit: bool,
     java_structure_clean: bool,
+    export_hide_empty_header: bool,
 }
 
 struct RenderedLogRow {
@@ -604,7 +606,13 @@ fn write_log_capture<'a>(
         if let Some(marker) = rendered.marker {
             writeln!(output, "{marker}")?;
         }
-        writeln!(output, "{}", rendered.header)?;
+        let no_byte_views = options.representation == PacketRepresentation::NoBytes
+            && !options.extra_legacy
+            && !options.extra_hex_dump
+            && !options.extra_raw_hex;
+        if !(options.export_hide_empty_header && no_byte_views) {
+            writeln!(output, "{}", rendered.header)?;
+        }
         for representation in rendered.extra_representations {
             writeln!(output, "{representation}")?;
         }
@@ -672,6 +680,7 @@ impl Default for Desktop {
             logger_java_structure_clean: false,
             logger_split: true,
             logger_export_separators: false,
+            logger_export_hide_empty_header: false,
             logger_names: true,
             logger_hashes: false,
             logger_message_id: false,
@@ -1779,6 +1788,10 @@ impl Desktop {
                 self.i18n.text("rust.logger.export_separators"),
             );
             ui.checkbox(
+                &mut self.logger_export_hide_empty_header,
+                self.i18n.text("rust.logger.export_hide_empty_header"),
+            );
+            ui.checkbox(
                 &mut self.logger_names,
                 self.i18n
                     .text("ext.logger.menu.packets.displaydetails.message.name"),
@@ -1963,6 +1976,7 @@ impl Desktop {
             structure: self.logger_structure,
             java_structure_limit: self.logger_java_structure_limit,
             java_structure_clean: self.logger_java_structure_clean,
+            export_hide_empty_header: self.logger_export_hide_empty_header,
         };
         let (display_incoming, display_outgoing) = logger_display::displayed_directions(
             self.incoming,
@@ -2147,7 +2161,10 @@ impl Desktop {
                                 &mut text,
                                 std::iter::once(row),
                                 &self.packet_info,
-                                display_options,
+                                LogDisplayOptions {
+                                    export_hide_empty_header: false,
+                                    ..display_options
+                                },
                                 false,
                             )
                             .is_ok()
@@ -3833,6 +3850,12 @@ impl Desktop {
             .get("logger_export_separators")
             .copied()
             .unwrap_or(false);
+        self.logger_export_hide_empty_header = self
+            .settings
+            .booleans
+            .get("logger_export_hide_empty_header")
+            .copied()
+            .unwrap_or(false);
         self.logger_names = self
             .settings
             .booleans
@@ -3976,6 +3999,10 @@ impl Desktop {
             (
                 "logger_export_separators".into(),
                 self.logger_export_separators,
+            ),
+            (
+                "logger_export_hide_empty_header".into(),
+                self.logger_export_hide_empty_header,
             ),
             ("logger_names".into(), self.logger_names),
             ("logger_hashes".into(), self.logger_hashes),
@@ -4389,6 +4416,7 @@ mod logger_prediction_tests {
             structure: false,
             java_structure_limit: false,
             java_structure_clean: false,
+            export_hide_empty_header: false,
         };
         let info = PacketInfoManager::default();
         for payload_len in [1998, 1999] {
@@ -4524,6 +4552,7 @@ mod logger_prediction_tests {
             structure: false,
             java_structure_limit: false,
             java_structure_clean: false,
+            export_hide_empty_header: false,
         };
         let mut output = Vec::new();
         write_log_capture(&mut output, [&row], &info, options, true).unwrap();
@@ -4581,12 +4610,20 @@ mod logger_prediction_tests {
         let text = String::from_utf8(output).unwrap();
         assert!(!text.contains("00000002002a"));
         assert!(!text.contains("{h:42}"));
+        assert!(text.contains("#000007"));
+        options.export_hide_empty_header = true;
+        let mut output = Vec::new();
+        write_log_capture(&mut output, [&row], &info, options, true).unwrap();
+        let text = String::from_utf8(output).unwrap();
+        assert!(!text.contains("#000007"));
+        assert!(text.contains(&format!("[{}]", options.blocked_label)));
+        assert!(text.ends_with("--------------------\n"));
         options.extra_raw_hex = true;
         let mut output = Vec::new();
         write_log_capture(&mut output, [&row], &info, options, false).unwrap();
-        assert!(String::from_utf8(output)
-            .unwrap()
-            .contains("Raw hex: 00000002002a"));
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains("Raw hex: 00000002002a"));
+        assert!(text.contains("#000007"));
         options.extra_legacy = true;
         options.extra_hex_dump = true;
         let mut output = Vec::new();

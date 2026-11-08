@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Logger: optionally omit empty byte-view headers from exported captures, retaining metadata and separators. The on-screen view and copy-displayed action retain their header.
 - Logger: allow exports to include separators independently of the on-screen separator setting; Java preference imports enable this unless an explicit Rust choice exists.
 - Logger: use the original localized incoming/outgoing labels in the display and export while retaining direction arrows.
 - Document migration architecture and outstanding work in dedicated files. Existing history is recorded by Git commits and `docs/CONTINUATION.md`; this changelog begins with the current migration work.

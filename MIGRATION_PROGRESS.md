@@ -28,6 +28,7 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Added `MIGRATION_TODO.md`, `MIGRATION_ARCHITECTURE.md` and `CHANGELOG.md` to track individually scoped work, the Rust architecture and recent changes. The matrix describes partial work and does not mark live compatibility complete.
 - Logger direction text now uses the original localized incoming/outgoing labels in display and export, retaining Rust direction arrows. Local UI-rendering/export tests, translations, desktop Clippy and a debug build pass; Java's exact header layout and interactive appearance remain unverified.
 - Logger exports can include a separator for every packet even when on-screen separators are disabled; importing Java settings enables this unless already chosen in Rust. Focused settings, translation, export and desktop tests and debug compilation pass. Java renders and exports its separator as part of the log itself, so Rust's independent export option is not exact visual parity.
+- Logger exports can omit the byte-view header when no byte views are selected, as Java does. Java settings import enables this unless an explicit Rust choice exists. Metadata and separators remain; on-screen display and copy-displayed retain their Rust header. Focused settings, translation, desktop/export tests, Clippy and debug compilation pass; full Java output formatting and visual behavior remain different.
 
 ## Remaining work
 
@@ -43,8 +44,9 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - GitHub Actions run 42513347986 passed all eight validation jobs; its development publishing job was skipped. The GitHub commits page subsequently showed eight successful checks and one skipped check for commit `9d58e65`, and successful checks for the earlier no-byte-representation and size-limit commits. The byte-view ordering commit requires its own CI result.
 - Local Git metadata remains behind GitHub main because the workspace `.git` is read-only. The working tree contains previously published changes; compare against the actual remote tree before publishing any new files.
 - The latest complete local library run passed 41 tests, failed two relay socket tests because this environment denied local loopback connections (Windows error 10013), and ignored one Python fixture. Focused logger/settings integration tests, desktop logger tests, formatting and a desktop debug build passed. GitHub Actions is the independent network-fixture check.
+- Windows GNU release build succeeded for commit `6b1b72341c860bff331ef98c5e8448ed01e8eaf8` before the empty-header change; the new change has been debug-built and awaits its own release validation.
 - Official client/game workflows, performance benefit and full visual equivalence remain unverified.
 
 ## Exact next step
 
-Inspect GitHub Actions for the latest code commit and fix any failures. Compare Java and Rust logger line formatting when all byte representations are disabled, then implement and test a compatible display/export choice without removing existing Rust options.
+Inspect GitHub Actions for the latest code commit and fix any failures. Compare the on-screen Java logger layout with Rust when all byte views are disabled, then implement and test a compatible display choice without removing existing Rust options.
