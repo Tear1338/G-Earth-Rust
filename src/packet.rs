@@ -137,6 +137,11 @@ impl Packet {
     pub fn remaining(&self) -> usize {
         self.bytes.len() - self.cursor
     }
+    /// Test whether an EVA structure describes the complete body, without
+    /// moving the read cursor or modifying the packet.
+    pub fn structure_equals(&self, structure: &str) -> bool {
+        crate::structure_prediction::structure_matches(self, structure)
+    }
     /// Advance through EVA fields using beta-29 HPacket's structure codes.
     /// Unknown characters are ignored; on failure previously read fields stay consumed.
     pub fn skip_structure(&mut self, structure: &str) -> Result<&mut Self> {

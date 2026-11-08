@@ -301,6 +301,61 @@ fn parse_fields(bytes: &[u8], at: &mut usize, depth: usize) -> Result<Vec<Field>
     Ok(fields)
 }
 
+/// Check whether a bounded EVA structure consumes exactly the packet body.
+/// The source packet and its cursor are never changed.
+pub fn structure_matches(packet: &Packet, structure: &str) -> bool {
+    if packet.format() != PacketFormat::EvaWire || structure.len() > MAX_BYTES {
+        return false;
+    }
+    fn consume(fields: &[Field], packet: &mut Packet, budget: &mut usize) -> Result<()> {
+        let mut previous = 0i32;
+        for field in fields {
+            *budget = budget
+                .checked_sub(1)
+                .ok_or_else(|| error("structure expansion limit exceeded"))?;
+            match field {
+                Field::Repeat(nested) => {
+                    let repeats = usize::try_from(previous.max(0)).unwrap_or(usize::MAX);
+                    if repeats > *budget {
+                        return Err(error("structure expansion limit exceeded"));
+                    }
+                    for _ in 0..repeats {
+                        consume(nested, packet, budget)?;
+                    }
+                }
+                Field::Value(code) => match code {
+                    b'i' => previous = packet.read_i32()?,
+                    b's' => {
+                        packet.read_short_bytes()?;
+                    }
+                    b'B' | b'b' => {
+                        packet.read_bytes(1)?;
+                    }
+                    b'u' => {
+                        packet.read_bytes(2)?;
+                    }
+                    b'f' => {
+                        packet.read_bytes(4)?;
+                    }
+                    b'l' | b'd' => {
+                        packet.read_bytes(8)?;
+                    }
+                    _ => return Err(error("unsupported structure field")),
+                },
+            }
+        }
+        Ok(())
+    }
+    let mut at = 0;
+    let Ok(fields) = parse_fields(structure.as_bytes(), &mut at, 0) else {
+        return false;
+    };
+    let mut reader = packet.clone();
+    reader.reset();
+    let mut budget = 1_000_000;
+    consume(&fields, &mut reader, &mut budget).is_ok() && reader.remaining() == 0
+}
+
 /// Formats an upstream structure, including count-prefixed nested repetitions.
 pub fn expression_from_structure(
     packet: &Packet,
@@ -411,5 +466,29 @@ mod tests {
         assert!(expression_from_structure(&packet, "i()", None).is_err());
         assert!(expression_from_structure(&packet, "i(", None).is_err());
         assert!(expression_from_structure(&packet, &"(".repeat(66), None).is_err());
+    }
+    #[test]
+    fn structure_matching_is_bounded_and_keeps_the_original_packet() {
+        let mut packet = Packet::new(1);
+        packet
+            .put_i32(2)
+            .unwrap()
+            .put_string("a")
+            .unwrap()
+            .put_string("b")
+            .unwrap();
+        packet.set_cursor(7).unwrap();
+        let original = packet.clone();
+        assert!(packet.structure_equals("i(s)"));
+        assert!(!packet.structure_equals("i"));
+        assert!(!packet.structure_equals("i(s)b"));
+        assert!(!packet.structure_equals("i("));
+        assert_eq!(packet, original);
+        let mut huge = Packet::new(1);
+        huge.put_i32(i32::MAX).unwrap();
+        assert!(!huge.structure_equals("i()"));
+        assert!(!Packet::new_with_format(PacketFormat::WedgieIncoming, 1)
+            .unwrap()
+            .structure_equals(""));
     }
 }

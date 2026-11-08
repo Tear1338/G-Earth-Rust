@@ -2,6 +2,8 @@
 
 The requested goal is a complete Rust replacement for G-Earth 1.5.4-beta-29, with original functionality and a GitHub project. The repository is Tear1338/G-Earth-Rust. It remains a development port; do not describe a passing component test as whole-application parity.
 
+EVA packets can now test whether their complete body matches a typed structure, including count-prefixed groups, without changing packet data or cursor. A finite Java oracle checks nested, incomplete, empty and invalid examples; parsing and expansion are bounded. Unknown structure symbols are rejected in Rust, while Java can stop interpreting at an unknown symbol. WEDGIE and real extension sessions remain unvalidated.
+
 The EVA packet API now supports beta-29 `HPacket.skip` structure codes for integers, strings, bytes, booleans, shorts, longs and doubles, ignoring unknown characters. Normal cursor results are compared with the released Java API. On truncated input Rust retains the cursor after the last successful field; Java can advance beyond the packet on a failing byte read, so that error case is deliberately different. WEDGIE skip and real extension usage remain untested.
 
 EVA packets now expose a fixed-length `replace_bytes` operation that preserves the read cursor. A finite byte comparison against beta-29 HPacket covers a normal body write; tests also check bounds and rollback. Unlike Java's `replaceBytes`, which truncates an oversized write at the packet end and can touch header bytes, Rust rejects writes outside the body atomically, consistent with its other typed mutations. WEDGIE and live client behavior are not covered.

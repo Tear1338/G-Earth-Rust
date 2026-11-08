@@ -105,6 +105,27 @@ fn predictions_match_the_released_java_api() {
             .as_bytes(),
         expression::parse_hex(observed["nested"]).unwrap()
     );
+    nested.set_cursor(7).unwrap();
+    for structure in ["i(si)", "i(s)", "i(si)b", "", "i("] {
+        let key = format!(
+            "match_{}",
+            structure
+                .as_bytes()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect::<String>()
+        );
+        assert_eq!(
+            format!("{},{}", nested.structure_equals(structure), nested.cursor()),
+            observed[key.as_str()],
+            "{structure}"
+        );
+    }
+    let empty = Packet::new(1);
+    assert_eq!(
+        format!("{},{}", empty.structure_equals(""), empty.cursor()),
+        observed["match_empty"]
+    );
     let mut numeric = Packet::new(1);
     numeric
         .put_f32(0.1)
