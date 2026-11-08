@@ -365,6 +365,7 @@ struct RenderedLogRow {
     header: String,
     extra_representations: Vec<String>,
     dump: Option<String>,
+    extra_raw_hex: Option<String>,
     structure: Option<String>,
 }
 
@@ -512,6 +513,7 @@ fn render_log_row(
     );
     let dump = inline_dump.then(|| logger_display::hex_dump(packet.bytes(), 128));
     let mut extra_representations = Vec::new();
+    let mut extra_raw_hex = None;
     if !row.skipped
         && omit_representations
         && options.representation == PacketRepresentation::Expression
@@ -524,11 +526,16 @@ fn render_log_row(
             (options.extra_raw_hex, PacketRepresentation::RawHex),
         ] {
             if enabled && options.representation != mode {
-                extra_representations.push(format!(
+                let text = format!(
                     "{}: {}",
                     mode.name(),
                     logger_display::represent(packet.bytes(), mode, 1024)
-                ));
+                );
+                if mode == PacketRepresentation::RawHex {
+                    extra_raw_hex = Some(text);
+                } else {
+                    extra_representations.push(text);
+                }
             }
         }
     }
@@ -566,6 +573,7 @@ fn render_log_row(
         header,
         extra_representations,
         dump,
+        extra_raw_hex,
         structure,
     }
 }
@@ -594,6 +602,9 @@ fn write_log_capture<'a>(
         }
         if let Some(dump) = rendered.dump {
             writeln!(output, "{dump}")?;
+        }
+        if let Some(raw_hex) = rendered.extra_raw_hex {
+            writeln!(output, "{raw_hex}")?;
         }
         if let Some(structure) = rendered.structure {
             writeln!(output, "{structure}")?;
@@ -2084,6 +2095,14 @@ impl Desktop {
                                         egui::RichText::new(dump).monospace().color(hex_color),
                                     )
                                     .wrap_mode(egui::TextWrapMode::Extend),
+                                );
+                            }
+                            if let Some(raw_hex) = &rendered.extra_raw_hex {
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(raw_hex).monospace().color(hex_color),
+                                    )
+                                    .truncate(),
                                 );
                             }
                             if let Some(structure) = &rendered.structure {
@@ -4509,6 +4528,13 @@ mod logger_prediction_tests {
         assert!(String::from_utf8(output)
             .unwrap()
             .contains("Raw hex: 00000002002a"));
+        options.extra_legacy = true;
+        options.extra_hex_dump = true;
+        let mut output = Vec::new();
+        write_log_capture(&mut output, [&row], &info, options, false).unwrap();
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.find("Legacy:").unwrap() < text.find("00000000  ").unwrap());
+        assert!(text.find("00000000  ").unwrap() < text.find("Raw hex:").unwrap());
         options.extra_raw_hex = false;
         options.representation = PacketRepresentation::HexDump;
         let mut output = Vec::new();

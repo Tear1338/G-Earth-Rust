@@ -24,6 +24,7 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - The logger can select no primary byte representation, as in Java; importing valid Java logger settings selects it while preserving independently enabled byte views. Existing Rust installations retain their default expression view. Focused representation, settings, translation and desktop tests and desktop Clippy pass locally; interactive behavior remains unverified.
 - An optional Java structure limit suppresses structure prediction for EVA packets over 2000 bytes (excluding their four-byte prefix). Java settings import enables it unless a Rust choice already exists; the default Rust behavior is retained. Local tests cover the boundary and exported output. Non-EVA behavior and interactive UI are not verified against Java.
 - An optional Java structure text filter hides expressions that Java's `cleanTextContent` would change. Its decision is made before Rust truncates long output, and is cached independently of the option, so toggling it affects retained packets. Tests cover control characters, Unicode, export and settings import; interactive UI and full Java-generated expression parity remain unverified.
+- When no primary byte representation is chosen, additional logger views now follow Java's legacy, hexdump, raw-hex order in display and export. A desktop export regression test covers the three views; other primary-view combinations and exact Java formatting still differ.
 
 ## Remaining work
 
@@ -43,4 +44,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect GitHub Actions for the latest code commit and fix any failures. Compare Java logger export separators, direction labels and byte-view ordering with Rust, then implement and test one verified difference without removing Rust options.
+Inspect GitHub Actions for the latest code commit and fix any failures. Compare Java logger direction labels and export separators with Rust, then implement and test a verified difference while preserving Rust display options.
