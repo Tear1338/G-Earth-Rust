@@ -30,6 +30,7 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Logger exports can include a separator for every packet even when on-screen separators are disabled; importing Java settings enables this unless already chosen in Rust. Focused settings, translation, export and desktop tests and debug compilation pass. Java renders and exports its separator as part of the log itself, so Rust's independent export option is not exact visual parity.
 - Logger exports can omit the byte-view header when no byte views are selected, as Java does. Java settings import enables this unless an explicit Rust choice exists. Metadata and separators remain. Focused settings, translation, desktop/export tests, Clippy and debug compilation pass; full Java output formatting and visual behavior remain different.
 - An independent screen option hides that header when every byte view is disabled; copied displayed text follows the on-screen setting. Java settings import enables it unless an explicit Rust preference exists. Focused tests cover selection logic, settings and export, and desktop compilation; visual appearance and row interactions need interactive validation. Other Java layout differences remain.
+- A simulated egui pointer test verifies that primary and secondary clicks reach the hidden-header row. Eight desktop logger tests, focused logger/settings tests, desktop Clippy and a debug build pass; the full visual application and actual context-menu flow still require interactive testing.
 
 ## Remaining work
 
@@ -50,4 +51,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect GitHub Actions for the latest code commit and fix any failures. Validate the no-byte-view logger interactions in a desktop session, then compare Java's byte-view direction/header formatting with Rust while retaining existing features.
+Inspect GitHub Actions for the latest code commit and fix any failures. Validate the no-byte-view logger interactions visually in a desktop session, then compare Java's byte-view direction/header formatting with Rust while retaining existing features.

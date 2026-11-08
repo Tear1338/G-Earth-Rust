@@ -375,6 +375,18 @@ struct RenderedLogRow {
     structure: Option<String>,
 }
 
+fn logger_row_response(
+    inner: egui::Response,
+    outer: egui::Response,
+    hidden: bool,
+) -> egui::Response {
+    if hidden {
+        inner.union(outer.interact(egui::Sense::click()))
+    } else {
+        inner
+    }
+}
+
 // beta-29 colors incoming traffic red, outgoing traffic blue, and both
 // blocked/replaced markers yellow. Darker variants remain legible on light UI.
 fn log_colors(direction: Direction, dark: bool) -> (egui::Color32, egui::Color32, egui::Color32) {
@@ -2172,13 +2184,11 @@ impl Desktop {
                             response
                         },
                     );
-                    let response = if hide_empty_header {
-                        row_output
-                            .inner
-                            .union(row_output.response.clone().interact(egui::Sense::click()))
-                    } else {
-                        row_output.inner
-                    };
+                    let response = logger_row_response(
+                        row_output.inner,
+                        row_output.response.clone(),
+                        hide_empty_header,
+                    );
                     response.context_menu(|ui| {
                         if ui
                             .button(self.i18n.text("rust.logger.copy_displayed"))
@@ -4392,9 +4402,58 @@ mod logger_prediction_tests {
         log_header_layout, log_packet_metadata, log_row_matches, matching_packet_metadata,
         write_log_capture, LogDisplayOptions, LogRow, PacketRepresentation, LOG_PREDICTION_LIMIT,
     };
+    use eframe::egui;
     use gearth_rust::packet::{Direction, Message, Packet};
     use gearth_rust::packet_info::{PacketInfo, PacketInfoManager};
     use std::{collections::VecDeque, sync::OnceLock};
+
+    #[test]
+    fn hidden_header_row_accepts_primary_and_secondary_clicks() {
+        let context = egui::Context::default();
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(400.0, 300.0));
+        let mut row_rect = egui::Rect::NOTHING;
+        let mut clicked = false;
+        let mut secondary = false;
+        for button in [egui::PointerButton::Primary, egui::PointerButton::Secondary] {
+            for phase in 0..3 {
+                let position = if phase == 0 {
+                    egui::pos2(30.0, 30.0)
+                } else {
+                    row_rect.center()
+                };
+                let mut events = vec![egui::Event::PointerMoved(position)];
+                if phase > 0 {
+                    events.push(egui::Event::PointerButton {
+                        pos: position,
+                        button,
+                        pressed: phase == 1,
+                        modifiers: egui::Modifiers::default(),
+                    });
+                }
+                let input = egui::RawInput {
+                    screen_rect: Some(screen),
+                    events,
+                    ..Default::default()
+                };
+                let _ = context.run(input, |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        let row = ui.allocate_ui(egui::vec2(200.0, 40.0), |ui| {
+                            ui.allocate_response(
+                                egui::vec2(ui.available_width(), 2.0),
+                                egui::Sense::click(),
+                            )
+                        });
+                        row_rect = row.response.rect;
+                        let response = super::logger_row_response(row.inner, row.response, true);
+                        clicked |= response.clicked();
+                        secondary |= response.secondary_clicked();
+                    });
+                });
+            }
+        }
+        assert!(clicked, "primary click should target hidden-header row");
+        assert!(secondary, "secondary click should open its context menu");
+    }
 
     #[test]
     fn logger_colors_distinguish_direction_and_highlight_markers() {

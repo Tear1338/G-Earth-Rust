@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Logger: exercise primary and secondary clicks on an empty-header row using simulated egui pointer events.
 - Logger: optionally hide empty byte-view headers on screen and in copied displayed text; retain row actions through the row area.
 - Logger: optionally omit empty byte-view headers from exported captures, retaining metadata and separators. The on-screen view and copy-displayed action retain their header.
 - Logger: allow exports to include separators independently of the on-screen separator setting; Java preference imports enable this unless an explicit Rust choice exists.
