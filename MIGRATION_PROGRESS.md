@@ -27,6 +27,7 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - When no primary byte representation is chosen, additional logger views now follow Java's legacy, hexdump, raw-hex order in display and export. A desktop export regression test covers the three views; other primary-view combinations and exact Java formatting still differ.
 - Added `MIGRATION_TODO.md`, `MIGRATION_ARCHITECTURE.md` and `CHANGELOG.md` to track individually scoped work, the Rust architecture and recent changes. The matrix describes partial work and does not mark live compatibility complete.
 - Logger direction text now uses the original localized incoming/outgoing labels in display and export, retaining Rust direction arrows. Local UI-rendering/export tests, translations, desktop Clippy and a debug build pass; Java's exact header layout and interactive appearance remain unverified.
+- Logger exports can include a separator for every packet even when on-screen separators are disabled; importing Java settings enables this unless already chosen in Rust. Focused settings, translation, export and desktop tests and debug compilation pass. Java renders and exports its separator as part of the log itself, so Rust's independent export option is not exact visual parity.
 
 ## Remaining work
 
@@ -46,4 +47,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect GitHub Actions for the latest code commit and fix any failures. Compare the Java logger's unconditional export separator with Rust's optional separator and implement a compatible choice without removing the current option.
+Inspect GitHub Actions for the latest code commit and fix any failures. Compare Java and Rust logger line formatting when all byte representations are disabled, then implement and test a compatible display/export choice without removing existing Rust options.

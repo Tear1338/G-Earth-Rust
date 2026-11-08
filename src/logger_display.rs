@@ -2,6 +2,11 @@
 use crate::{expression, packet::Direction};
 use std::{fs::OpenOptions, io, path::Path};
 
+/// Keep the display choice while optionally including separators in exports.
+pub fn export_separators(display_separators: bool, force_export: bool) -> bool {
+    display_separators || force_export
+}
+
 /// Decide whether a packet enters the logger's retained capture.
 pub fn capture_direction(
     direction: Direction,

@@ -194,6 +194,7 @@ fn importing_java_logger_settings_preserves_menu_choices() {
         ("logger_capture_selected_only", true),
         ("logger_java_structure_limit", true),
         ("logger_java_structure_clean", true),
+        ("logger_export_separators", true),
         ("logger_structure", true),
         ("logger_autoscroll", false),
         ("logger_names", false),
@@ -230,6 +231,9 @@ fn importing_invalid_logger_settings_does_not_override_existing_choices() {
         .booleans
         .insert("logger_java_structure_limit".into(), false);
     settings
+        .booleans
+        .insert("logger_export_separators".into(), false);
+    settings
         .values
         .insert("logger_antispam".into(), "Medium".into());
     for bad in [
@@ -252,6 +256,7 @@ fn importing_invalid_logger_settings_does_not_override_existing_choices() {
     assert_eq!(settings.get("logger_antispam"), "Medium");
     assert!(!settings.booleans["logger_capture_selected_only"]);
     assert!(!settings.booleans["logger_java_structure_limit"]);
+    assert!(!settings.booleans["logger_export_separators"]);
 }
 
 #[test]

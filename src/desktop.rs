@@ -151,6 +151,7 @@ struct Desktop {
     logger_java_structure_limit: bool,
     logger_java_structure_clean: bool,
     logger_split: bool,
+    logger_export_separators: bool,
     logger_names: bool,
     logger_hashes: bool,
     logger_message_id: bool,
@@ -670,6 +671,7 @@ impl Default for Desktop {
             logger_java_structure_limit: false,
             logger_java_structure_clean: false,
             logger_split: true,
+            logger_export_separators: false,
             logger_names: true,
             logger_hashes: false,
             logger_message_id: false,
@@ -1773,6 +1775,10 @@ impl Desktop {
             );
             ui.checkbox(&mut self.logger_split, self.i18n.text("rust.logger.split"));
             ui.checkbox(
+                &mut self.logger_export_separators,
+                self.i18n.text("rust.logger.export_separators"),
+            );
+            ui.checkbox(
                 &mut self.logger_names,
                 self.i18n
                     .text("ext.logger.menu.packets.displaydetails.message.name"),
@@ -1991,7 +1997,10 @@ impl Desktop {
                         visible,
                         &self.packet_info,
                         display_options,
-                        self.logger_split,
+                        logger_display::export_separators(
+                            self.logger_split,
+                            self.logger_export_separators,
+                        ),
                     )
                 });
                 self.status = match result {
@@ -3818,6 +3827,12 @@ impl Desktop {
             .get("logger_split")
             .copied()
             .unwrap_or(true);
+        self.logger_export_separators = self
+            .settings
+            .booleans
+            .get("logger_export_separators")
+            .copied()
+            .unwrap_or(false);
         self.logger_names = self
             .settings
             .booleans
@@ -3958,6 +3973,10 @@ impl Desktop {
                 self.logger_java_structure_clean,
             ),
             ("logger_split".into(), self.logger_split),
+            (
+                "logger_export_separators".into(),
+                self.logger_export_separators,
+            ),
             ("logger_names".into(), self.logger_names),
             ("logger_hashes".into(), self.logger_hashes),
             ("logger_message_id".into(), self.logger_message_id),
@@ -4515,6 +4534,28 @@ mod logger_prediction_tests {
         assert!(text.contains("[Example][Another][abc][def][42]\n[Blocked]\n"));
         assert!(text.contains("00000002002a"));
         assert!(text.ends_with("--------------------\n"));
+        for (visible, forced, expected) in [
+            (false, false, false),
+            (false, true, true),
+            (true, false, true),
+        ] {
+            let mut output = Vec::new();
+            write_log_capture(
+                &mut output,
+                [&row, &row],
+                &info,
+                options,
+                gearth_rust::logger_display::export_separators(visible, forced),
+            )
+            .unwrap();
+            assert_eq!(
+                String::from_utf8(output)
+                    .unwrap()
+                    .matches("--------------------\n")
+                    .count(),
+                if expected { 2 } else { 0 }
+            );
+        }
         options.extra_legacy = true;
         options.extra_raw_hex = true;
         options.extra_hex_dump = true;

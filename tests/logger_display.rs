@@ -1,6 +1,15 @@
 use gearth_rust::logger_display::{hex_dump, represent, PacketRepresentation};
 
 #[test]
+fn export_separators_can_be_forced_independently_of_display() {
+    use gearth_rust::logger_display::export_separators;
+    assert!(!export_separators(false, false));
+    assert!(export_separators(false, true));
+    assert!(export_separators(true, false));
+    assert!(export_separators(true, true));
+}
+
+#[test]
 fn java_structure_limit_excludes_the_eva_prefix() {
     use gearth_rust::logger_display::allow_eva_structure as allowed;
     assert!(allowed(2004, true));
