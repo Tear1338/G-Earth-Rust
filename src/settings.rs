@@ -472,6 +472,10 @@ impl Settings {
             .as_array()
             .filter(|items| items.len() == 21 && items.iter().all(serde_json::Value::is_boolean))
         {
+            // Java's direction switches control capture; preserve an explicit Rust choice.
+            self.booleans
+                .entry("logger_capture_selected_only".into())
+                .or_insert(true);
             for (index, key) in [
                 (0, "incoming"),
                 (1, "outgoing"),

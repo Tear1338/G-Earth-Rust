@@ -20,6 +20,7 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Logger timestamps use the original localized label on their own line in the display and text export. Seven desktop logger tests and desktop Clippy pass; visual layout and timing in a live session remain unverified.
 - Blocked/replaced markers now use localized bracketed labels on their own line in the logger and export, as in the Java controller. Seven desktop tests and Clippy pass locally; full metadata layout and live visuals remain unfinished.
 - Logger names, hashes and IDs use individual brackets on a line preceding blocked/replaced markers, following the original Java ordering for tested cases. Desktop tests cover multiple names and hashes; metadata remains size bounded and visual behavior is unverified.
+- Importing valid Java logger settings now enables Java-like direction capture unless an explicit Rust preference already exists. Fourteen settings integration tests, seven settings unit tests and all-targets Clippy pass locally.
 
 ## Remaining work
 

@@ -191,6 +191,7 @@ fn importing_java_logger_settings_preserves_menu_choices() {
     for (key, expected) in [
         ("incoming", true),
         ("outgoing", false),
+        ("logger_capture_selected_only", true),
         ("logger_structure", true),
         ("logger_autoscroll", false),
         ("logger_names", false),
@@ -221,6 +222,9 @@ fn importing_invalid_logger_settings_does_not_override_existing_choices() {
     let mut settings = Settings::default();
     settings.booleans.insert("incoming".into(), false);
     settings
+        .booleans
+        .insert("logger_capture_selected_only".into(), false);
+    settings
         .values
         .insert("logger_antispam".into(), "Medium".into());
     for bad in [
@@ -231,6 +235,7 @@ fn importing_invalid_logger_settings_does_not_override_existing_choices() {
             .import_java_cache(serde_json::json!({"LOGGER_SETTINGS": bad}))
             .unwrap();
         assert!(!settings.booleans["incoming"]);
+        assert!(!settings.booleans["logger_capture_selected_only"]);
         assert_eq!(settings.get("logger_antispam"), "Medium");
     }
     let mut choices = vec![false; 21];
@@ -240,6 +245,7 @@ fn importing_invalid_logger_settings_does_not_override_existing_choices() {
         .import_java_cache(serde_json::json!({"LOGGER_SETTINGS": choices}))
         .unwrap();
     assert_eq!(settings.get("logger_antispam"), "Medium");
+    assert!(!settings.booleans["logger_capture_selected_only"]);
 }
 
 #[test]
