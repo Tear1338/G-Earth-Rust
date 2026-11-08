@@ -106,7 +106,16 @@ fn predictions_match_the_released_java_api() {
         expression::parse_hex(observed["nested"]).unwrap()
     );
     nested.set_cursor(7).unwrap();
-    for structure in ["i(si)", "i(s)", "i(si)b", "", "i("] {
+    for structure in [
+        "i(si)",
+        "i(s)",
+        "i(si)b",
+        "",
+        "i(",
+        "i(si)?extra",
+        "i(si))",
+        "i(s?i)",
+    ] {
         let key = format!(
             "match_{}",
             structure
@@ -125,6 +134,10 @@ fn predictions_match_the_released_java_api() {
     assert_eq!(
         format!("{},{}", empty.structure_equals(""), empty.cursor()),
         observed["match_empty"]
+    );
+    assert_eq!(
+        format!("{},{}", empty.structure_equals("?ignored"), empty.cursor()),
+        observed["match_unknown_empty"]
     );
     let mut numeric = Packet::new(1);
     numeric

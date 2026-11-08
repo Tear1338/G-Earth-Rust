@@ -22,12 +22,13 @@ public class JavaPredictionOracle {
         nested.appendInt(2).appendString("a").appendInt(7).appendString("b\\\"").appendInt(-1);
         System.out.println("nested=" + HexFormat.of().formatHex(PacketStringUtils.toExpressionFromGivenStructure(nested, "i(si)", null).getBytes(java.nio.charset.StandardCharsets.UTF_8)));
         nested.setReadIndex(7);
-        for (String structure : new String[]{"i(si)", "i(s)", "i(si)b", "", "i("}) {
+        for (String structure : new String[]{"i(si)", "i(s)", "i(si)b", "", "i(", "i(si)?extra", "i(si))", "i(s?i)"}) {
             System.out.println("match_" + HexFormat.of().formatHex(structure.getBytes(java.nio.charset.StandardCharsets.UTF_8))
                 + "=" + nested.structureEquals(structure) + "," + nested.getReadIndex());
         }
         HPacket empty = new HPacket(1);
         System.out.println("match_empty=" + empty.structureEquals("") + "," + empty.getReadIndex());
+        System.out.println("match_unknown_empty=" + empty.structureEquals("?ignored") + "," + empty.getReadIndex());
         HPacket numeric = new HPacket(1);
         numeric.appendFloat(0.1f).appendDouble(-2.5).appendShort((short) 8);
         System.out.println("numeric=" + HexFormat.of().formatHex(PacketStringUtils.toExpressionFromGivenStructure(numeric, "fdu", null).getBytes(java.nio.charset.StandardCharsets.UTF_8)));

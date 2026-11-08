@@ -307,53 +307,74 @@ pub fn structure_matches(packet: &Packet, structure: &str) -> bool {
     if packet.format() != PacketFormat::EvaWire || structure.len() > MAX_BYTES {
         return false;
     }
-    fn consume(fields: &[Field], packet: &mut Packet, budget: &mut usize) -> Result<()> {
+    fn consume(
+        structure: &[u8],
+        mut at: usize,
+        depth: usize,
+        packet: &mut Packet,
+        budget: &mut usize,
+    ) -> Result<()> {
+        if depth > 64 {
+            return Err(error("structure nesting limit exceeded"));
+        }
         let mut previous = 0i32;
-        for field in fields {
+        while let Some(&code) = structure.get(at) {
+            at += 1;
             *budget = budget
                 .checked_sub(1)
                 .ok_or_else(|| error("structure expansion limit exceeded"))?;
-            match field {
-                Field::Repeat(nested) => {
+            match code {
+                b'(' => {
                     let repeats = usize::try_from(previous.max(0)).unwrap_or(usize::MAX);
                     if repeats > *budget {
                         return Err(error("structure expansion limit exceeded"));
                     }
                     for _ in 0..repeats {
-                        consume(nested, packet, budget)?;
+                        consume(structure, at, depth + 1, packet, budget)?;
+                    }
+                    let mut nesting = 1usize;
+                    while nesting > 0 {
+                        *budget = budget
+                            .checked_sub(1)
+                            .ok_or_else(|| error("structure expansion limit exceeded"))?;
+                        let byte = *structure
+                            .get(at)
+                            .ok_or_else(|| error("unterminated structure group"))?;
+                        at += 1;
+                        if byte == b'(' {
+                            nesting += 1;
+                        }
+                        if byte == b')' {
+                            nesting -= 1;
+                        }
                     }
                 }
-                Field::Value(code) => match code {
-                    b'i' => previous = packet.read_i32()?,
-                    b's' => {
-                        packet.read_short_bytes()?;
-                    }
-                    b'B' | b'b' => {
-                        packet.read_bytes(1)?;
-                    }
-                    b'u' => {
-                        packet.read_bytes(2)?;
-                    }
-                    b'f' => {
-                        packet.read_bytes(4)?;
-                    }
-                    b'l' | b'd' => {
-                        packet.read_bytes(8)?;
-                    }
-                    _ => return Err(error("unsupported structure field")),
-                },
+                b'i' => previous = packet.read_i32()?,
+                b's' => {
+                    packet.read_short_bytes()?;
+                }
+                b'B' | b'b' => {
+                    packet.read_bytes(1)?;
+                }
+                b'u' => {
+                    packet.read_bytes(2)?;
+                }
+                b'f' => {
+                    packet.read_bytes(4)?;
+                }
+                b'l' | b'd' => {
+                    packet.read_bytes(8)?;
+                }
+                // The original reader stops on ')' or any unknown symbol.
+                _ => return Ok(()),
             }
         }
         Ok(())
     }
-    let mut at = 0;
-    let Ok(fields) = parse_fields(structure.as_bytes(), &mut at, 0) else {
-        return false;
-    };
     let mut reader = packet.clone();
     reader.reset();
     let mut budget = 1_000_000;
-    consume(&fields, &mut reader, &mut budget).is_ok() && reader.remaining() == 0
+    consume(structure.as_bytes(), 0, 0, &mut reader, &mut budget).is_ok() && reader.remaining() == 0
 }
 
 /// Formats an upstream structure, including count-prefixed nested repetitions.
