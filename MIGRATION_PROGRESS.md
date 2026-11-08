@@ -1,6 +1,6 @@
 # G-Earth Rust migration progress
 
-Last updated: 2026-11-08. Baseline: Java 1.5.4-beta-29; GitHub main `1cdf3365287b2036fb7c341a80e0b20fd8e3cdab`.
+Last updated: 2026-11-08. Baseline: Java 1.5.4-beta-29; current status and changes are tracked in the GitHub main branch.
 
 The migration is **not complete**. Implemented code and finite fixtures do not establish live-client compatibility or performance gains. See `docs/PARITY.md` and `docs/CONTINUATION.md` for detailed evidence and limitations.
 
@@ -25,6 +25,7 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - An optional Java structure limit suppresses structure prediction for EVA packets over 2000 bytes (excluding their four-byte prefix). Java settings import enables it unless a Rust choice already exists; the default Rust behavior is retained. Local tests cover the boundary and exported output. Non-EVA behavior and interactive UI are not verified against Java.
 - An optional Java structure text filter hides expressions that Java's `cleanTextContent` would change. Its decision is made before Rust truncates long output, and is cached independently of the option, so toggling it affects retained packets. Tests cover control characters, Unicode, export and settings import; interactive UI and full Java-generated expression parity remain unverified.
 - When no primary byte representation is chosen, additional logger views now follow Java's legacy, hexdump, raw-hex order in display and export. A desktop export regression test covers the three views; other primary-view combinations and exact Java formatting still differ.
+- Added `MIGRATION_TODO.md`, `MIGRATION_ARCHITECTURE.md` and `CHANGELOG.md` to track individually scoped work, the Rust architecture and recent changes. The matrix describes partial work and does not mark live compatibility complete.
 
 ## Remaining work
 
@@ -39,7 +40,7 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - GitHub Actions run 42510568958 failed in the Linux/Windows core and web jobs because a settings unit test still rejected an offset equal to the interval. The test was corrected. Follow-up run 42510869830 passed all eight validation jobs (Windows/Linux core, desktop, web, Java compatibility, G-Presets and G-Python on both systems); development publishing was skipped.
 - GitHub Actions run 42513347986 passed all eight validation jobs; its development publishing job was skipped. The GitHub commits page subsequently showed eight successful checks and one skipped check for commit `9d58e65`, and successful checks for the earlier no-byte-representation and size-limit commits. The byte-view ordering commit requires its own CI result.
 - Local Git metadata remains behind GitHub main because the workspace `.git` is read-only. The working tree contains previously published changes; compare against the actual remote tree before publishing any new files.
-- The complete local library run passed 39 of 41 tests; two relay socket tests failed because this environment denied local loopback connections (Windows error 10013). GitHub Actions is the independent network-fixture check.
+- The latest complete local library run passed 41 tests, failed two relay socket tests because this environment denied local loopback connections (Windows error 10013), and ignored one Python fixture. Focused logger/settings integration tests, desktop logger tests, formatting and a desktop debug build passed. GitHub Actions is the independent network-fixture check.
 - Official client/game workflows, performance benefit and full visual equivalence remain unverified.
 
 ## Exact next step
