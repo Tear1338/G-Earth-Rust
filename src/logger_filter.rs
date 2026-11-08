@@ -69,24 +69,15 @@ impl LoggerFilter {
     }
 
     pub fn set_mode(&mut self, mode: AntiSpam) {
-        if self.mode != mode {
-            // Retain recent history when changing between active levels, as Java does.
-            // Disabled filtering deliberately retains no history to bound memory.
-            if self.mode == AntiSpam::None || mode == AntiSpam::None {
-                self.reset();
-            }
-            self.mode = mode;
-        }
+        self.mode = mode;
     }
 
     /// Return true when this message should be omitted from the display.
     pub fn suppress(&mut self, message: &Message, now: Instant) -> bool {
-        let Some(threshold) = self.mode.threshold() else {
-            return false;
-        };
         if message.direction != Direction::ToClient || message.blocked || message.packet.edited {
             return false;
         }
+        let threshold = self.mode.threshold();
         let window = Duration::from_secs(5);
         if self
             .last_cleanup
@@ -106,10 +97,34 @@ impl LoggerFilter {
         {
             timestamps.pop_front();
         }
-        if timestamps.len() == threshold || timestamps.len() >= 15 {
+        // The original keeps up to 100 million timestamps while filtering is off.
+        // Keeping the newest 15 bounds memory while covering every enabled threshold.
+        if threshold == Some(timestamps.len()) || timestamps.len() >= 15 {
             timestamps.pop_front();
         }
         timestamps.push_back(now);
-        timestamps.len() >= threshold
+        threshold.is_some_and(|threshold| timestamps.len() >= threshold)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::packet::Packet;
+
+    #[test]
+    fn disabled_history_is_bounded_for_heavy_traffic() {
+        let now = Instant::now();
+        let mut filter = LoggerFilter::default();
+        let message = Message {
+            packet: Packet::new(42),
+            direction: Direction::ToClient,
+            index: 0,
+            blocked: false,
+        };
+        for _ in 0..10_000 {
+            assert!(!filter.suppress(&message, now));
+        }
+        assert_eq!(filter.timestamps[&42].len(), 15);
     }
 }

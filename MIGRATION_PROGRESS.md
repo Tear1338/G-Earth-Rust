@@ -11,9 +11,9 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Rust desktop interface, Windows attachment helpers, G-Python integration, extension store and native data parsers.
 - Selected original Java API and G-Presets binary compatibility fixtures; no live G-Presets or official hotel session established.
 - Latest published commit adds scheduler/settings fixes, logger, extension handling, UI translations and additional Java differential tests.
-- Compared logger reconnection and level switching against pinned beta-29 source. Rust now retains anti-spam history across reconnects and switches between active levels; six filter tests and desktop Clippy pass locally. Disabled-mode history and timestamp bounds deliberately differ to keep memory bounded.
-- Manual extension launches now capture stdout/stderr for the extension console, like store launches. Host unit tests, a manually launched Python fixture and all-targets Clippy pass locally. The new fixture also passed on Windows and Linux in Actions run 42511342499; real extensions still need validation.
-- A deterministic test compares selected active anti-spam level transitions with a direct model of the pinned Java queue algorithm; seven local filter tests and Clippy pass. This is a behavioral model, not execution of the original JavaFX controller, and does not cover unbounded or disabled-mode traffic.
+- Compared logger reconnection and level switching against pinned beta-29 source. Rust retains anti-spam history across reconnects and all level switches, including disabled mode. The per-header queue is deliberately capped at 15 timestamps, unlike Java, so extreme traffic can differ.
+- Manual extension launches now capture stdout/stderr for the extension console, like store launches. Host unit tests, a manually launched Python fixture and all-targets Clippy pass locally. All eight validation jobs in Actions run 42511342499 passed, including the new Python fixture on Windows and Linux; real extensions still need validation.
+- A deterministic test compares selected anti-spam level transitions, including disabled mode, with a direct model of the pinned Java queue algorithm. Seven local filter tests and a 10,000-packet bounded-memory test pass. This is a behavioral model, not execution of the original JavaFX controller; extreme unbounded traffic is deliberately different.
 
 ## Remaining work
 
@@ -32,4 +32,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect the remaining desktop job in Actions run 42511342499 and the latest commit's validation, and fix any failure. Then assess a bounded representation for anti-spam history while filtering is disabled, using the pinned Java controller as reference without introducing unbounded queues.
+Inspect the latest GitHub Actions validation and fix failures. Then compare the logger's clear/reset behavior and filtered count with the pinned Java controller, preserving bounded memory and checking both manual clear and connection events.

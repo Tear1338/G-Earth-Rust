@@ -54,7 +54,7 @@ fn outgoing_blocked_and_replaced_packets_do_not_enter_the_filter() {
 }
 
 #[test]
-fn mode_changes_clear_old_history_and_none_never_suppresses() {
+fn disabled_mode_keeps_bounded_history_without_suppressing_packets() {
     let now = Instant::now();
     let packet = message(7, Direction::ToClient);
     let mut filter = LoggerFilter::default();
@@ -62,11 +62,11 @@ fn mode_changes_clear_old_history_and_none_never_suppresses() {
         assert!(!filter.suppress(&packet, now));
     }
     filter.set_mode(AntiSpam::Ultra);
-    assert!(!filter.suppress(&packet, now));
     assert!(filter.suppress(&packet, now));
     filter.set_mode(AntiSpam::None);
     filter.set_mode(AntiSpam::Ultra);
-    assert!(!filter.suppress(&packet, now));
+    assert!(filter.suppress(&packet, now));
+    assert!(!filter.suppress(&packet, now + Duration::from_secs(6)));
     for mode in [
         AntiSpam::None,
         AntiSpam::Low,
@@ -118,7 +118,7 @@ fn switching_active_levels_preserves_recent_incoming_history() {
     assert!(!filter.suppress(&packet, now + Duration::from_millis(2)));
     filter.set_mode(AntiSpam::None);
     filter.set_mode(AntiSpam::Ultra);
-    assert!(!filter.suppress(&packet, now + Duration::from_millis(3)));
+    assert!(filter.suppress(&packet, now + Duration::from_millis(3)));
 }
 
 #[test]
@@ -128,7 +128,9 @@ fn active_level_switches_match_upstream_queue_for_bounded_samples() {
     let packet = message(42, Direction::ToClient);
     let mut rust = LoggerFilter::default();
     let mut java_history = VecDeque::<u64>::new();
-    let samples: [(AntiSpam, u64); 10] = [
+    let samples: [(AntiSpam, u64); 12] = [
+        (AntiSpam::None, 0),
+        (AntiSpam::None, 0),
         (AntiSpam::Low, 0),
         (AntiSpam::Low, 10),
         (AntiSpam::Low, 20),
@@ -146,7 +148,7 @@ fn active_level_switches_match_upstream_queue_for_bounded_samples() {
             AntiSpam::Medium => 9,
             AntiSpam::High => 4,
             AntiSpam::Ultra => 2,
-            AntiSpam::None => unreachable!(),
+            AntiSpam::None => 100_000_000,
         };
         while java_history
             .front()
