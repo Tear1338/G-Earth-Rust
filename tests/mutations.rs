@@ -29,6 +29,27 @@ fn utf8_offset_reads_are_strict_and_do_not_move_the_cursor() {
 }
 
 #[test]
+fn lossy_utf8_reads_replace_invalid_bytes_and_validate_lengths() {
+    let mut packet = Packet::new(16);
+    packet
+        .put_short_bytes(&[0xe2, 0x82, b'A'])
+        .unwrap()
+        .put_long_bytes(&[0xff, b'a'])
+        .unwrap();
+    packet.set_cursor(7).unwrap();
+    assert_eq!(packet.read_utf8_lossy_at(6).unwrap(), "�A");
+    assert_eq!(packet.read_utf8_long_lossy_at(11).unwrap(), "�a");
+    assert_eq!(packet.cursor(), 7);
+    packet.set_cursor(6).unwrap();
+    assert_eq!(packet.read_utf8_lossy().unwrap(), "�A");
+    assert_eq!(packet.read_utf8_long_lossy().unwrap(), "�a");
+    let end = packet.cursor();
+    assert!(packet.read_utf8_lossy().is_err());
+    assert_eq!(packet.cursor(), end);
+    assert!(packet.read_utf8_long_lossy_at(usize::MAX).is_err());
+}
+
+#[test]
 fn signed_bytes_roundtrip_and_preserve_cursor_on_errors() {
     let mut packet = Packet::new(14);
     for value in [i8::MIN, -1, 0, i8::MAX] {

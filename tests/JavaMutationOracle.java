@@ -7,6 +7,11 @@ public class JavaMutationOracle {
         System.out.println(name + "=" + HexFormat.of().formatHex(packet.toBytes()) + "," + packet.getReadIndex());
     }
     public static void main(String[] args) {
+        HPacket malformedUtf = new HPacket(16);
+        malformedUtf.appendUShort(3).appendBytes(new byte[]{(byte)0xe2, (byte)0x82, 0x41});
+        malformedUtf.appendInt(2).appendBytes(new byte[]{(byte)0xff, 0x61});
+        malformedUtf.setReadIndex(7);
+        System.out.println("utf8_malformed=" + HexFormat.of().formatHex(malformedUtf.readString(6, StandardCharsets.UTF_8).getBytes(StandardCharsets.UTF_8)) + "," + HexFormat.of().formatHex(malformedUtf.readLongString(11, StandardCharsets.UTF_8).getBytes(StandardCharsets.UTF_8)) + "," + malformedUtf.getReadIndex());
         HPacket utfAt = new HPacket(15);
         utfAt.appendString("Café 🐱", StandardCharsets.UTF_8).appendLongString("éclair", StandardCharsets.UTF_8);
         utfAt.setReadIndex(7);

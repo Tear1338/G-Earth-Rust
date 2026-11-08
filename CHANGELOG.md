@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- EVA packets: add optional replacement-decoding UTF-8 reads for malformed short/long fields, including cursor-preserving offset reads.
 - EVA packets: add cursor-preserving short/long byte and strict UTF-8 reads at an absolute offset, with Java API comparisons for valid strings.
 - Packet core: add signed-byte read, random-access read, append and EVA replacement; compare negative boundary values with the original Java API.
 - EVA packets: add signed 16-bit read, random-access read, append and replacement; compare boundary values and cursor behavior with the beta-29 Java API.

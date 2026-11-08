@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: check the latest GitHub Actions result and compare Java charset handling and remaining packet APIs with beta-29; validate on-screen logger interaction when a safe desktop session is available.
+Next: check the latest GitHub Actions result and expand malformed UTF-8 comparisons against beta-29; validate on-screen logger interaction when a safe desktop session is available.

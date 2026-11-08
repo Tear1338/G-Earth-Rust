@@ -329,6 +329,14 @@ impl Packet {
     pub fn read_utf8_long_at(&self, offset: usize) -> Result<&str> {
         std::str::from_utf8(self.read_long_bytes_at(offset)?).map_err(|_| error("invalid UTF-8"))
     }
+    /// Read UTF-8 at an EVA offset, replacing malformed sequences.
+    pub fn read_utf8_lossy_at(&self, offset: usize) -> Result<std::borrow::Cow<'_, str>> {
+        Ok(String::from_utf8_lossy(self.read_short_bytes_at(offset)?))
+    }
+    /// Read a long UTF-8 EVA field at an offset, replacing malformed sequences.
+    pub fn read_utf8_long_lossy_at(&self, offset: usize) -> Result<std::borrow::Cow<'_, str>> {
+        Ok(String::from_utf8_lossy(self.read_long_bytes_at(offset)?))
+    }
     pub fn read_u8(&mut self) -> Result<u8> {
         Ok(self.read_bytes(1)?[0])
     }
@@ -442,6 +450,10 @@ impl Packet {
         }
         result
     }
+    /// Read an EVA UTF-8 field with replacement decoding for malformed bytes.
+    pub fn read_utf8_lossy(&mut self) -> Result<String> {
+        Ok(String::from_utf8_lossy(self.read_short_bytes()?).into_owned())
+    }
     /// Read an EVA four-byte-length-prefixed field without copying its bytes.
     /// Invalid or truncated fields leave the cursor unchanged.
     pub fn read_long_bytes(&mut self) -> Result<&[u8]> {
@@ -482,6 +494,10 @@ impl Packet {
             self.cursor = start;
         }
         result
+    }
+    /// Read a long EVA UTF-8 field with replacement decoding for malformed bytes.
+    pub fn read_utf8_long_lossy(&mut self) -> Result<String> {
+        Ok(String::from_utf8_lossy(self.read_long_bytes()?).into_owned())
     }
     pub fn append(&mut self, bytes: &[u8]) -> Result<&mut Self> {
         let n = self

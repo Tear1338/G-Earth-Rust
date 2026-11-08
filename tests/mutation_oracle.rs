@@ -18,6 +18,32 @@ fn mutations_match_original_java_packets_and_cursor() {
         );
         assert_eq!(packet.cursor(), cursor.parse::<usize>().unwrap(), "{name}");
     };
+    let mut malformed = Packet::new(16);
+    malformed
+        .put_short_bytes(&[0xe2, 0x82, 0x41])
+        .unwrap()
+        .put_long_bytes(&[0xff, 0x61])
+        .unwrap();
+    malformed.set_cursor(7).unwrap();
+    let parts: Vec<_> = expected["utf8_malformed"].split(',').collect();
+    assert_eq!(
+        malformed.read_utf8_lossy_at(6).unwrap().as_bytes(),
+        expression::parse_hex(parts[0]).unwrap()
+    );
+    assert_eq!(
+        malformed.read_utf8_long_lossy_at(11).unwrap().as_bytes(),
+        expression::parse_hex(parts[1]).unwrap()
+    );
+    assert_eq!(malformed.cursor(), parts[2].parse::<usize>().unwrap());
+    malformed.set_cursor(6).unwrap();
+    assert_eq!(
+        malformed.read_utf8_lossy().unwrap().as_bytes(),
+        expression::parse_hex(parts[0]).unwrap()
+    );
+    assert_eq!(
+        malformed.read_utf8_long_lossy().unwrap().as_bytes(),
+        expression::parse_hex(parts[1]).unwrap()
+    );
     let mut utf = Packet::new(15);
     utf.put_utf8("Café 🐱")
         .unwrap()
