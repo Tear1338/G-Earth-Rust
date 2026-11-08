@@ -221,6 +221,10 @@ impl Packet {
     pub fn read_u8_at(&self, offset: usize) -> Result<u8> {
         Ok(self.read_bytes_at(offset, 1)?[0])
     }
+    /// Read the signed byte used by Java's byte type, without moving the cursor.
+    pub fn read_i8_at(&self, offset: usize) -> Result<i8> {
+        Ok(self.read_u8_at(offset)? as i8)
+    }
     pub fn read_bool_at(&self, offset: usize) -> Result<bool> {
         if self.format == PacketFormat::EvaWire {
             Ok(self.read_u8_at(offset)? != 0)
@@ -300,6 +304,9 @@ impl Packet {
     }
     pub fn read_u8(&mut self) -> Result<u8> {
         Ok(self.read_bytes(1)?[0])
+    }
+    pub fn read_i8(&mut self) -> Result<i8> {
+        Ok(self.read_u8()? as i8)
     }
     pub fn read_bool(&mut self) -> Result<bool> {
         if self.format == PacketFormat::EvaWire {
@@ -472,6 +479,9 @@ impl Packet {
     pub fn put_u8(&mut self, v: u8) -> Result<&mut Self> {
         self.append(&[v])
     }
+    pub fn put_i8(&mut self, v: i8) -> Result<&mut Self> {
+        self.put_u8(v as u8)
+    }
     pub fn put_bool(&mut self, v: bool) -> Result<&mut Self> {
         if self.format == PacketFormat::EvaWire {
             self.put_u8(u8::from(v))
@@ -634,6 +644,9 @@ impl Packet {
 
     pub fn replace_u8(&mut self, offset: usize, value: u8) -> Result<&mut Self> {
         self.replace_fixed(offset, &[value])
+    }
+    pub fn replace_i8(&mut self, offset: usize, value: i8) -> Result<&mut Self> {
+        self.replace_u8(offset, value as u8)
     }
     /// Overwrite bytes at an absolute EVA body offset without changing the
     /// packet length or read cursor. An out-of-range write is rejected in full.

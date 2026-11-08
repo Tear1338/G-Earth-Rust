@@ -4,7 +4,7 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 
 | Feature | Status | Next evidence or work |
 |---|---|---|
-| EVA framing, fields and mutations | Partial | Signed 16-bit operations have boundary and Java oracle coverage; remaining helpers and regex/charset cases need fixtures. |
+| EVA framing, fields and mutations | Partial | Signed 8/16-bit operations have boundary and Java oracle coverage; remaining helpers and regex/charset cases need fixtures. |
 | WEDGIE codecs and expressions | Partial | Expand parsing corpus and validate a real Shockwave client. |
 | Packet expressions and prediction | Partial | Broaden Java comparisons and metadata/client coverage. |
 | Injection, packet tools and safety | Partial | CLI revision detection and real connection behavior. |

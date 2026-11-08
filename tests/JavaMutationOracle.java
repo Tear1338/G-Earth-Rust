@@ -7,6 +7,12 @@ public class JavaMutationOracle {
         System.out.println(name + "=" + HexFormat.of().formatHex(packet.toBytes()) + "," + packet.getReadIndex());
     }
     public static void main(String[] args) {
+        HPacket signedBytes = new HPacket(14);
+        signedBytes.appendByte(Byte.MIN_VALUE).appendByte((byte) -1).appendByte((byte) 0).appendByte(Byte.MAX_VALUE);
+        signedBytes.setReadIndex(7);
+        signedBytes.replaceByte(7, (byte) -42);
+        System.out.println("signed_bytes=" + signedBytes.readByte(6) + "," + signedBytes.readByte(7) + "," + signedBytes.readByte(8) + "," + signedBytes.readByte(9) + "," + signedBytes.getReadIndex());
+        emit("signed_byte_packet", signedBytes);
         HPacket shorts = new HPacket(13);
         shorts.appendShort(Short.MIN_VALUE).appendShort((short) -1).appendShort((short) 0).appendShort(Short.MAX_VALUE);
         shorts.setReadIndex(8);

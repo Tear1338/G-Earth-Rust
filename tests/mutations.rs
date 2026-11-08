@@ -1,6 +1,27 @@
 use gearth_rust::packet::{Packet, PacketFormat};
 
 #[test]
+fn signed_bytes_roundtrip_and_preserve_cursor_on_errors() {
+    let mut packet = Packet::new(14);
+    for value in [i8::MIN, -1, 0, i8::MAX] {
+        packet.put_i8(value).unwrap();
+    }
+    assert_eq!(packet.read_i8().unwrap(), i8::MIN);
+    assert_eq!(packet.read_i8_at(7).unwrap(), -1);
+    assert_eq!(packet.cursor(), 7);
+    packet.replace_i8(7, -42).unwrap();
+    assert_eq!(packet.read_i8().unwrap(), -42);
+    assert_eq!(packet.read_i8().unwrap(), 0);
+    assert_eq!(packet.read_i8().unwrap(), i8::MAX);
+    let end = packet.cursor();
+    assert!(packet.read_i8().is_err());
+    assert_eq!(packet.cursor(), end);
+    let before = packet.bytes().to_vec();
+    assert!(packet.replace_i8(0, -1).is_err());
+    assert_eq!(packet.bytes(), before);
+}
+
+#[test]
 fn signed_shorts_roundtrip_and_reject_invalid_operations() {
     let mut packet = Packet::new(13);
     for value in [i16::MIN, -1, 0, i16::MAX] {
