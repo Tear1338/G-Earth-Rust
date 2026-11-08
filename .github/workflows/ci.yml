@@ -67,6 +67,7 @@ jobs:
       - run: cargo test --locked --features desktop --bin gearth-desktop window_icon_tests
       - run: cargo build --locked --release --features desktop --bin gearth-desktop
       - run: python tools/check_pe_imports.py target/release/gearth-desktop.exe
+      - run: python tools/check_pe_icon.py target/release/gearth-desktop.exe
       - name: Package desktop usage and license
         shell: pwsh
         run: |
