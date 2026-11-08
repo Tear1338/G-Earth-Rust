@@ -33,6 +33,7 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - A simulated egui pointer test verifies that primary and secondary clicks reach the hidden-header row. Eight desktop logger tests, focused logger/settings tests, desktop Clippy and a debug build pass; the full visual application and actual context-menu flow still require interactive testing.
 - Importing Java logger settings now preserves an explicitly selected Rust primary representation, which has no direct Java equivalent; without a saved choice it still selects no primary byte view. Tests cover both import cases and save/reload, plus preservation of an explicit hidden-header choice. Settings/logger integration tests, 41 library tests excluding two blocked socket cases, desktop Clippy and a debug build pass.
 - Ran the original beta-29 Java hexdump implementation against Rust locally using Java 21. The byte-for-byte oracle passes 13 lengths from zero through 1024 bytes, including 255, 256 and 257; this is finite formatting coverage, not live-client validation.
+- EVA packet API now has signed 16-bit sequential and absolute-offset reads, append and replacement. Boundary values, replacement bytes and cursor behavior match selected beta-29 Java API vectors; local tests cover truncation, protected headers and explicit WEDGIE rejection. The Java oracle, 41 available library tests, workspace/all-targets Clippy and a debug CLI build pass; real-client and WEDGIE signed-short semantics remain unverified.
 
 ## Remaining work
 
@@ -53,4 +54,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect GitHub Actions for the latest code commit and fix any failures. Validate the no-byte-view logger interactions visually in a desktop session, then compare Java's byte-view direction/header formatting with Rust while retaining existing features.
+Inspect GitHub Actions for the latest code commit and fix any failures. Compare the remaining Java packet primitive and mutation APIs with Rust, then implement the next independently testable EVA operation; validate the no-byte-view logger interaction visually when a safe desktop test session is available.

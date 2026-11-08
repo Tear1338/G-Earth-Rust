@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- EVA packets: add signed 16-bit read, random-access read, append and replacement; compare boundary values and cursor behavior with the beta-29 Java API.
 - Extend the Java hexdump differential fixture around the 256-byte boundary and to 1024 bytes.
 - Java settings import preserves an explicitly selected Rust logger representation; imports without a choice still default to no primary byte view.
 - Logger: exercise primary and secondary clicks on an empty-header row using simulated egui pointer events.

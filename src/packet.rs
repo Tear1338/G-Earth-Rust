@@ -240,6 +240,12 @@ impl Packet {
             }
         }
     }
+    /// Read a Java-compatible signed short at an absolute EVA offset.
+    pub fn read_i16_at(&self, offset: usize) -> Result<i16> {
+        Ok(i16::from_be_bytes(
+            self.eva_bytes_at(offset, 2)?.try_into().unwrap(),
+        ))
+    }
     pub fn read_i32_at(&self, offset: usize) -> Result<i32> {
         if self.format == PacketFormat::EvaWire {
             Ok(i32::from_be_bytes(
@@ -319,6 +325,11 @@ impl Packet {
             self.cursor = start;
         }
         result
+    }
+    /// Read a signed EVA short, advancing the cursor only on success.
+    pub fn read_i16(&mut self) -> Result<i16> {
+        self.ensure_eva()?;
+        Ok(i16::from_be_bytes(self.read_bytes(2)?.try_into().unwrap()))
     }
     pub fn read_i32(&mut self) -> Result<i32> {
         if self.format == PacketFormat::EvaWire {
@@ -479,6 +490,11 @@ impl Packet {
             }
         }
     }
+    /// Append a Java-compatible signed EVA short.
+    pub fn put_i16(&mut self, v: i16) -> Result<&mut Self> {
+        self.ensure_eva()?;
+        self.append(&v.to_be_bytes())
+    }
     pub fn put_i32(&mut self, v: i32) -> Result<&mut Self> {
         if self.format == PacketFormat::EvaWire {
             self.append(&v.to_be_bytes())
@@ -628,6 +644,9 @@ impl Packet {
         self.replace_u8(offset, u8::from(value))
     }
     pub fn replace_u16(&mut self, offset: usize, value: u16) -> Result<&mut Self> {
+        self.replace_fixed(offset, &value.to_be_bytes())
+    }
+    pub fn replace_i16(&mut self, offset: usize, value: i16) -> Result<&mut Self> {
         self.replace_fixed(offset, &value.to_be_bytes())
     }
     pub fn replace_i32(&mut self, offset: usize, value: i32) -> Result<&mut Self> {

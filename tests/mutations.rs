@@ -1,6 +1,32 @@
 use gearth_rust::packet::{Packet, PacketFormat};
 
 #[test]
+fn signed_shorts_roundtrip_and_reject_invalid_operations() {
+    let mut packet = Packet::new(13);
+    for value in [i16::MIN, -1, 0, i16::MAX] {
+        packet.put_i16(value).unwrap();
+    }
+    assert_eq!(packet.read_i16().unwrap(), i16::MIN);
+    let cursor = packet.cursor();
+    assert_eq!(packet.read_i16_at(8).unwrap(), -1);
+    assert_eq!(packet.cursor(), cursor);
+    packet.replace_i16(8, -1234).unwrap();
+    assert_eq!(packet.read_i16().unwrap(), -1234);
+    assert_eq!(packet.read_i16().unwrap(), 0);
+    assert_eq!(packet.read_i16().unwrap(), i16::MAX);
+    let end = packet.cursor();
+    assert!(packet.read_i16().is_err());
+    assert_eq!(packet.cursor(), end);
+    let before = packet.bytes().to_vec();
+    assert!(packet.replace_i16(0, 2).is_err());
+    assert_eq!(packet.bytes(), before);
+    let mut wedgie = Packet::new_with_format(PacketFormat::WedgieOutgoing, 1).unwrap();
+    assert!(wedgie.put_i16(-1).is_err());
+    assert!(wedgie.read_i16().is_err());
+    assert!(wedgie.read_i16_at(0).is_err());
+}
+
+#[test]
 fn skip_structure_advances_fields_and_preserves_completed_reads_on_error() {
     let mut packet = Packet::new(11);
     packet

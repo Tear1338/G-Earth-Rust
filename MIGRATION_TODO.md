@@ -4,7 +4,7 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 
 | Feature | Status | Next evidence or work |
 |---|---|---|
-| EVA framing, fields and mutations | Partial | Remaining Java helpers and regex/charset cases; differential fixtures. |
+| EVA framing, fields and mutations | Partial | Signed 16-bit operations have boundary and Java oracle coverage; remaining helpers and regex/charset cases need fixtures. |
 | WEDGIE codecs and expressions | Partial | Expand parsing corpus and validate a real Shockwave client. |
 | Packet expressions and prediction | Partial | Broaden Java comparisons and metadata/client coverage. |
 | Injection, packet tools and safety | Partial | CLI revision detection and real connection behavior. |
@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: check the latest GitHub Actions result, validate on-screen logger interaction without byte representations, and compare remaining header formatting with beta-29.
+Next: check the latest GitHub Actions result and compare remaining EVA primitive/mutation methods with beta-29; validate on-screen logger interaction when a safe desktop session is available.

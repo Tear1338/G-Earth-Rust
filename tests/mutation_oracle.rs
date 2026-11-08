@@ -18,6 +18,24 @@ fn mutations_match_original_java_packets_and_cursor() {
         );
         assert_eq!(packet.cursor(), cursor.parse::<usize>().unwrap(), "{name}");
     };
+    let mut shorts = Packet::new(13);
+    for n in [i16::MIN, -1, 0, i16::MAX] {
+        shorts.put_i16(n).unwrap();
+    }
+    shorts.set_cursor(8).unwrap();
+    shorts.replace_i16(8, -1234).unwrap();
+    assert_eq!(
+        format!(
+            "{},{},{},{},{}",
+            shorts.read_i16_at(6).unwrap(),
+            shorts.read_i16_at(8).unwrap(),
+            shorts.read_i16_at(10).unwrap(),
+            shorts.read_i16_at(12).unwrap(),
+            shorts.cursor()
+        ),
+        expected["signed_shorts"]
+    );
+    check("signed_short_bytes", &shorts);
     let mut fixed = Packet::new(1);
     fixed
         .put_i32(123)
