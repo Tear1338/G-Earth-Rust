@@ -119,6 +119,12 @@ pub fn skip_large_eva_representations(frame_len: usize, hex_dump_enabled: bool) 
     packet_len > 4000 || (hex_dump_enabled && packet_len > 1000)
 }
 
+/// Java's logger limits structure rendering by the EVA length field, excluding
+/// its four-byte prefix. Other packet formats retain their existing behavior.
+pub fn allow_eva_structure(frame_len: usize, java_limit: bool) -> bool {
+    !java_limit || frame_len.saturating_sub(4) <= 2000
+}
+
 impl PacketRepresentation {
     pub fn translation_key(self) -> &'static str {
         match self {

@@ -22,7 +22,7 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Logger names, hashes and IDs use individual brackets on a line preceding blocked/replaced markers, following the original Java ordering for tested cases. Desktop tests cover multiple names and hashes; metadata remains size bounded and visual behavior is unverified.
 - Importing valid Java logger settings now enables Java-like direction capture unless an explicit Rust preference already exists. Fourteen settings integration tests, seven settings unit tests and all-targets Clippy pass locally.
 - The logger can select no primary byte representation, as in Java; importing valid Java logger settings selects it while preserving independently enabled byte views. Existing Rust installations retain their default expression view. Focused representation, settings, translation and desktop tests and desktop Clippy pass locally; interactive behavior remains unverified.
-- Source comparison identified another logger difference: beta-29 only generates a structure when `HPacket.length() <= 2000`; that length is read from the packet's first four bytes. Rust currently uses its configurable capture-size limit instead. This difference has not yet been fixed; behavior for non-EVA formats needs separate verification.
+- An optional Java structure limit suppresses structure prediction for EVA packets over 2000 bytes (excluding their four-byte prefix). Java settings import enables it unless a Rust choice already exists; the default Rust behavior is retained. Local tests cover the boundary and exported output. Non-EVA behavior and interactive UI are not verified against Java.
 
 ## Remaining work
 
@@ -42,4 +42,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect Actions for commit `72452be52aae24351e368e764c04b13f6f753821` and fix any failures. Then implement and test an optional beta-29 structure limit for valid EVA packets at lengths 2000 and 2001, preserving the existing Rust default; verify non-EVA semantics before extending it.
+Inspect GitHub Actions for the latest code commit and fix any failures. Compare the Java logger's structure cleaning and line output against Rust, then add a focused parity test while retaining existing Rust options.

@@ -1,6 +1,14 @@
 use gearth_rust::logger_display::{hex_dump, represent, PacketRepresentation};
 
 #[test]
+fn java_structure_limit_excludes_the_eva_prefix() {
+    use gearth_rust::logger_display::allow_eva_structure as allowed;
+    assert!(allowed(2004, true));
+    assert!(!allowed(2005, true));
+    assert!(allowed(2005, false));
+}
+
+#[test]
 fn selected_direction_capture_can_match_java_or_keep_hidden_packets() {
     use gearth_rust::{
         logger_display::{capture_direction, displayed_directions},

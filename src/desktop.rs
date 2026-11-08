@@ -148,6 +148,7 @@ struct Desktop {
     packet_limit: usize,
     logger_additional: bool,
     logger_structure: bool,
+    logger_java_structure_limit: bool,
     logger_split: bool,
     logger_names: bool,
     logger_hashes: bool,
@@ -352,6 +353,7 @@ struct LogDisplayOptions<'a> {
     blocked_label: &'a str,
     replaced_label: &'a str,
     structure: bool,
+    java_structure_limit: bool,
 }
 
 struct RenderedLogRow {
@@ -528,7 +530,13 @@ fn render_log_row(
             }
         }
     }
-    let structure = if options.structure && !row.skipped {
+    let structure = if options.structure
+        && !row.skipped
+        && (packet.format() != PacketFormat::EvaWire
+            || logger_display::allow_eva_structure(
+                packet.bytes().len(),
+                options.java_structure_limit,
+            )) {
         let (expression, known) = row.packet_expression.get_or_init(|| {
             let (expression, known) = gearth_rust::structure_prediction::expression_with_metadata(
                 packet,
@@ -638,6 +646,7 @@ impl Default for Desktop {
             packet_limit: 8000,
             logger_additional: true,
             logger_structure: true,
+            logger_java_structure_limit: false,
             logger_split: true,
             logger_names: true,
             logger_hashes: false,
@@ -1732,6 +1741,10 @@ impl Desktop {
                 self.i18n
                     .text("ext.logger.menu.packets.displaydetails.structure"),
             );
+            ui.checkbox(
+                &mut self.logger_java_structure_limit,
+                self.i18n.text("rust.logger.java_structure_limit"),
+            );
             ui.checkbox(&mut self.logger_split, self.i18n.text("rust.logger.split"));
             ui.checkbox(
                 &mut self.logger_names,
@@ -1912,6 +1925,7 @@ impl Desktop {
             blocked_label: &blocked_label,
             replaced_label: &replaced_label,
             structure: self.logger_structure,
+            java_structure_limit: self.logger_java_structure_limit,
         };
         let (display_incoming, display_outgoing) = logger_display::displayed_directions(
             self.incoming,
@@ -3747,6 +3761,12 @@ impl Desktop {
             .get("logger_structure")
             .copied()
             .unwrap_or(true);
+        self.logger_java_structure_limit = self
+            .settings
+            .booleans
+            .get("logger_java_structure_limit")
+            .copied()
+            .unwrap_or(false);
         self.logger_split = self
             .settings
             .booleans
@@ -3884,6 +3904,10 @@ impl Desktop {
             ("incoming".into(), self.incoming),
             ("logger_additional".into(), self.logger_additional),
             ("logger_structure".into(), self.logger_structure),
+            (
+                "logger_java_structure_limit".into(),
+                self.logger_java_structure_limit,
+            ),
             ("logger_split".into(), self.logger_split),
             ("logger_names".into(), self.logger_names),
             ("logger_hashes".into(), self.logger_hashes),
@@ -4293,8 +4317,47 @@ mod logger_prediction_tests {
             blocked_label: "Blocked",
             replaced_label: "Replaced",
             structure: false,
+            java_structure_limit: false,
         };
         let info = PacketInfoManager::default();
+        for payload_len in [1998, 1999] {
+            let mut packet = Packet::new(42);
+            packet.append(&vec![b'a'; payload_len]).unwrap();
+            let long_row = LogRow {
+                message: Message {
+                    packet,
+                    direction: Direction::ToClient,
+                    index: 2,
+                    blocked: false,
+                },
+                timestamp_ms: None,
+                expression: String::new(),
+                search: String::new(),
+                bytes: 0,
+                skipped: false,
+                unity: false,
+                predicted_structure: OnceLock::new(),
+                packet_expression: OnceLock::from(("fixture structure".into(), true)),
+                packet_metadata: OnceLock::new(),
+            };
+            options.structure = true;
+            options.java_structure_limit = true;
+            let mut output = Vec::new();
+            write_log_capture(&mut output, [&long_row], &info, options, false).unwrap();
+            assert_eq!(
+                String::from_utf8(output)
+                    .unwrap()
+                    .contains("fixture structure"),
+                payload_len == 1998
+            );
+            options.java_structure_limit = false;
+            let mut output = Vec::new();
+            write_log_capture(&mut output, [&long_row], &info, options, false).unwrap();
+            assert!(String::from_utf8(output)
+                .unwrap()
+                .contains("fixture structure"));
+        }
+        options.structure = false;
         let mut output = Vec::new();
         write_log_capture(&mut output, [&row], &info, options, false).unwrap();
         let text = String::from_utf8(output).unwrap();
@@ -4373,6 +4436,7 @@ mod logger_prediction_tests {
             blocked_label: "Blocked",
             replaced_label: "Replaced",
             structure: false,
+            java_structure_limit: false,
         };
         let mut output = Vec::new();
         write_log_capture(&mut output, [&row], &info, options, true).unwrap();
