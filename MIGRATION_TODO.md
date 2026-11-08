@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: check the latest GitHub Actions result and compare logger direction labels and separators with beta-29 before implementing and validating the next difference.
+Next: check the latest GitHub Actions result and compare logger export separators with beta-29 before implementing and validating the next difference.

@@ -353,6 +353,8 @@ struct LogDisplayOptions<'a> {
     timestamp_label: &'a str,
     blocked_label: &'a str,
     replaced_label: &'a str,
+    incoming_label: &'a str,
+    outgoing_label: &'a str,
     structure: bool,
     java_structure_limit: bool,
     java_structure_clean: bool,
@@ -501,12 +503,17 @@ fn render_log_row(
         None
     };
     let header = format!(
-        "#{:06}  {:8}  {}{}",
+        "#{:06}  {} {}  {}{}",
         message.index,
         if message.direction == Direction::ToServer {
-            "→ SERVER"
+            "→"
         } else {
-            "← CLIENT"
+            "←"
+        },
+        if message.direction == Direction::ToServer {
+            options.outgoing_label
+        } else {
+            options.incoming_label
         },
         additional,
         representation
@@ -1928,6 +1935,8 @@ impl Desktop {
         let timestamp_label = self.i18n.text("ext.logger.element.timestamp");
         let blocked_label = self.i18n.text("ext.logger.element.blocked");
         let replaced_label = self.i18n.text("ext.logger.element.replaced");
+        let incoming_label = self.i18n.text("ext.logger.element.direction.incoming");
+        let outgoing_label = self.i18n.text("ext.logger.element.direction.outgoing");
         let display_options = LogDisplayOptions {
             additional: self.logger_additional,
             names: self.logger_names,
@@ -1943,6 +1952,8 @@ impl Desktop {
             timestamp_label: &timestamp_label,
             blocked_label: &blocked_label,
             replaced_label: &replaced_label,
+            incoming_label: &incoming_label,
+            outgoing_label: &outgoing_label,
             structure: self.logger_structure,
             java_structure_limit: self.logger_java_structure_limit,
             java_structure_clean: self.logger_java_structure_clean,
@@ -4354,6 +4365,8 @@ mod logger_prediction_tests {
             timestamp_label: "timestamp",
             blocked_label: "Blocked",
             replaced_label: "Replaced",
+            incoming_label: "Incoming",
+            outgoing_label: "Outgoing",
             structure: false,
             java_structure_limit: false,
             java_structure_clean: false,
@@ -4487,6 +4500,8 @@ mod logger_prediction_tests {
             timestamp_label: "timestamp",
             blocked_label: "Blocked",
             replaced_label: "Replaced",
+            incoming_label: "Incoming",
+            outgoing_label: "Outgoing",
             structure: false,
             java_structure_limit: false,
             java_structure_clean: false,
@@ -4495,6 +4510,7 @@ mod logger_prediction_tests {
         write_log_capture(&mut output, [&row], &info, options, true).unwrap();
         let text = String::from_utf8(output).unwrap();
         assert!(text.starts_with("(timestamp: 123)\n"));
+        assert!(text.contains("Incoming"));
         assert!(text.contains("[Blocked]\n"));
         assert!(text.contains("[Example][Another][abc][def][42]\n[Blocked]\n"));
         assert!(text.contains("00000002002a"));
@@ -4503,11 +4519,13 @@ mod logger_prediction_tests {
         options.extra_raw_hex = true;
         options.extra_hex_dump = true;
         options.timestamp_label = "heure";
+        options.incoming_label = "Entrant";
         options.blocked_label = "Bloqué";
         let mut output = Vec::new();
         write_log_capture(&mut output, [&row], &info, options, false).unwrap();
         let text = String::from_utf8(output).unwrap();
         assert!(text.starts_with("(heure: 123)\n"));
+        assert!(text.contains("Entrant"));
         assert!(text.contains("[Bloqué]\n"));
         assert!(text.contains("Legacy:"));
         assert!(text.contains("00000002002a"));
