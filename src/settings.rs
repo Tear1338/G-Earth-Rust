@@ -383,6 +383,30 @@ impl Settings {
         if !value.is_object() {
             return Err(io::Error::other("Java cache must be a JSON object"));
         }
+        // LanguageBundle stores the Java enum name, not its locale code.
+        if let Some(language) = value["language"].as_str() {
+            let locale = match language {
+                "ENGLISH" => Some("en"),
+                "DUTCH" => Some("nl"),
+                "FRENCH" => Some("fr"),
+                "GERMAN" => Some("de"),
+                "SPANISH" => Some("es"),
+                "PORTUGUESE" => Some("pt"),
+                "ITALIAN" => Some("it"),
+                "FINNISH" => Some("fi"),
+                "TURKISH" => Some("tr"),
+                _ => None,
+            };
+            if let Some(locale) = locale {
+                self.values.insert("language".into(), locale.into());
+            }
+        }
+        if let Some(theme) = value["theme"].as_str() {
+            // ThemeFactory falls back to the light G-Earth theme for unknown
+            // titles. Tanji is also light; its distinct appearance is not ported.
+            self.booleans
+                .insert("dark_mode".into(), theme == "G-Earth Dark");
+        }
         if let (Some(host), Some(port)) = (
             value["last_connection_settings"]["host"].as_str(),
             value["last_connection_settings"]["port"].as_u64(),
@@ -483,6 +507,52 @@ impl Settings {
 mod tests {
     use super::{ScheduleTemplate, Settings};
     use crate::packet::Direction;
+
+    #[test]
+    fn java_language_and_theme_preferences_are_imported_and_persisted() {
+        for (original, locale) in [
+            ("ENGLISH", "en"),
+            ("DUTCH", "nl"),
+            ("FRENCH", "fr"),
+            ("GERMAN", "de"),
+            ("SPANISH", "es"),
+            ("PORTUGUESE", "pt"),
+            ("ITALIAN", "it"),
+            ("FINNISH", "fi"),
+            ("TURKISH", "tr"),
+        ] {
+            let mut settings = Settings::default();
+            settings
+                .import_java_cache(
+                    serde_json::json!({"language": original, "theme": "G-Earth Dark"}),
+                )
+                .unwrap();
+            let restored = Settings::from_json(settings.to_json()).unwrap();
+            assert_eq!(restored.get("language"), locale);
+            assert_eq!(restored.booleans.get("dark_mode"), Some(&true));
+            assert_eq!(restored.extra["legacy_java_cache"]["language"], original);
+        }
+        for theme in ["G-Earth", "Tanji", "unknown"] {
+            let mut settings = Settings::default();
+            settings.booleans.insert("dark_mode".into(), true);
+            settings
+                .import_java_cache(serde_json::json!({"theme": theme}))
+                .unwrap();
+            assert_eq!(settings.booleans.get("dark_mode"), Some(&false));
+        }
+    }
+
+    #[test]
+    fn malformed_java_language_and_theme_do_not_override_preferences() {
+        let mut settings = Settings::default();
+        settings.values.insert("language".into(), "fr".into());
+        settings.booleans.insert("dark_mode".into(), true);
+        settings
+            .import_java_cache(serde_json::json!({"language": "UNKNOWN", "theme": 12}))
+            .unwrap();
+        assert_eq!(settings.get("language"), "fr");
+        assert_eq!(settings.booleans.get("dark_mode"), Some(&true));
+    }
 
     #[test]
     fn java_client_permissions_choice_is_imported_and_persisted() {
