@@ -14,6 +14,21 @@ public class JavaMutationOracle {
             p.appendUShort(bytes.length).appendBytes(bytes);
             System.out.println("utf8_case_" + i + "=" + HexFormat.of().formatHex(p.readString(6, StandardCharsets.UTF_8).getBytes(StandardCharsets.UTF_8)));
         }
+        // Exhaust every two-byte combination, then exercise mixed data and short-field boundaries.
+        for (int first = 0; first < 256; first++) {
+            for (int second = 0; second < 256; second++) {
+                HPacket p = new HPacket(18);
+                p.appendUShort(2).appendBytes(new byte[]{(byte) first, (byte) second});
+                System.out.println("utf8_pair_" + (first * 256 + second) + "=" + HexFormat.of().formatHex(p.readString(6, StandardCharsets.UTF_8).getBytes(StandardCharsets.UTF_8)));
+            }
+        }
+        for (int length : new int[]{0, 1, 255, 256, 32767, 65535}) {
+            byte[] bytes = new byte[length];
+            for (int i = 0; i < length; i++) bytes[i] = new byte[]{0x61, (byte) 0xed, (byte) 0xa0, (byte) 0x80, (byte) 0xc3, (byte) 0xa9, (byte) 0xff}[i % 7];
+            HPacket p = new HPacket(18);
+            p.appendUShort(length).appendBytes(bytes);
+            System.out.println("utf8_length_" + length + "=" + HexFormat.of().formatHex(p.readString(6, StandardCharsets.UTF_8).getBytes(StandardCharsets.UTF_8)));
+        }
         HPacket malformedUtf = new HPacket(16);
         malformedUtf.appendUShort(3).appendBytes(new byte[]{(byte)0xe2, (byte)0x82, 0x41});
         malformedUtf.appendInt(2).appendBytes(new byte[]{(byte)0xff, 0x61});

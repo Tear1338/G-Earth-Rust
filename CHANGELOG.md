@@ -1,5 +1,7 @@
 # Changelog
 
+- Expanded the beta-29 Java UTF-8 differential oracle to every two-byte sequence and mixed input at six short-field length boundaries; this is finite coverage.
+
 ## Unreleased
 
 - EVA UTF-8 replacement decoding now treats malformed surrogate encodings like Java for the tested cases, instead of replacing each byte separately.

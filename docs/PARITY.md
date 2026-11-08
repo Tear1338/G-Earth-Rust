@@ -35,3 +35,5 @@ Status describes source implementation and finite tests, not successful producti
 ## Completion criteria
 
 A complete port requires the remaining functionality above, tested through real supported Flash/Origins/Unity/Nitro connections, existing Java extensions including G-Presets, reconnect, encrypted traffic, certificate/proxy cleanup, settings migration and the complete UI workflow. Passing a finite protocol oracle or compiling an executable does not establish whole-application parity.
+
+The Java UTF-8 replacement-decoding oracle covers all 65,536 two-byte inputs and mixed valid and malformed data at six short-field lengths through 65535. Offset and sequential reads are checked on those length cases. This is finite coverage; real extensions and all longer combinations remain unverified.

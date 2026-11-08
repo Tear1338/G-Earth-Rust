@@ -39,6 +39,9 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Added optional replacement-decoding UTF-8 reads for short/long EVA fields, sequentially and at absolute offsets, alongside existing strict reads. Two malformed byte examples and cursor behavior match the beta-29 Java API; exhaustive equivalence for all malformed sequences is not established. Local mutation tests, Java oracle, 41 available library tests, all-targets Clippy and debug CLI build pass; WEDGIE remains unsupported for these methods.
 - Java differential tests exposed a difference in decoding encoded surrogate values: Java consumes them as a single malformed sequence. The replacement decoder now handles that case, and 13 selected surrogate, incomplete, overlong and invalid sequences match the original API. This is finite coverage, not proof of equivalence for every malformed input. Mutation tests, Java oracle, 41 available library tests, all-targets Clippy and debug CLI build pass.
 
+- The beta-29 Java UTF-8 oracle now covers all 65,536 two-byte inputs and mixed valid/malformed fields of lengths 0, 1, 255, 256, 32767 and 65535. Both offset and sequential reads are checked for the length cases. The local Windows GNU differential test passes; longer input combinations and live extensions remain unverified.
+- GitHub Actions run 42531691407 passed all eight validation jobs for `244a4e1`; development publishing was skipped.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -51,11 +54,11 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - GitHub Actions run 42510568958 failed in the Linux/Windows core and web jobs because a settings unit test still rejected an offset equal to the interval. The test was corrected. Follow-up run 42510869830 passed all eight validation jobs (Windows/Linux core, desktop, web, Java compatibility, G-Presets and G-Python on both systems); development publishing was skipped.
 - GitHub Actions run 42513347986 passed all eight validation jobs; its development publishing job was skipped. The GitHub commits page subsequently showed eight successful checks and one skipped check for commit `9d58e65`, and successful checks for the earlier no-byte-representation and size-limit commits. The byte-view ordering commit requires its own CI result.
-- Local Git metadata remains behind GitHub main because the workspace `.git` is read-only. The working tree contains previously published changes; compare against the actual remote tree before publishing any new files.
+- The original workspace index remains behind GitHub main and its working tree contains many previously published files. Fetch succeeded; an isolated worktree based on the current remote commit is used to avoid disturbing those files. Compare the remote head before publishing.
 - The latest complete local library run passed 41 tests, failed two relay socket tests because this environment denied local loopback connections (Windows error 10013), and ignored one Python fixture. Focused logger/settings integration tests, desktop logger tests, formatting and a desktop debug build passed. GitHub Actions is the independent network-fixture check.
 - Windows GNU release build succeeded for the source of commit `3ec69f57cfc29bb930b68fae0c306ebfa4c23c1d`; only the hexdump test cases changed during that build. The release is not a live-client or visual validation.
 - Official client/game workflows, performance benefit and full visual equivalence remain unverified.
 
 ## Exact next step
 
-Inspect GitHub Actions for the latest code commit and fix any failures. Expand the Java UTF-8 differential corpus beyond the 13 selected malformed sequences, including mixed valid and invalid input and length boundaries; validate the no-byte-view logger interaction visually when a safe desktop test session is available.
+Inspect the CI result for the UTF-8 corpus commit. Expand the Java differential corpus to three- and four-byte malformed sequences with mixed valid input, and investigate any mismatches; validate the no-byte-view logger interaction visually when a safe desktop test session is available.

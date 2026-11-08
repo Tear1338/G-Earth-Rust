@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: check the latest GitHub Actions result and expand malformed UTF-8 comparisons beyond the first 13 cases against beta-29; validate on-screen logger interaction when a safe desktop session is available.
+Next: inspect CI for the expanded UTF-8 oracle, then compare three- and four-byte malformed sequences with mixed valid input against beta-29; validate on-screen logger interaction when a safe desktop session is available.

@@ -30,6 +30,41 @@ fn mutations_match_original_java_packets_and_cursor() {
         assert_eq!(p.read_utf8_lossy_at(6).unwrap().as_bytes(), java, "{value}");
         assert_eq!(p.read_utf8_lossy().unwrap().as_bytes(), java, "{value}");
     }
+    for first in 0u8..=255 {
+        for second in 0u8..=255 {
+            let mut p = Packet::new(18);
+            p.put_short_bytes(&[first, second]).unwrap();
+            let key = format!(
+                "utf8_pair_{}",
+                usize::from(first) * 256 + usize::from(second)
+            );
+            let java = expression::parse_hex(expected[key.as_str()]).unwrap();
+            assert_eq!(
+                p.read_utf8_lossy().unwrap().as_bytes(),
+                java,
+                "{first:02x}{second:02x}"
+            );
+        }
+    }
+    for length in [0, 1, 255, 256, 32767, 65535] {
+        let pattern = [0x61, 0xed, 0xa0, 0x80, 0xc3, 0xa9, 0xff];
+        let bytes: Vec<_> = (0..length).map(|i| pattern[i % pattern.len()]).collect();
+        let mut p = Packet::new(18);
+        p.put_short_bytes(&bytes).unwrap();
+        let key = format!("utf8_length_{length}");
+        let java = expression::parse_hex(expected[key.as_str()]).unwrap();
+        assert_eq!(
+            p.read_utf8_lossy_at(6).unwrap().as_bytes(),
+            java,
+            "length {length}"
+        );
+        assert_eq!(p.cursor(), 6);
+        assert_eq!(
+            p.read_utf8_lossy().unwrap().as_bytes(),
+            java,
+            "length {length}"
+        );
+    }
     let mut malformed = Packet::new(16);
     malformed
         .put_short_bytes(&[0xe2, 0x82, 0x41])

@@ -185,3 +185,5 @@ An isolated stable Rust and MinGW toolchain is available under the ignored `buil
 After the recent interface and parser changes, local Windows GNU checks pass `cargo fmt --all -- --check`, workspace/all-targets Clippy with warnings denied, and desktop Clippy with warnings denied. This does not replace the full CI matrix or the socket-based extension tests blocked by this environment.
 
 Do not add an automatic workflow push to main as a convenience: that write-access expansion was previously rejected. Source and dependency updates are published directly through the authorized GitHub connection. Development prerelease publishing has also encountered an integration-permission error; validated Actions artifacts remain the build distribution.
+
+The Java UTF-8 replacement oracle now exercises all two-byte sequences and mixed data at short-field boundaries through 65535 bytes. Continue with three- and four-byte malformed combinations and mixed valid input; this is not proof of complete decoder parity. GitHub Actions run 42531691407 passed all eight validation jobs for commit `244a4e1`.
