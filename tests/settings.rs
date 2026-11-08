@@ -207,7 +207,7 @@ fn importing_java_logger_settings_preserves_menu_choices() {
         assert_eq!(settings.booleans.get(key), Some(&expected), "{key}");
     }
     assert_eq!(settings.get("logger_antispam"), "High");
-    assert_eq!(settings.get("logger_representation"), "Expression");
+    assert_eq!(settings.get("logger_representation"), "No bytes");
     assert_eq!(settings.extra["legacy_java_cache"], cache);
     let path = path();
     settings.save(&path).unwrap();

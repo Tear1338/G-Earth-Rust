@@ -105,6 +105,7 @@ pub fn write_atomic(
 pub enum PacketRepresentation {
     #[default]
     Expression,
+    NoBytes,
     Legacy,
     RawHex,
     HexDump,
@@ -122,6 +123,7 @@ impl PacketRepresentation {
     pub fn translation_key(self) -> &'static str {
         match self {
             Self::Expression => "tab.tools.expression",
+            Self::NoBytes => "rust.logger.no_representation",
             Self::Legacy => "ext.logger.menu.packets.displaydetails.byterep.legacy",
             Self::RawHex => "ext.logger.menu.packets.displaydetails.byterep.rawhex",
             Self::HexDump => "ext.logger.menu.packets.displaydetails.byterep.hexdump",
@@ -130,6 +132,7 @@ impl PacketRepresentation {
     pub fn name(self) -> &'static str {
         match self {
             Self::Expression => "Expression",
+            Self::NoBytes => "No bytes",
             Self::Legacy => "Legacy",
             Self::RawHex => "Raw hex",
             Self::HexDump => "Hexdump",
@@ -138,6 +141,7 @@ impl PacketRepresentation {
 
     pub fn from_setting(value: &str) -> Self {
         match value {
+            "No bytes" => Self::NoBytes,
             "Legacy" => Self::Legacy,
             "Raw hex" => Self::RawHex,
             "Hexdump" => Self::HexDump,
@@ -160,7 +164,7 @@ pub fn represent(bytes: &[u8], mode: PacketRepresentation, byte_limit: usize) ->
             result
         }
         PacketRepresentation::HexDump => return hex_dump(bytes, byte_limit),
-        PacketRepresentation::Expression => return String::new(),
+        PacketRepresentation::Expression | PacketRepresentation::NoBytes => return String::new(),
     };
     if shown.len() < bytes.len() {
         result.push('…');

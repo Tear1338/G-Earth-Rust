@@ -260,6 +260,7 @@ fn logger_choices_resolve_in_every_supported_language() {
         }
         for mode in [
             PacketRepresentation::Expression,
+            PacketRepresentation::NoBytes,
             PacketRepresentation::Legacy,
             PacketRepresentation::RawHex,
         ] {

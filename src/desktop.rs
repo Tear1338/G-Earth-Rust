@@ -450,8 +450,10 @@ fn render_log_row(
     if options.message_id {
         metadata.push_str(&format!("[{}]", packet.header()));
     }
-    let has_byte_representation = options.representation != PacketRepresentation::Expression
-        || options.extra_legacy
+    let has_byte_representation = !matches!(
+        options.representation,
+        PacketRepresentation::Expression | PacketRepresentation::NoBytes
+    ) || options.extra_legacy
         || options.extra_raw_hex
         || options.extra_hex_dump;
     let omit_representations = options.skip_big
@@ -1803,6 +1805,7 @@ impl Desktop {
                 .show_ui(ui, |ui| {
                     for mode in [
                         PacketRepresentation::Expression,
+                        PacketRepresentation::NoBytes,
                         PacketRepresentation::Legacy,
                         PacketRepresentation::RawHex,
                         PacketRepresentation::HexDump,
@@ -4396,6 +4399,19 @@ mod logger_prediction_tests {
         options.extra_legacy = false;
         options.extra_raw_hex = false;
         options.extra_hex_dump = false;
+        options.representation = PacketRepresentation::NoBytes;
+        let mut output = Vec::new();
+        write_log_capture(&mut output, [&row], &info, options, false).unwrap();
+        let text = String::from_utf8(output).unwrap();
+        assert!(!text.contains("00000002002a"));
+        assert!(!text.contains("{h:42}"));
+        options.extra_raw_hex = true;
+        let mut output = Vec::new();
+        write_log_capture(&mut output, [&row], &info, options, false).unwrap();
+        assert!(String::from_utf8(output)
+            .unwrap()
+            .contains("Raw hex: 00000002002a"));
+        options.extra_raw_hex = false;
         options.representation = PacketRepresentation::HexDump;
         let mut output = Vec::new();
         write_log_capture(&mut output, [&row], &info, options, false).unwrap();

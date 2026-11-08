@@ -21,6 +21,7 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Blocked/replaced markers now use localized bracketed labels on their own line in the logger and export, as in the Java controller. Seven desktop tests and Clippy pass locally; full metadata layout and live visuals remain unfinished.
 - Logger names, hashes and IDs use individual brackets on a line preceding blocked/replaced markers, following the original Java ordering for tested cases. Desktop tests cover multiple names and hashes; metadata remains size bounded and visual behavior is unverified.
 - Importing valid Java logger settings now enables Java-like direction capture unless an explicit Rust preference already exists. Fourteen settings integration tests, seven settings unit tests and all-targets Clippy pass locally.
+- The logger can select no primary byte representation, as in Java; importing valid Java logger settings selects it while preserving independently enabled byte views. Existing Rust installations retain their default expression view. Focused representation, settings, translation and desktop tests and desktop Clippy pass locally; interactive behavior remains unverified.
 
 ## Remaining work
 
@@ -39,4 +40,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect the latest GitHub Actions validation and fix any failures. Then compare the original logger's packet representation and export line endings with Rust, and implement one verified difference with a focused regression test.
+Inspect the latest GitHub Actions validation and fix any failures. Then compare Java and Rust logger structure prediction limits and add a regression test for a verified difference while preserving existing Rust behavior.

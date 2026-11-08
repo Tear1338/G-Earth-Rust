@@ -506,9 +506,9 @@ impl Settings {
             if let [mode] = selected.as_slice() {
                 self.values.insert("logger_antispam".into(), (*mode).into());
             }
-            // Java's byte representations are independent of its main expression.
+            // Java's byte representations are independent of its structure expression.
             self.values
-                .insert("logger_representation".into(), "Expression".into());
+                .insert("logger_representation".into(), "No bytes".into());
         }
         if let Some(entries) = value["INJECTED_HISTORY"].as_array() {
             let history = crate::injection::InjectionHistory::from_java_cache(entries);

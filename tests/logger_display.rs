@@ -112,6 +112,10 @@ fn hex_dump_matches_original_java() {
 fn displays_legacy_and_hex_without_losing_control_bytes() {
     let bytes = [0, b'A', b'[', b']', b'{', b'}', 127, 160, 255];
     assert_eq!(
+        represent(&bytes, PacketRepresentation::NoBytes, bytes.len()),
+        ""
+    );
+    assert_eq!(
         represent(&bytes, PacketRepresentation::Legacy, bytes.len()),
         "[0]A[91][93][123][125][127]\u{a0}ÿ"
     );
@@ -128,6 +132,7 @@ fn long_packets_are_bounded_and_options_restore_from_settings() {
     assert_eq!(represent(&bytes, PacketRepresentation::Legacy, 0), "…");
     for mode in [
         PacketRepresentation::Expression,
+        PacketRepresentation::NoBytes,
         PacketRepresentation::Legacy,
         PacketRepresentation::RawHex,
         PacketRepresentation::HexDump,
