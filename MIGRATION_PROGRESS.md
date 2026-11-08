@@ -45,6 +45,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - A Windows GNU release build with `desktop,web` features succeeded locally for the code at `7257f58`; this does not establish live compatibility.
 - A second deterministic Java comparison covers 20,000 byte strings of lengths 3–12, including mixed valid and malformed input. The local oracle passes; it is a sample, not exhaustive coverage.
 
+- The Java oracle also compares 36,864 targeted three- and four-byte boundary combinations for E0, ED, F0 and F4 leads. The local differential test passes; other lead bytes and longer combinations are not exhaustive.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -64,4 +66,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect CI for both UTF-8 corpus commits; expand targeted three- and four-byte boundary sequences around overlong encodings, surrogates and U+10FFFF, then compare Java and Rust. Validate the no-byte-view logger interaction visually when a safe desktop test session is available.
+Inspect CI for the three UTF-8 corpus commits. Investigate how the Java connection discovers the hotel revision and whether the CLI relay can reliably acquire it before applying packet-safety checks; add a deterministic regression test if supported. Validate the no-byte-view logger interaction visually when a safe desktop test session is available.

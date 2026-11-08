@@ -84,6 +84,31 @@ fn mutations_match_original_java_packets_and_cursor() {
             "case {case_index}, bytes {bytes:02x?}"
         );
     }
+    let tails = [0x00, 0x7f, 0x80, 0x9f, 0xa0, 0xbf, 0xc0, 0xff];
+    let mut boundary_index = 0;
+    for lead in [0xe0, 0xed, 0xf0, 0xf4] {
+        for second in 0u8..=255 {
+            for third in tails {
+                let fourths: &[u8] = if lead < 0xf0 { &[0] } else { &tails };
+                for fourth in fourths {
+                    let mut bytes = vec![lead, second, third];
+                    if lead >= 0xf0 {
+                        bytes.push(*fourth);
+                    }
+                    let mut p = Packet::new(18);
+                    p.put_short_bytes(&bytes).unwrap();
+                    let key = format!("utf8_boundary_{boundary_index}");
+                    let java = expression::parse_hex(expected[key.as_str()]).unwrap();
+                    assert_eq!(
+                        p.read_utf8_lossy().unwrap().as_bytes(),
+                        java,
+                        "boundary {boundary_index}, bytes {bytes:02x?}"
+                    );
+                    boundary_index += 1;
+                }
+            }
+        }
+    }
     let mut malformed = Packet::new(16);
     malformed
         .put_short_bytes(&[0xe2, 0x82, 0x41])

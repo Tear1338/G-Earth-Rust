@@ -43,6 +43,21 @@ public class JavaMutationOracle {
             p.appendUShort(bytes.length).appendBytes(bytes);
             System.out.println("utf8_mixed_" + caseIndex + "=" + HexFormat.of().formatHex(p.readString(6, StandardCharsets.UTF_8).getBytes(StandardCharsets.UTF_8)));
         }
+        int boundaryIndex = 0;
+        int[] tails = {0x00, 0x7f, 0x80, 0x9f, 0xa0, 0xbf, 0xc0, 0xff};
+        for (int lead : new int[]{0xe0, 0xed, 0xf0, 0xf4}) {
+            for (int second = 0; second < 256; second++) {
+                for (int third : tails) {
+                    int[] fourths = lead < 0xf0 ? new int[]{-1} : tails;
+                    for (int fourth : fourths) {
+                        byte[] bytes = fourth < 0 ? new byte[]{(byte)lead, (byte)second, (byte)third} : new byte[]{(byte)lead, (byte)second, (byte)third, (byte)fourth};
+                        HPacket p = new HPacket(18);
+                        p.appendUShort(bytes.length).appendBytes(bytes);
+                        System.out.println("utf8_boundary_" + boundaryIndex++ + "=" + HexFormat.of().formatHex(p.readString(6, StandardCharsets.UTF_8).getBytes(StandardCharsets.UTF_8)));
+                    }
+                }
+            }
+        }
         HPacket malformedUtf = new HPacket(16);
         malformedUtf.appendUShort(3).appendBytes(new byte[]{(byte)0xe2, (byte)0x82, 0x41});
         malformedUtf.appendInt(2).appendBytes(new byte[]{(byte)0xff, 0x61});

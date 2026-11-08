@@ -189,3 +189,5 @@ Do not add an automatic workflow push to main as a convenience: that write-acces
 The Java UTF-8 replacement oracle now exercises all two-byte sequences and mixed data at short-field boundaries through 65535 bytes. Continue with three- and four-byte malformed combinations and mixed valid input; this is not proof of complete decoder parity. GitHub Actions run 42531691407 passed all eight validation jobs for commit `244a4e1`.
 
 A deterministic sample of 20,000 byte strings of lengths 3–12 also matches Java replacement decoding locally. This does not exhaust longer inputs.
+
+An additional 36,864 combinations target E0, ED, F0 and F4 boundary sequences; the local Java comparison passes. These tests do not establish exhaustive UTF-8 or real extension compatibility.
