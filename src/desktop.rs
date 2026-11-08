@@ -37,6 +37,36 @@ use std::{
 // Both lazy prediction caches count against the capture byte budget.
 const LOG_PREDICTION_LIMIT: usize = 1024;
 
+fn with_gearth_icon(viewport: egui::ViewportBuilder) -> egui::ViewportBuilder {
+    static ICON: OnceLock<Option<Arc<egui::IconData>>> = OnceLock::new();
+    match ICON.get_or_init(|| {
+        eframe::icon_data::from_png_bytes(include_bytes!("../resources/g_earth_icon.png"))
+            .ok()
+            .map(Arc::new)
+    }) {
+        Some(icon) => viewport.with_icon(icon.clone()),
+        None => viewport,
+    }
+}
+
+#[cfg(test)]
+mod window_icon_tests {
+    use super::*;
+
+    #[test]
+    fn original_icon_decodes_and_is_reused_for_native_windows() {
+        let main = with_gearth_icon(egui::ViewportBuilder::default())
+            .icon
+            .unwrap();
+        let logger = with_gearth_icon(egui::ViewportBuilder::default())
+            .icon
+            .unwrap();
+        assert_eq!((main.width, main.height), (64, 64));
+        assert_eq!(main.rgba.len(), 64 * 64 * 4);
+        assert!(Arc::ptr_eq(&main, &logger));
+    }
+}
+
 fn bounded_log_prediction(mut value: String) -> String {
     if value.len() > LOG_PREDICTION_LIMIT {
         let mut end = LOG_PREDICTION_LIMIT - "…".len();
@@ -54,9 +84,11 @@ fn main() -> eframe::Result<()> {
     eframe::run_native(
         "G-Earth Rust — development",
         eframe::NativeOptions {
-            viewport: egui::ViewportBuilder::default()
-                .with_inner_size([1060.0, 720.0])
-                .with_min_inner_size([780.0, 540.0]),
+            viewport: with_gearth_icon(
+                egui::ViewportBuilder::default()
+                    .with_inner_size([1060.0, 720.0])
+                    .with_min_inner_size([780.0, 540.0]),
+            ),
             ..Default::default()
         },
         Box::new(|_| Ok(Box::<Desktop>::default())),
@@ -3207,11 +3239,13 @@ impl eframe::App for Desktop {
             };
             ctx.show_viewport_immediate(
                 egui::ViewportId::from_hash_of("logger_window"),
-                egui::ViewportBuilder::default()
-                    .with_title(&title)
-                    .with_window_level(level)
-                    .with_inner_size([850.0, 600.0])
-                    .with_min_inner_size([480.0, 320.0]),
+                with_gearth_icon(
+                    egui::ViewportBuilder::default()
+                        .with_title(&title)
+                        .with_window_level(level)
+                        .with_inner_size([850.0, 600.0])
+                        .with_min_inner_size([480.0, 320.0]),
+                ),
                 |logger_ctx, class| {
                     if class == egui::ViewportClass::Embedded {
                         egui::Window::new(&title)

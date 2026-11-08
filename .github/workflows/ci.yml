@@ -64,6 +64,7 @@ jobs:
       - run: cargo clippy --locked --features desktop --bin gearth-desktop -- -D warnings
       - run: cargo test --locked --features desktop --bin gearth-desktop logger_prediction_tests
       - run: cargo test --locked --features desktop --bin gearth-desktop rule_editor_tests
+      - run: cargo test --locked --features desktop --bin gearth-desktop window_icon_tests
       - run: cargo build --locked --release --features desktop --bin gearth-desktop
       - run: python tools/check_pe_imports.py target/release/gearth-desktop.exe
       - name: Package desktop usage and license

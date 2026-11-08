@@ -2,6 +2,8 @@
 
 The requested goal is a complete Rust replacement for G-Earth 1.5.4-beta-29, with original functionality and a GitHub project. The repository is Tear1338/G-Earth-Rust. It remains a development port; do not describe a passing component test as whole-application parity.
 
+The native main and packet logger windows now use the 64x64 `gearth/ui/themes/G-Earth/logoSmall.png` asset from the released beta-29 API JAR (SHA-256 f6d6d50f222cc245db9367f6ceb45c5a5956b4c8424a75cd95821311cf3fbbec), covered by the project's upstream MIT license. A desktop test verifies decoding and reuse. Native window/taskbar presentation and executable file icon have not been visually validated; the executable file icon has not been added.
+
 EVA packets can now test whether their complete body matches a typed structure, including count-prefixed groups, without changing packet data or cursor. A finite Java oracle checks nested, incomplete, empty and invalid examples, including unknown symbols where Java stops interpreting the current group. Parsing and expansion are bounded, which may reject exceptionally large structures accepted by Java. WEDGIE and real extension sessions remain unvalidated.
 
 The EVA packet API now supports beta-29 `HPacket.skip` structure codes for integers, strings, bytes, booleans, shorts, longs and doubles, ignoring unknown characters. Normal cursor results are compared with the released Java API. On truncated input Rust retains the cursor after the last successful field; Java can advance beyond the packet on a failing byte read, so that error case is deliberately different. WEDGIE skip and real extension usage remain untested.
