@@ -440,6 +440,9 @@ impl Settings {
         if let Some(enabled) = value["always_admin"].as_bool() {
             self.booleans.insert("always_admin".into(), enabled);
         }
+        if let Some(enabled) = value["use_gpython"].as_bool() {
+            self.booleans.insert("python_enabled".into(), enabled);
+        }
         // beta-29 stores these in the exact menu order from UiLoggerController.
         // Reject malformed or differently sized lists, as Java does for old layouts.
         if let Some(items) = value["LOGGER_SETTINGS"]
@@ -507,6 +510,24 @@ impl Settings {
 mod tests {
     use super::{ScheduleTemplate, Settings};
     use crate::packet::Direction;
+
+    #[test]
+    fn java_python_console_preference_is_preserved() {
+        for enabled in [true, false] {
+            let mut settings = Settings::default();
+            settings
+                .import_java_cache(serde_json::json!({"use_gpython": enabled}))
+                .unwrap();
+            let restored = Settings::from_json(settings.to_json()).unwrap();
+            assert_eq!(restored.booleans.get("python_enabled"), Some(&enabled));
+        }
+        let mut settings = Settings::default();
+        settings.booleans.insert("python_enabled".into(), false);
+        settings
+            .import_java_cache(serde_json::json!({"use_gpython": "invalid"}))
+            .unwrap();
+        assert_eq!(settings.booleans.get("python_enabled"), Some(&false));
+    }
 
     #[test]
     fn java_language_and_theme_preferences_are_imported_and_persisted() {

@@ -2,6 +2,7 @@ use eframe::egui;
 use gearth_rust::{
     extension_host::ExtensionHost,
     gpython::{self, Dependencies, PythonConsole},
+    i18n::I18n,
 };
 use std::{
     path::Path,
@@ -61,6 +62,8 @@ impl PythonUi {
         &mut self,
         ui: &mut egui::Ui,
         host: Option<&Arc<ExtensionHost>>,
+        python_enabled: bool,
+        i18n: &I18n,
         status: &mut String,
     ) {
         if let Some(pending) = &self.pending {
@@ -100,12 +103,13 @@ impl PythonUi {
             !matches!(console.exited(), Ok(Some(_)))
         });
         egui::CollapsingHeader::new("G-Python live console").show(ui,|ui|{
+            if !python_enabled { ui.label(i18n.text("rust.python.disabled_hint")); }
             ui.horizontal(|ui|{ui.label("Python executable");if ui.add_enabled(self.pending.is_none(),egui::TextEdit::singleline(&mut self.runtime)).changed(){self.report=None;}ui.label("Console title");ui.text_edit_singleline(&mut self.title);});
             ui.horizontal(|ui|{if ui.add_enabled(self.pending.is_none(),egui::Button::new("Check Python dependencies")).clicked(){let runtime=self.runtime.clone();let (send,receive)=mpsc::channel();self.pending=Some(receive);*status="Checking Python modules...".into();std::thread::spawn(move||{let _=send.send(gpython::probe(Path::new(&runtime)).map_err(|error|error.to_string()));});}
                 if ui.add_enabled(self.pending.is_none()&&self.consoles.is_empty(),egui::Button::new("Install/repair Python packages")).clicked(){let runtime=self.runtime.clone();let cancel=Arc::new(AtomicBool::new(false));let worker_cancel=cancel.clone();let (send,receive)=mpsc::channel();self.install_cancel=Some(cancel);self.pending=Some(receive);self.report=None;*status="Installing validated Python packages in the selected environment...".into();std::thread::spawn(move||{let _=send.send(gpython::install_dependencies(Path::new(&runtime),&worker_cancel).map_err(|error|error.to_string()));});}
                 if self.install_cancel.is_some()&&ui.button("Cancel installation").clicked(){self.cancel_install();*status="Cancelling Python package installation...".into();}
                 if self.pending.is_some(){ui.spinner();}
-                let enabled=host.is_some()&&self.pending.is_none()&&self.report.as_ref().is_some_and(|report|report.missing().is_empty())&&self.consoles.len()<4;
+                let enabled=python_enabled&&host.is_some()&&self.pending.is_none()&&self.report.as_ref().is_some_and(|report|report.missing().is_empty())&&self.consoles.len()<4;
                 if ui.add_enabled(enabled,egui::Button::new("Open G-Python QtConsole")).clicked(){match PythonConsole::launch(Path::new(&self.runtime),host.unwrap(),&self.title){Ok(console)=>{self.consoles.push(console);*status="Starting G-Python kernel and QtConsole...".into();},Err(error)=>*status=error.to_string()}}
                 if ui.add_enabled(!self.consoles.is_empty(),egui::Button::new("Stop Python consoles")).clicked(){self.consoles.clear();*status="Python consoles stopped".into();}
             });

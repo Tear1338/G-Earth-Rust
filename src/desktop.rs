@@ -182,6 +182,7 @@ struct Desktop {
     packet_safety: Arc<std::sync::Mutex<gearth_rust::packet_safety::PacketSafety>>,
     admin_service: Arc<std::sync::Mutex<gearth_rust::admin_service::AdminService>>,
     always_admin: bool,
+    python_enabled: bool,
     developer_mode: bool,
     developer_mode_confirmation: bool,
     socks_proxy: String,
@@ -659,6 +660,7 @@ impl Default for Desktop {
                 gearth_rust::admin_service::AdminService::default(),
             )),
             always_admin: false,
+            python_enabled: true,
             developer_mode: false,
             developer_mode_confirmation: false,
             socks_proxy: String::new(),
@@ -2843,6 +2845,10 @@ impl Desktop {
     }
     fn extra(&mut self, ui: &mut egui::Ui) {
         ui.heading(self.i18n.text("tab.extra"));
+        ui.checkbox(
+            &mut self.python_enabled,
+            self.i18n.text("tab.extra.options.pythonscripting"),
+        );
         if ui
             .checkbox(
                 &mut self.always_admin,
@@ -3334,6 +3340,12 @@ impl Desktop {
         }
     }
     fn apply_settings(&mut self) {
+        self.python_enabled = self
+            .settings
+            .booleans
+            .get("python_enabled")
+            .copied()
+            .unwrap_or(true);
         let enabled = self
             .settings
             .booleans
@@ -3577,6 +3589,7 @@ impl Desktop {
             ("logger_message_id".into(), self.logger_message_id),
             ("developer_mode".into(), self.developer_mode),
             ("always_admin".into(), self.always_admin),
+            ("python_enabled".into(), self.python_enabled),
             ("logger_extra_legacy".into(), self.logger_extra_legacy),
             ("logger_extra_raw_hex".into(), self.logger_extra_raw_hex),
             ("logger_extra_hex_dump".into(), self.logger_extra_hex_dump),
@@ -3721,8 +3734,13 @@ impl Desktop {
         })
     }
     fn extensions(&mut self, ui: &mut egui::Ui) {
-        self.python_console
-            .show(ui, self.extension_host.as_ref(), &mut self.status);
+        self.python_console.show(
+            ui,
+            self.extension_host.as_ref(),
+            self.python_enabled,
+            &self.i18n,
+            &mut self.status,
+        );
         self.store.show(
             ui,
             self.extension_host.as_ref(),
