@@ -656,7 +656,7 @@ impl WebSocketHandler for Handler {
                 tokio::select! {
                     _=stopping.changed()=>break,
                     _=tick.tick(), if direction==Direction::ToServer&&peer.ready.load(Ordering::Acquire)=>{
-                        if let Some(host)=&self.0.options.extensions{host.forward_injections(|direction,packet|peer.enqueue_retaining(direction,packet))?;}
+                        if let Some(host)=&self.0.options.extensions{let epoch=peer.extension_session.lock().map_err(|_|io::Error::other("Nitro extension session lock poisoned"))?.ok_or_else(||io::Error::other("Nitro extension session missing"))?;host.forward_owned_injections(epoch,|direction,packet|peer.enqueue_retaining(direction,packet))?;}
                     },
                     packet=injections.recv()=>{let Some(packet)=packet else{break;};peer.queued.fetch_sub(packet.bytes().len(),Ordering::AcqRel);let mut modifier=peer.modifier.lock().await;if let Some(packet)=self.0.packet(direction,packet,true).await?{let bytes=modifier.encode(direction,packet.bytes().to_vec())?;sink.send(WsMessage::Binary(bytes.into())).await.map_err(io::Error::other)?;}},
                     message=stream.next()=>{

@@ -289,8 +289,22 @@ fn an_old_session_cannot_disconnect_or_clear_a_new_session() {
     .unwrap();
     write_frame(&mut stream, &Packet::new(3)).unwrap();
     assert_eq!(read_frame(&mut stream).unwrap().header(), 4);
+    assert_eq!(
+        host.take_owned_injections(old).unwrap_err().kind(),
+        std::io::ErrorKind::NotConnected
+    );
+    let mut called = false;
+    let result = host.forward_owned_injections(old, |_, _| {
+        called = true;
+        Ok(())
+    });
+    assert_eq!(result.unwrap_err().kind(), std::io::ErrorKind::NotConnected);
+    assert!(!called);
     assert!(!host.end_owned_connection(old));
-    assert_eq!(host.take_injections()[0].1.header(), 123);
+    assert_eq!(
+        host.take_owned_injections(current).unwrap()[0].1.header(),
+        123
+    );
     write_frame(&mut stream, &Packet::new(3)).unwrap();
     assert_eq!(read_frame(&mut stream).unwrap().header(), 4);
     assert!(host.end_owned_connection(current));

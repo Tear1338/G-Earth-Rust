@@ -466,8 +466,8 @@ fn run_session(
     while !stop.load(Ordering::Acquire) && !closed.load(Ordering::Acquire) {
         let mut progress = false;
         let mut injected: Vec<_> = commands.try_iter().take(64).collect();
-        if let Some(host) = &options.extensions {
-            injected.extend(host.take_injections());
+        if let (Some(host), Some(epoch)) = (&options.extensions, *extension_session) {
+            injected.extend(host.take_owned_injections(epoch)?);
         }
         for (direction, packet) in injected {
             let message = Message {

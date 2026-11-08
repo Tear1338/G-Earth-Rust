@@ -399,6 +399,21 @@ impl ExtensionHost {
             })
             .unwrap_or_default()
     }
+    /// Only the current transport may take injections belonging to its session.
+    pub fn take_owned_injections(&self, epoch: u64) -> io::Result<Vec<(Direction, Packet)>> {
+        let connection = self
+            .shared
+            .connection
+            .lock()
+            .map_err(|_| io::Error::other("connection lock poisoned"))?;
+        if connection.is_none() || self.shared.connection_epoch.load(Ordering::Relaxed) != epoch {
+            return Err(io::Error::new(
+                io::ErrorKind::NotConnected,
+                "extension session was replaced",
+            ));
+        }
+        Ok(self.take_injections())
+    }
     /// Forward up to 64 queued packets, retaining the first one that cannot
     /// yet be accepted by the transport. No later packet can pass it.
     pub fn forward_injections(
@@ -430,6 +445,26 @@ impl ExtensionHost {
             }
         }
         Ok(count)
+    }
+    /// Forward while holding the session guard. The callback must be
+    /// nonblocking and must not call back into the extension host.
+    pub fn forward_owned_injections(
+        &self,
+        epoch: u64,
+        enqueue: impl FnMut(Direction, Packet) -> Result<(), (io::Error, Packet)>,
+    ) -> io::Result<usize> {
+        let connection = self
+            .shared
+            .connection
+            .lock()
+            .map_err(|_| io::Error::other("connection lock poisoned"))?;
+        if connection.is_none() || self.shared.connection_epoch.load(Ordering::Relaxed) != epoch {
+            return Err(io::Error::new(
+                io::ErrorKind::NotConnected,
+                "extension session was replaced",
+            ));
+        }
+        self.forward_injections(enqueue)
     }
     pub fn launch(&self, executable: &Path, path: &Path) -> io::Result<Child> {
         let path = path.canonicalize()?;

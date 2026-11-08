@@ -338,7 +338,7 @@ async fn session(
     let result:io::Result<()>=async {loop {if state.stop.load(Ordering::Acquire)||peer.closed.load(Ordering::Acquire){break;}tokio::select! {
         _=stopped.changed()=>break,
         _=&mut handshake,if !peer.ready.load(Ordering::Acquire)=>return Err(io::Error::new(io::ErrorKind::TimedOut,"Unity revision/hello timed out")),
-        _=tick.tick(),if peer.ready.load(Ordering::Acquire)=>{if let Some(host)=&state.options.extensions {host.forward_injections(|direction,packet|peer.enqueue_retaining(direction,packet))?;}},
+        _=tick.tick(),if peer.ready.load(Ordering::Acquire)=>{if let Some(host)=&state.options.extensions {let epoch=peer.extension_session.lock().map_err(|_|io::Error::other("Unity extension session lock poisoned"))?.ok_or_else(||io::Error::other("Unity extension session missing"))?;host.forward_owned_injections(epoch,|direction,packet|peer.enqueue_retaining(direction,packet))?;}},
         injection=injections.recv()=>{let Some((direction,packet))=injection else{break;};peer.queued.fetch_sub(packet.bytes().len(),Ordering::AcqRel);if let Some(packet)=state.packet(direction,packet,true,None).await?{tokio::time::timeout(Duration::from_secs(5),socket.send(wire(direction,&packet))).await.map_err(io::Error::other)?.map_err(io::Error::other)?;}},
         message=socket.next()=>{let Some(message)=message else{break;};match message.map_err(io::Error::other)? {
             WsMessage::Binary(bytes)=>{if revision_name.is_none(){revision_name=Some(revision(&bytes)?);continue;}let (&prefix,payload)=bytes.split_first().ok_or_else(||io::Error::other("empty Unity frame"))?;let direction=direction(prefix)?;
