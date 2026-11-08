@@ -1,6 +1,23 @@
 use gearth_rust::packet::{Packet, PacketFormat};
 
 #[test]
+fn replacing_raw_bytes_keeps_length_and_cursor_and_rejects_partial_writes() {
+    let mut packet = Packet::new(10);
+    packet.append(&[0, 1, 2, 3, 4, 5]).unwrap();
+    packet.set_cursor(8).unwrap();
+    let length = packet.bytes().len();
+    packet.replace_bytes(7, &[0xff, 0x80, 42]).unwrap();
+    assert_eq!(packet.body(), &[0, 0xff, 0x80, 42, 4, 5]);
+    assert_eq!(packet.cursor(), 8);
+    assert_eq!(packet.bytes().len(), length);
+    let before = packet.clone();
+    assert!(packet.replace_bytes(5, &[1]).is_err());
+    assert!(packet.replace_bytes(usize::MAX, &[1]).is_err());
+    assert!(packet.replace_bytes(length - 1, &[1, 2]).is_err());
+    assert_eq!(packet, before);
+}
+
+#[test]
 fn typed_edits_keep_cursor_and_reject_invalid_fields_without_mutation() {
     let mut packet = Packet::new(7);
     packet.put_string("old").unwrap().put_i32(9).unwrap();

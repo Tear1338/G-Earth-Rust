@@ -47,6 +47,11 @@ fn mutations_match_original_java_packets_and_cursor() {
         .replace_f64(25, 0.125)
         .unwrap();
     check("fixed", &fixed);
+    let mut raw_bytes = Packet::new(10);
+    raw_bytes.append(&[0, 1, 2, 3, 4, 5]).unwrap();
+    raw_bytes.set_cursor(8).unwrap();
+    raw_bytes.replace_bytes(7, &[0xff, 0x80, 42]).unwrap();
+    check("fixed_bytes", &raw_bytes);
     for (name, original, replacement) in [
         ("growth", "cat", "caterpillar"),
         ("shrink", "elephant", "x"),

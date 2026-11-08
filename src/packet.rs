@@ -501,6 +501,11 @@ impl Packet {
     pub fn replace_u8(&mut self, offset: usize, value: u8) -> Result<&mut Self> {
         self.replace_fixed(offset, &[value])
     }
+    /// Overwrite bytes at an absolute EVA body offset without changing the
+    /// packet length or read cursor. An out-of-range write is rejected in full.
+    pub fn replace_bytes(&mut self, offset: usize, bytes: &[u8]) -> Result<&mut Self> {
+        self.replace_fixed(offset, bytes)
+    }
     pub fn replace_bool(&mut self, offset: usize, value: bool) -> Result<&mut Self> {
         self.replace_u8(offset, u8::from(value))
     }

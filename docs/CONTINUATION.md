@@ -2,6 +2,8 @@
 
 The requested goal is a complete Rust replacement for G-Earth 1.5.4-beta-29, with original functionality and a GitHub project. The repository is Tear1338/G-Earth-Rust. It remains a development port; do not describe a passing component test as whole-application parity.
 
+EVA packets now expose a fixed-length `replace_bytes` operation that preserves the read cursor. A finite byte comparison against beta-29 HPacket covers a normal body write; tests also check bounds and rollback. Unlike Java's `replaceBytes`, which truncates an oversized write at the packet end and can touch header bytes, Rust rejects writes outside the body atomically, consistent with its other typed mutations. WEDGIE and live client behavior are not covered.
+
 The extension host panel's server status, runtime and file labels, launch/approval/open/disconnect controls and console title now use translated resources. French and English text are provided; other supported languages fall back to English for these added labels. The extension store, Python console and operating-system error messages are not fully translated, and UI interaction has not been verified visually.
 
 The scheduler's saved/active file controls, explanatory hints and results, plus the packet conversion tools, now have French and English labels with English fallback for other languages. Counts and file paths remain visible in results; operating-system error details remain untranslated. These labels have resource tests and a desktop compile check, but the UI has not been visually verified and other controls remain untranslated.

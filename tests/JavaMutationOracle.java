@@ -12,6 +12,11 @@ public class JavaMutationOracle {
         fixed.setReadIndex(10);
         fixed.replaceInt(6, -77).replaceBoolean(10, true).replaceUShort(11, 65000).replaceLong(13, -9999999999L).replaceFloat(21, -3.25f).replaceDouble(25, 0.125);
         emit("fixed", fixed);
+        HPacket rawBytes = new HPacket(10);
+        rawBytes.appendBytes(new byte[]{0, 1, 2, 3, 4, 5});
+        rawBytes.setReadIndex(8);
+        rawBytes.replaceBytes(7, new byte[]{(byte) 0xff, (byte) 0x80, 42});
+        emit("fixed_bytes", rawBytes);
         HPacket growth = new HPacket(2);
         growth.appendString("cat").appendInt(42).appendString("end");
         growth.setReadIndex(7);
