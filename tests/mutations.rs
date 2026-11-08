@@ -23,7 +23,7 @@ fn absolute_reads_preserve_cursor_and_validate_bounds() {
     invalid.put_i32(-1).unwrap();
     assert!(invalid.read_long_string_at(6).is_err());
     let wedgie = Packet::new_with_format(PacketFormat::WedgieOutgoing, 1).unwrap();
-    assert!(wedgie.read_i32_at(0).is_err());
+    assert!(wedgie.read_i32_at(wedgie.bytes().len()).is_err());
 }
 
 #[test]

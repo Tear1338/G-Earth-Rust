@@ -2,6 +2,51 @@ use gearth_rust::{
     expression, extension,
     packet::{Direction, Message, Packet, PacketFormat},
 };
+
+#[test]
+fn absolute_reads_follow_wedgie_encodings_without_moving_the_cursor() {
+    for format in [PacketFormat::WedgieIncoming, PacketFormat::WedgieOutgoing] {
+        let mut packet = Packet::new_with_format(format, 123).unwrap();
+        let number = packet.bytes().len();
+        packet.put_i32(-256).unwrap();
+        let text = packet.bytes().len();
+        packet.put_string("hello").unwrap();
+        let boolean = packet.bytes().len();
+        packet.put_bool(true).unwrap();
+        let ushort = packet.bytes().len();
+        packet.put_u16(1000).unwrap();
+        let end = packet.bytes().len();
+        packet.set_cursor(boolean).unwrap();
+        assert_eq!(packet.read_i32_at(number).unwrap(), -256);
+        assert_eq!(packet.read_string_at(text).unwrap(), "hello");
+        assert!(packet.read_bool_at(boolean).unwrap());
+        assert_eq!(packet.read_u16_at(ushort).unwrap(), 1000);
+        assert_eq!(packet.read_u8_at(0).unwrap(), packet.bytes()[0]);
+        assert!(packet.read_i32_at(end).is_err());
+        assert!(packet.read_i32_at(usize::MAX).is_err());
+        assert!(packet.read_string_at(end).is_err());
+        assert!(packet.read_i64_at(number).is_err());
+        assert!(packet.read_f32_at(number).is_err());
+        assert!(packet.read_f64_at(number).is_err());
+        assert!(packet.read_long_string_at(number).is_err());
+        assert_eq!(packet.cursor(), boolean);
+    }
+}
+
+#[test]
+fn absolute_wedgie_reads_reject_invalid_and_truncated_values() {
+    let mut incoming = Packet::new_with_format(PacketFormat::WedgieIncoming, 1).unwrap();
+    incoming.put_i32(-1).unwrap();
+    assert!(incoming.read_u16_at(2).is_err());
+    assert!(incoming.read_string_at(2).is_err());
+    let mut outgoing = Packet::new_with_format(PacketFormat::WedgieOutgoing, 1).unwrap();
+    outgoing.append(&[0x40]).unwrap();
+    assert!(outgoing.read_u16_at(2).is_err());
+    assert!(outgoing.read_string_at(2).is_err());
+    assert!(outgoing.read_i32_at(2).is_err());
+    assert_eq!(incoming.cursor(), 2);
+    assert_eq!(outgoing.cursor(), 2);
+}
 #[test]
 fn both_wedgie_formats_read_write_and_serialize() {
     for format in [PacketFormat::WedgieIncoming, PacketFormat::WedgieOutgoing] {

@@ -188,20 +188,39 @@ impl Packet {
         self.read_bytes_at(offset, n)
     }
     pub fn read_u8_at(&self, offset: usize) -> Result<u8> {
-        Ok(self.eva_bytes_at(offset, 1)?[0])
+        Ok(self.read_bytes_at(offset, 1)?[0])
     }
     pub fn read_bool_at(&self, offset: usize) -> Result<bool> {
-        Ok(self.read_u8_at(offset)? != 0)
+        if self.format == PacketFormat::EvaWire {
+            Ok(self.read_u8_at(offset)? != 0)
+        } else {
+            Ok(self.read_i32_at(offset)? == 1)
+        }
     }
     pub fn read_u16_at(&self, offset: usize) -> Result<u16> {
-        Ok(u16::from_be_bytes(
-            self.eva_bytes_at(offset, 2)?.try_into().unwrap(),
-        ))
+        match self.format {
+            PacketFormat::EvaWire => Ok(u16::from_be_bytes(
+                self.read_bytes_at(offset, 2)?.try_into().unwrap(),
+            )),
+            PacketFormat::WedgieIncoming => u16::try_from(self.read_i32_at(offset)?)
+                .map_err(|_| error("WEDGIE ushort outside range")),
+            PacketFormat::WedgieOutgoing => {
+                Ok(crate::encoding::decode_b64(self.read_bytes_at(offset, 2)?)? as u16)
+            }
+        }
     }
     pub fn read_i32_at(&self, offset: usize) -> Result<i32> {
-        Ok(i32::from_be_bytes(
-            self.eva_bytes_at(offset, 4)?.try_into().unwrap(),
-        ))
+        if self.format == PacketFormat::EvaWire {
+            Ok(i32::from_be_bytes(
+                self.read_bytes_at(offset, 4)?.try_into().unwrap(),
+            ))
+        } else {
+            let bytes = self
+                .bytes
+                .get(offset..)
+                .ok_or_else(|| error("truncated packet field"))?;
+            Ok(crate::encoding::decode_vl64(bytes)?.0)
+        }
     }
     pub fn read_i64_at(&self, offset: usize) -> Result<i64> {
         Ok(i64::from_be_bytes(
@@ -209,12 +228,24 @@ impl Packet {
         ))
     }
     pub fn read_f32_at(&self, offset: usize) -> Result<f32> {
+        self.ensure_eva()?;
         Ok(f32::from_bits(self.read_i32_at(offset)? as u32))
     }
     pub fn read_f64_at(&self, offset: usize) -> Result<f64> {
         Ok(f64::from_bits(self.read_i64_at(offset)? as u64))
     }
     pub fn read_string_at(&self, offset: usize) -> Result<String> {
+        if self.format == PacketFormat::WedgieIncoming {
+            let bytes = self
+                .bytes
+                .get(offset..)
+                .ok_or_else(|| error("truncated packet field"))?;
+            let length = bytes
+                .iter()
+                .position(|byte| *byte == 2)
+                .ok_or_else(|| error("unterminated WEDGIE string"))?;
+            return Ok(latin1_decode(&bytes[..length]));
+        }
         let length = usize::from(self.read_u16_at(offset)?);
         let start = offset
             .checked_add(2)
@@ -222,6 +253,7 @@ impl Packet {
         Ok(latin1_decode(self.read_bytes_at(start, length)?))
     }
     pub fn read_long_string_at(&self, offset: usize) -> Result<String> {
+        self.ensure_eva()?;
         let length = usize::try_from(self.read_i32_at(offset)?)
             .map_err(|_| error("negative string length"))?;
         let start = offset
