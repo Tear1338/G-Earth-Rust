@@ -128,14 +128,71 @@ fn ambiguous_reverse_snapshot_never_silently_corrupts_a_packet() {
 }
 
 #[test]
+fn flash_identity_accepts_java_hello_variants_and_ignores_truncated_fields() {
+    for version in ["TEST-2026", ""] {
+        let mut session = FlashSession::default();
+        let mut invalid = Packet::new(1);
+        invalid.put_u16(5).unwrap().put_u8(b'a').unwrap();
+        session.feed(Direction::ToServer, invalid.bytes()).unwrap();
+        assert!(session.take_identity().is_none());
+        let mut hello = Packet::new(1);
+        hello
+            .put_string(version)
+            .unwrap()
+            .put_string("FLASH")
+            .unwrap()
+            .put_u8(42)
+            .unwrap();
+        session.feed(Direction::ToServer, hello.bytes()).unwrap();
+        let identity = session.take_identity().unwrap();
+        assert_eq!(
+            (identity.version.as_str(), identity.identifier.as_str()),
+            (version, "FLASH")
+        );
+        assert!(session.take_identity().is_none());
+    }
+}
+
+#[test]
 #[ignore = "requires the pinned Java Flash identification oracle"]
-fn identification_compares_with_java_and_records_stricter_rust_checks() {
+fn identification_compares_with_java_and_handles_fragmentation() {
     let java =
         std::fs::read_to_string(std::env::var("GEARTH_FLASH_IDENTITY_ORACLE").unwrap()).unwrap();
     let expected: std::collections::BTreeMap<_, _> = java
         .lines()
         .map(|line| line.split_once('=').unwrap())
         .collect();
+    let mut hello = Packet::new(1);
+    hello
+        .put_string("TEST-2026")
+        .unwrap()
+        .put_string("FLASH")
+        .unwrap();
+    for split in 1..hello.bytes().len() {
+        let mut session = FlashSession::default();
+        session
+            .feed(Direction::ToServer, &hello.bytes()[..split])
+            .unwrap();
+        assert!(session.take_identity().is_none(), "split {split}");
+        session
+            .feed(Direction::ToServer, &hello.bytes()[split..])
+            .unwrap();
+        let identity = session.take_identity().unwrap();
+        assert_eq!(
+            (identity.version.as_str(), identity.identifier.as_str()),
+            ("TEST-2026", "FLASH")
+        );
+        let java = expected[format!("split_{split}").as_str()];
+        assert_eq!(
+            java,
+            if split <= 6 {
+                "ok,false,none"
+            } else {
+                "ArrayIndexOutOfBoundsException,true,none"
+            },
+            "split {split}"
+        );
+    }
     for case in 0..3 {
         let mut packet = Packet::new(1);
         packet
@@ -152,25 +209,11 @@ fn identification_compares_with_java_and_records_stricter_rust_checks() {
         }
         let identity = session.take_identity();
         let key = format!("identity_{case}");
-        match case {
-            0 => {
-                let identity = identity.unwrap();
-                assert_eq!(
-                    format!("{},{}", identity.version, identity.identifier),
-                    expected[key.as_str()]
-                );
-            }
-            _ => {
-                assert!(identity.is_none());
-                assert_eq!(
-                    expected[key.as_str()],
-                    if case == 1 {
-                        "TEST-2026,FLASH"
-                    } else {
-                        ",FLASH"
-                    }
-                );
-            }
-        }
+        let identity = identity.unwrap();
+        assert_eq!(
+            format!("{},{}", identity.version, identity.identifier),
+            expected[key.as_str()]
+        );
+        assert!(session.take_identity().is_none());
     }
 }

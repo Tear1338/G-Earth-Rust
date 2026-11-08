@@ -191,3 +191,5 @@ The Java UTF-8 replacement oracle now exercises all two-byte sequences and mixed
 A deterministic sample of 20,000 byte strings of lengths 3–12 also matches Java replacement decoding locally. This does not exhaust longer inputs.
 
 An additional 36,864 combinations target E0, ED, F0 and F4 boundary sequences; the local Java comparison passes. These tests do not establish exhaustive UTF-8 or real extension compatibility.
+
+Flash identification now accepts an empty revision or trailing fields like the pinned Java method. A Java method oracle with a stub superclass and Rust fragmented-frame test show a difference for all two-part splits of one sample hello: Rust reassembles it; Java does not. This change broadens the identification heuristic and may identify another short packet by mistake; real sessions and full Java forwarding have not been tested.

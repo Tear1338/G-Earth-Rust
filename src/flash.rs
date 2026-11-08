@@ -108,12 +108,10 @@ impl FlashSession {
         if direction == Direction::ToServer && self.identity.is_none() && p.bytes().len() < 104 {
             let mut hello = p.clone();
             if let (Ok(version), Ok(identifier)) = (hello.read_string(), hello.read_string()) {
-                if hello.remaining() == 0 && !version.is_empty() {
-                    self.identity = Some(Identity {
-                        version,
-                        identifier,
-                    });
-                }
+                self.identity = Some(Identity {
+                    version,
+                    identifier,
+                });
             }
         }
         if direction == Direction::ToClient {

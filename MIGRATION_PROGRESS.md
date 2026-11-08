@@ -47,10 +47,10 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - The Java oracle also compares 36,864 targeted three- and four-byte boundary combinations for E0, ED, F0 and F4 leads. The local differential test passes; other lead bytes and longer combinations are not exhaustive.
 
-- Revision investigation: beta-29 `OutgoingFlashPacketHandler.dataStreamCheck` extracts two strings from a short outbound Flash packet, while the CLI is a generic plaintext EVA relay and does not activate `FlashSession`; arbitrary EVA traffic cannot safely be assumed to be a Flash handshake. `--revision` remains necessary for its observed-ID checks. Rust Flash identification additionally requires a nonempty version and no trailing payload; Java source does not impose those two checks. Real handshake variants and the impact of changing that heuristic are unverified.
+- Revision investigation: beta-29 `OutgoingFlashPacketHandler.dataStreamCheck` extracts two strings from a short outbound Flash packet, while the CLI is a generic plaintext EVA relay and does not activate `FlashSession`; arbitrary EVA traffic cannot safely be assumed to be a Flash handshake. `--revision` remains necessary for its observed-ID checks. Rust Flash now accepts empty versions and trailing payload as Java does. Real handshake variants and the impact of this broader heuristic are unverified.
 
-- A focused oracle executes the pinned Java `OutgoingFlashPacketHandler.dataStreamCheck` using a minimal stub superclass. Normal identification agrees with Rust; Java accepts trailing data and empty revisions, which Rust rejects. Rust is fed fragmented frames in this test; Java receives complete packets, so Java fragmentation and actual transport behavior are not compared. Three existing Flash tests and this oracle pass locally. CI now includes the oracle.
-- GitHub Actions runs 42532312161 and 42532419969 succeeded for the first two UTF-8 commits.
+- A focused oracle executes the pinned Java `OutgoingFlashPacketHandler.dataStreamCheck` using a minimal stub superclass. Normal, trailing-payload and empty-revision cases now agree with Rust. For all 23 two-chunk splits of the sample hello, Rust reconstructs it; the Java identification method, called as the original socket reader calls it and with a stub superclass, never identifies it and throws on splits 7–23. This controlled test does not execute the full Java forwarding pipeline or a real client. Five Flash tests, the oracle, desktop/web debug compilation and all-target Clippy pass locally.
+- GitHub Actions runs 42532312161, 42532419969 and 42532501145 succeeded for the three UTF-8 commits; run 42532583734 also succeeded.
 
 ## Remaining work
 
@@ -71,4 +71,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect CI for the Flash oracle and remaining UTF-8 commits. Compare Flash handshake fragmentation and identification lifecycle with the full beta-29 handler and captured or controlled traffic; assess whether to accept trailing fields without creating false identifications. Validate the no-byte-view logger interaction visually when a safe desktop test session is available.
+Inspect CI for the latest Flash identification commit. Exercise the changed identification through the actual Rust relay and extension lifecycle with controlled complete and fragmented handshakes, including an empty revision and trailing data; assess false identification and metadata failure paths. Validate the no-byte-view logger interaction visually when a safe desktop test session is available.
