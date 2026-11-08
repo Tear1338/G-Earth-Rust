@@ -260,8 +260,9 @@ impl ExtensionHost {
             while injections.receiver.try_recv().is_ok() {}
             self.shared.connection_epoch.fetch_add(1, Ordering::Relaxed);
             *connection = Some(details);
+            drop(injections);
+            self.broadcast(packet);
         }
-        self.broadcast(packet);
         Ok(())
     }
     pub fn end_connection(&self) {
@@ -275,8 +276,8 @@ impl ExtensionHost {
                 injections.pending = None;
                 while injections.receiver.try_recv().is_ok() {}
             }
+            self.broadcast(Packet::new(6));
         }
-        self.broadcast(Packet::new(6));
     }
     fn broadcast(&self, packet: Packet) {
         if let Ok(peers) = self.shared.peers.lock() {
@@ -608,31 +609,96 @@ fn send(sender: &SyncSender<Packet>, packet: Packet) -> io::Result<()> {
     })
 }
 fn initialize(shared: &Shared, peer: &Peer) -> io::Result<()> {
-    if peer.approved.swap(true, Ordering::AcqRel) {
-        return Ok(());
-    }
     let connection = shared
         .connection
         .lock()
-        .map_err(|_| io::Error::other("connection lock poisoned"))?
-        .clone();
+        .map_err(|_| io::Error::other("connection lock poisoned"))?;
+    if peer.approved.load(Ordering::Acquire) {
+        return Ok(());
+    }
     let language = shared
         .language
         .lock()
-        .map_err(|_| io::Error::other("language lock poisoned"))?
-        .clone();
+        .map_err(|_| io::Error::other("language lock poisoned"))?;
     send(
         &peer.output,
         extension::init_with_language(connection.is_some(), &language).map_err(io::Error::other)?,
     )?;
-    if let Some(c) = connection {
+    if let Some(c) = connection.as_ref() {
         send(&peer.output, c.packet()?)?;
     }
+    peer.approved.store(true, Ordering::Release);
     let _ = shared.events.try_send(HostEvent::Connected {
         id: peer.id,
         info: peer.info.clone(),
     });
     Ok(())
+}
+
+#[cfg(test)]
+mod initialization_tests {
+    use super::*;
+
+    #[test]
+    fn pending_approval_cannot_receive_broadcast_before_initialization() {
+        let (host, _) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), vec![]).unwrap();
+        let (output, packets) = mpsc::sync_channel(8);
+        let (_responses, response_rx) = mpsc::sync_channel(1);
+        let peer = Arc::new(Peer {
+            id: 42,
+            info: ExtensionInfo {
+                title: "fixture".into(),
+                author: "test".into(),
+                version: "1".into(),
+                description: String::new(),
+                on_click: false,
+                file: None,
+                cookie: String::new(),
+                can_leave: true,
+                can_delete: true,
+            },
+            approved: AtomicBool::new(false),
+            closed: Arc::new(AtomicBool::new(false)),
+            output,
+            responses: Mutex::new(response_rx),
+        });
+        host.shared
+            .peers
+            .lock()
+            .unwrap()
+            .insert(peer.id, peer.clone());
+        let connection = host.shared.connection.lock().unwrap();
+        let (started, started_rx) = mpsc::channel();
+        let actor = host.clone();
+        let task = thread::spawn(move || {
+            started.send(()).unwrap();
+            actor.approve(42).unwrap();
+        });
+        started_rx.recv().unwrap();
+        thread::sleep(Duration::from_millis(30));
+        assert!(!peer.approved.load(Ordering::Acquire));
+        host.broadcast(Packet::new(6));
+        assert!(packets.try_recv().is_err());
+        drop(connection);
+        task.join().unwrap();
+        assert_eq!(
+            packets
+                .recv_timeout(Duration::from_secs(1))
+                .unwrap()
+                .header(),
+            7
+        );
+        assert!(peer.approved.load(Ordering::Acquire));
+        host.broadcast(Packet::new(6));
+        assert_eq!(
+            packets
+                .recv_timeout(Duration::from_secs(1))
+                .unwrap()
+                .header(),
+            6
+        );
+        host.stop();
+    }
 }
 
 // A per-extension buffer lets the peer continue answering interception
