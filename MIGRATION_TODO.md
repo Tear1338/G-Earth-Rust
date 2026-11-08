@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: inspect CI for Flash identification, then exercise the actual Rust relay and extension lifecycle with fragmented and variant handshakes; validate on-screen logger interaction when a safe desktop session is available.
+Next: inspect CI for Flash identification and relay fixtures, then test metadata lookup failure and cancellation deterministically and assess false identification; validate on-screen logger interaction when a safe desktop session is available.

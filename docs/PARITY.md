@@ -45,3 +45,5 @@ An additional 36,864 combinations target E0, ED, F0 and F4 boundary sequences; t
 The CLI relay is generic plaintext EVA and cannot reliably infer a Flash revision from arbitrary traffic; `--revision` enables observed-ID checks. Java and Rust Flash extract two strings from a short outgoing packet and accept an empty revision or trailing bytes. The broader heuristic can misidentify other packets; real client handshakes remain unverified.
 
 A focused oracle executes the pinned Java identification method with a stub superclass: normal input, trailing payload and an empty revision agree. Rust reassembles every two-part split of one hello; Java identification called with the two chunks does not, and throws for splits 7–23. The superclass is stubbed, so this is not a full Java transport or real-client test.
+
+A controlled loopback Flash relay and extension protocol fixture covers normal and empty revisions with a trailing byte, interception, forwarding and disconnect using preloaded metadata. TCP may coalesce the two writes; deterministic frame fragmentation is covered separately. Real client and extension behavior and metadata lookup failures remain unverified.

@@ -1,5 +1,6 @@
 # Changelog
 
+- Added a controlled Flash relay and extension lifecycle fixture for identity variants.
 - Flash identification accepts empty revisions and trailing fields like the pinned Java handler; the oracle also documents fragmentation differences.
 - Added 36,864 targeted UTF-8 boundary combinations to the Java decoding oracle.
 - Added 20,000 deterministic mixed byte strings of lengths 3–12 to the Java UTF-8 differential oracle.

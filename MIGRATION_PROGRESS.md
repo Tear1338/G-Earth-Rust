@@ -52,6 +52,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - A focused oracle executes the pinned Java `OutgoingFlashPacketHandler.dataStreamCheck` using a minimal stub superclass. Normal, trailing-payload and empty-revision cases now agree with Rust. For all 23 two-chunk splits of the sample hello, Rust reconstructs it; the Java identification method, called as the original socket reader calls it and with a stub superclass, never identifies it and throws on splits 7–23. This controlled test does not execute the full Java forwarding pipeline or a real client. Five Flash tests, the oracle, desktop/web debug compilation and all-target Clippy pass locally.
 - GitHub Actions runs 42532312161, 42532419969 and 42532501145 succeeded for the three UTF-8 commits; run 42532583734 also succeeded.
 
+- A controlled loopback Flash relay and extension protocol fixture now covers two-field hellos with a trailing byte and both normal and empty revisions. It checks the identification event, extension connection details, interception, unchanged forwarding and disconnect. The packet is sent in two writes which TCP may coalesce; deterministic reassembly is separately covered by the session test. Metadata is preloaded in this fixture and no real client or extension is involved. All 16 extension integration tests and all-target Clippy pass locally. GitHub Actions run 42532727954 passed all eight validation jobs for the prior Flash oracle commit.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -71,4 +73,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect CI for the latest Flash identification commit. Exercise the changed identification through the actual Rust relay and extension lifecycle with controlled complete and fragmented handshakes, including an empty revision and trailing data; assess false identification and metadata failure paths. Validate the no-byte-view logger interaction visually when a safe desktop test session is available.
+Inspect CI for the Flash identification and relay fixture commits. Investigate Flash metadata lookup failure and cancellation when the identifier database is empty, using a deterministic offline fixture; assess false identification with representative non-handshake traffic. Validate the no-byte-view logger interaction visually when a safe desktop test session is available.

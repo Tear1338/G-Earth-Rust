@@ -169,6 +169,79 @@ fn closing_an_old_relay_preserves_a_replacement_session() {
 }
 
 #[test]
+fn flash_relay_identifies_fragmented_hello_and_starts_extension_session() {
+    use gearth_rust::relay::{Config, Event, Relay, RelayOptions};
+    use std::{io::Write, net::TcpListener};
+
+    for version in ["TEST-2026", ""] {
+        let (host, host_events) =
+            ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+        let (mut extension, _) = connect(&host, &host_events);
+        let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+        let (mut relay, events) = Relay::start_with_options(
+            Config {
+                listen: "127.0.0.1:0".parse().unwrap(),
+                remote: remote.local_addr().unwrap().to_string(),
+            },
+            RelayOptions {
+                flash_process: Some(1),
+                extensions: Some(host.clone()),
+                connection: Some(details()),
+                ..RelayOptions::default()
+            },
+        )
+        .unwrap();
+        let mut client = TcpStream::connect(relay.address).unwrap();
+        let (mut server, _) = remote.accept().unwrap();
+        server
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        let mut hello = Packet::new(1);
+        hello
+            .put_string(version)
+            .unwrap()
+            .put_string("FLASH")
+            .unwrap()
+            .put_u8(42)
+            .unwrap();
+        let split = 7;
+        client.write_all(&hello.bytes()[..split]).unwrap();
+        // Separate writes encourage fragmentation, but TCP may coalesce them.
+        thread::sleep(Duration::from_millis(50));
+        client.write_all(&hello.bytes()[split..]).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            if let Ok(Event::Identified {
+                version: found,
+                identifier,
+            }) = events.recv_timeout(Duration::from_millis(100))
+            {
+                assert_eq!((found.as_str(), identifier.as_str()), (version, "FLASH"));
+                break;
+            }
+            assert!(Instant::now() < deadline, "Flash identification timed out");
+        }
+        let mut start = read_frame(&mut extension).unwrap();
+        assert_eq!(start.header(), 5);
+        assert_eq!(start.read_string().unwrap(), "test.example");
+        assert_eq!(start.read_i32().unwrap(), 30000);
+        assert_eq!(start.read_string().unwrap(), version);
+        assert_eq!(start.read_string().unwrap(), "FLASH");
+        let mut intercepted = read_frame(&mut extension).unwrap();
+        assert_eq!(intercepted.header(), 3);
+        let message = Message::parse(&intercepted.read_long_string().unwrap()).unwrap();
+        assert_eq!(message.packet.bytes(), hello.bytes());
+        write_frame(&mut extension, &extension::manipulated(&message).unwrap()).unwrap();
+        assert_eq!(read_frame(&mut server).unwrap().bytes(), hello.bytes());
+        drop(client);
+        assert_eq!(read_frame(&mut extension).unwrap().header(), 6);
+        relay.stop();
+        drop(extension);
+        host.stop();
+    }
+}
+
+#[test]
 fn relay_ends_extension_session_only_after_it_has_started_one() {
     use gearth_rust::relay::{Config, Event, Relay, RelayOptions};
     use std::net::TcpListener;
