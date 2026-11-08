@@ -47,6 +47,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - The Java oracle also compares 36,864 targeted three- and four-byte boundary combinations for E0, ED, F0 and F4 leads. The local differential test passes; other lead bytes and longer combinations are not exhaustive.
 
+- Revision investigation: beta-29 `OutgoingFlashPacketHandler.dataStreamCheck` extracts two strings from a short outbound Flash packet, while the CLI is a generic plaintext EVA relay and does not activate `FlashSession`; arbitrary EVA traffic cannot safely be assumed to be a Flash handshake. `--revision` remains necessary for its observed-ID checks. Rust Flash identification additionally requires a nonempty version and no trailing payload; Java source does not impose those two checks. Real handshake variants and the impact of changing that heuristic are unverified.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -66,4 +68,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect CI for the three UTF-8 corpus commits. Investigate how the Java connection discovers the hotel revision and whether the CLI relay can reliably acquire it before applying packet-safety checks; add a deterministic regression test if supported. Validate the no-byte-view logger interaction visually when a safe desktop test session is available.
+Inspect CI for the three UTF-8 corpus commits. Build a focused Java-versus-Rust Flash identification fixture covering valid hello packets, trailing fields, empty revision and fragmentation; assess the stricter Rust heuristic before changing it. Validate the no-byte-view logger interaction visually when a safe desktop test session is available.

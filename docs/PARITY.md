@@ -41,3 +41,5 @@ The Java UTF-8 replacement-decoding oracle covers all 65,536 two-byte inputs and
 A deterministic sample of 20,000 byte strings of lengths 3–12 also matches Java replacement decoding locally. This does not exhaust longer inputs.
 
 An additional 36,864 combinations target E0, ED, F0 and F4 boundary sequences; the local Java comparison passes. These tests do not establish exhaustive UTF-8 or real extension compatibility.
+
+The CLI relay is generic plaintext EVA and cannot reliably infer a Flash revision from arbitrary traffic; `--revision` enables observed-ID checks. Java Flash extracts two strings from a short outgoing packet, while Rust Flash additionally requires a nonempty revision and no remaining bytes. The effect on actual client handshake variants is unverified.
