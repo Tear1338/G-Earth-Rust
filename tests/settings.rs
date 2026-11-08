@@ -239,8 +239,14 @@ fn importing_invalid_logger_settings_does_not_override_existing_choices() {
         .booleans
         .insert("logger_export_hide_empty_header".into(), false);
     settings
+        .booleans
+        .insert("logger_display_hide_empty_header".into(), false);
+    settings
         .values
         .insert("logger_antispam".into(), "Medium".into());
+    settings
+        .values
+        .insert("logger_representation".into(), "Raw hex".into());
     for bad in [
         serde_json::json!([true, false]),
         serde_json::json!(vec!["true"; 21]),
@@ -259,10 +265,21 @@ fn importing_invalid_logger_settings_does_not_override_existing_choices() {
         .import_java_cache(serde_json::json!({"LOGGER_SETTINGS": choices}))
         .unwrap();
     assert_eq!(settings.get("logger_antispam"), "Medium");
+    assert_eq!(settings.get("logger_representation"), "Raw hex");
     assert!(!settings.booleans["logger_capture_selected_only"]);
     assert!(!settings.booleans["logger_java_structure_limit"]);
     assert!(!settings.booleans["logger_export_separators"]);
     assert!(!settings.booleans["logger_export_hide_empty_header"]);
+    assert!(!settings.booleans["logger_display_hide_empty_header"]);
+    let path = path();
+    settings.save(&path).unwrap();
+    let reloaded = Settings::read(&path).unwrap();
+    fs::remove_file(path).unwrap();
+    assert_eq!(
+        reloaded.booleans.get("logger_display_hide_empty_header"),
+        Some(&false)
+    );
+    assert_eq!(reloaded.get("logger_representation"), "Raw hex");
 }
 
 #[test]

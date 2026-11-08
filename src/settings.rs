@@ -523,7 +523,8 @@ impl Settings {
             }
             // Java's byte representations are independent of its structure expression.
             self.values
-                .insert("logger_representation".into(), "No bytes".into());
+                .entry("logger_representation".into())
+                .or_insert_with(|| "No bytes".into());
         }
         if let Some(entries) = value["INJECTED_HISTORY"].as_array() {
             let history = crate::injection::InjectionHistory::from_java_cache(entries);
