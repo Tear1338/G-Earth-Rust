@@ -1,6 +1,40 @@
 use gearth_rust::packet::{Packet, PacketFormat};
 
 #[test]
+fn skip_structure_advances_fields_and_preserves_completed_reads_on_error() {
+    let mut packet = Packet::new(11);
+    packet
+        .put_i32(42)
+        .unwrap()
+        .put_string("hello")
+        .unwrap()
+        .put_u8(4)
+        .unwrap()
+        .put_bool(true)
+        .unwrap()
+        .put_u16(1234)
+        .unwrap()
+        .put_i64(123456789)
+        .unwrap()
+        .put_f64(2.5)
+        .unwrap();
+    let before = packet.bytes().to_vec();
+    packet.skip_structure("i s?bBul d").unwrap();
+    assert_eq!(packet.remaining(), 0);
+    assert_eq!(packet.bytes(), before);
+    let mut partial = Packet::new(12);
+    partial.put_i32(42).unwrap();
+    assert!(partial.skip_structure("ib").is_err());
+    assert_eq!(partial.cursor(), 10);
+    let mut truncated = Packet::new(13);
+    truncated.append(&[0, 3, b'x']).unwrap();
+    assert!(truncated.skip_structure("s").is_err());
+    assert_eq!(truncated.cursor(), 6);
+    let mut wedgie = Packet::new_with_format(PacketFormat::WedgieOutgoing, 1).unwrap();
+    assert!(wedgie.skip_structure("i").is_err());
+}
+
+#[test]
 fn absolute_reads_preserve_cursor_and_validate_bounds() {
     let mut packet = Packet::new(77);
     packet

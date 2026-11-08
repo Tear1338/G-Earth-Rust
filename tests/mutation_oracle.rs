@@ -86,6 +86,39 @@ fn mutations_match_original_java_packets_and_cursor() {
         random.cursor()
     );
     assert_eq!(result, expected["random_reads"]);
+    let mut skipped = Packet::new(11);
+    skipped
+        .put_i32(42)
+        .unwrap()
+        .put_string("hello")
+        .unwrap()
+        .put_u8(4)
+        .unwrap()
+        .put_bool(true)
+        .unwrap()
+        .put_u16(1234)
+        .unwrap()
+        .put_i64(123456789)
+        .unwrap()
+        .put_f64(2.5)
+        .unwrap();
+    skipped.skip_structure("i s?bBul d").unwrap();
+    assert_eq!(
+        format!(
+            "{},{}",
+            skipped.cursor(),
+            u8::from(skipped.remaining() == 0)
+        ),
+        expected["skip_full"]
+    );
+    let mut partial = Packet::new(12);
+    partial.put_i32(42).unwrap();
+    assert!(partial.skip_structure("ib").is_err());
+    // Java increments its cursor before the failed byte read; Rust keeps its
+    // cursor inside the packet, after the successfully skipped integer.
+    assert_eq!(expected["skip_partial"], "11,2");
+    assert_eq!(partial.cursor(), 10);
+    assert_eq!(partial.remaining(), 0);
     for (name, original, replacement) in [
         ("growth", "cat", "caterpillar"),
         ("shrink", "elephant", "x"),

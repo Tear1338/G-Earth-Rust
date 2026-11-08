@@ -28,6 +28,18 @@ public class JavaMutationOracle {
             + randomReads.readFloat(21) + "," + randomReads.readDouble(25) + ","
             + randomReads.readString(33) + "," + randomReads.readLongString(39) + ","
             + randomReads.readInteger(0) + "," + randomReads.getReadIndex());
+        HPacket skipped = new HPacket(11);
+        skipped.appendInt(42).appendString("hello").appendByte((byte) 4).appendBoolean(true)
+            .appendShort((short) 1234).appendLong(123456789L).appendDouble(2.5);
+        skipped.skip("i s?bBul d");
+        System.out.println("skip_full=" + skipped.getReadIndex() + "," + skipped.isEOF());
+        HPacket partialSkip = new HPacket(12);
+        partialSkip.appendInt(42);
+        try {
+            partialSkip.skip("ib");
+        } catch (IndexOutOfBoundsException expected) {
+            System.out.println("skip_partial=" + partialSkip.getReadIndex() + "," + partialSkip.isEOF());
+        }
         HPacket growth = new HPacket(2);
         growth.appendString("cat").appendInt(42).appendString("end");
         growth.setReadIndex(7);

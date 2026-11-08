@@ -137,6 +137,32 @@ impl Packet {
     pub fn remaining(&self) -> usize {
         self.bytes.len() - self.cursor
     }
+    /// Advance through EVA fields using beta-29 HPacket's structure codes.
+    /// Unknown characters are ignored; on failure previously read fields stay consumed.
+    pub fn skip_structure(&mut self, structure: &str) -> Result<&mut Self> {
+        self.ensure_eva()?;
+        for code in structure.chars() {
+            match code {
+                'i' => {
+                    self.read_bytes(4)?;
+                }
+                's' => {
+                    self.read_short_bytes()?;
+                }
+                'b' | 'B' => {
+                    self.read_bytes(1)?;
+                }
+                'u' => {
+                    self.read_bytes(2)?;
+                }
+                'l' | 'd' => {
+                    self.read_bytes(8)?;
+                }
+                _ => {}
+            }
+        }
+        Ok(self)
+    }
     pub fn reset(&mut self) {
         self.cursor = self.format.body_offset();
     }
