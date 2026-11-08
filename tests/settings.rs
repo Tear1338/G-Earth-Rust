@@ -101,6 +101,24 @@ fn saving_rules_preserves_schedules_and_refuses_corrupt_files() {
     assert_eq!(fs::read_to_string(&path).unwrap(), "{broken");
     fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn logger_capture_direction_choice_survives_settings_save() {
+    let path = path();
+    let mut settings = Settings::default();
+    settings
+        .booleans
+        .insert("logger_capture_selected_only".into(), true);
+    settings.save(&path).unwrap();
+    assert_eq!(
+        Settings::read(&path)
+            .unwrap()
+            .booleans
+            .get("logger_capture_selected_only"),
+        Some(&true)
+    );
+    fs::remove_file(path).unwrap();
+}
 #[test]
 fn imports_real_beta29_cache_keys_and_retains_all_original_values() {
     let mut settings = Settings::default();

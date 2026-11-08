@@ -159,6 +159,7 @@ struct Desktop {
     logger_skip_big: bool,
     logger_timestamp: bool,
     logger_autoscroll: bool,
+    logger_capture_selected_only: bool,
     logger_clear_on_connect: bool,
     logger_clear_on_disconnect: bool,
     logger_window: logger_display::LoggerWindow,
@@ -632,6 +633,7 @@ impl Default for Desktop {
             logger_skip_big: false,
             logger_timestamp: false,
             logger_autoscroll: true,
+            logger_capture_selected_only: false,
             logger_clear_on_connect: false,
             logger_clear_on_disconnect: false,
             logger_window: logger_display::LoggerWindow::default(),
@@ -931,6 +933,14 @@ impl Desktop {
                         if !self.paused {
                             if self.logger_filter.suppress(&message, Instant::now()) {
                                 self.logger_filtered = self.logger_filtered.saturating_add(1);
+                                continue;
+                            }
+                            if !logger_display::capture_direction(
+                                message.direction,
+                                self.incoming,
+                                self.outgoing,
+                                self.logger_capture_selected_only,
+                            ) {
                                 continue;
                             }
                             let packet_size = if message.packet.format() == PacketFormat::EvaWire {
@@ -1678,6 +1688,11 @@ impl Desktop {
                 self.i18n.text("ext.logger.menu.view.incoming"),
             );
             ui.checkbox(&mut self.paused, self.i18n.text("rust.logger.pause"));
+            ui.checkbox(
+                &mut self.logger_capture_selected_only,
+                self.i18n.text("rust.logger.capture_selected_only"),
+            )
+            .on_hover_text(self.i18n.text("rust.logger.capture_selected_hint"));
             if ui
                 .button(self.i18n.text("ext.logger.menu.view.cleartext"))
                 .clicked()
@@ -3620,6 +3635,12 @@ impl Desktop {
             .get("logger_autoscroll")
             .copied()
             .unwrap_or(true);
+        self.logger_capture_selected_only = self
+            .settings
+            .booleans
+            .get("logger_capture_selected_only")
+            .copied()
+            .unwrap_or(false);
         self.logger_clear_on_connect = self
             .settings
             .booleans
@@ -3821,6 +3842,10 @@ impl Desktop {
             ("logger_skip_big".into(), self.logger_skip_big),
             ("logger_timestamp".into(), self.logger_timestamp),
             ("logger_autoscroll".into(), self.logger_autoscroll),
+            (
+                "logger_capture_selected_only".into(),
+                self.logger_capture_selected_only,
+            ),
             (
                 "logger_open_on_connect".into(),
                 self.logger_window.open_on_connect,

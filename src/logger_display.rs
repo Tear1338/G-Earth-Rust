@@ -1,6 +1,20 @@
 //! Packet representation options for the built-in logger.
-use crate::expression;
+use crate::{expression, packet::Direction};
 use std::{fs::OpenOptions, io, path::Path};
+
+/// Decide whether a packet enters the logger's retained capture.
+pub fn capture_direction(
+    direction: Direction,
+    incoming: bool,
+    outgoing: bool,
+    selected_only: bool,
+) -> bool {
+    !selected_only
+        || match direction {
+            Direction::ToClient => incoming,
+            Direction::ToServer => outgoing,
+        }
+}
 
 /// Visibility of the optional logger panel and its connection lifecycle options.
 #[derive(Default)]

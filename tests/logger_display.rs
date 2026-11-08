@@ -1,6 +1,35 @@
 use gearth_rust::logger_display::{hex_dump, represent, PacketRepresentation};
 
 #[test]
+fn selected_direction_capture_can_match_java_or_keep_hidden_packets() {
+    use gearth_rust::{logger_display::capture_direction, packet::Direction};
+    for incoming in [false, true] {
+        for outgoing in [false, true] {
+            assert!(capture_direction(
+                Direction::ToClient,
+                incoming,
+                outgoing,
+                false
+            ));
+            assert!(capture_direction(
+                Direction::ToServer,
+                incoming,
+                outgoing,
+                false
+            ));
+            assert_eq!(
+                capture_direction(Direction::ToClient, incoming, outgoing, true),
+                incoming
+            );
+            assert_eq!(
+                capture_direction(Direction::ToServer, incoming, outgoing, true),
+                outgoing
+            );
+        }
+    }
+}
+
+#[test]
 fn java_large_packet_thresholds_are_strict_and_exclude_frame_prefix() {
     use gearth_rust::logger_display::skip_large_eva_representations as skip;
     assert!(!skip(1004, true));

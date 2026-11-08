@@ -76,6 +76,8 @@ The displayed-capture export now shares row formatting with the on-screen logger
 
 The Windows logger export path now has a native save-file chooser with a .txt filter and default extension, alongside manual path entry. Unlike Java's one-step export, selection and export remain separate actions. The Windows filter fixture, capture tests and desktop Clippy pass; the native dialog has not been exercised interactively.
 
+The logger offers an optional "capture selected directions only" setting: after anti-spam processing, packets in unchecked directions are not retained, as in Java. It defaults off to preserve existing Rust behavior and is saved with settings. When off, packets can still be hidden and later redisplayed. Direction controls also filter previously retained rows in Rust, unlike Java, so this is partial parity. Tests cover all direction combinations, settings persistence and translations; real UI and client behavior remain unverified.
+
 The logger context menu can copy an individual displayed entry using the same formatting as the text export, including enabled metadata and representations. The copy is not clipped to the window width and remains subject to display representation limits. Inspection and copy controls have French and English labels. Actual clipboard and context-menu interaction remain unverified.
 
 Displayed-capture export now writes to an exclusively created temporary file beside the destination, flushes it and replaces the destination only on success. A local Windows test confirms that a simulated partial-write error keeps the previous capture and removes the temporary file; behavior across all filesystems is not established.
