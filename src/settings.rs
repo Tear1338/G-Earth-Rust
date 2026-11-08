@@ -677,6 +677,11 @@ mod tests {
         assert!(!legacy.schedules[0].paused);
         let mut invalid = settings.to_json();
         invalid["schedules"][0]["offset_ms"] = serde_json::json!(500);
+        assert_eq!(
+            Settings::from_json(invalid.clone()).unwrap().schedules[0].offset_ms,
+            Some(500)
+        );
+        invalid["schedules"][0]["offset_ms"] = serde_json::json!(501);
         assert!(Settings::from_json(invalid).is_err());
     }
 }
