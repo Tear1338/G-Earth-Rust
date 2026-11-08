@@ -166,6 +166,70 @@ fn installation_is_atomic_versioned_and_uninstall_stays_inside_its_managed_root(
     assert!(!record.directory.exists());
     assert!(second.directory.exists());
 }
+
+#[test]
+fn installed_command_comes_from_the_catalogue_entry() {
+    let directory = Directory::new();
+    let root = directory.0.join("installed");
+    let catalog = catalog();
+    let mut supplied = catalog.extensions[0].clone();
+    supplied.commands.common = vec!["unexpected-command".into()];
+    supplied.commands.windows = Some(vec!["unexpected-command".into()]);
+    supplied.commands.linux = Some(vec!["unexpected-command".into()]);
+    supplied.commands.mac = Some(vec!["unexpected-command".into()]);
+    let bytes = archive(&[("tool.jar", b"fixture")]);
+    let installed = extension_store::install_archive(&catalog, &supplied, &root, &bytes).unwrap();
+    assert_eq!(
+        installed.command,
+        catalog.extensions[0].commands.for_platform()
+    );
+    assert_eq!(
+        extension_store::installed(&root).unwrap()[0].command,
+        installed.command
+    );
+}
+
+#[test]
+fn update_status_uses_the_newest_version_and_matching_catalogue() {
+    use extension_store::InstallStatus;
+    let directory = Directory::new();
+    let catalog = catalog();
+    let extension = &catalog.extensions[0];
+    let bytes = archive(&[("tool.jar", b"fixture")]);
+    let record =
+        extension_store::install_archive(&catalog, extension, &directory.0, &bytes).unwrap();
+    let mut older = record.clone();
+    older.version = "0.9".into();
+    let mut newer = record.clone();
+    newer.version = "2.0".into();
+    assert_eq!(
+        extension_store::install_status(&catalog, extension, &[]),
+        InstallStatus::NotInstalled
+    );
+    assert_eq!(
+        extension_store::install_status(&catalog, extension, &[older.clone()]),
+        InstallStatus::UpdateAvailable
+    );
+    assert_eq!(
+        extension_store::install_status(&catalog, extension, &[older, newer.clone()]),
+        InstallStatus::OlderVersion
+    );
+    assert_eq!(
+        extension_store::install_status(&catalog, extension, &[newer.clone(), record.clone()]),
+        InstallStatus::Installed
+    );
+    newer.source = "other/catalogue".into();
+    assert_eq!(
+        extension_store::install_status(&catalog, extension, &[newer]),
+        InstallStatus::NotInstalled
+    );
+    let mut same_version_other_source = record;
+    same_version_other_source.source = "other/catalogue".into();
+    assert_eq!(
+        extension_store::install_status(&catalog, extension, &[same_version_other_source]),
+        InstallStatus::NotInstalled
+    );
+}
 #[test]
 fn rejects_traversal_and_rolls_back_partially_extracted_archives() {
     let directory = Directory::new();

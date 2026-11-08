@@ -37,6 +37,70 @@ fn malformed_config_is_rejected_without_overwriting() {
     assert_eq!(fs::read_to_string(&path).unwrap(), "{broken");
     fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn saving_schedules_preserves_other_settings_and_refuses_corrupt_files() {
+    use gearth_rust::{packet::Direction, settings::ScheduleTemplate};
+    let path = path();
+    let template = ScheduleTemplate {
+        expression: "{h:42}".into(),
+        direction: Direction::ToServer,
+        interval_ms: 500,
+        offset_ms: Some(500),
+        paused: true,
+        repeat: 0,
+    };
+    Settings::save_schedules(&path, std::slice::from_ref(&template)).unwrap();
+    let mut current = Settings::read(&path).unwrap();
+    assert_eq!(current.schedules, vec![template.clone()]);
+    current
+        .values
+        .insert("remote".into(), "example:30000".into());
+    current
+        .extra
+        .insert("future_field".into(), serde_json::json!({"keep": true}));
+    current.save(&path).unwrap();
+    Settings::save_schedules(&path, &[]).unwrap();
+    let restored = Settings::read(&path).unwrap();
+    assert!(restored.schedules.is_empty());
+    assert_eq!(restored.get("remote"), "example:30000");
+    assert_eq!(restored.extra["future_field"]["keep"], true);
+    fs::write(&path, "{broken").unwrap();
+    assert!(Settings::save_schedules(&path, &[template]).is_err());
+    assert_eq!(fs::read_to_string(&path).unwrap(), "{broken");
+    fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn saving_rules_preserves_schedules_and_refuses_corrupt_files() {
+    use gearth_rust::{packet::Direction, settings::ScheduleTemplate};
+    let path = path();
+    let rule = (true, Direction::ToClient, 42, Some("{h:7}".into()));
+    Settings::save_rules(&path, std::slice::from_ref(&rule)).unwrap();
+    let mut existing = Settings::read(&path).unwrap();
+    assert_eq!(existing.rules, vec![rule.clone()]);
+    existing.schedules.push(ScheduleTemplate {
+        expression: "{h:3}".into(),
+        direction: Direction::ToServer,
+        interval_ms: 500,
+        offset_ms: Some(500),
+        paused: false,
+        repeat: 0,
+    });
+    existing
+        .extra
+        .insert("future".into(), serde_json::json!(true));
+    existing.save(&path).unwrap();
+    Settings::save_rules(&path, &[]).unwrap();
+    let restored = Settings::read(&path).unwrap();
+    assert!(restored.rules.is_empty());
+    assert_eq!(restored.schedules, existing.schedules);
+    assert_eq!(restored.extra["future"], true);
+    fs::write(&path, "{broken").unwrap();
+    assert!(Settings::save_rules(&path, &[rule]).is_err());
+    assert_eq!(fs::read_to_string(&path).unwrap(), "{broken");
+    fs::remove_file(path).unwrap();
+}
 #[test]
 fn imports_real_beta29_cache_keys_and_retains_all_original_values() {
     let mut settings = Settings::default();
@@ -111,7 +175,6 @@ fn importing_java_logger_settings_preserves_menu_choices() {
         ("outgoing", false),
         ("logger_structure", true),
         ("logger_autoscroll", false),
-        ("logger_skip_big", true),
         ("logger_names", false),
         ("logger_hashes", true),
         ("logger_message_id", true),

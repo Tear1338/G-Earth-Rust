@@ -42,6 +42,18 @@ impl I18n {
     }
 }
 pub fn parse_properties(source: &str) -> HashMap<String, String> {
+    parse_properties_inner(source, false).expect("permissive decoding cannot fail")
+}
+
+/// Decode properties with Java's strict handling of malformed Unicode escapes.
+pub fn try_parse_properties(source: &str) -> Result<HashMap<String, String>, &'static str> {
+    parse_properties_inner(source, true)
+}
+
+fn parse_properties_inner(
+    source: &str,
+    strict: bool,
+) -> Result<HashMap<String, String>, &'static str> {
     let mut values = HashMap::new();
     let mut combined = String::new();
     let source = source.replace("\r\n", "\n").replace('\r', "\n");
@@ -89,12 +101,12 @@ pub fn parse_properties(source: &str) -> HashMap<String, String> {
             }
             None => (line.as_str(), ""),
         };
-        values.insert(unescape(key), unescape(value));
+        values.insert(unescape(key, strict)?, unescape(value, strict)?);
     }
-    values
+    Ok(values)
 }
 
-fn unescape(s: &str) -> String {
+fn unescape(s: &str, strict: bool) -> Result<String, &'static str> {
     let mut output = Vec::new();
     let mut chars = s.chars();
     while let Some(c) = chars.next() {
@@ -102,8 +114,10 @@ fn unescape(s: &str) -> String {
             match chars.next() {
                 Some('u') => {
                     let hex: String = chars.by_ref().take(4).collect();
-                    if let Ok(n) = u16::from_str_radix(&hex, 16) {
-                        output.push(n);
+                    if hex.len() == 4 && hex.bytes().all(|c| c.is_ascii_hexdigit()) {
+                        output.push(u16::from_str_radix(&hex, 16).expect("four hex digits"));
+                    } else if strict {
+                        return Err("malformed Unicode escape");
                     } else {
                         output.push(0xfffd);
                     }
@@ -122,7 +136,7 @@ fn unescape(s: &str) -> String {
         let mut temp = [0; 2];
         output.extend_from_slice(c.encode_utf16(&mut temp));
     }
-    String::from_utf16_lossy(&output)
+    Ok(String::from_utf16_lossy(&output))
 }
 
 #[cfg(test)]

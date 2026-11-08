@@ -989,6 +989,7 @@ impl Desktop {
                     Event::Listening(a) => self.status = format!("Listening on {a}"),
                     Event::Connected(a) => {
                         self.logger_connection_active = true;
+                        self.logger_filter.reset();
                         self.logger_window.on_connect();
                         if self.logger_clear_on_connect {
                             clear_log_contents(
@@ -1131,22 +1132,100 @@ impl Desktop {
             }
             self.update_rules();
         }
-        egui::CollapsingHeader::new(self.i18n.text("rust.connection.attachment")).default_open(true).show(ui,|ui|{
-            let hotels=if self.origins{gearth_rust::attachment::ORIGINS_HOTELS}else{gearth_rust::attachment::FLASH_HOTELS};
-            egui::ComboBox::from_id_salt("attach-hotel").selected_text(&self.attachment_host).show_ui(ui,|ui|{for host in hotels{ui.selectable_value(&mut self.attachment_host,(*host).into(),*host);}});
-            ui.text_edit_singleline(&mut self.attachment_host);
-            ui.checkbox(&mut self.flash_auto,"Negotiate Flash encryption and discover client RC4 state (Windows)");
-            ui.horizontal(|ui|{
-                if ui.button(self.i18n.text("rust.connection.refresh")).clicked(){match gearth_platform::habbo_processes(){Ok(processes)=>self.client_processes=processes,Err(e)=>self.status=e.to_string()}}
-                egui::ComboBox::from_id_salt("flash-process").selected_text(if self.flash_pid==0{self.i18n.text("rust.connection.automatic")}else{format!("PID {}",self.flash_pid)}).show_ui(ui,|ui|{ui.selectable_value(&mut self.flash_pid,0,self.i18n.text("rust.connection.automatic"));for p in &self.client_processes{ui.selectable_value(&mut self.flash_pid,p.pid,format!("{} - PID {}",p.executable,p.pid));}});
+        egui::CollapsingHeader::new(self.i18n.text("rust.connection.attachment"))
+            .default_open(true)
+            .show(ui, |ui| {
+                let hotels = if self.origins {
+                    gearth_rust::attachment::ORIGINS_HOTELS
+                } else {
+                    gearth_rust::attachment::FLASH_HOTELS
+                };
+                egui::ComboBox::from_id_salt("attach-hotel")
+                    .selected_text(&self.attachment_host)
+                    .show_ui(ui, |ui| {
+                        for host in hotels {
+                            ui.selectable_value(&mut self.attachment_host, (*host).into(), *host);
+                        }
+                    });
+                ui.text_edit_singleline(&mut self.attachment_host);
+                ui.checkbox(
+                    &mut self.flash_auto,
+                    self.i18n.text("rust.connection.flash_crypto"),
+                );
+                ui.horizontal(|ui| {
+                    if ui
+                        .button(self.i18n.text("rust.connection.refresh"))
+                        .clicked()
+                    {
+                        match gearth_platform::habbo_processes() {
+                            Ok(processes) => self.client_processes = processes,
+                            Err(e) => self.status = e.to_string(),
+                        }
+                    }
+                    egui::ComboBox::from_id_salt("flash-process")
+                        .selected_text(if self.flash_pid == 0 {
+                            self.i18n.text("rust.connection.automatic")
+                        } else {
+                            format!("PID {}", self.flash_pid)
+                        })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut self.flash_pid,
+                                0,
+                                self.i18n.text("rust.connection.automatic"),
+                            );
+                            for p in &self.client_processes {
+                                ui.selectable_value(
+                                    &mut self.flash_pid,
+                                    p.pid,
+                                    format!("{} - PID {}", p.executable, p.pid),
+                                );
+                            }
+                        });
+                });
+                if ui
+                    .add_enabled(
+                        self.relay.is_none() && self.attachment_pending.is_none(),
+                        egui::Button::new(self.i18n.text("rust.connection.attach")),
+                    )
+                    .clicked()
+                {
+                    let port = if self.origins { 40001 } else { 30000 };
+                    self.remote = format!("{}:{port}", self.attachment_host);
+                    self.flash_auto = !self.origins;
+                    match self.relay_options() {
+                        Ok(options) => {
+                            let host = self.attachment_host.clone();
+                            let path = gearth_rust::attachment::HostsRedirect::system_path();
+                            let (send, receive) = std::sync::mpsc::channel();
+                            self.attachment_pending = Some(receive);
+                            self.status =
+                                "Resolving hotel and preparing the local listener...".into();
+                            self.attachment_worker = Some(std::thread::spawn(move || {
+                                let _ = send.send(gearth_rust::attachment::Attachment::start(
+                                    &host, port, options, &path,
+                                ));
+                            }));
+                        }
+                        Err(e) => self.status = e.to_string(),
+                    }
+                }
+                ui.label(self.i18n.text("rust.connection.attachment_hint"));
+                if ui
+                    .add_enabled(
+                        self.relay.is_none() && self.attachment_pending.is_none(),
+                        egui::Button::new(self.i18n.text("rust.connection.recover_redirects")),
+                    )
+                    .clicked()
+                {
+                    self.status = match gearth_rust::attachment::HostsRedirect::recover_stale(
+                        &gearth_rust::attachment::HostsRedirect::system_path(),
+                    ) {
+                        Ok(()) => self.i18n.text("rust.connection.redirects_removed"),
+                        Err(e) => e.to_string(),
+                    };
+                }
             });
-            if ui.add_enabled(self.relay.is_none()&&self.attachment_pending.is_none(),egui::Button::new(self.i18n.text("rust.connection.attach"))).clicked(){
-                let port=if self.origins{40001}else{30000};self.remote=format!("{}:{port}",self.attachment_host);self.flash_auto = !self.origins;
-                match self.relay_options(){Ok(options)=>{let host=self.attachment_host.clone();let path=gearth_rust::attachment::HostsRedirect::system_path();let (send,receive)=std::sync::mpsc::channel();self.attachment_pending=Some(receive);self.status="Resolving hotel and preparing the local listener...".into();self.attachment_worker=Some(std::thread::spawn(move||{let _=send.send(gearth_rust::attachment::Attachment::start(&host,port,options,&path));}));},Err(e)=>self.status=e.to_string()}
-            }
-            ui.label("Enter a hotel hostname for hosts attachment or its IPv4 address for Raw IP. Both require administrator/root privileges; Raw IP is Flash-only and preconnects three direct upstream sockets.");
-            if ui.add_enabled(self.relay.is_none()&&self.attachment_pending.is_none(),egui::Button::new("Recover redirects after closing other G-Earth Rust instances")).clicked(){self.status=match gearth_rust::attachment::HostsRedirect::recover_stale(&gearth_rust::attachment::HostsRedirect::system_path()){Ok(())=>"Owned redirects removed".into(),Err(e)=>e.to_string()};}
-        });
         ui.add_space(12.0);
         egui::Grid::new("connection-grid")
             .spacing([18.0, 12.0])
@@ -1164,22 +1243,47 @@ impl Desktop {
                 );
                 ui.end_row();
             });
-        egui::CollapsingHeader::new(self.i18n.text("rust.connection.options")).show(ui,|ui|{
-            ui.checkbox(&mut self.socks_enabled, self.i18n.text("tab.extra.options.advanced.socks"));
-            egui::Grid::new("connection-options").show(ui,|ui|{
-                for (label,value) in [("Hotel version",&mut self.hotel_version),("Client identifier",&mut self.client_identifier),("Packet identifiers (.tsv / .json)",&mut self.packet_database),("SOCKS5 proxy",&mut self.socks_proxy),("SOCKS username",&mut self.socks_user)] {ui.label(label);ui.text_edit_singleline(value);ui.end_row();}
-                ui.label("SOCKS password");ui.add(egui::TextEdit::singleline(&mut self.socks_password).password(true));ui.end_row();
-                ui.label("Outgoing RC4 key (hex)");ui.add(egui::TextEdit::singleline(&mut self.outgoing_key).password(true));ui.end_row();
-                ui.label("Incoming RC4 key (hex)");ui.add(egui::TextEdit::singleline(&mut self.incoming_key).password(true));ui.end_row();
+        egui::CollapsingHeader::new(self.i18n.text("rust.connection.options")).show(ui, |ui| {
+            ui.checkbox(
+                &mut self.socks_enabled,
+                self.i18n.text("tab.extra.options.advanced.socks"),
+            );
+            egui::Grid::new("connection-options").show(ui, |ui| {
+                for (key, value) in [
+                    ("rust.connection.hotel_version", &mut self.hotel_version),
+                    (
+                        "rust.connection.client_identifier",
+                        &mut self.client_identifier,
+                    ),
+                    (
+                        "rust.connection.packet_identifiers",
+                        &mut self.packet_database,
+                    ),
+                    ("rust.connection.socks_proxy", &mut self.socks_proxy),
+                    ("rust.connection.socks_user", &mut self.socks_user),
+                ] {
+                    ui.label(self.i18n.text(key));
+                    ui.text_edit_singleline(value);
+                    ui.end_row();
+                }
+                ui.label(self.i18n.text("rust.connection.socks_password"));
+                ui.add(egui::TextEdit::singleline(&mut self.socks_password).password(true));
+                ui.end_row();
+                ui.label(self.i18n.text("rust.connection.outgoing_key"));
+                ui.add(egui::TextEdit::singleline(&mut self.outgoing_key).password(true));
+                ui.end_row();
+                ui.label(self.i18n.text("rust.connection.incoming_key"));
+                ui.add(egui::TextEdit::singleline(&mut self.incoming_key).password(true));
+                ui.end_row();
             });
-            ui.label("Leave keys blank for plaintext. Explicit keys apply from the first byte of the TCP stream.");
+            ui.label(self.i18n.text("rust.connection.key_hint"));
         });
         ui.add_space(14.0);
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(
                     self.relay.is_none() && self.packet_download.is_none(),
-                    egui::Button::new("Load packet names from Sulek"),
+                    egui::Button::new(self.i18n.text("rust.connection.load_sulek")),
                 )
                 .clicked()
             {
@@ -1187,14 +1291,15 @@ impl Desktop {
                 let origins = self.origins;
                 let (send, receive) = std::sync::mpsc::channel();
                 self.packet_download = Some(receive);
-                self.status = "Loading packet identifiers...".into();
+                self.status = self.i18n.text("rust.connection.loading_identifiers");
                 std::thread::spawn(move || {
                     let _ = send.send(PacketInfoManager::fetch_sulek(&version, origins));
                 });
             }
             ui.label(format!(
-                "{} packet identifiers",
-                self.packet_info.entries().len()
+                "{} {}",
+                self.packet_info.entries().len(),
+                self.i18n.text("rust.connection.identifier_count")
             ));
         });
         if self.relay.is_none() && self.attachment_pending.is_none() {
@@ -1397,13 +1502,13 @@ impl Desktop {
         Ok(())
     }
     fn nitro_connection(&mut self, ui: &mut egui::Ui) {
-        ui.label(if self.unity {
-            "Unity WebGL browser connection"
+        ui.label(self.i18n.text(if self.unity {
+            "rust.browser.unity_connection"
         } else {
-            "Nitro browser connection"
-        });
+            "rust.browser.nitro_connection"
+        }));
         ui.horizontal(|ui| {
-            ui.label("Local address");
+            ui.label(self.i18n.text("rust.browser.local_address"));
             ui.add_enabled(
                 self.relay.is_none(),
                 egui::TextEdit::singleline(&mut self.listen),
@@ -1413,43 +1518,47 @@ impl Desktop {
             self.relay.is_none(),
             egui::Checkbox::new(
                 &mut self.system_proxy,
-                "Configure Windows browser proxy while waiting for the game",
+                self.i18n.text("rust.browser.configure_proxy"),
             ),
         );
-        ui.label("Start the proxy, then reload your hotel. The previous Windows proxy is restored when the game connects or when you stop.");
+        ui.label(self.i18n.text("rust.browser.proxy_hint"));
         if ui
             .add_enabled(
                 self.relay.is_none(),
-                egui::Button::new("Restore saved Windows proxy after an interrupted session"),
+                egui::Button::new(self.i18n.text("rust.browser.restore_proxy")),
             )
             .clicked()
         {
             self.status = match gearth_platform::recover_system_proxy() {
-                Ok(()) => "Saved proxy settings restored; later user changes preserved".into(),
+                Ok(()) => self.i18n.text("rust.browser.proxy_restored"),
                 Err(e) => e.to_string(),
             };
         }
         if ui
             .add_enabled(
                 self.relay.is_none() && self.certificate_task.is_none(),
-                egui::Button::new("Prepare public certificate"),
+                egui::Button::new(self.i18n.text("rust.browser.prepare_certificate")),
             )
             .clicked()
         {
             self.status = match self.prepare_certificate() {
-                Ok(()) => "Public certificate ready".into(),
+                Ok(()) => self.i18n.text("rust.browser.certificate_ready"),
                 Err(e) => e.to_string(),
             };
         }
         if let Some((path, der)) = self.public_certificate.clone() {
-            ui.label(format!("Public certificate: {}", path.display()));
-            ui.label("Installing this certificate allows this local proxy to inspect HTTPS while it is running. Only the public certificate belongs in the Windows certificate store.");
+            ui.label(format!(
+                "{}: {}",
+                self.i18n.text("rust.browser.public_certificate"),
+                path.display()
+            ));
+            ui.label(self.i18n.text("rust.browser.certificate_hint"));
             ui.horizontal(|ui| {
                 let available = self.relay.is_none() && self.certificate_task.is_none();
                 let action = if ui
                     .add_enabled(
                         available,
-                        egui::Button::new("Install certificate for my Windows account"),
+                        egui::Button::new(self.i18n.text("rust.browser.install_certificate")),
                     )
                     .clicked()
                 {
@@ -1457,7 +1566,7 @@ impl Desktop {
                 } else if ui
                     .add_enabled(
                         available,
-                        egui::Button::new("Remove certificate from my Windows account"),
+                        egui::Button::new(self.i18n.text("rust.browser.remove_certificate")),
                     )
                     .clicked()
                 {
@@ -1488,41 +1597,52 @@ impl Desktop {
             });
         }
         if self.unity {
-            ui.label(
-                "Unity packet identifiers (.json / .tsv); leave blank to use beta-29 messages.json",
-            );
+            ui.label(self.i18n.text("rust.browser.unity_identifiers"));
             ui.add_enabled(
                 self.relay.is_none(),
                 egui::TextEdit::singleline(&mut self.packet_database),
             );
-            ui.label("Reload the official WebGL client with the browser proxy enabled. Its framework, loader and WebAssembly hooks are patched for this session. Unsupported client layouts stop with a patch error.");
-            ui.label("With automatic Windows setup disabled, configure your test browser to use the local address and trust the displayed public certificate.");
+            ui.label(self.i18n.text("rust.browser.unity_hint"));
+            ui.label(self.i18n.text("rust.browser.manual_proxy_hint"));
         } else {
-            egui::CollapsingHeader::new("Nitro options").show(ui,|ui|{
-            ui.label("Packet identifiers (.tsv / .json)");ui.text_edit_singleline(&mut self.packet_database);
-            ui.label("Optional game WebSocket URLs (final * accepts a prefix), one per line. Otherwise the game is recognized by its first outgoing packet (4000).");ui.add(egui::TextEdit::multiline(&mut self.nitro_urls).desired_rows(3));
-            ui.label("HabboCity key data file (optional Nitro Helper JSON response)");ui.text_edit_singleline(&mut self.city_key_path);
-            ui.add_enabled(self.relay.is_none(),egui::Checkbox::new(&mut self.allow_city_helper,"For this session, allow sending HabboCity's crypto WASM file to https://nitro.sulek.dev/habbocity to obtain its protocol keys"));
-            ui.label("With the Windows proxy disabled, configure your test browser to use the local address and trust the public certificate in that browser.");
-        });
+            egui::CollapsingHeader::new(self.i18n.text("rust.browser.nitro_options")).show(
+                ui,
+                |ui| {
+                    ui.label(self.i18n.text("rust.connection.packet_identifiers"));
+                    ui.text_edit_singleline(&mut self.packet_database);
+                    ui.label(self.i18n.text("rust.browser.websocket_hint"));
+                    ui.add(egui::TextEdit::multiline(&mut self.nitro_urls).desired_rows(3));
+                    ui.label(self.i18n.text("rust.browser.city_keys"));
+                    ui.text_edit_singleline(&mut self.city_key_path);
+                    ui.add_enabled(
+                        self.relay.is_none(),
+                        egui::Checkbox::new(
+                            &mut self.allow_city_helper,
+                            self.i18n.text("rust.browser.city_helper"),
+                        ),
+                    );
+                    ui.label(self.i18n.text("rust.browser.manual_proxy_hint"));
+                },
+            );
             ui.horizontal(|ui| {
                 if ui
                     .add_enabled(
                         self.relay.is_none() && self.packet_download.is_none(),
-                        egui::Button::new("Load Nitro packet identifiers"),
+                        egui::Button::new(self.i18n.text("rust.browser.load_nitro_identifiers")),
                     )
                     .clicked()
                 {
                     let (send, receive) = std::sync::mpsc::channel();
                     self.packet_download = Some(receive);
-                    self.status = "Loading Nitro packet identifiers...".into();
+                    self.status = self.i18n.text("rust.connection.loading_identifiers");
                     std::thread::spawn(move || {
                         let _ = send.send(PacketInfoManager::fetch_sulek(NITRO_REVISION, false));
                     });
                 }
                 ui.label(format!(
-                    "{} packet identifiers",
-                    self.packet_info.entries().len()
+                    "{} {}",
+                    self.packet_info.entries().len(),
+                    self.i18n.text("rust.connection.identifier_count")
                 ));
             });
         }
@@ -1530,7 +1650,7 @@ impl Desktop {
             if ui
                 .add_enabled(
                     self.certificate_task.is_none(),
-                    egui::Button::new("Start browser proxy"),
+                    egui::Button::new(self.i18n.text("rust.browser.start_proxy")),
                 )
                 .clicked()
             {
@@ -1890,6 +2010,28 @@ impl Desktop {
                     let response = row_output.inner;
                     response.context_menu(|ui| {
                         if ui
+                            .button(self.i18n.text("rust.logger.copy_displayed"))
+                            .clicked()
+                        {
+                            let mut text = Vec::new();
+                            if write_log_capture(
+                                &mut text,
+                                std::iter::once(row),
+                                &self.packet_info,
+                                display_options,
+                                false,
+                            )
+                            .is_ok()
+                            {
+                                ui.ctx().copy_text(
+                                    String::from_utf8_lossy(&text)
+                                        .trim_end_matches('\n')
+                                        .to_owned(),
+                                );
+                            }
+                            ui.close_menu();
+                        }
+                        if ui
                             .add_enabled(
                                 !row.skipped,
                                 egui::Button::new(self.i18n.text("rust.logger.copy_packet")),
@@ -1909,7 +2051,10 @@ impl Desktop {
                             ui.ctx().copy_text(expression::hex(m.packet.bytes()));
                             ui.close_menu();
                         }
-                        if ui.button("Inspect packet bytes").clicked() {
+                        if ui
+                            .button(self.i18n.text("rust.logger.inspect_bytes"))
+                            .clicked()
+                        {
                             inspection = Some(logger_display::hex_dump(m.packet.bytes(), 4096));
                             ui.close_menu();
                         }
@@ -1945,12 +2090,12 @@ impl Desktop {
         }
         let mut open = self.packet_dump.is_some();
         if let Some(dump) = &self.packet_dump {
-            egui::Window::new("Packet bytes")
+            egui::Window::new(self.i18n.text("rust.logger.packet_bytes"))
                 .open(&mut open)
                 .resizable(true)
                 .default_width(720.0)
                 .show(ui.ctx(), |ui| {
-                    if ui.button("Copy hex dump").clicked() {
+                    if ui.button(self.i18n.text("rust.logger.copy_dump")).clicked() {
                         ui.ctx().copy_text(dump.clone());
                     }
                     egui::ScrollArea::both().max_height(500.0).show(ui, |ui| {
@@ -2187,6 +2332,7 @@ impl Desktop {
         ui.add_space(20.0);
         ui.separator();
         ui.heading(self.i18n.text("rust.rule.title"));
+        let mut saved_rules_changed = false;
         let changed = ui
             .add_enabled(
                 self.editing_saved_rule.is_none(),
@@ -2257,7 +2403,8 @@ impl Desktop {
                         Ok(()) => {
                             self.editing_saved_rule = None;
                             self.block_enabled = false;
-                            self.status = "Rule updated; save settings to keep it".into();
+                            self.status = "Rule updated".into();
+                            saved_rules_changed = true;
                             self.update_rules();
                         }
                         Err(error) => self.status = error.to_string(),
@@ -2280,7 +2427,7 @@ impl Desktop {
             self.settings.rules.iter_mut().enumerate()
         {
             ui.horizontal(|ui| {
-                changed |= ui
+                let toggled = ui
                     .checkbox(
                         enabled,
                         format!(
@@ -2295,6 +2442,8 @@ impl Desktop {
                         ),
                     )
                     .changed();
+                changed |= toggled;
+                saved_rules_changed |= toggled;
                 if ui
                     .small_button(self.i18n.text("rust.action.remove"))
                     .clicked()
@@ -2341,12 +2490,14 @@ impl Desktop {
                 other => other,
             };
             changed = true;
+            saved_rules_changed = true;
         }
         if let Some((from, to)) = move_rule {
             if let Err(error) = self.settings.move_saved_rule(from, to) {
                 self.status = error.to_string();
             } else {
                 changed = true;
+                saved_rules_changed = true;
             }
         }
         if let Some(index) = edit {
@@ -2361,6 +2512,11 @@ impl Desktop {
         }
         if changed {
             self.update_rules();
+        }
+        if saved_rules_changed {
+            if let Err(error) = Settings::save_rules(&self.settings_path, &self.settings.rules) {
+                self.status = format!("Rules changed in memory; could not save: {error}");
+            }
         }
     }
     fn send_injection(&mut self, direction: Direction) {
@@ -2419,6 +2575,7 @@ impl Desktop {
         self.repeat = 1;
     }
     fn schedule(&mut self, ui: &mut egui::Ui) {
+        let mut templates_changed = false;
         ui.heading(self.i18n.text("tab.scheduler"));
         let mut enabled = self.scheduler_hotkeys.is_some();
         if ui
@@ -2458,7 +2615,7 @@ impl Desktop {
         ui.horizontal(|ui| {
             ui.add(
                 egui::DragValue::new(&mut self.interval_ms)
-                    .range(1..=86_400_000)
+                    .range(1..=gearth_rust::scheduler::MAX_INTERVAL_MS)
                     .prefix(format!(
                         "{} (ms) ",
                         self.i18n.text("tab.scheduler.setup.interval")
@@ -2482,7 +2639,7 @@ impl Desktop {
             ui.add_enabled(
                 self.align_schedule,
                 egui::DragValue::new(&mut self.schedule_offset_ms)
-                    .range(0..=self.interval_ms.saturating_sub(1))
+                    .range(0..=self.interval_ms)
                     .prefix(format!("{} ", self.i18n.text("rust.scheduler.offset"))),
             );
         });
@@ -2501,14 +2658,14 @@ impl Desktop {
             .clicked()
         {
             let mut reset_active_editor = false;
-            let valid_offset = !self.align_schedule || self.schedule_offset_ms < self.interval_ms;
+            let valid_offset = !self.align_schedule || self.schedule_offset_ms <= self.interval_ms;
             let parsed = expression::parse_with_format(
                 &self.schedule_draft.expression,
                 self.packet_format(self.schedule_draft.direction),
                 Some((self.schedule_draft.direction, &self.packet_info)),
             );
             if !valid_offset {
-                self.status = "Offset must be smaller than the interval".into();
+                self.status = "Offset must not exceed the interval".into();
             } else {
                 self.status = match parsed.and_then(|packet| {
                     if let Some(id) = self.active_schedule_edit {
@@ -2562,12 +2719,14 @@ impl Desktop {
                             if let Some(index) = self.schedule_edit.take() {
                                 if let Some(existing) = self.settings.schedules.get_mut(index) {
                                     *existing = template;
+                                    templates_changed = true;
                                     "Template updated; active schedules are unchanged".into()
                                 } else {
                                     "Template no longer exists".into()
                                 }
                             } else {
                                 self.settings.schedules.push(template);
+                                templates_changed = true;
                                 "Schedule added".into()
                             }
                         }
@@ -2626,6 +2785,7 @@ impl Desktop {
             .clicked()
         {
             self.settings.schedules.clear();
+            templates_changed = true;
             self.schedule_edit = None;
         }
         ui.horizontal_wrapped(|ui| {
@@ -2655,6 +2815,7 @@ impl Desktop {
                     Ok(templates) => {
                         let count = templates.len();
                         self.settings.schedules = templates;
+                        templates_changed = true;
                         self.schedule_edit = None;
                         format!("{}: {count}", self.i18n.text("rust.scheduler.imported"))
                     }
@@ -2758,10 +2919,15 @@ impl Desktop {
                 {
                     remove_template = Some(i);
                 }
-                ui.checkbox(
-                    &mut template.paused,
-                    self.i18n.text("rust.scheduler.paused_start"),
-                );
+                if ui
+                    .checkbox(
+                        &mut template.paused,
+                        self.i18n.text("rust.scheduler.paused_start"),
+                    )
+                    .changed()
+                {
+                    templates_changed = true;
+                }
                 ui.label(format!(
                     "{}: {} every {} ms",
                     i + 1,
@@ -2785,6 +2951,7 @@ impl Desktop {
         }
         if let Some(index) = remove_template {
             self.settings.schedules.remove(index);
+            templates_changed = true;
             self.schedule_edit = match self.schedule_edit {
                 Some(editing) if editing == index => None,
                 Some(editing) if editing > index => Some(editing - 1),
@@ -2869,6 +3036,14 @@ impl Desktop {
                 self.reset_active_schedule_editor();
             }
             self.scheduler.jobs.remove(i);
+        }
+        if templates_changed {
+            if let Err(error) =
+                Settings::save_schedules(&self.settings_path, &self.settings.schedules)
+            {
+                self.status =
+                    format!("Schedule templates changed in memory; could not save: {error}");
+            }
         }
     }
 
@@ -3798,6 +3973,7 @@ impl Desktop {
             ui,
             self.extension_host.as_ref(),
             Path::new(&self.extension_runtime),
+            &self.i18n,
             &mut self.status,
             &mut self.extension_processes,
         );

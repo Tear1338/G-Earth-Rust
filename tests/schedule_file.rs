@@ -145,11 +145,101 @@ fn imports_original_schedule_rows_and_preserves_pause_and_offsets() {
 }
 
 #[test]
+fn interval_equal_to_offset_roundtrips_and_runs_on_the_zero_phase() {
+    let input = "0\tfalse\t500+500\tTOSERVER\t{h:42}";
+    let schedules = schedule_file::parse(input).unwrap();
+    assert_eq!(schedules[0].offset_ms, Some(500));
+    assert_eq!(schedule_file::format(&schedules).unwrap(), input);
+
+    let now = Instant::now();
+    let wall = UNIX_EPOCH + Duration::from_millis(125);
+    let packet = Packet::new_with_format(PacketFormat::EvaWire, 42).unwrap();
+    let mut scheduler = Scheduler::default();
+    scheduler
+        .add_aligned(
+            packet.clone(),
+            Direction::ToServer,
+            500,
+            500,
+            None,
+            (now, wall),
+        )
+        .unwrap();
+    scheduler
+        .add_aligned(packet, Direction::ToServer, 500, 0, None, (now, wall))
+        .unwrap();
+    let due = now + Duration::from_millis(375);
+    assert_eq!(scheduler.jobs[0].next, due);
+    assert_eq!(scheduler.jobs[1].next, due);
+    assert!(scheduler.tick(due - Duration::from_millis(1)).is_empty());
+    assert_eq!(scheduler.tick(due).len(), 2);
+    assert_eq!(scheduler.jobs[0].alignment_offset_ms, Some(500));
+    assert_eq!(scheduler.jobs[0].next, due + Duration::from_millis(500));
+    assert!(scheduler
+        .add_aligned(
+            Packet::new_with_format(PacketFormat::EvaWire, 42).unwrap(),
+            Direction::ToServer,
+            500,
+            501,
+            None,
+            (now, wall)
+        )
+        .is_err());
+}
+
+#[test]
+fn java_maximum_interval_and_equal_offset_survive_settings_and_schedule_files() {
+    use gearth_rust::settings::Settings;
+
+    let input = "0\tfalse\t2147483647+2147483647\tTOSERVER\t{h:42}";
+    let schedules = schedule_file::parse(input).unwrap();
+    assert_eq!(schedule_file::format(&schedules).unwrap(), input);
+    let settings = Settings {
+        schedules,
+        ..Settings::default()
+    };
+    let mut nonce = [0u8; 16];
+    getrandom::fill(&mut nonce).unwrap();
+    let name = nonce.iter().map(|b| format!("{b:02x}")).collect::<String>();
+    let directory = std::env::temp_dir().join(format!("gearth-settings-test-{name}"));
+    std::fs::create_dir(&directory).unwrap();
+    let path = directory.join("settings.json");
+    settings.save(&path).unwrap();
+    let restored = Settings::read(&path).unwrap();
+    assert_eq!(restored.schedules, settings.schedules);
+
+    let now = Instant::now();
+    let mut scheduler = Scheduler::default();
+    scheduler
+        .add_aligned(
+            Packet::new(42),
+            Direction::ToServer,
+            2_147_483_647,
+            2_147_483_647,
+            None,
+            (now, UNIX_EPOCH),
+        )
+        .unwrap();
+    assert_eq!(scheduler.tick(now).len(), 1);
+    assert_eq!(
+        scheduler.jobs[0].next,
+        now + Duration::from_millis(2_147_483_647)
+    );
+    assert!(schedule_file::parse("0\tfalse\t2147483648+0\tTOSERVER\t{h:42}").is_err());
+    let mut invalid = settings.to_json();
+    invalid["schedules"][0]["offset_ms"] = serde_json::json!(2_147_483_648u64);
+    std::fs::write(&path, serde_json::to_vec(&invalid).unwrap()).unwrap();
+    assert!(Settings::read(&path).is_err());
+    std::fs::remove_file(path).unwrap();
+    std::fs::remove_dir(directory).unwrap();
+}
+
+#[test]
 fn rejects_malformed_files_and_lossy_exports() {
     let valid = "0\tfalse\t500+100\tTOSERVER\t{h:42}";
     for input in [
         "0\tfalse\t0+0\tTOSERVER\t{h:42}",
-        "0\tfalse\t500+500\tTOSERVER\t{h:42}",
+        "0\tfalse\t500+501\tTOSERVER\t{h:42}",
         "0\tfalse\t500+0\tUNKNOWN\t{h:42}",
         "0\tfalse\t500+0\tTOSERVER\t",
         "0\tfalse\t500+0\tTOSERVER\t{h:42}\textra",

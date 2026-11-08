@@ -77,3 +77,16 @@ fn mode_changes_clear_old_history_and_none_never_suppresses() {
         assert_eq!(AntiSpam::from_setting(mode.name()), mode);
     }
 }
+
+#[test]
+fn new_session_discards_previous_frequencies_without_disabling_filter() {
+    let now = Instant::now();
+    let packet = message(42, Direction::ToClient);
+    let mut filter = LoggerFilter::default();
+    filter.set_mode(AntiSpam::Ultra);
+    assert!(!filter.suppress(&packet, now));
+    assert!(filter.suppress(&packet, now));
+    filter.reset();
+    assert!(!filter.suppress(&packet, now + Duration::from_millis(10)));
+    assert!(filter.suppress(&packet, now + Duration::from_millis(20)));
+}

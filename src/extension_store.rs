@@ -378,6 +378,39 @@ pub struct Installed {
     #[serde(skip)]
     pub directory: PathBuf,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InstallStatus {
+    NotInstalled,
+    Installed,
+    UpdateAvailable,
+    OlderVersion,
+}
+
+/// Describe this catalogue version relative to the newest matching installation.
+pub fn install_status(
+    catalog: &Catalog,
+    extension: &StoreExtension,
+    installed: &[Installed],
+) -> InstallStatus {
+    let mut newest: Option<&str> = None;
+    for record in installed
+        .iter()
+        .filter(|record| record.source == catalog.source && record.title == extension.title)
+    {
+        if record.version == extension.version {
+            return InstallStatus::Installed;
+        }
+        if newest.is_none_or(|version| compare_versions(&record.version, version).is_gt()) {
+            newest = Some(&record.version);
+        }
+    }
+    match newest.map(|version| compare_versions(&extension.version, version)) {
+        Some(Ordering::Greater) => InstallStatus::UpdateAvailable,
+        Some(Ordering::Less) => InstallStatus::OlderVersion,
+        _ => InstallStatus::NotInstalled,
+    }
+}
 fn install_id(catalog: &Catalog, extension: &StoreExtension) -> String {
     let digest = Sha256::digest(
         format!(
@@ -478,13 +511,11 @@ pub fn install_archive(
     if bytes.len() > MAX_ARCHIVE {
         return Err(io::Error::other("extension archive exceeds 64 MiB"));
     }
-    if !catalog
+    let extension = catalog
         .extensions
         .iter()
-        .any(|value| value.title == extension.title && value.version == extension.version)
-    {
-        return Err(io::Error::other("extension is not in this catalogue"));
-    }
+        .find(|value| value.title == extension.title && value.version == extension.version)
+        .ok_or_else(|| io::Error::other("extension is not in this catalogue"))?;
     fs::create_dir_all(root)?;
     let root = root.canonicalize()?;
     let id = install_id(catalog, extension);

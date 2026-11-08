@@ -62,11 +62,16 @@ pub struct LoggerFilter {
 }
 
 impl LoggerFilter {
+    /// Start a new connection without carrying packet frequencies from the old one.
+    pub fn reset(&mut self) {
+        self.timestamps.clear();
+        self.last_cleanup = None;
+    }
+
     pub fn set_mode(&mut self, mode: AntiSpam) {
         if self.mode != mode {
             self.mode = mode;
-            self.timestamps.clear();
-            self.last_cleanup = None;
+            self.reset();
         }
     }
 

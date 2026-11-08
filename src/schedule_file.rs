@@ -1,5 +1,10 @@
 //! G-Earth beta-29 `.sched` files (tab-separated, UTF-8 on Java 21).
-use crate::{expression, packet::Direction, scheduler::Job, settings::ScheduleTemplate};
+use crate::{
+    expression,
+    packet::Direction,
+    scheduler::{Job, MAX_INTERVAL_MS},
+    settings::ScheduleTemplate,
+};
 use std::{
     fs::OpenOptions,
     io::{self, Write},
@@ -130,9 +135,9 @@ pub fn parse(input: &str) -> io::Result<Vec<ScheduleTemplate>> {
             let offset_ms = offset
                 .parse::<u64>()
                 .map_err(|_| io::Error::other("invalid offset"))?;
-            if interval_ms == 0 || interval_ms > 86_400_000 || offset_ms >= interval_ms {
+            if interval_ms == 0 || interval_ms > MAX_INTERVAL_MS || offset_ms > interval_ms {
                 return Err(io::Error::other(
-                    "offset must be smaller than the interval, which must be 1 ms to 1 day",
+                    "offset must not exceed the interval, which must be 1 to 2147483647 ms",
                 ));
             }
             let direction = Direction::parse(fields[3]).map_err(io::Error::other)?;
@@ -173,8 +178,8 @@ pub fn format(templates: &[ScheduleTemplate]) -> io::Result<String> {
             )));
         }
         if template.interval_ms == 0
-            || template.interval_ms > 86_400_000
-            || offset >= template.interval_ms
+            || template.interval_ms > MAX_INTERVAL_MS
+            || offset > template.interval_ms
             || template.expression.is_empty()
             || template.expression.contains(['\t', '\n', '\r'])
         {

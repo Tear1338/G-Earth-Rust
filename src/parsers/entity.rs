@@ -278,6 +278,18 @@ impl HEntity {
         }
         Ok(entities)
     }
+    /// Construct a room-entity packet in the same order as beta-29's constructPacket.
+    pub fn construct(entities: &[Self], header: u16) -> Result<Packet> {
+        if entities.len() > 65_536 {
+            return Err(error("too many room entities"));
+        }
+        let mut packet = Packet::new(header);
+        packet.put_i32(entities.len() as i32)?;
+        for entity in entities {
+            entity.append(&mut packet)?;
+        }
+        Ok(packet)
+    }
     pub fn apply_update(&mut self, update: &HEntityUpdate) -> bool {
         if self.index != update.index {
             return false;
@@ -409,6 +421,31 @@ mod tests {
     use crate::packet::Packet;
 
     #[test]
+    fn construct_entity_packet_matches_beta29_java_vector() {
+        let entity = HEntity {
+            id: 17,
+            name: "Bot".into(),
+            motto: "hello".into(),
+            figure_id: "figure".into(),
+            index: 23,
+            tile: HPoint::with_height(3, 4, 1.5),
+            unknown: 5,
+            details: HEntityDetails::OldBot,
+            last_update: None,
+        };
+        let packet = HEntity::construct(&[entity.clone(), entity], 42).unwrap();
+        let expected = crate::expression::parse_hex(concat!(
+            "00000068002a00000002",
+            "000000110003426f74000568656c6c6f0006666967757265",
+            "0000001700000003000000040003312e350000000500000003",
+            "000000110003426f74000568656c6c6f0006666967757265",
+            "0000001700000003000000040003312e350000000500000003"
+        ))
+        .unwrap();
+        assert_eq!(packet.bytes(), expected);
+    }
+
+    #[test]
     fn point_formats_coordinates_like_the_java_api() {
         assert_eq!(HPoint::new(2, -3).to_string(), "(2,-3,0.0)");
         assert_eq!(HPoint::with_height(1, 2, -0.0).to_string(), "(1,2,-0.0)");
@@ -482,8 +519,6 @@ mod tests {
                 skills: vec![0, 65535],
             },
         ];
-        let mut packet = Packet::new(1);
-        packet.put_i32(details.len() as i32).unwrap();
         let mut expected = Vec::new();
         for (index, detail) in details.into_iter().enumerate() {
             let entity = HEntity {
@@ -497,9 +532,12 @@ mod tests {
                 details: detail,
                 last_update: None,
             };
-            entity.append(&mut packet).unwrap();
             expected.push(entity);
         }
+        let mut packet = HEntity::construct(&expected, 1).unwrap();
         assert_eq!(HEntity::parse(&mut packet).unwrap(), expected);
+        let mut empty = HEntity::construct(&[], 7).unwrap();
+        assert_eq!(empty.header(), 7);
+        assert!(HEntity::parse(&mut empty).unwrap().is_empty());
     }
 }

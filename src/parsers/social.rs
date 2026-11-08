@@ -144,6 +144,91 @@ pub struct HFriend {
     pub relationship_status: u16,
     pub category_name: Option<String>,
 }
+
+/// A friend-list update. The type for an upsert is supplied by the caller;
+/// -1 is reserved for removals in the beta-29 parser.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum HFriendChange {
+    Upsert { change_type: i32, friend: HFriend },
+    Removed(i32),
+}
+
+/// Categories and changes in their original packet order, including unused categories.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct HFriendUpdate {
+    pub categories: Vec<(i32, String)>,
+    pub changes: Vec<HFriendChange>,
+}
+
+impl HFriendUpdate {
+    pub fn parse(packet: &mut Packet) -> Result<Self> {
+        let category_count = count(packet)?;
+        let mut categories = Vec::with_capacity(category_count);
+        let mut lookup = BTreeMap::new();
+        for _ in 0..category_count {
+            let id = packet.read_i32()?;
+            let name = packet.read_string()?;
+            lookup.insert(id, name.clone());
+            categories.push((id, name));
+        }
+        let n = count(packet)?;
+        let mut changes = Vec::with_capacity(n);
+        for _ in 0..n {
+            let change_type = packet.read_i32()?;
+            if change_type == -1 {
+                changes.push(HFriendChange::Removed(packet.read_i32()?));
+            } else {
+                let mut friend = HFriend::read(packet)?;
+                friend.category_name = lookup.get(&friend.category_id).cloned();
+                changes.push(HFriendChange::Upsert {
+                    change_type,
+                    friend,
+                });
+            }
+        }
+        Ok(Self {
+            categories,
+            changes,
+        })
+    }
+    pub fn construct(&self, header: u16) -> Result<Packet> {
+        construct_friend_update(&self.categories, &self.changes, header)
+    }
+}
+
+fn construct_friend_update(
+    categories: &[(i32, String)],
+    changes: &[HFriendChange],
+    header: u16,
+) -> Result<Packet> {
+    if categories.len() > 65_536 || changes.len() > 65_536 {
+        return Err(error("too many friend categories or changes"));
+    }
+    let mut packet = Packet::new(header);
+    packet.put_i32(categories.len() as i32)?;
+    for (id, name) in categories {
+        packet.put_i32(*id)?.put_string(name)?;
+    }
+    packet.put_i32(changes.len() as i32)?;
+    for change in changes {
+        match change {
+            HFriendChange::Upsert {
+                change_type,
+                friend,
+            } => {
+                if *change_type == -1 {
+                    return Err(error("friend change type -1 is reserved for removals"));
+                }
+                packet.put_i32(*change_type)?;
+                friend.append(&mut packet)?;
+            }
+            HFriendChange::Removed(id) => {
+                packet.put_i32(-1)?.put_i32(*id)?;
+            }
+        }
+    }
+    Ok(packet)
+}
 impl HFriend {
     pub fn read(packet: &mut Packet) -> Result<Self> {
         let id = packet.read_i32()?;
@@ -232,23 +317,45 @@ impl HFriend {
         Ok(packets)
     }
     pub fn parse_update(packet: &mut Packet) -> Result<(Vec<Self>, Vec<i32>)> {
-        let mut categories = BTreeMap::new();
-        for _ in 0..count(packet)? {
-            categories.insert(packet.read_i32()?, packet.read_string()?);
-        }
-        let n = count(packet)?;
         let mut friends = Vec::new();
         let mut removed = Vec::new();
-        for _ in 0..n {
-            if packet.read_i32()? == -1 {
-                removed.push(packet.read_i32()?);
-            } else {
-                let mut friend = Self::read(packet)?;
-                friend.category_name = categories.get(&friend.category_id).cloned();
-                friends.push(friend);
+        for change in Self::parse_update_changes(packet)? {
+            match change {
+                HFriendChange::Upsert { friend, .. } => friends.push(friend),
+                HFriendChange::Removed(id) => removed.push(id),
             }
         }
         Ok((friends, removed))
+    }
+    /// Parse friend changes in wire order, retaining each non-removal type.
+    pub fn parse_update_changes(packet: &mut Packet) -> Result<Vec<HFriendChange>> {
+        Ok(HFriendUpdate::parse(packet)?.changes)
+    }
+    /// Construct an update with explicit change types and optional removals.
+    pub fn construct_update(changes: &[HFriendChange], header: u16) -> Result<Packet> {
+        if changes.len() > 65_536 {
+            return Err(error("too many friend changes"));
+        }
+        let mut categories = BTreeMap::new();
+        for change in changes {
+            if let HFriendChange::Upsert {
+                change_type,
+                friend,
+            } = change
+            {
+                if *change_type == -1 {
+                    return Err(error("friend change type -1 is reserved for removals"));
+                }
+                if let Some(name) = &friend.category_name {
+                    categories.insert(friend.category_id, name);
+                }
+            }
+        }
+        let categories: Vec<_> = categories
+            .into_iter()
+            .map(|(id, name)| (id, name.clone()))
+            .collect();
+        construct_friend_update(&categories, changes, header)
     }
 }
 
@@ -326,5 +433,67 @@ mod tests {
         let (changed, removed) = HFriend::parse_update(&mut update).unwrap();
         assert_eq!(changed[0].category_name.as_deref(), Some("Friends"));
         assert_eq!(removed, vec![99]);
+        let changes = vec![
+            HFriendChange::Upsert {
+                change_type: 0,
+                friend: changed[0].clone(),
+            },
+            HFriendChange::Removed(99),
+        ];
+        let mut built = HFriend::construct_update(&changes, 3).unwrap();
+        assert_eq!(built.bytes(), update.bytes());
+        let java_vector = crate::expression::parse_hex(concat!(
+            "00000046000300000001000000020007467269656e64730000000200000000",
+            "000000080003426f62000000010100000268720000000200016d0000000000",
+            "01000001ffffffff00000063"
+        ))
+        .unwrap();
+        assert_eq!(built.bytes(), java_vector);
+        let (roundtrip, removed) = HFriend::parse_update(&mut built).unwrap();
+        assert_eq!(roundtrip, changed);
+        assert_eq!(removed, [99]);
+        assert!(HFriend::construct_update(
+            &[HFriendChange::Upsert {
+                change_type: -1,
+                friend: changed[0].clone(),
+            }],
+            3
+        )
+        .is_err());
+        let interleaved = vec![
+            HFriendChange::Removed(99),
+            HFriendChange::Upsert {
+                change_type: 2,
+                friend: changed[0].clone(),
+            },
+            HFriendChange::Removed(7),
+            HFriendChange::Upsert {
+                change_type: 0,
+                friend: changed[0].clone(),
+            },
+        ];
+        let mut original = HFriend::construct_update(&interleaved, 3).unwrap();
+        let parsed = HFriend::parse_update_changes(&mut original).unwrap();
+        assert_eq!(parsed, interleaved);
+        assert_eq!(
+            HFriend::construct_update(&parsed, 3).unwrap().bytes(),
+            original.bytes()
+        );
+        let mut legacy_packet = HFriend::construct_update(&interleaved, 3).unwrap();
+        let (friends, removed) = HFriend::parse_update(&mut legacy_packet).unwrap();
+        assert_eq!(friends, vec![changed[0].clone(), changed[0].clone()]);
+        assert_eq!(removed, [99, 7]);
+        let full = HFriendUpdate {
+            categories: vec![
+                (9, "Unused".into()),
+                (2, "Earlier".into()),
+                (2, "Friends".into()),
+            ],
+            changes: interleaved,
+        };
+        let mut packet = full.construct(3).unwrap();
+        let parsed = HFriendUpdate::parse(&mut packet).unwrap();
+        assert_eq!(parsed, full);
+        assert_eq!(parsed.construct(3).unwrap().bytes(), packet.bytes());
     }
 }

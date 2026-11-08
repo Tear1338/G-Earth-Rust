@@ -1,6 +1,128 @@
 use gearth_rust::i18n::{parse_properties, I18n, LANGUAGES};
 
 #[test]
+fn store_controls_have_french_labels_and_english_fallbacks() {
+    let keys = [
+        "title",
+        "load",
+        "search",
+        "reverse",
+        "outdated",
+        "all_systems",
+        "all_clients",
+        "all_frameworks",
+        "all_categories",
+        "matches",
+        "installed",
+        "install_update",
+        "install_older",
+        "install",
+        "installed_versions",
+        "installed_hint",
+        "launch",
+        "uninstall",
+        "sort_rating",
+        "sort_alphabetical",
+        "sort_updated",
+        "sort_new",
+    ];
+    let english = I18n::new("en");
+    let french = I18n::new("fr");
+    let german = I18n::new("de");
+    for name in keys {
+        let key = format!("rust.store.{name}");
+        assert_ne!(english.text(&key), key);
+        assert_ne!(french.text(&key), english.text(&key), "untranslated {key}");
+        assert_eq!(german.text(&key), english.text(&key));
+    }
+}
+
+#[test]
+fn logger_copy_and_inspection_controls_have_french_labels() {
+    let en = I18n::new("en");
+    let fr = I18n::new("fr");
+    for key in [
+        "rust.logger.copy_displayed",
+        "rust.logger.inspect_bytes",
+        "rust.logger.packet_bytes",
+        "rust.logger.copy_dump",
+    ] {
+        assert_ne!(en.text(key), key);
+        assert_ne!(fr.text(key), en.text(key));
+    }
+}
+
+#[test]
+fn connection_and_browser_controls_are_available_in_french_and_english() {
+    let keys = [
+        "rust.connection.flash_crypto",
+        "rust.connection.attachment_hint",
+        "rust.connection.recover_redirects",
+        "rust.connection.redirects_removed",
+        "rust.connection.hotel_version",
+        "rust.connection.client_identifier",
+        "rust.connection.packet_identifiers",
+        "rust.connection.socks_proxy",
+        "rust.connection.socks_user",
+        "rust.connection.socks_password",
+        "rust.connection.outgoing_key",
+        "rust.connection.incoming_key",
+        "rust.connection.key_hint",
+        "rust.browser.unity_connection",
+        "rust.browser.nitro_connection",
+        "rust.browser.local_address",
+        "rust.browser.configure_proxy",
+        "rust.browser.proxy_hint",
+        "rust.browser.restore_proxy",
+        "rust.browser.prepare_certificate",
+        "rust.browser.certificate_hint",
+        "rust.browser.install_certificate",
+        "rust.browser.remove_certificate",
+        "rust.browser.unity_identifiers",
+        "rust.browser.unity_hint",
+        "rust.browser.manual_proxy_hint",
+        "rust.browser.nitro_options",
+        "rust.browser.websocket_hint",
+        "rust.browser.city_keys",
+        "rust.browser.city_helper",
+        "rust.connection.load_sulek",
+        "rust.connection.loading_identifiers",
+        "rust.connection.identifier_count",
+        "rust.browser.proxy_restored",
+        "rust.browser.certificate_ready",
+        "rust.browser.public_certificate",
+        "rust.browser.load_nitro_identifiers",
+        "rust.browser.start_proxy",
+    ];
+    let english = I18n::new("en");
+    let french = I18n::new("fr");
+    for key in keys {
+        assert_ne!(english.text(key), key, "missing English: {key}");
+        assert_ne!(french.text(key), english.text(key), "missing French: {key}");
+        assert_eq!(
+            I18n::new("de").text(key),
+            english.text(key),
+            "fallback: {key}"
+        );
+    }
+    assert!(french
+        .text("rust.browser.city_helper")
+        .contains("https://nitro.sulek.dev/habbocity"));
+}
+
+#[test]
+fn strict_properties_reject_malformed_unicode_in_keys_and_values() {
+    use gearth_rust::i18n::try_parse_properties;
+    for input in ["key=\\u12", "key=\\u12xz", "\\u+123=value", "key=\\u00é0"] {
+        assert!(try_parse_properties(input).is_err(), "accepted {input:?}");
+    }
+    let values = try_parse_properties("\\u006b=\\u00e9\nemoji=\\uD83E\\uDD80").unwrap();
+    assert_eq!(values["k"], "é");
+    assert_eq!(values["emoji"], "🦀");
+    assert_eq!(parse_properties("key=\\u12")["key"], "�");
+}
+
+#[test]
 fn scheduler_and_tool_controls_have_translations_and_fallbacks() {
     let keys = [
         "rust.scheduler.active_count",

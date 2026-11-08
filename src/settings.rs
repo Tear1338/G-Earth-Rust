@@ -202,7 +202,7 @@ impl Settings {
                 .map_err(io::Error::other)?;
                 let interval_ms = schedule["interval_ms"]
                     .as_u64()
-                    .filter(|n| *n > 0 && *n <= 86400000)
+                    .filter(|n| *n > 0 && *n <= crate::scheduler::MAX_INTERVAL_MS)
                     .ok_or_else(|| io::Error::other("invalid schedule interval"))?;
                 let repeat = u32::try_from(
                     schedule["repeat"]
@@ -215,7 +215,7 @@ impl Settings {
                     Some(value) => Some(
                         value
                             .as_u64()
-                            .filter(|n| *n < interval_ms)
+                            .filter(|n| *n <= interval_ms)
                             .ok_or_else(|| io::Error::other("invalid schedule offset"))?,
                     ),
                 };
@@ -281,6 +281,29 @@ impl Settings {
             let _ = fs::remove_file(&temporary);
         }
         outcome
+    }
+    /// Persist templates without overwriting unrelated settings already on disk.
+    pub fn save_schedules(path: &Path, schedules: &[ScheduleTemplate]) -> io::Result<()> {
+        let mut current = match Self::read(path) {
+            Ok(settings) => settings,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Self::default(),
+            Err(error) => return Err(error),
+        };
+        current.schedules = schedules.to_vec();
+        current.save(path)
+    }
+    /// Persist saved rules without replacing other on-disk settings.
+    pub fn save_rules(
+        path: &Path,
+        rules: &[(bool, Direction, u16, Option<String>)],
+    ) -> io::Result<()> {
+        let mut current = match Self::read(path) {
+            Ok(settings) => settings,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => Self::default(),
+            Err(error) => return Err(error),
+        };
+        current.rules = rules.to_vec();
+        current.save(path)
     }
     pub fn compiled_rules(&self) -> io::Result<Vec<Rule>> {
         self.compiled_rules_for(false)

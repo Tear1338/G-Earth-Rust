@@ -591,7 +591,7 @@ fn scheduler_preserves_clock_alignment_when_late_or_resumed() {
             Packet::new(2),
             Direction::ToServer,
             500,
-            500,
+            501,
             None,
             (now, wall)
         )
@@ -764,7 +764,7 @@ fn scheduler_edit_targets_stable_identity_and_preserves_pause_on_failure() {
         repeat: Some(3),
     };
     assert!(scheduler
-        .update_configured(id, spec(Some(500)), (now, wall))
+        .update_configured(id, spec(Some(501)), (now, wall))
         .is_err());
     assert_eq!(scheduler.jobs[0].packet.header(), 2);
     assert!(scheduler.jobs[0].paused);

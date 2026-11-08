@@ -1,6 +1,9 @@
 use crate::packet::{error, Direction, Packet, Result};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+/// Largest positive millisecond interval accepted by Java's signed integer parser.
+pub const MAX_INTERVAL_MS: u64 = i32::MAX as u64;
+
 /// The scheduler editor keeps its draft separate from the injection editor.
 pub struct ScheduleDraft {
     pub expression: String,
@@ -46,10 +49,10 @@ fn deadline_from_wall(
 ) -> Option<Instant> {
     let current = wall.duration_since(UNIX_EPOCH).ok()?.as_nanos();
     let period = interval.as_nanos();
-    if period == 0 || u128::from(offset_ms) * 1_000_000 >= period {
+    if period == 0 || u128::from(offset_ms) * 1_000_000 > period {
         return None;
     }
-    let offset = u128::from(offset_ms) * 1_000_000;
+    let offset = u128::from(offset_ms) * 1_000_000 % period;
     let mut wait = (offset + period - current % period) % period;
     if strictly_future && wait == 0 {
         wait = period;
@@ -149,7 +152,7 @@ impl Scheduler {
         clock: (Instant, SystemTime),
     ) -> Result<()> {
         let (now, wall) = clock;
-        if interval_ms == 0 || interval_ms > 86_400_000 || offset_ms >= interval_ms {
+        if interval_ms == 0 || interval_ms > MAX_INTERVAL_MS || offset_ms > interval_ms {
             return Err(error("invalid schedule interval/offset"));
         }
         let interval = Duration::from_millis(interval_ms);

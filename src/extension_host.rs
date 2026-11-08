@@ -87,6 +87,60 @@ struct InjectionQueue {
     receiver: Receiver<(Direction, Packet)>,
     pending: Option<(Direction, Packet)>,
 }
+const MAX_CONSOLE_LINE_BYTES: usize = 4096;
+
+#[derive(Default)]
+struct ConsoleLines {
+    pending: Vec<u8>,
+}
+impl ConsoleLines {
+    fn push(&mut self, bytes: &[u8], mut emit: impl FnMut(String)) {
+        self.pending.extend_from_slice(bytes);
+        loop {
+            let newline = self.pending.iter().position(|&byte| byte == b'\n');
+            let length = match newline {
+                Some(index) if index <= MAX_CONSOLE_LINE_BYTES => index,
+                _ if self.pending.len() > MAX_CONSOLE_LINE_BYTES => {
+                    let prefix = &self.pending[..MAX_CONSOLE_LINE_BYTES];
+                    match std::str::from_utf8(prefix) {
+                        Err(error) if error.error_len().is_none() => error.valid_up_to(),
+                        _ => MAX_CONSOLE_LINE_BYTES,
+                    }
+                }
+                _ => break,
+            };
+            let mut line: Vec<_> = self.pending.drain(..length).collect();
+            if self.pending.first() == Some(&b'\n') {
+                self.pending.remove(0);
+                if line.last() == Some(&b'\r') {
+                    line.pop();
+                }
+            }
+            emit(String::from_utf8_lossy(&line).into_owned());
+        }
+    }
+    fn finish(&mut self, mut emit: impl FnMut(String)) {
+        if !self.pending.is_empty() {
+            emit(String::from_utf8_lossy(&self.pending).into_owned());
+            self.pending.clear();
+        }
+    }
+}
+// A launch token is retained only once the child has actually started.
+struct LaunchTokenGuard {
+    shared: Arc<Shared>,
+    token: String,
+    committed: bool,
+}
+impl Drop for LaunchTokenGuard {
+    fn drop(&mut self) {
+        if !self.committed {
+            if let Ok(mut tokens) = self.shared.tokens.lock() {
+                tokens.remove(&self.token);
+            }
+        }
+    }
+}
 impl ExtensionHost {
     /// Use the same observed-ID and developer-mode state as the desktop.
     pub fn set_packet_safety(
@@ -479,7 +533,7 @@ impl ExtensionHost {
             .and_then(|s| s.to_str())
             .ok_or_else(|| io::Error::other("invalid extension filename"))?
             .to_owned();
-        let token = self.register_launch(&filename)?;
+        let mut token = self.launch_token_guard(&filename)?;
         let mut command = Command::new(executable);
         match path
             .extension()
@@ -506,7 +560,7 @@ impl ExtensionHost {
             .arg("-f")
             .arg(&filename)
             .arg("-c")
-            .arg(token);
+            .arg(&token.token);
         command
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -516,7 +570,9 @@ impl ExtensionHost {
             use std::os::windows::process::CommandExt;
             command.creation_flags(0x08000000);
         }
-        command.spawn()
+        let process = command.spawn()?;
+        token.committed = true;
+        Ok(process)
     }
     pub fn register_launch(&self, filename: &str) -> io::Result<String> {
         let mut random = [0u8; 32];
@@ -539,6 +595,13 @@ impl ExtensionHost {
             ),
         );
         Ok(token)
+    }
+    fn launch_token_guard(&self, filename: &str) -> io::Result<LaunchTokenGuard> {
+        Ok(LaunchTokenGuard {
+            shared: self.shared.clone(),
+            token: self.register_launch(filename)?,
+            committed: false,
+        })
     }
     /// Launch an installed store command with the original file-bound IPC placeholders.
     pub fn launch_command(
@@ -568,13 +631,13 @@ impl ExtensionHost {
                 "extension working directory is unavailable",
             ));
         }
-        let token = self.register_launch(filename)?;
+        let mut token = self.launch_token_guard(filename)?;
         let command = words
             .iter()
             .map(|word| {
                 word.replace("{port}", &self.address.port().to_string())
                     .replace("{filename}", filename)
-                    .replace("{cookie}", &token)
+                    .replace("{cookie}", &token.token)
             })
             .collect::<Vec<_>>();
         let program = if matches!(
@@ -610,6 +673,7 @@ impl ExtensionHost {
             child.creation_flags(0x08000000);
         }
         let mut process = child.spawn()?;
+        token.committed = true;
         if let Some(output) = process.stdout.take() {
             self.capture_output(output, format!("{label} stdout"));
         }
@@ -622,22 +686,23 @@ impl ExtensionHost {
         let state = self.shared.clone();
         thread::spawn(move || {
             let mut buffer = [0; 4096];
+            let mut lines = ConsoleLines::default();
+            let emit = |line: String| {
+                let _ = state.events.try_send(HostEvent::Console {
+                    id: 0,
+                    text: format!("{label}: {line}"),
+                });
+            };
             loop {
                 match output.read(&mut buffer) {
                     Ok(0) | Err(_) => break,
-                    Ok(count) => {
-                        for line in String::from_utf8_lossy(&buffer[..count]).lines() {
-                            let _ = state.events.try_send(HostEvent::Console {
-                                id: 0,
-                                text: format!("{label}: {line}"),
-                            });
-                        }
-                    }
+                    Ok(count) => lines.push(&buffer[..count], &emit),
                 }
                 if state.stop.load(Ordering::Acquire) {
                     break;
                 }
             }
+            lines.finish(emit);
         });
     }
     pub fn stop(&self) {
@@ -697,6 +762,85 @@ fn initialize(shared: &Shared, peer: &Peer) -> io::Result<()> {
 #[cfg(test)]
 mod initialization_tests {
     use super::*;
+
+    #[test]
+    fn console_lines_preserve_utf8_across_reads_and_bound_long_lines() {
+        let mut lines = ConsoleLines::default();
+        let mut output = Vec::new();
+        lines.push(b"caf\xc3", |line| output.push(line));
+        assert!(output.is_empty());
+        lines.push(b"\xa9\r\nnext\nlast", |line| output.push(line));
+        assert_eq!(output, ["café", "next"]);
+        lines.finish(|line| output.push(line));
+        assert_eq!(output, ["café", "next", "last"]);
+
+        let mut long = vec![b'a'; MAX_CONSOLE_LINE_BYTES - 1];
+        long.extend_from_slice("é".as_bytes());
+        long.extend_from_slice(b"finish\n");
+        let mut chunks = Vec::new();
+        lines.push(&long, |line| chunks.push(line));
+        assert_eq!(chunks.len(), 2);
+        assert_eq!(chunks[0].len(), MAX_CONSOLE_LINE_BYTES - 1);
+        assert_eq!(chunks[1], "éfinish");
+        assert!(lines.pending.is_empty());
+    }
+
+    #[test]
+    fn failed_launches_discard_their_temporary_tokens() {
+        let (host, _) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), vec![]).unwrap();
+        let mut random = [0; 16];
+        getrandom::fill(&mut random).unwrap();
+        let name = random
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>();
+        let directory = std::env::temp_dir().join(format!("gearth-launch-test-{name}"));
+        std::fs::create_dir(&directory).unwrap();
+        let jar = directory.join("fixture.jar");
+        std::fs::write(&jar, b"fixture").unwrap();
+        let missing = directory.join("missing-runtime.exe");
+        assert!(host.launch(&missing, &jar).is_err());
+        assert!(host.shared.tokens.lock().unwrap().is_empty());
+
+        let unsupported = directory.join("fixture.txt");
+        std::fs::write(&unsupported, b"fixture").unwrap();
+        assert!(host.launch(&missing, &unsupported).is_err());
+        assert!(host.shared.tokens.lock().unwrap().is_empty());
+
+        let command = vec![missing.to_string_lossy().into_owned(), "{cookie}".into()];
+        assert!(host
+            .launch_command(
+                &command,
+                &directory,
+                "fixture.jar",
+                "fixture",
+                Path::new("")
+            )
+            .is_err());
+        assert!(host.shared.tokens.lock().unwrap().is_empty());
+        let command = vec!["./missing-program".into(), "{cookie}".into()];
+        assert!(host
+            .launch_command(
+                &command,
+                &directory,
+                "fixture.jar",
+                "fixture",
+                Path::new("")
+            )
+            .is_err());
+        assert!(host.shared.tokens.lock().unwrap().is_empty());
+        let retained = {
+            let mut guard = host.launch_token_guard("fixture.jar").unwrap();
+            guard.committed = true;
+            guard.token.clone()
+        };
+        assert!(host.shared.tokens.lock().unwrap().contains_key(&retained));
+        host.shared.tokens.lock().unwrap().remove(&retained);
+        host.stop();
+        std::fs::remove_file(jar).unwrap();
+        std::fs::remove_file(unsupported).unwrap();
+        std::fs::remove_dir(directory).unwrap();
+    }
 
     #[test]
     fn pending_approval_cannot_receive_broadcast_before_initialization() {
