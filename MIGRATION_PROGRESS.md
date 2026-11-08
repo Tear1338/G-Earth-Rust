@@ -17,6 +17,7 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Comparing the original Java logger confirmed clearing displayed packets does not reset the filtered counter. Rust now preserves that counter and offers a separate reset button. Seven desktop logger tests, eleven translation tests and desktop Clippy pass locally; interactive use remains unverified.
 - The Windows logger can choose a .txt export path in a native save dialog. Windows filter tests, five capture tests and desktop Clippy pass; selecting the path and exporting still require separate actions and the dialog remains untested interactively.
 - Logger has an optional Java-like capture mode that discards unchecked directions after anti-spam while leaving previously captured rows visible; the default retains Rust's existing reversible display filter. Direction combinations, preference persistence, translations and desktop Clippy pass locally; interactive validation remains outstanding.
+- Logger timestamps use the original localized label on their own line in the display and text export. Seven desktop logger tests and desktop Clippy pass; visual layout and timing in a live session remain unverified.
 
 ## Remaining work
 
@@ -35,4 +36,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect the latest GitHub Actions validation and fix any failures. Then compare the Java logger's timestamp and export formatting with Rust and add focused compatibility tests for a concrete gap.
+Inspect the latest GitHub Actions validation and fix any failures. Then compare Java and Rust logger metadata, blocked/replaced markers and export formatting, and implement one verified difference with a focused regression test.

@@ -76,6 +76,8 @@ The displayed-capture export now shares row formatting with the on-screen logger
 
 The Windows logger export path now has a native save-file chooser with a .txt filter and default extension, alongside manual path entry. Unlike Java's one-step export, selection and export remain separate actions. The Windows filter fixture, capture tests and desktop Clippy pass; the native dialog has not been exercised interactively.
 
+When timestamps are enabled, the logger and exported capture now put `(timestamp: milliseconds)` on a separate line using the original localized label, matching the beta-29 controller's layout for this element. Local desktop tests cover English/French labels and the exported line; rendered layout and timestamp timing in a real session remain unverified.
+
 The logger offers an optional "capture selected directions only" setting: after anti-spam processing, packets in unchecked directions are not retained, as in Java. In this mode previously captured rows remain visible when direction choices change, also matching the Java behavior; text search still filters rows. The setting defaults off to preserve existing Rust behavior and is saved with settings. When off, packets can be hidden and later redisplayed. Tests cover all direction combinations, settings persistence and translations; real UI and client behavior remain unverified.
 
 The logger context menu can copy an individual displayed entry using the same formatting as the text export, including enabled metadata and representations. The copy is not clipped to the window width and remains subject to display representation limits. Inspection and copy controls have French and English labels. Actual clipboard and context-menu interaction remain unverified.

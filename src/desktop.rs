@@ -348,10 +348,12 @@ struct LogDisplayOptions<'a> {
     skip_big: bool,
     skipped_label: &'a str,
     timestamp: bool,
+    timestamp_label: &'a str,
     structure: bool,
 }
 
 struct RenderedLogRow {
+    timestamp: Option<String>,
     header: String,
     extra_representations: Vec<String>,
     dump: Option<String>,
@@ -475,16 +477,13 @@ fn render_log_row(
             1024,
         ))
     };
-    let timestamp = if options.timestamp {
-        row.timestamp_ms
-            .map(|ms| format!("({ms} ms) "))
-            .unwrap_or_default()
-    } else {
-        String::new()
-    };
+    let timestamp = options
+        .timestamp
+        .then_some(row.timestamp_ms)
+        .flatten()
+        .map(|ms| format!("({}: {ms})", options.timestamp_label));
     let header = format!(
-        "{}#{:06}  {:8}  {}{}{}{}",
-        timestamp,
+        "#{:06}  {:8}  {}{}{}{}",
         message.index,
         if message.direction == Direction::ToServer {
             "→ SERVER"
@@ -545,6 +544,7 @@ fn render_log_row(
         None
     };
     RenderedLogRow {
+        timestamp,
         header,
         extra_representations,
         dump,
@@ -561,6 +561,9 @@ fn write_log_capture<'a>(
 ) -> std::io::Result<()> {
     for row in rows {
         let rendered = render_log_row(row, info, options);
+        if let Some(timestamp) = rendered.timestamp {
+            writeln!(output, "{timestamp}")?;
+        }
         writeln!(output, "{}", rendered.header)?;
         for representation in rendered.extra_representations {
             writeln!(output, "{representation}")?;
@@ -1876,6 +1879,7 @@ impl Desktop {
             .expect("search cache initialized")
             .1;
         let skipped_label = format!("<{}>", self.i18n.text("ext.logger.element.skipped"));
+        let timestamp_label = self.i18n.text("ext.logger.element.timestamp");
         let display_options = LogDisplayOptions {
             additional: self.logger_additional,
             names: self.logger_names,
@@ -1888,6 +1892,7 @@ impl Desktop {
             skip_big: self.logger_skip_big,
             skipped_label: &skipped_label,
             timestamp: self.logger_timestamp,
+            timestamp_label: &timestamp_label,
             structure: self.logger_structure,
         };
         let (display_incoming, display_outgoing) = logger_display::displayed_directions(
@@ -1962,7 +1967,12 @@ impl Desktop {
         } else {
             24.0
         } + extra_lines as f32
-            * (ui.text_style_height(&egui::TextStyle::Monospace) + ui.spacing().item_spacing.y);
+            * (ui.text_style_height(&egui::TextStyle::Monospace) + ui.spacing().item_spacing.y)
+            + if self.logger_timestamp {
+                ui.text_style_height(&egui::TextStyle::Monospace) + ui.spacing().item_spacing.y
+            } else {
+                0.0
+            };
         let mut inspection = None;
         egui::ScrollArea::vertical()
             .stick_to_bottom(self.logger_autoscroll)
@@ -1984,6 +1994,9 @@ impl Desktop {
                         egui::vec2(ui.available_width(), row_height),
                         egui::Layout::top_down(egui::Align::Min),
                         |ui| {
+                            if let Some(timestamp) = &rendered.timestamp {
+                                ui.monospace(timestamp);
+                            }
                             let response = ui.add(
                                 egui::Label::new(log_header_layout(
                                     &rendered.header,
@@ -4239,6 +4252,7 @@ mod logger_prediction_tests {
             skip_big: true,
             skipped_label: "<paquet ignoré>",
             timestamp: false,
+            timestamp_label: "timestamp",
             structure: false,
         };
         let info = PacketInfoManager::default();
@@ -4306,12 +4320,13 @@ mod logger_prediction_tests {
             skip_big: false,
             skipped_label: "<packet skipped>",
             timestamp: true,
+            timestamp_label: "timestamp",
             structure: false,
         };
         let mut output = Vec::new();
         write_log_capture(&mut output, [&row], &info, options, true).unwrap();
         let text = String::from_utf8(output).unwrap();
-        assert!(text.contains("(123 ms)"));
+        assert!(text.starts_with("(timestamp: 123)\n"));
         assert!(text.contains("BLOCKED"));
         assert!(text.contains("[Example] [42]"));
         assert!(text.contains("00000002002a"));
@@ -4319,9 +4334,11 @@ mod logger_prediction_tests {
         options.extra_legacy = true;
         options.extra_raw_hex = true;
         options.extra_hex_dump = true;
+        options.timestamp_label = "heure";
         let mut output = Vec::new();
         write_log_capture(&mut output, [&row], &info, options, false).unwrap();
         let text = String::from_utf8(output).unwrap();
+        assert!(text.starts_with("(heure: 123)\n"));
         assert!(text.contains("Legacy:"));
         assert!(text.contains("00000002002a"));
         assert!(text.contains("00000000  00 00 00 02 00 2a"));
