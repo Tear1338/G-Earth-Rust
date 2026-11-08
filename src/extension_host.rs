@@ -242,8 +242,12 @@ impl ExtensionHost {
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "extension not found"))
     }
     pub fn start_connection(&self, details: ConnectionDetails) -> io::Result<()> {
+        self.start_owned_connection(details).map(|_| ())
+    }
+    /// Start a session and return its identity for conditional teardown.
+    pub fn start_owned_connection(&self, details: ConnectionDetails) -> io::Result<u64> {
         let packet = details.packet()?;
-        {
+        let epoch = {
             let mut connection = self
                 .shared
                 .connection
@@ -258,15 +262,33 @@ impl ExtensionHost {
                 .map_err(|_| io::Error::other("extension injection lock poisoned"))?;
             injections.pending = None;
             while injections.receiver.try_recv().is_ok() {}
-            self.shared.connection_epoch.fetch_add(1, Ordering::Relaxed);
+            let epoch = self
+                .shared
+                .connection_epoch
+                .fetch_add(1, Ordering::Relaxed)
+                .wrapping_add(1);
             *connection = Some(details);
             drop(injections);
             self.broadcast(packet);
-        }
-        Ok(())
+            epoch
+        };
+        Ok(epoch)
     }
     pub fn end_connection(&self) {
+        self.end_connection_inner(None);
+    }
+    /// End only the session identified by `epoch`; an older owner cannot
+    /// disconnect a replacement session.
+    pub fn end_owned_connection(&self, epoch: u64) -> bool {
+        self.end_connection_inner(Some(epoch))
+    }
+    fn end_connection_inner(&self, expected: Option<u64>) -> bool {
         if let Ok(mut c) = self.shared.connection.lock() {
+            if expected.is_some_and(|epoch| {
+                c.is_none() || self.shared.connection_epoch.load(Ordering::Relaxed) != epoch
+            }) {
+                return false;
+            }
             *c = None;
             self.shared.connection_epoch.fetch_add(1, Ordering::Relaxed);
             // Keep the connection lock until pending injections are discarded:
@@ -277,7 +299,9 @@ impl ExtensionHost {
                 while injections.receiver.try_recv().is_ok() {}
             }
             self.broadcast(Packet::new(6));
+            return true;
         }
+        false
     }
     fn broadcast(&self, packet: Packet) {
         if let Ok(peers) = self.shared.peers.lock() {

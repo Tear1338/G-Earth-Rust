@@ -61,6 +61,7 @@ impl UnityOptions {
 struct Peer {
     ready: AtomicBool,
     closed: AtomicBool,
+    extension_session: Mutex<Option<u64>>,
     queued: AtomicUsize,
     sender: asynchronous::Sender<(Direction, Packet)>,
     stop: watch::Sender<bool>,
@@ -148,6 +149,7 @@ impl State {
         let peer = Arc::new(Peer {
             ready: AtomicBool::new(false),
             closed: AtomicBool::new(false),
+            extension_session: Mutex::new(None),
             queued: AtomicUsize::new(0),
             sender,
             stop,
@@ -166,7 +168,11 @@ impl State {
                 *active = None;
                 if peer.ready.load(Ordering::Acquire) {
                     if let Some(host) = &self.options.extensions {
-                        host.end_connection();
+                        if let Ok(mut session) = peer.extension_session.lock() {
+                            if let Some(epoch) = session.take() {
+                                host.end_owned_connection(epoch);
+                            }
+                        }
                     }
                     let _ = self.events.try_send(Event::Disconnected);
                 }
@@ -198,14 +204,18 @@ impl State {
         let mut packets = self.options.packet_info.clone();
         packets.version = revision.clone();
         if let Some(host) = &self.options.extensions {
-            host.start_connection(ConnectionDetails {
+            let mut session = peer
+                .extension_session
+                .lock()
+                .map_err(|_| io::Error::other("Unity extension session lock poisoned"))?;
+            *session = Some(host.start_owned_connection(ConnectionDetails {
                 host: String::new(),
                 port: 0,
                 version: revision.clone(),
                 identifier: identifier.clone(),
                 client_type: "UNITY".into(),
                 packets: packets.clone(),
-            })?;
+            })?);
         }
         self.index[0].store(0, Ordering::Release);
         self.index[1].store(0, Ordering::Release);
@@ -474,6 +484,7 @@ mod injection_queue_tests {
         let peer = Peer {
             ready: AtomicBool::new(true),
             closed: AtomicBool::new(false),
+            extension_session: Mutex::new(None),
             queued: AtomicUsize::new(0),
             sender,
             stop,

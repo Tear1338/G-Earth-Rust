@@ -126,6 +126,49 @@ fn requires_approval_and_supports_flags_click_injection_and_interception() {
 }
 
 #[test]
+fn closing_an_old_relay_preserves_a_replacement_session() {
+    use gearth_rust::relay::{Config, Event, Relay, RelayOptions};
+    use std::net::TcpListener;
+    let (host, host_events) =
+        ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+    let (mut extension, _) = connect(&host, &host_events);
+    let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+    let (mut relay, events) = Relay::start_with_options(
+        Config {
+            listen: "127.0.0.1:0".parse().unwrap(),
+            remote: remote.local_addr().unwrap().to_string(),
+        },
+        RelayOptions {
+            extensions: Some(host.clone()),
+            connection: Some(details()),
+            ..RelayOptions::default()
+        },
+    )
+    .unwrap();
+    let client = TcpStream::connect(relay.address).unwrap();
+    let (server, _) = remote.accept().unwrap();
+    assert_eq!(read_frame(&mut extension).unwrap().header(), 5);
+    let replacement = host.start_owned_connection(details()).unwrap();
+    assert_eq!(read_frame(&mut extension).unwrap().header(), 5);
+    drop(client);
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !matches!(
+        events.recv_timeout(Duration::from_millis(100)),
+        Ok(Event::Disconnected)
+    ) {
+        assert!(Instant::now() < deadline, "relay did not disconnect");
+    }
+    write_frame(&mut extension, &Packet::new(3)).unwrap();
+    assert_eq!(read_frame(&mut extension).unwrap().header(), 4);
+    assert!(host.end_owned_connection(replacement));
+    assert_eq!(read_frame(&mut extension).unwrap().header(), 6);
+    drop(server);
+    relay.stop();
+    drop(extension);
+    host.stop();
+}
+
+#[test]
 fn relay_ends_extension_session_only_after_it_has_started_one() {
     use gearth_rust::relay::{Config, Event, Relay, RelayOptions};
     use std::net::TcpListener;
@@ -226,6 +269,33 @@ fn reconnect_does_not_replay_injections_from_a_previous_session() {
     let packets = host.take_injections();
     assert_eq!(packets.len(), 1);
     assert_eq!(packets[0].1.header(), 93);
+    drop(stream);
+    host.stop();
+}
+
+#[test]
+fn an_old_session_cannot_disconnect_or_clear_a_new_session() {
+    let (host, events) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+    let old = host.start_owned_connection(details()).unwrap();
+    let (mut stream, _) = connect(&host, &events);
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 5);
+    let current = host.start_owned_connection(details()).unwrap();
+    assert_ne!(old, current);
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 5);
+    write_frame(
+        &mut stream,
+        &extension::send(Direction::ToServer, &Packet::new(123)).unwrap(),
+    )
+    .unwrap();
+    write_frame(&mut stream, &Packet::new(3)).unwrap();
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 4);
+    assert!(!host.end_owned_connection(old));
+    assert_eq!(host.take_injections()[0].1.header(), 123);
+    write_frame(&mut stream, &Packet::new(3)).unwrap();
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 4);
+    assert!(host.end_owned_connection(current));
+    assert_eq!(read_frame(&mut stream).unwrap().header(), 6);
+    assert!(!host.end_owned_connection(current));
     drop(stream);
     host.stop();
 }

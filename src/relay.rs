@@ -222,13 +222,13 @@ impl Relay {
                                 .map(|v| v.to_string())
                                 .unwrap_or_default(),
                         ));
-                        let mut extension_started = false;
+                        let mut extension_session = None;
                         if let (Some(host), Some(details)) =
                             (&options.extensions, &options.connection)
                         {
                             if options.flash_process.is_none() {
-                                match host.start_connection(details.clone()) {
-                                    Ok(()) => extension_started = true,
+                                match host.start_owned_connection(details.clone()) {
+                                    Ok(epoch) => extension_session = Some(epoch),
                                     Err(e) => {
                                         let _ = events.try_send(Event::Error(e.to_string()));
                                     }
@@ -245,12 +245,11 @@ impl Relay {
                             commands,
                             &mut index,
                             &session_options,
-                            &mut extension_started,
+                            &mut extension_session,
                         );
-                        if extension_started {
-                            if let Some(host) = &options.extensions {
-                                host.end_connection();
-                            }
+                        if let (Some(host), Some(epoch)) = (&options.extensions, extension_session)
+                        {
+                            host.end_owned_connection(epoch);
                         }
                         closed.store(true, Ordering::Release);
                         if let Ok(mut slot) = worker_active.lock() {
@@ -432,7 +431,7 @@ fn run_session(
     commands: Receiver<(Direction, Packet)>,
     index: &mut i32,
     options: &RelayOptions,
-    extension_started: &mut bool,
+    extension_session: &mut Option<u64>,
 ) -> io::Result<()> {
     client.set_nonblocking(true)?;
     server.set_nonblocking(true)?;
@@ -637,8 +636,7 @@ fn run_session(
                                 return Ok(());
                             }
                         }
-                        host.start_connection(details)?;
-                        *extension_started = true;
+                        *extension_session = Some(host.start_owned_connection(details)?);
                     }
                 }
             }
@@ -744,7 +742,7 @@ mod tests {
                 receiver,
                 &mut 0,
                 &RelayOptions::default(),
-                &mut false,
+                &mut None,
             )
         });
         for header in 1..=64 {

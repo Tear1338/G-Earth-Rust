@@ -80,6 +80,7 @@ struct Peer {
     active: AtomicBool,
     ready: AtomicBool,
     closed: AtomicBool,
+    extension_session: Mutex<Option<u64>>,
     notify: Notify,
     queued: AtomicUsize,
     finished: AtomicUsize,
@@ -98,6 +99,7 @@ impl Peer {
             active: AtomicBool::new(false),
             ready: AtomicBool::new(false),
             closed: AtomicBool::new(false),
+            extension_session: Mutex::new(None),
             notify: Notify::new(),
             queued: AtomicUsize::new(0),
             finished: AtomicUsize::new(0),
@@ -218,7 +220,11 @@ impl Shared {
                 *active = None;
                 if peer.ready.load(Ordering::Acquire) {
                     if let Some(host) = &self.options.extensions {
-                        host.end_connection();
+                        if let Ok(mut session) = peer.extension_session.lock() {
+                            if let Some(epoch) = session.take() {
+                                host.end_owned_connection(epoch);
+                            }
+                        }
                     }
                     let _ = self.events.try_send(Event::Disconnected);
                 }
@@ -303,7 +309,11 @@ impl Shared {
             ));
         }
         if let Some(host) = &self.options.extensions {
-            host.start_connection(ConnectionDetails {
+            let mut session = peer
+                .extension_session
+                .lock()
+                .map_err(|_| io::Error::other("Nitro extension session lock poisoned"))?;
+            *session = Some(host.start_owned_connection(ConnectionDetails {
                 host: uri.host().unwrap_or("").into(),
                 port: uri.port_u16().unwrap_or(
                     if matches!(uri.scheme_str(), Some("https" | "wss")) {
@@ -316,7 +326,7 @@ impl Shared {
                 identifier: "HTML5".into(),
                 client_type: "NITRO".into(),
                 packets: database,
-            })?;
+            })?);
         }
         if let Some(service) = &self.options.admin_service {
             if let Ok(mut service) = service.lock() {
@@ -893,15 +903,16 @@ mod lifecycle_tests {
     fn closing_an_uninitialized_peer_does_not_disconnect_extensions() {
         let (host, host_events) =
             ExtensionHost::start("127.0.0.1:0".parse().unwrap(), vec![]).unwrap();
-        host.start_connection(ConnectionDetails {
-            host: "fixture".into(),
-            port: 1,
-            version: "test".into(),
-            identifier: "test".into(),
-            client_type: "FLASH".into(),
-            packets: PacketInfoManager::default(),
-        })
-        .unwrap();
+        let epoch = host
+            .start_owned_connection(ConnectionDetails {
+                host: "fixture".into(),
+                port: 1,
+                version: "test".into(),
+                identifier: "test".into(),
+                client_type: "FLASH".into(),
+                packets: PacketInfoManager::default(),
+            })
+            .unwrap();
         let mut stream = TcpStream::connect(host.address).unwrap();
         stream
             .set_read_timeout(Some(Duration::from_secs(3)))
@@ -964,6 +975,7 @@ mod lifecycle_tests {
             Modifier::new(&crate::nitro::HotelKind::Plain).unwrap(),
         ));
         ready_peer.ready.store(true, Ordering::Release);
+        *ready_peer.extension_session.lock().unwrap() = Some(epoch);
         *state.active.lock().unwrap() = Some(ready_peer.clone());
         state.close(&ready_peer);
         assert!(matches!(receiver.try_recv(), Ok(Event::Disconnected)));
