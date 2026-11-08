@@ -42,6 +42,9 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - The beta-29 Java UTF-8 oracle now covers all 65,536 two-byte inputs and mixed valid/malformed fields of lengths 0, 1, 255, 256, 32767 and 65535. Both offset and sequential reads are checked for the length cases. The local Windows GNU differential test passes; longer input combinations and live extensions remain unverified.
 - GitHub Actions run 42531691407 passed all eight validation jobs for `244a4e1`; development publishing was skipped.
 
+- A Windows GNU release build with `desktop,web` features succeeded locally for the code at `7257f58`; this does not establish live compatibility.
+- A second deterministic Java comparison covers 20,000 byte strings of lengths 3–12, including mixed valid and malformed input. The local oracle passes; it is a sample, not exhaustive coverage.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -61,4 +64,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect the CI result for the UTF-8 corpus commit. Expand the Java differential corpus to three- and four-byte malformed sequences with mixed valid input, and investigate any mismatches; validate the no-byte-view logger interaction visually when a safe desktop test session is available.
+Inspect CI for both UTF-8 corpus commits; expand targeted three- and four-byte boundary sequences around overlong encodings, surrogates and U+10FFFF, then compare Java and Rust. Validate the no-byte-view logger interaction visually when a safe desktop test session is available.

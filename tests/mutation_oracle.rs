@@ -65,6 +65,25 @@ fn mutations_match_original_java_packets_and_cursor() {
             "length {length}"
         );
     }
+    let mut state = 0x1234_5678u32;
+    for case_index in 0..20_000 {
+        let mut bytes = vec![0; 3 + case_index % 10];
+        for byte in &mut bytes {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            *byte = state as u8;
+        }
+        let mut p = Packet::new(18);
+        p.put_short_bytes(&bytes).unwrap();
+        let key = format!("utf8_mixed_{case_index}");
+        let java = expression::parse_hex(expected[key.as_str()]).unwrap();
+        assert_eq!(
+            p.read_utf8_lossy().unwrap().as_bytes(),
+            java,
+            "case {case_index}, bytes {bytes:02x?}"
+        );
+    }
     let mut malformed = Packet::new(16);
     malformed
         .put_short_bytes(&[0xe2, 0x82, 0x41])

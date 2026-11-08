@@ -29,6 +29,20 @@ public class JavaMutationOracle {
             p.appendUShort(length).appendBytes(bytes);
             System.out.println("utf8_length_" + length + "=" + HexFormat.of().formatHex(p.readString(6, StandardCharsets.UTF_8).getBytes(StandardCharsets.UTF_8)));
         }
+        // Deterministic mixed byte strings cover longer sequences without random CI failures.
+        int state = 0x12345678;
+        for (int caseIndex = 0; caseIndex < 20000; caseIndex++) {
+            byte[] bytes = new byte[3 + caseIndex % 10];
+            for (int i = 0; i < bytes.length; i++) {
+                state ^= state << 13;
+                state ^= state >>> 17;
+                state ^= state << 5;
+                bytes[i] = (byte) state;
+            }
+            HPacket p = new HPacket(18);
+            p.appendUShort(bytes.length).appendBytes(bytes);
+            System.out.println("utf8_mixed_" + caseIndex + "=" + HexFormat.of().formatHex(p.readString(6, StandardCharsets.UTF_8).getBytes(StandardCharsets.UTF_8)));
+        }
         HPacket malformedUtf = new HPacket(16);
         malformedUtf.appendUShort(3).appendBytes(new byte[]{(byte)0xe2, (byte)0x82, 0x41});
         malformedUtf.appendInt(2).appendBytes(new byte[]{(byte)0xff, 0x61});
