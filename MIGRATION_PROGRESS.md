@@ -13,6 +13,7 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Latest published commit adds scheduler/settings fixes, logger, extension handling, UI translations and additional Java differential tests.
 - Compared logger reconnection and level switching against pinned beta-29 source. Rust now retains anti-spam history across reconnects and switches between active levels; six filter tests and desktop Clippy pass locally. Disabled-mode history and timestamp bounds deliberately differ to keep memory bounded.
 - Manual extension launches now capture stdout/stderr for the extension console, like store launches. Host unit tests, a manually launched Python fixture and all-targets Clippy pass locally. The new fixture also passed on Windows and Linux in Actions run 42511342499; real extensions still need validation.
+- A deterministic test compares selected active anti-spam level transitions with a direct model of the pinned Java queue algorithm; seven local filter tests and Clippy pass. This is a behavioral model, not execution of the original JavaFX controller, and does not cover unbounded or disabled-mode traffic.
 
 ## Remaining work
 
@@ -31,4 +32,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Check all jobs in Actions run 42511342499 and resolve failures. Then add a differential test for switching anti-spam levels against the beta-29 algorithm, clearly documenting the bounded-memory and disabled-mode differences; verify the latest published anti-spam change on GitHub Actions.
+Inspect the remaining desktop job in Actions run 42511342499 and the latest commit's validation, and fix any failure. Then assess a bounded representation for anti-spam history while filtering is disabled, using the pinned Java controller as reference without introducing unbounded queues.

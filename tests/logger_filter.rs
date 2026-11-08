@@ -120,3 +120,50 @@ fn switching_active_levels_preserves_recent_incoming_history() {
     filter.set_mode(AntiSpam::Ultra);
     assert!(!filter.suppress(&packet, now + Duration::from_millis(3)));
 }
+
+#[test]
+fn active_level_switches_match_upstream_queue_for_bounded_samples() {
+    use std::collections::VecDeque;
+    let now = Instant::now();
+    let packet = message(42, Direction::ToClient);
+    let mut rust = LoggerFilter::default();
+    let mut java_history = VecDeque::<u64>::new();
+    let samples: [(AntiSpam, u64); 10] = [
+        (AntiSpam::Low, 0),
+        (AntiSpam::Low, 10),
+        (AntiSpam::Low, 20),
+        (AntiSpam::High, 30),
+        (AntiSpam::High, 40),
+        (AntiSpam::Low, 50),
+        (AntiSpam::Ultra, 60),
+        (AntiSpam::Medium, 5001),
+        (AntiSpam::Medium, 5020),
+        (AntiSpam::Medium, 7000),
+    ];
+    for (mode, millis) in samples {
+        let threshold = match mode {
+            AntiSpam::Low => 15,
+            AntiSpam::Medium => 9,
+            AntiSpam::High => 4,
+            AntiSpam::Ultra => 2,
+            AntiSpam::None => unreachable!(),
+        };
+        while java_history
+            .front()
+            .is_some_and(|time| millis.saturating_sub(*time) > 5000)
+        {
+            java_history.pop_front();
+        }
+        if java_history.len() == threshold {
+            java_history.pop_front();
+        }
+        java_history.push_back(millis);
+        let expected = java_history.len() >= threshold;
+        rust.set_mode(mode);
+        assert_eq!(
+            rust.suppress(&packet, now + Duration::from_millis(millis)),
+            expected,
+            "{mode:?} at {millis} ms"
+        );
+    }
+}
