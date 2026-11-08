@@ -1,6 +1,34 @@
 use gearth_rust::packet::{Packet, PacketFormat};
 
 #[test]
+fn utf8_offset_reads_are_strict_and_do_not_move_the_cursor() {
+    let mut packet = Packet::new(15);
+    packet
+        .put_utf8("Café 🐱")
+        .unwrap()
+        .put_utf8_long("éclair")
+        .unwrap();
+    packet.set_cursor(7).unwrap();
+    assert_eq!(packet.read_utf8_at(6).unwrap(), "Café 🐱");
+    assert_eq!(packet.read_utf8_long_at(18).unwrap(), "éclair");
+    assert_eq!(packet.read_short_bytes_at(6).unwrap(), "Café 🐱".as_bytes());
+    assert_eq!(packet.read_long_bytes_at(18).unwrap(), "éclair".as_bytes());
+    assert!(packet.read_utf8_at(usize::MAX).is_err());
+    assert_eq!(packet.cursor(), 7);
+    let mut invalid = Packet::new(16);
+    invalid.put_short_bytes(&[0xff]).unwrap();
+    assert!(invalid.read_utf8_at(6).is_err());
+    assert_eq!(invalid.cursor(), 6);
+    let mut truncated = Packet::new(17);
+    truncated.append(&[0, 0, 0, 3, b'x']).unwrap();
+    assert!(truncated.read_utf8_long_at(6).is_err());
+    assert_eq!(truncated.cursor(), 6);
+    let wedgie = Packet::new_with_format(PacketFormat::WedgieOutgoing, 1).unwrap();
+    assert!(wedgie.read_utf8_at(0).is_err());
+    assert!(wedgie.read_utf8_long_at(0).is_err());
+}
+
+#[test]
 fn signed_bytes_roundtrip_and_preserve_cursor_on_errors() {
     let mut packet = Packet::new(14);
     for value in [i8::MIN, -1, 0, i8::MAX] {

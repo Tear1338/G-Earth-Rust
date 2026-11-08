@@ -35,6 +35,7 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Ran the original beta-29 Java hexdump implementation against Rust locally using Java 21. The byte-for-byte oracle passes 13 lengths from zero through 1024 bytes, including 255, 256 and 257; this is finite formatting coverage, not live-client validation.
 - EVA packet API now has signed 16-bit sequential and absolute-offset reads, append and replacement. Boundary values, replacement bytes and cursor behavior match selected beta-29 Java API vectors; local tests cover truncation, protected headers and explicit WEDGIE rejection. The Java oracle, 41 available library tests, workspace/all-targets Clippy and a debug CLI build pass; real-client and WEDGIE signed-short semantics remain unverified.
 - Signed-byte sequential/absolute reads and append now complement unsigned byte operations, with EVA replacement. Selected negative and boundary values, replacement bytes and cursor behavior match the beta-29 Java API oracle. Local mutation tests, 41 available library tests, all-targets Clippy and a debug CLI build pass; WEDGIE and real extensions remain unverified.
+- EVA packets support short/long prefixed byte reads and UTF-8 reads at an absolute offset without changing the cursor. Valid short and long UTF-8 strings match the beta-29 Java API oracle, including a non-BMP character. Bounds and invalid UTF-8 have local tests; Rust rejects invalid UTF-8 where Java replaces malformed input. WEDGIE and real extensions are unverified. Mutation tests, Java oracle, 41 available library tests, all-targets Clippy and debug CLI build pass.
 
 ## Remaining work
 
@@ -55,4 +56,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect GitHub Actions for the latest code commit and fix any failures. Compare the remaining Java packet primitive and mutation APIs with Rust, then implement the next independently testable EVA operation; validate the no-byte-view logger interaction visually when a safe desktop test session is available.
+Inspect GitHub Actions for the latest code commit and fix any failures. Compare Java charset handling and the remaining packet APIs with Rust, then implement the next independently testable operation; validate the no-byte-view logger interaction visually when a safe desktop test session is available.

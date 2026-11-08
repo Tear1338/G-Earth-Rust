@@ -302,6 +302,33 @@ impl Packet {
             .ok_or_else(|| error("length overflow"))?;
         Ok(latin1_decode(self.read_bytes_at(start, length)?))
     }
+    /// Read an EVA short-length-prefixed byte field without changing the cursor.
+    pub fn read_short_bytes_at(&self, offset: usize) -> Result<&[u8]> {
+        self.ensure_eva()?;
+        let length = usize::from(self.read_u16_at(offset)?);
+        let start = offset
+            .checked_add(2)
+            .ok_or_else(|| error("length overflow"))?;
+        self.read_bytes_at(start, length)
+    }
+    /// Read an EVA long-length-prefixed byte field without changing the cursor.
+    pub fn read_long_bytes_at(&self, offset: usize) -> Result<&[u8]> {
+        self.ensure_eva()?;
+        let length = usize::try_from(self.read_i32_at(offset)?)
+            .map_err(|_| error("negative string length"))?;
+        let start = offset
+            .checked_add(4)
+            .ok_or_else(|| error("length overflow"))?;
+        self.read_bytes_at(start, length)
+    }
+    /// Read strict UTF-8 from an EVA short-length-prefixed field at an offset.
+    pub fn read_utf8_at(&self, offset: usize) -> Result<&str> {
+        std::str::from_utf8(self.read_short_bytes_at(offset)?).map_err(|_| error("invalid UTF-8"))
+    }
+    /// Read strict UTF-8 from an EVA long-length-prefixed field at an offset.
+    pub fn read_utf8_long_at(&self, offset: usize) -> Result<&str> {
+        std::str::from_utf8(self.read_long_bytes_at(offset)?).map_err(|_| error("invalid UTF-8"))
+    }
     pub fn read_u8(&mut self) -> Result<u8> {
         Ok(self.read_bytes(1)?[0])
     }

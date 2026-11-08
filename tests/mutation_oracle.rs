@@ -18,6 +18,22 @@ fn mutations_match_original_java_packets_and_cursor() {
         );
         assert_eq!(packet.cursor(), cursor.parse::<usize>().unwrap(), "{name}");
     };
+    let mut utf = Packet::new(15);
+    utf.put_utf8("Café 🐱")
+        .unwrap()
+        .put_utf8_long("éclair")
+        .unwrap();
+    utf.set_cursor(7).unwrap();
+    let parts: Vec<_> = expected["utf8_offsets"].split(',').collect();
+    assert_eq!(
+        utf.read_utf8_at(6).unwrap().as_bytes(),
+        expression::parse_hex(parts[0]).unwrap()
+    );
+    assert_eq!(
+        utf.read_utf8_long_at(18).unwrap().as_bytes(),
+        expression::parse_hex(parts[1]).unwrap()
+    );
+    assert_eq!(utf.cursor(), parts[2].parse::<usize>().unwrap());
     let mut bytes = Packet::new(14);
     for n in [i8::MIN, -1, 0, i8::MAX] {
         bytes.put_i8(n).unwrap();
