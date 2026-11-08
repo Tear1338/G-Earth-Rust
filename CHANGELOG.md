@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Extend the Java hexdump differential fixture around the 256-byte boundary and to 1024 bytes.
 - Java settings import preserves an explicitly selected Rust logger representation; imports without a choice still default to no primary byte view.
 - Logger: exercise primary and secondary clicks on an empty-header row using simulated egui pointer events.
 - Logger: optionally hide empty byte-view headers on screen and in copied displayed text; retain row actions through the row area.

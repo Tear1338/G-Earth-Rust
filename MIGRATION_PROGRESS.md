@@ -32,6 +32,7 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - An independent screen option hides that header when every byte view is disabled; copied displayed text follows the on-screen setting. Java settings import enables it unless an explicit Rust preference exists. Focused tests cover selection logic, settings and export, and desktop compilation; visual appearance and row interactions need interactive validation. Other Java layout differences remain.
 - A simulated egui pointer test verifies that primary and secondary clicks reach the hidden-header row. Eight desktop logger tests, focused logger/settings tests, desktop Clippy and a debug build pass; the full visual application and actual context-menu flow still require interactive testing.
 - Importing Java logger settings now preserves an explicitly selected Rust primary representation, which has no direct Java equivalent; without a saved choice it still selects no primary byte view. Tests cover both import cases and save/reload, plus preservation of an explicit hidden-header choice. Settings/logger integration tests, 41 library tests excluding two blocked socket cases, desktop Clippy and a debug build pass.
+- Ran the original beta-29 Java hexdump implementation against Rust locally using Java 21. The byte-for-byte oracle passes 13 lengths from zero through 1024 bytes, including 255, 256 and 257; this is finite formatting coverage, not live-client validation.
 
 ## Remaining work
 
@@ -47,9 +48,9 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - GitHub Actions run 42513347986 passed all eight validation jobs; its development publishing job was skipped. The GitHub commits page subsequently showed eight successful checks and one skipped check for commit `9d58e65`, and successful checks for the earlier no-byte-representation and size-limit commits. The byte-view ordering commit requires its own CI result.
 - Local Git metadata remains behind GitHub main because the workspace `.git` is read-only. The working tree contains previously published changes; compare against the actual remote tree before publishing any new files.
 - The latest complete local library run passed 41 tests, failed two relay socket tests because this environment denied local loopback connections (Windows error 10013), and ignored one Python fixture. Focused logger/settings integration tests, desktop logger tests, formatting and a desktop debug build passed. GitHub Actions is the independent network-fixture check.
-- Windows GNU release build succeeded for commit `6b1b72341c860bff331ef98c5e8448ed01e8eaf8` before the empty-header change; the new change has been debug-built and awaits its own release validation.
+- Windows GNU release build succeeded for the source of commit `3ec69f57cfc29bb930b68fae0c306ebfa4c23c1d`; only the hexdump test cases changed during that build. The release is not a live-client or visual validation.
 - Official client/game workflows, performance benefit and full visual equivalence remain unverified.
 
 ## Exact next step
 
-Inspect GitHub Actions for the latest code commit and fix any failures. Validate the no-byte-view logger interactions visually in a desktop session, then compare Java's byte-view direction/header formatting with Rust while retaining existing features. Re-run the release build on a stable source tree.
+Inspect GitHub Actions for the latest code commit and fix any failures. Validate the no-byte-view logger interactions visually in a desktop session, then compare Java's byte-view direction/header formatting with Rust while retaining existing features.

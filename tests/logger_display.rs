@@ -154,7 +154,7 @@ fn hex_dump_aligns_bytes_offsets_and_marks_truncation() {
 fn hex_dump_matches_original_java() {
     use std::process::Command;
     let cp = std::env::var("GEARTH_HEXDUMP_CLASSPATH").unwrap();
-    for length in [0, 1, 7, 8, 9, 15, 16, 17, 32, 256] {
+    for length in [0, 1, 7, 8, 9, 15, 16, 17, 32, 255, 256, 257, 1024] {
         let bytes: Vec<_> = (0..length).map(|n| n as u8).collect();
         let hex: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
         let actual = Command::new("java")
