@@ -37,6 +37,32 @@ use std::{
 // Both lazy prediction caches count against the capture byte budget.
 const LOG_PREDICTION_LIMIT: usize = 1024;
 
+#[cfg(windows)]
+fn browse_path(
+    ui: &mut egui::Ui,
+    path: &mut String,
+    kind: gearth_platform::FileKind,
+    save: bool,
+    i18n: &I18n,
+    status: &mut String,
+) {
+    let label = if save {
+        "rust.dialog.choose_save"
+    } else {
+        "rust.dialog.browse"
+    };
+    if ui.button(i18n.text(label)).clicked() {
+        match gearth_platform::choose_file(kind, save) {
+            Ok(Some(selected)) => match selected.into_os_string().into_string() {
+                Ok(selected) => *path = selected,
+                Err(_) => *status = i18n.text("rust.dialog.invalid_path"),
+            },
+            Ok(None) => {}
+            Err(error) => *status = format!("{}: {error}", i18n.text("rust.dialog.failed")),
+        }
+    }
+}
+
 fn with_gearth_icon(viewport: egui::ViewportBuilder) -> egui::ViewportBuilder {
     static ICON: OnceLock<Option<Arc<egui::IconData>>> = OnceLock::new();
     match ICON.get_or_init(|| {
@@ -2602,9 +2628,27 @@ impl Desktop {
             self.settings.schedules.clear();
             self.schedule_edit = None;
         }
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.label(self.i18n.text("rust.scheduler.file"));
             ui.text_edit_singleline(&mut self.schedule_path);
+            #[cfg(windows)]
+            browse_path(
+                ui,
+                &mut self.schedule_path,
+                gearth_platform::FileKind::Schedule,
+                false,
+                &self.i18n,
+                &mut self.status,
+            );
+            #[cfg(windows)]
+            browse_path(
+                ui,
+                &mut self.schedule_path,
+                gearth_platform::FileKind::Schedule,
+                true,
+                &self.i18n,
+                &mut self.status,
+            );
             if ui.button(self.i18n.text("rust.scheduler.import")).clicked() {
                 let result = self.read_schedule_file();
                 self.status = match result {
@@ -3054,6 +3098,15 @@ impl Desktop {
         ui.horizontal(|ui| {
             ui.label("Import original Cache/cache.json");
             ui.text_edit_singleline(&mut self.legacy_cache_path);
+            #[cfg(windows)]
+            browse_path(
+                ui,
+                &mut self.legacy_cache_path,
+                gearth_platform::FileKind::Json,
+                false,
+                &self.i18n,
+                &mut self.status,
+            );
             if ui.button("Import").clicked() {
                 let result = std::fs::read(&self.legacy_cache_path)
                     .and_then(|bytes| serde_json::from_slice(&bytes).map_err(std::io::Error::other))
@@ -3765,6 +3818,15 @@ impl Desktop {
         ui.horizontal(|ui| {
             ui.label(self.i18n.text("rust.extensions.file"));
             ui.text_edit_singleline(&mut self.extension_path);
+            #[cfg(windows)]
+            browse_path(
+                ui,
+                &mut self.extension_path,
+                gearth_platform::FileKind::Extension,
+                false,
+                &self.i18n,
+                &mut self.status,
+            );
         });
         if ui
             .button(self.i18n.text("rust.extensions.launch"))

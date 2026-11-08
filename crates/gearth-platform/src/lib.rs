@@ -1,8 +1,12 @@
 //! Read-only native process access, isolated from the safe protocol core.
 use std::{io, sync::atomic::AtomicBool};
+#[cfg(windows)]
+mod file_dialog;
 mod hotkeys;
 mod ip_mapping;
 mod process_tree;
+#[cfg(windows)]
+pub use file_dialog::{choose_file, FileKind};
 pub use hotkeys::GlobalHotkeys;
 pub use ip_mapping::{system_ip_mapper, IpMapper};
 pub use process_tree::ProcessTree;
