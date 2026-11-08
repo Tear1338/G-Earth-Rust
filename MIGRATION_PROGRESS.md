@@ -37,7 +37,7 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 ## Current issues and validation
 
 - GitHub Actions run 42510568958 failed in the Linux/Windows core and web jobs because a settings unit test still rejected an offset equal to the interval. The test was corrected. Follow-up run 42510869830 passed all eight validation jobs (Windows/Linux core, desktop, web, Java compatibility, G-Presets and G-Python on both systems); development publishing was skipped.
-- GitHub Actions run 42513347986 passed all eight validation jobs; its development publishing job was skipped. This run predates the no-byte-representation change, which has been validated locally but still needs its own complete CI result.
+- GitHub Actions run 42513347986 passed all eight validation jobs; its development publishing job was skipped. The GitHub commits page subsequently showed eight successful checks and one skipped check for commit `9d58e65`, and successful checks for the earlier no-byte-representation and size-limit commits. The byte-view ordering commit requires its own CI result.
 - Local Git metadata remains behind GitHub main because the workspace `.git` is read-only. The working tree contains previously published changes; compare against the actual remote tree before publishing any new files.
 - The complete local library run passed 39 of 41 tests; two relay socket tests failed because this environment denied local loopback connections (Windows error 10013). GitHub Actions is the independent network-fixture check.
 - Official client/game workflows, performance benefit and full visual equivalence remain unverified.
