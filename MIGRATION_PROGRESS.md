@@ -18,6 +18,7 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - The Windows logger can choose a .txt export path in a native save dialog. Windows filter tests, five capture tests and desktop Clippy pass; selecting the path and exporting still require separate actions and the dialog remains untested interactively.
 - Logger has an optional Java-like capture mode that discards unchecked directions after anti-spam while leaving previously captured rows visible; the default retains Rust's existing reversible display filter. Direction combinations, preference persistence, translations and desktop Clippy pass locally; interactive validation remains outstanding.
 - Logger timestamps use the original localized label on their own line in the display and text export. Seven desktop logger tests and desktop Clippy pass; visual layout and timing in a live session remain unverified.
+- Blocked/replaced markers now use localized bracketed labels on their own line in the logger and export, as in the Java controller. Seven desktop tests and Clippy pass locally; full metadata layout and live visuals remain unfinished.
 
 ## Remaining work
 
@@ -36,4 +37,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect the latest GitHub Actions validation and fix any failures. Then compare Java and Rust logger metadata, blocked/replaced markers and export formatting, and implement one verified difference with a focused regression test.
+Inspect the latest GitHub Actions validation and fix any failures. Then compare Java and Rust logger metadata ordering and formatting, including multiple names and hashes, and implement one bounded, tested compatibility improvement.

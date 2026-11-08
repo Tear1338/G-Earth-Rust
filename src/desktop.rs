@@ -349,11 +349,14 @@ struct LogDisplayOptions<'a> {
     skipped_label: &'a str,
     timestamp: bool,
     timestamp_label: &'a str,
+    blocked_label: &'a str,
+    replaced_label: &'a str,
     structure: bool,
 }
 
 struct RenderedLogRow {
     timestamp: Option<String>,
+    marker: Option<String>,
     header: String,
     extra_representations: Vec<String>,
     dump: Option<String>,
@@ -482,20 +485,20 @@ fn render_log_row(
         .then_some(row.timestamp_ms)
         .flatten()
         .map(|ms| format!("({}: {ms})", options.timestamp_label));
+    let marker = if message.blocked {
+        Some(format!("[{}]", options.blocked_label))
+    } else if packet.edited {
+        Some(format!("[{}]", options.replaced_label))
+    } else {
+        None
+    };
     let header = format!(
-        "#{:06}  {:8}  {}{}{}{}",
+        "#{:06}  {:8}  {}{}{}",
         message.index,
         if message.direction == Direction::ToServer {
             "→ SERVER"
         } else {
             "← CLIENT"
-        },
-        if message.blocked {
-            "BLOCKED  "
-        } else if packet.edited {
-            "REPLACED  "
-        } else {
-            ""
         },
         additional,
         metadata,
@@ -545,6 +548,7 @@ fn render_log_row(
     };
     RenderedLogRow {
         timestamp,
+        marker,
         header,
         extra_representations,
         dump,
@@ -563,6 +567,9 @@ fn write_log_capture<'a>(
         let rendered = render_log_row(row, info, options);
         if let Some(timestamp) = rendered.timestamp {
             writeln!(output, "{timestamp}")?;
+        }
+        if let Some(marker) = rendered.marker {
+            writeln!(output, "{marker}")?;
         }
         writeln!(output, "{}", rendered.header)?;
         for representation in rendered.extra_representations {
@@ -1880,6 +1887,8 @@ impl Desktop {
             .1;
         let skipped_label = format!("<{}>", self.i18n.text("ext.logger.element.skipped"));
         let timestamp_label = self.i18n.text("ext.logger.element.timestamp");
+        let blocked_label = self.i18n.text("ext.logger.element.blocked");
+        let replaced_label = self.i18n.text("ext.logger.element.replaced");
         let display_options = LogDisplayOptions {
             additional: self.logger_additional,
             names: self.logger_names,
@@ -1893,6 +1902,8 @@ impl Desktop {
             skipped_label: &skipped_label,
             timestamp: self.logger_timestamp,
             timestamp_label: &timestamp_label,
+            blocked_label: &blocked_label,
+            replaced_label: &replaced_label,
             structure: self.logger_structure,
         };
         let (display_incoming, display_outgoing) = logger_display::displayed_directions(
@@ -1972,6 +1983,14 @@ impl Desktop {
                 ui.text_style_height(&egui::TextStyle::Monospace) + ui.spacing().item_spacing.y
             } else {
                 0.0
+            }
+            + if filtered
+                .iter()
+                .any(|row| row.message.blocked || row.message.packet.edited)
+            {
+                ui.text_style_height(&egui::TextStyle::Monospace) + ui.spacing().item_spacing.y
+            } else {
+                0.0
             };
         let mut inspection = None;
         egui::ScrollArea::vertical()
@@ -1982,13 +2001,6 @@ impl Desktop {
                     let m = &row.message;
                     let (color, hex_color, marker_color) =
                         log_colors(m.direction, ui.visuals().dark_mode);
-                    let marker = if m.blocked {
-                        Some("BLOCKED")
-                    } else if m.packet.edited {
-                        Some("REPLACED")
-                    } else {
-                        None
-                    };
                     let rendered = render_log_row(row, &self.packet_info, display_options);
                     let row_output = ui.allocate_ui_with_layout(
                         egui::vec2(ui.available_width(), row_height),
@@ -1997,10 +2009,15 @@ impl Desktop {
                             if let Some(timestamp) = &rendered.timestamp {
                                 ui.monospace(timestamp);
                             }
+                            if let Some(marker) = &rendered.marker {
+                                ui.label(
+                                    egui::RichText::new(marker).monospace().color(marker_color),
+                                );
+                            }
                             let response = ui.add(
                                 egui::Label::new(log_header_layout(
                                     &rendered.header,
-                                    marker,
+                                    None,
                                     color,
                                     marker_color,
                                     ui.text_style_height(&egui::TextStyle::Monospace),
@@ -4253,6 +4270,8 @@ mod logger_prediction_tests {
             skipped_label: "<paquet ignoré>",
             timestamp: false,
             timestamp_label: "timestamp",
+            blocked_label: "Blocked",
+            replaced_label: "Replaced",
             structure: false,
         };
         let info = PacketInfoManager::default();
@@ -4280,7 +4299,7 @@ mod logger_prediction_tests {
 
     #[test]
     fn exported_capture_uses_display_options_and_reports_write_errors() {
-        let row = LogRow {
+        let mut row = LogRow {
             message: Message {
                 packet: Packet::new(42),
                 direction: Direction::ToClient,
@@ -4321,13 +4340,15 @@ mod logger_prediction_tests {
             skipped_label: "<packet skipped>",
             timestamp: true,
             timestamp_label: "timestamp",
+            blocked_label: "Blocked",
+            replaced_label: "Replaced",
             structure: false,
         };
         let mut output = Vec::new();
         write_log_capture(&mut output, [&row], &info, options, true).unwrap();
         let text = String::from_utf8(output).unwrap();
         assert!(text.starts_with("(timestamp: 123)\n"));
-        assert!(text.contains("BLOCKED"));
+        assert!(text.contains("[Blocked]\n"));
         assert!(text.contains("[Example] [42]"));
         assert!(text.contains("00000002002a"));
         assert!(text.ends_with("--------------------\n"));
@@ -4335,10 +4356,12 @@ mod logger_prediction_tests {
         options.extra_raw_hex = true;
         options.extra_hex_dump = true;
         options.timestamp_label = "heure";
+        options.blocked_label = "Bloqué";
         let mut output = Vec::new();
         write_log_capture(&mut output, [&row], &info, options, false).unwrap();
         let text = String::from_utf8(output).unwrap();
         assert!(text.starts_with("(heure: 123)\n"));
+        assert!(text.contains("[Bloqué]\n"));
         assert!(text.contains("Legacy:"));
         assert!(text.contains("00000002002a"));
         assert!(text.contains("00000000  00 00 00 02 00 2a"));
@@ -4352,6 +4375,12 @@ mod logger_prediction_tests {
         assert!(String::from_utf8(output)
             .unwrap()
             .contains("00000000  00 00 00 02 00 2a"));
+        row.message.blocked = false;
+        row.message.packet.edited = true;
+        options.replaced_label = "Remplacé";
+        let mut output = Vec::new();
+        write_log_capture(&mut output, [&row], &info, options, false).unwrap();
+        assert!(String::from_utf8(output).unwrap().contains("[Remplacé]\n"));
         struct Fails;
         impl std::io::Write for Fails {
             fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
