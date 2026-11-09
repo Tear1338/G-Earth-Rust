@@ -852,6 +852,42 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_nullable_repeat_" + i, sample);
         }
+        String[][] boundedNested = {
+            {"((a)?b){2} abb ab", "((a)?b){2}", "$1/$2/$0", "1"},
+            {"((a)?b){1,3} abbb", "((a)?b){1,3}", "$1/$2/$0", "1"},
+            {"((a)?b){1,3}? abbb", "((a)?b){1,3}?", "$1/$2/$0", "1"},
+            {"((a)?b){2,} abb ab", "((a)?b){2,}", "$1/$2/$0", "1"},
+            {"((a)?(b)?){2,4} ab", "((a)?(b)?){2,4}", "$1/$2/$3/$0", "1"},
+            {"((a)?(b)?){2,4}? ab", "((a)?(b)?){2,4}?", "$1/$2/$3/$0", "1"},
+            {"((a)?b){0} ab", "((a)?b){0}", "$1/$2/$0", "1"},
+        };
+        for (int i = 0; i < boundedNested.length; i++) {
+            HPacket sample = new HPacket(9);
+            sample.appendString(boundedNested[i][0]);
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(boundedNested[i][1], boundedNested[i][2], Integer.parseInt(boundedNested[i][3]));
+            } finally { System.setOut(original); }
+            emit("substring_bounded_nested_" + i, sample);
+        }
+        String[] boundedNestedPatterns = {"((a)?b){2}", "((a)?b){1,3}", "((a)?b){1,3}?", "((a)?b){2,}", "((a)?(b)?){2,4}", "((a)?(b)?){2,4}?", "((a)?b){0}"};
+        char[] boundedNestedAlphabet = {'a', 'b', 'c', 'x', 'é', ' ', '\n', '\r', '\u0085'};
+        for (int i = 0; i < 140; i++) {
+            String pattern = boundedNestedPatterns[i % boundedNestedPatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(" abb abbb ab bb a ");
+            for (int j = 0; j < 16; j++) value.append(boundedNestedAlphabet[(i * 7 + j * 3) % boundedNestedAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, "$1/$2/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_bounded_nested_corpus_" + i, sample);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);

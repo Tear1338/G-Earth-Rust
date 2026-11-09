@@ -69,6 +69,8 @@
 
 ## Unreleased
 
+- Support bounded repetition counts for variable-length Java regex groups with retained optional captures.
+
 - Guard zero-width repeated Java regex bodies while preserving captures across iterations.
 
 - Preserve multiple independent optional Java regex captures across bounded group repetition.
