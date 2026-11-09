@@ -1,5 +1,7 @@
 # Changelog
 
+- Test encrypted Origins relay traffic, extension modification and reconnect after metadata initialization.
+
 - Initialize Origins metadata before starting the extension session, with bounded cancellable lookup and an offline option.
 
 - Test Origins discovery and metadata caching over local HTTPS; preserve the requested version when a discovered database is empty, as Java does.

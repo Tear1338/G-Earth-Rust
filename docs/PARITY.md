@@ -105,3 +105,5 @@ Origins discovery now prefers the latest Sulek release over a supplied version, 
 A local HTTPS fixture verifies Origins latest-release discovery, 503 fallback, metadata paths and cache persistence. Empty metadata now preserves the requested connection version, following Java PacketInfoManagerRemote. Actual Origins clients and the live service remain unverified.
 
 The Origins relay now loads missing metadata before starting extensions, including without an extension host. Matching preloaded data is kept, mismatched data discarded, and the API supports offline lookup bypass. Controlled tests cover success, failure, extension initialization, stop and visible peer EOF; in-flight HTTP workers can continue and unread data can hide EOF. Full encrypted relay and real clients remain unverified.
+
+A controlled full Origins relay fixture now covers metadata initialization, Bobba handshake, encrypted traffic in both directions, extension packet modification and reconnect. It uses simulated peers, not an official client or a real extension.

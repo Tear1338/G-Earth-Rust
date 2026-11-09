@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: test the full Origins relay handshake, packet forwarding, extensions and reconnect after automatic metadata initialization. Full Java regex and live extension validation remain open.
+Next: test an actual beta-29 Java extension through an encrypted Origins relay and compare packet formats. Full Java regex and live extension validation remain open.

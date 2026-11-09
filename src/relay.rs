@@ -1184,6 +1184,204 @@ mod tests {
     }
 
     #[test]
+    fn origins_relay_encrypts_and_intercepts_after_metadata_and_reconnect() {
+        use crate::{
+            encoding::{decode_b64, encode_b64},
+            extension::{self, ExtensionInfo},
+            extension_host::HostEvent,
+            packet_info::{PacketInfo, PacketInfoManager},
+            shockwave::{test_encrypt, BobbaCrypto, ChaChaKey},
+        };
+        use base64::{engine::general_purpose::STANDARD_NO_PAD, Engine};
+        fn intercept(peer: &mut TcpStream, direction: Direction, header: u16) {
+            let mut frame = read_frame(peer).unwrap();
+            assert_eq!(frame.header(), 3);
+            let text = frame.read_long_string().unwrap();
+            let format = PacketFormat::from_id(frame.read_i32().unwrap()).unwrap();
+            let mut message = Message::parse_with_format(&text, format).unwrap();
+            assert_eq!(message.direction, direction);
+            assert_eq!(message.packet.header(), header);
+            if header == 77 {
+                let mut replacement = Packet::new_with_format(format, header).unwrap();
+                replacement.put_i32(43).unwrap();
+                message.packet = replacement;
+            }
+            write_frame(peer, &extension::manipulated(&message).unwrap()).unwrap();
+        }
+        fn read_encrypted(
+            stream: &mut TcpStream,
+            header: &mut ChaChaKey,
+            data: &mut ChaChaKey,
+        ) -> Vec<u8> {
+            let mut wire_header = [0; 6];
+            stream.read_exact(&mut wire_header).unwrap();
+            let mut decoded = STANDARD_NO_PAD.decode(wire_header).unwrap();
+            header.apply(&mut decoded);
+            let length = decode_b64(&decoded[1..]).unwrap() as usize;
+            let mut wire = vec![0; length];
+            stream.read_exact(&mut wire).unwrap();
+            let mut plain = STANDARD_NO_PAD.decode(wire).unwrap();
+            data.apply(&mut plain);
+            plain
+        }
+        let _test_lock = LOOKUP_TEST_LOCK.lock().unwrap();
+        let (host, host_events) =
+            ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+        let mut peer = TcpStream::connect(host.address).unwrap();
+        peer.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        assert_eq!(read_frame(&mut peer).unwrap().header(), 2);
+        let info = ExtensionInfo {
+            title: "fixture".into(),
+            author: "test".into(),
+            version: "1".into(),
+            description: String::new(),
+            on_click: false,
+            file: None,
+            cookie: String::new(),
+            can_leave: true,
+            can_delete: true,
+        };
+        write_frame(&mut peer, &extension::info_response(&info).unwrap()).unwrap();
+        let id = match host_events.recv_timeout(Duration::from_secs(3)).unwrap() {
+            HostEvent::Pending { id, .. } => id,
+            event => panic!("{event:?}"),
+        };
+        host.approve(id).unwrap();
+        assert_eq!(read_frame(&mut peer).unwrap().header(), 7);
+        let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+        let (called_tx, called_rx) = mpsc::channel();
+        let lookup = Arc::new(move |version: String| {
+            called_tx.send(version).unwrap();
+            Ok(PacketInfoManager::new(
+                "ORIGINS-2",
+                vec![PacketInfo {
+                    header: 77,
+                    hash: None,
+                    name: Some("Known".into()),
+                    structure: None,
+                    direction: Direction::ToServer,
+                    source: "fixture".into(),
+                }],
+            ))
+        });
+        let (mut relay, events) = Relay::start_with_options(
+            Config {
+                listen: "127.0.0.1:0".parse().unwrap(),
+                remote: remote.local_addr().unwrap().to_string(),
+            },
+            RelayOptions {
+                shockwave: true,
+                extensions: Some(host.clone()),
+                origins_lookup: Some(lookup),
+                ..RelayOptions::default()
+            },
+        )
+        .unwrap();
+        for _ in 0..2 {
+            let mut client = TcpStream::connect(relay.address).unwrap();
+            client
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let (mut server, _) = remote.accept().unwrap();
+            server
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            assert_eq!(
+                called_rx.recv_timeout(Duration::from_secs(3)).unwrap(),
+                "latest"
+            );
+            let mut start = read_frame(&mut peer).unwrap();
+            assert_eq!(start.header(), 5);
+            start.read_string().unwrap();
+            start.read_i32().unwrap();
+            let version = start.read_string().unwrap();
+            assert_eq!(version, "ORIGINS-2");
+            start.read_string().unwrap();
+            start.read_string().unwrap();
+            assert_eq!(
+                PacketInfoManager::read_from(version, &mut start)
+                    .unwrap()
+                    .entries()[0]
+                    .header,
+                77
+            );
+            let mut client_crypto = BobbaCrypto::with_private(12345).unwrap();
+            let mut server_crypto = BobbaCrypto::with_private(67890).unwrap();
+            let mut hello = Packet::new_with_format(PacketFormat::WedgieOutgoing, 202).unwrap();
+            hello.put_string(&client_crypto.public_key()).unwrap();
+            let mut wire = encode_b64(hello.bytes().len() as u32, 3).unwrap();
+            wire.extend_from_slice(hello.bytes());
+            client.write_all(&wire).unwrap();
+            intercept(&mut peer, Direction::ToServer, 202);
+            let mut length = [0; 3];
+            server.read_exact(&mut length).unwrap();
+            let mut payload = vec![0; decode_b64(&length).unwrap() as usize];
+            server.read_exact(&mut payload).unwrap();
+            let mut packet =
+                Packet::from_bytes_with_format(PacketFormat::WedgieOutgoing, payload).unwrap();
+            server_crypto
+                .set_peer(&packet.read_string().unwrap())
+                .unwrap();
+            let mut reply = Packet::new_with_format(PacketFormat::WedgieIncoming, 1).unwrap();
+            reply.put_string(&server_crypto.public_key()).unwrap();
+            let mut wire = reply.bytes().to_vec();
+            wire.push(1);
+            server.write_all(&wire).unwrap();
+            intercept(&mut peer, Direction::ToClient, 1);
+            let mut response = Vec::new();
+            loop {
+                let mut byte = [0];
+                client.read_exact(&mut byte).unwrap();
+                if byte[0] == 1 {
+                    break;
+                }
+                response.push(byte[0]);
+            }
+            let mut packet =
+                Packet::from_bytes_with_format(PacketFormat::WedgieIncoming, response).unwrap();
+            client_crypto
+                .set_peer(&packet.read_string().unwrap())
+                .unwrap();
+            let mut outgoing = Packet::new_with_format(PacketFormat::WedgieOutgoing, 77).unwrap();
+            outgoing.put_i32(42).unwrap();
+            let keys = client_crypto.keys_mut().unwrap();
+            client
+                .write_all(
+                    &test_encrypt(outgoing.bytes(), &mut keys.c2s_header, &mut keys.c2s_data)
+                        .unwrap(),
+                )
+                .unwrap();
+            intercept(&mut peer, Direction::ToServer, 77);
+            let keys = server_crypto.keys_mut().unwrap();
+            let mut replaced = Packet::new_with_format(PacketFormat::WedgieOutgoing, 77).unwrap();
+            replaced.put_i32(43).unwrap();
+            assert_eq!(
+                read_encrypted(&mut server, &mut keys.c2s_header, &mut keys.c2s_data),
+                replaced.bytes()
+            );
+            let mut incoming = Packet::new_with_format(PacketFormat::WedgieIncoming, 78).unwrap();
+            incoming.put_string("hello").unwrap();
+            let mut plain = incoming.bytes().to_vec();
+            plain.push(1);
+            let keys = server_crypto.keys_mut().unwrap();
+            server
+                .write_all(&test_encrypt(&plain, &mut keys.s2c_header, &mut keys.s2c_data).unwrap())
+                .unwrap();
+            intercept(&mut peer, Direction::ToClient, 78);
+            let keys = client_crypto.keys_mut().unwrap();
+            assert_eq!(
+                read_encrypted(&mut client, &mut keys.s2c_header, &mut keys.s2c_data),
+                plain
+            );
+            drop(client);
+            wait_for(&events, |event| matches!(event, Event::Disconnected));
+            assert_eq!(read_frame(&mut peer).unwrap().header(), 6);
+        }
+        relay.stop();
+        host.stop();
+    }
+
+    #[test]
     fn origins_matching_metadata_and_offline_mode_skip_lookup() {
         use crate::{
             packet_info::{PacketInfo, PacketInfoManager},

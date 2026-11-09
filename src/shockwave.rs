@@ -339,6 +339,14 @@ fn encrypt(
     Ok(result)
 }
 #[cfg(test)]
+pub(crate) fn test_encrypt(
+    bytes: &[u8],
+    header_key: &mut ChaChaKey,
+    data_key: &mut ChaChaKey,
+) -> io::Result<Vec<u8>> {
+    encrypt(bytes, header_key, data_key)
+}
+#[cfg(test)]
 mod tests {
     use super::*;
     fn decode_wire(wire: &[u8], header: &mut ChaChaKey, data: &mut ChaChaKey) -> Vec<u8> {
