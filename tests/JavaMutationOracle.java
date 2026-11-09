@@ -804,6 +804,22 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_fixed_nested_repeat_" + i, sample);
         }
+        String[] retentionPatterns = {"((a)?b)*", "((a)??b)*", "x((a)?b)+c", "((a)?b)*?", "((a)?b)+?", "((a)?b)*b", "((?<inner>a)?b)*ab", "((a)?b)+ab"};
+        char[] retentionAlphabet = {'a', 'b', 'c', 'x', 'é', ' ', '\n', '\r', '\u0085'};
+        for (int i = 0; i < 200; i++) {
+            String pattern = retentionPatterns[i % retentionPatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(" abb abbb xabbc bbb ab ");
+            for (int j = 0; j < 20; j++) value.append(retentionAlphabet[(i * 7 + j * 3) % retentionAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, "$1/$2/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_retention_corpus_" + i, sample);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);

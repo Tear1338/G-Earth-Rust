@@ -870,6 +870,217 @@ mod regex_budget_tests {
         let error = match_fixed_at(b"ac", 0, &atoms, &program, &mut comparisons).unwrap_err();
         assert!(error.0.contains("comparison limit"));
     }
+
+    #[test]
+    fn nested_repeat_retains_capture_and_caps_state() {
+        let atoms = [FixedRegexAtom::Literal(b'a'), FixedRegexAtom::Literal(b'b')];
+        let program = compile_nested_repeat(2, (0, 2, 0, true), (0, 1, true), 0, 1);
+        let mut comparisons = 0;
+        let (end, captures) = match_nested_repeat(b"abb", 0, &atoms, &program, &mut comparisons)
+            .unwrap()
+            .unwrap();
+        assert_eq!(end, 3);
+        assert_eq!(captures, ["b", "a"]);
+        let mut comparisons = 0;
+        let error = match_nested_repeat(&vec![b'b'; 65_535], 0, &atoms, &program, &mut comparisons)
+            .unwrap_err();
+        assert!(error.0.contains("state limit"));
+    }
+}
+
+#[derive(Clone, Copy)]
+enum NestedInstruction {
+    Atom(usize),
+    Start(usize),
+    End(usize),
+    Split(usize, usize),
+}
+
+fn compile_nested_repeat(
+    atoms: usize,
+    outer: (usize, usize, usize, bool),
+    inner: (usize, usize, bool),
+    outer_group: usize,
+    inner_group: usize,
+) -> Vec<NestedInstruction> {
+    let (start, end, min, greedy) = outer;
+    let (inner_start, inner_end, inner_greedy) = inner;
+    let mut program = Vec::new();
+    for atom in 0..start {
+        program.push(NestedInstruction::Atom(atom));
+    }
+    let initial_split = if min == 0 {
+        let pc = program.len();
+        program.push(NestedInstruction::Split(0, 0));
+        Some(pc)
+    } else {
+        None
+    };
+    let body = program.len();
+    program.push(NestedInstruction::Start(outer_group));
+    for atom in start..inner_start {
+        program.push(NestedInstruction::Atom(atom));
+    }
+    let inner_split = program.len();
+    program.push(NestedInstruction::Split(0, 0));
+    let inner_body = program.len();
+    program.push(NestedInstruction::Start(inner_group));
+    for atom in inner_start..inner_end {
+        program.push(NestedInstruction::Atom(atom));
+    }
+    program.push(NestedInstruction::End(inner_group));
+    let after_inner = program.len();
+    program[inner_split] = if inner_greedy {
+        NestedInstruction::Split(inner_body, after_inner)
+    } else {
+        NestedInstruction::Split(after_inner, inner_body)
+    };
+    for atom in inner_end..end {
+        program.push(NestedInstruction::Atom(atom));
+    }
+    program.push(NestedInstruction::End(outer_group));
+    let loop_split = program.len();
+    program.push(NestedInstruction::Split(0, 0));
+    let after_loop = program.len();
+    program[loop_split] = if greedy {
+        NestedInstruction::Split(body, after_loop)
+    } else {
+        NestedInstruction::Split(after_loop, body)
+    };
+    if let Some(pc) = initial_split {
+        program[pc] = if greedy {
+            NestedInstruction::Split(body, after_loop)
+        } else {
+            NestedInstruction::Split(after_loop, body)
+        };
+    }
+    for atom in end..atoms {
+        program.push(NestedInstruction::Atom(atom));
+    }
+    program
+}
+
+fn match_nested_repeat(
+    input: &[u8],
+    offset: usize,
+    atoms: &[FixedRegexAtom],
+    program: &[NestedInstruction],
+    comparisons: &mut usize,
+) -> Result<Option<(usize, Vec<String>)>> {
+    const MAX_STATES: usize = 262_144;
+    // Each frame retains the capture trail length before its parent instruction.
+    let mut frames = vec![(0usize, offset, 0u8, 0usize)];
+    let mut captures: [Option<(usize, usize)>; 2] = [None, None];
+    let mut trail: Vec<(usize, Option<(usize, usize)>)> = Vec::new();
+    while let Some((pc, position, choice, checkpoint)) = frames.last_mut() {
+        if *pc == program.len() {
+            let groups = captures
+                .iter()
+                .map(|capture| {
+                    capture.map_or_else(String::new, |(start, end)| {
+                        latin1_decode(&input[start..end])
+                    })
+                })
+                .collect();
+            return Ok(Some((*position, groups)));
+        }
+        let choices = if matches!(program[*pc], NestedInstruction::Split(..)) {
+            2
+        } else {
+            1
+        };
+        if *choice == choices {
+            let checkpoint = *checkpoint;
+            frames.pop();
+            while trail.len() > checkpoint {
+                let (group, previous) = trail.pop().unwrap();
+                captures[group] = previous;
+            }
+            continue;
+        }
+        consume_regex_budget(comparisons)?;
+        let branch = *choice;
+        *choice += 1;
+        let (pc, position) = (*pc, *position);
+        let checkpoint = trail.len();
+        let next = match program[pc] {
+            NestedInstruction::Atom(index) => {
+                if !input
+                    .get(position)
+                    .is_some_and(|byte| atom_accepts(&atoms[index], *byte))
+                {
+                    continue;
+                }
+                (pc + 1, position + 1)
+            }
+            NestedInstruction::Start(group) => {
+                trail.push((group, captures[group]));
+                captures[group] = Some((position, position));
+                (pc + 1, position)
+            }
+            NestedInstruction::End(group) => {
+                trail.push((group, captures[group]));
+                let start = captures[group].map_or(position, |capture| capture.0);
+                captures[group] = Some((start, position));
+                (pc + 1, position)
+            }
+            NestedInstruction::Split(first, second) => {
+                (if branch == 0 { first } else { second }, position)
+            }
+        };
+        if frames.len() >= MAX_STATES || trail.len() >= MAX_STATES {
+            return Err(error("regex state limit exceeded"));
+        }
+        frames.push((next.0, next.1, 0, checkpoint));
+    }
+    Ok(None)
+}
+
+fn replace_nested_pattern(
+    text: &str,
+    atoms: &[FixedRegexAtom],
+    program: &[NestedInstruction],
+    names: &[Option<String>],
+    replacement: &str,
+    comparisons: &mut usize,
+) -> Result<String> {
+    let input = latin1_encode(text)?;
+    let mut output = Vec::new();
+    let mut copied = 0;
+    let mut offset = 0;
+    while offset <= input.len() {
+        if let Some((end, groups)) =
+            match_nested_repeat(&input, offset, atoms, program, comparisons)?
+        {
+            let whole = latin1_decode(&input[offset..end]);
+            let expanded =
+                latin1_encode(&expand_literal_groups(replacement, &whole, &groups, names)?)?;
+            let prefix = offset - copied;
+            if output
+                .len()
+                .checked_add(prefix)
+                .and_then(|n| n.checked_add(expanded.len()))
+                .is_none_or(|n| n > usize::from(u16::MAX))
+            {
+                return Err(error("short string too long"));
+            }
+            output.extend_from_slice(&input[copied..offset]);
+            output.extend_from_slice(&expanded);
+            copied = end;
+            offset = if end == offset { offset + 1 } else { end };
+        } else {
+            offset += 1;
+        }
+    }
+    if output
+        .len()
+        .checked_add(input.len() - copied)
+        .is_none_or(|n| n > usize::from(u16::MAX))
+    {
+        return Err(error("short string too long"));
+    }
+    output.extend_from_slice(&input[copied..]);
+    Ok(latin1_decode(&output))
 }
 
 impl Packet {
@@ -1961,6 +2172,7 @@ impl Packet {
         let mut ranges: Vec<(usize, usize)> = Vec::new();
         let mut dynamic = false;
         let mut optional = Vec::new();
+        let mut optional_group_owners = Vec::new();
         let mut repeated = Vec::new();
         let mut group_repeat = None;
         let mut repeated_group_owner = None;
@@ -2087,6 +2299,11 @@ impl Packet {
                     };
                     if start != end {
                         optional.push((start, end, greedy));
+                        optional_group_owners.push(if quantifiable {
+                            None
+                        } else {
+                            last_closed_group
+                        });
                     }
                     dynamic = true;
                     quantifiable = false;
@@ -2174,7 +2391,8 @@ impl Packet {
             return Err(error("invalid capture pattern"));
         }
         let needle = latin1_encode(&literal)?;
-        if let Some((start, end, ..)) = group_repeat {
+        let mut nested_program = None;
+        if let Some((start, end, min, limit, greedy)) = group_repeat {
             let owner = repeated_group_owner.unwrap();
             let descendants_only = (0..groups.len()).all(|group| {
                 let mut current = Some(group);
@@ -2186,9 +2404,34 @@ impl Packet {
                 }
                 false
             });
-            if !descendants_only || start == end || !optional.is_empty() || !repeated.is_empty() {
-                return Err(error(
-                    "repeated groups require nonempty fixed-length nested captures",
+            if !descendants_only || start == end || !repeated.is_empty() {
+                return Err(error("unsupported repeated capture structure"));
+            }
+            if !optional.is_empty() {
+                if groups.len() != 2
+                    || owner != 0
+                    || parents[1] != Some(owner)
+                    || optional.len() != 1
+                    || optional_group_owners[0] != Some(1)
+                    || limit.is_some()
+                    || min > 1
+                {
+                    return Err(error("unsupported nested repeated capture"));
+                }
+                let (inner_start, inner_end, inner_greedy) = optional[0];
+                if (inner_start, inner_end) != ranges[1]
+                    || inner_start < start
+                    || inner_end > end
+                    || end - start == inner_end - inner_start
+                {
+                    return Err(error("nullable nested repeated capture is not supported"));
+                }
+                nested_program = Some(compile_nested_repeat(
+                    atoms.len(),
+                    (start, end, min, greedy),
+                    (inner_start, inner_end, inner_greedy),
+                    owner,
+                    1,
                 ));
             }
         }
@@ -2196,8 +2439,11 @@ impl Packet {
         for (index, min, limit, greedy) in repeated {
             repeated_atoms[index] = Some((min, limit, greedy));
         }
-        let program =
-            compile_optional_program(atoms.len(), &optional, &repeated_atoms, group_repeat);
+        let program = if nested_program.is_some() {
+            Vec::new()
+        } else {
+            compile_optional_program(atoms.len(), &optional, &repeated_atoms, group_repeat)
+        };
         let mut candidate = self.clone();
         let mut offset = candidate.bytes.len() as isize - 2 - pattern_bytes.len() as isize;
         let mut max = candidate.bytes.len();
@@ -2217,7 +2463,16 @@ impl Packet {
                         .ok_or_else(|| error("substring scan limit exceeded"))?;
                     let text = latin1_decode(&candidate.bytes[i + 2..end]);
                     if text.contains(pattern) {
-                        let result = if dynamic {
+                        let result = if let Some(nested_program) = &nested_program {
+                            replace_nested_pattern(
+                                &text,
+                                &atoms,
+                                nested_program,
+                                &names,
+                                replacement,
+                                &mut comparisons,
+                            )?
+                        } else if dynamic {
                             replace_fixed_pattern(
                                 &text,
                                 &atoms,

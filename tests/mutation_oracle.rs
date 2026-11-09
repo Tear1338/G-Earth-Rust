@@ -1195,15 +1195,7 @@ fn mutations_match_original_java_packets_and_cursor() {
         check(&format!("substring_simple_repeat_group_{i}"), &packet);
     }
     assert_eq!(expected["repeated_capture_retention"], "b,a");
-    let mut unsupported_nested_repeat = Packet::new(9);
-    unsupported_nested_repeat
-        .put_string("((a)?b)* abb")
-        .unwrap();
-    let unchanged = unsupported_nested_repeat.clone();
-    assert!(unsupported_nested_repeat
-        .replace_substrings_java_groups("((a)?b)*", "$1/$2", Some(1))
-        .is_err());
-    assert_eq!(unsupported_nested_repeat, unchanged);
+
     let fixed_nested_patterns = [
         "((a)b)*",
         "(x(?<inner>y))+",
@@ -1225,6 +1217,43 @@ fn mutations_match_original_java_packets_and_cursor() {
             .replace_substrings_java_groups(pattern, "$1/$2/$0", Some(1))
             .unwrap();
         check(&format!("substring_fixed_nested_repeat_{i}"), &packet);
+    }
+    for (index, value, pattern, replacement) in [
+        (2, "((a)?b)* abb ab", "((a)?b)*", "$1/$2"),
+        (3, "x((a)?b)+c xabbc", "x((a)?b)+c", "$1/$2/$0"),
+    ] {
+        let mut packet = Packet::new(9);
+        packet.put_string(value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java_groups(pattern, replacement, Some(1))
+            .unwrap();
+        check(&format!("substring_repeated_capture_{index}"), &packet);
+    }
+    let retention_patterns = [
+        "((a)?b)*",
+        "((a)??b)*",
+        "x((a)?b)+c",
+        "((a)?b)*?",
+        "((a)?b)+?",
+        "((a)?b)*b",
+        "((?<inner>a)?b)*ab",
+        "((a)?b)+ab",
+    ];
+    let retention_alphabet = ['a', 'b', 'c', 'x', 'é', ' ', '\n', '\r', '\u{85}'];
+    for i in 0..200 {
+        let pattern = retention_patterns[i % retention_patterns.len()];
+        let mut value = format!("{pattern} abb abbb xabbc bbb ab ");
+        for j in 0..20 {
+            value.push(retention_alphabet[(i * 7 + j * 3) % retention_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java_groups(pattern, "$1/$2/$0", Some(1))
+            .unwrap();
+        check(&format!("substring_retention_corpus_{i}"), &packet);
     }
     let mut empty_growth = Packet::new(5);
     empty_growth

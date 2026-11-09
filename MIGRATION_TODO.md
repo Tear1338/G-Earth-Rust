@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: implement variable-length repeated nested Java regex groups with bounded capture-state restoration; `((a)?b)*` must retain `a` on `abb`. Full Java regex and live extension validation remain open.
+Next: compare repeated groups with multiple optional nested captures and extend bounded capture restoration. Full Java regex and live extension validation remain open.
