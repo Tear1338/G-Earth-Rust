@@ -820,6 +820,22 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_retention_corpus_" + i, sample);
         }
+        String[] multiRetentionPatterns = {"((a)?(b)?c)*", "((a)??(b)?c)*", "x((a)?(b)??c)+d", "((?<left>a)?(?<right>b)?c)*c", "((a)?x(b)?c)+?"};
+        char[] multiRetentionAlphabet = {'a', 'b', 'c', 'd', 'x', 'é', ' ', '\n', '\u0085'};
+        for (int i = 0; i < 200; i++) {
+            String pattern = multiRetentionPatterns[i % multiRetentionPatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(" ac bc c abc xacbcd ");
+            for (int j = 0; j < 20; j++) value.append(multiRetentionAlphabet[(i * 7 + j * 3) % multiRetentionAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, "$1/$2/$3/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_multi_retention_" + i, sample);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);

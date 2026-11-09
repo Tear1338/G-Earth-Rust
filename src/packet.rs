@@ -872,18 +872,43 @@ mod regex_budget_tests {
     }
 
     #[test]
+    fn nested_repeat_retains_multiple_independent_captures() {
+        let atoms = [
+            FixedRegexAtom::Literal(b'a'),
+            FixedRegexAtom::Literal(b'b'),
+            FixedRegexAtom::Literal(b'c'),
+        ];
+        let program =
+            compile_nested_repeat(3, (0, 3, 0, true), &[(0, 1, true, 1), (1, 2, true, 2)], 0);
+        let mut comparisons = 0;
+        let (end, captures) =
+            match_nested_repeat(b"acbcc", 0, &atoms, &program, 3, &mut comparisons)
+                .unwrap()
+                .unwrap();
+        assert_eq!(end, 5);
+        assert_eq!(captures, ["c", "a", "b"]);
+    }
+
+    #[test]
     fn nested_repeat_retains_capture_and_caps_state() {
         let atoms = [FixedRegexAtom::Literal(b'a'), FixedRegexAtom::Literal(b'b')];
-        let program = compile_nested_repeat(2, (0, 2, 0, true), (0, 1, true), 0, 1);
+        let program = compile_nested_repeat(2, (0, 2, 0, true), &[(0, 1, true, 1)], 0);
         let mut comparisons = 0;
-        let (end, captures) = match_nested_repeat(b"abb", 0, &atoms, &program, &mut comparisons)
+        let (end, captures) = match_nested_repeat(b"abb", 0, &atoms, &program, 2, &mut comparisons)
             .unwrap()
             .unwrap();
         assert_eq!(end, 3);
         assert_eq!(captures, ["b", "a"]);
         let mut comparisons = 0;
-        let error = match_nested_repeat(&vec![b'b'; 65_535], 0, &atoms, &program, &mut comparisons)
-            .unwrap_err();
+        let error = match_nested_repeat(
+            &vec![b'b'; 65_535],
+            0,
+            &atoms,
+            &program,
+            2,
+            &mut comparisons,
+        )
+        .unwrap_err();
         assert!(error.0.contains("state limit"));
     }
 }
@@ -899,12 +924,10 @@ enum NestedInstruction {
 fn compile_nested_repeat(
     atoms: usize,
     outer: (usize, usize, usize, bool),
-    inner: (usize, usize, bool),
+    inners: &[(usize, usize, bool, usize)],
     outer_group: usize,
-    inner_group: usize,
 ) -> Vec<NestedInstruction> {
     let (start, end, min, greedy) = outer;
-    let (inner_start, inner_end, inner_greedy) = inner;
     let mut program = Vec::new();
     for atom in 0..start {
         program.push(NestedInstruction::Atom(atom));
@@ -918,24 +941,28 @@ fn compile_nested_repeat(
     };
     let body = program.len();
     program.push(NestedInstruction::Start(outer_group));
-    for atom in start..inner_start {
-        program.push(NestedInstruction::Atom(atom));
+    let mut cursor = start;
+    for &(inner_start, inner_end, inner_greedy, inner_group) in inners {
+        for atom in cursor..inner_start {
+            program.push(NestedInstruction::Atom(atom));
+        }
+        let inner_split = program.len();
+        program.push(NestedInstruction::Split(0, 0));
+        let inner_body = program.len();
+        program.push(NestedInstruction::Start(inner_group));
+        for atom in inner_start..inner_end {
+            program.push(NestedInstruction::Atom(atom));
+        }
+        program.push(NestedInstruction::End(inner_group));
+        let after_inner = program.len();
+        program[inner_split] = if inner_greedy {
+            NestedInstruction::Split(inner_body, after_inner)
+        } else {
+            NestedInstruction::Split(after_inner, inner_body)
+        };
+        cursor = inner_end;
     }
-    let inner_split = program.len();
-    program.push(NestedInstruction::Split(0, 0));
-    let inner_body = program.len();
-    program.push(NestedInstruction::Start(inner_group));
-    for atom in inner_start..inner_end {
-        program.push(NestedInstruction::Atom(atom));
-    }
-    program.push(NestedInstruction::End(inner_group));
-    let after_inner = program.len();
-    program[inner_split] = if inner_greedy {
-        NestedInstruction::Split(inner_body, after_inner)
-    } else {
-        NestedInstruction::Split(after_inner, inner_body)
-    };
-    for atom in inner_end..end {
+    for atom in cursor..end {
         program.push(NestedInstruction::Atom(atom));
     }
     program.push(NestedInstruction::End(outer_group));
@@ -965,12 +992,13 @@ fn match_nested_repeat(
     offset: usize,
     atoms: &[FixedRegexAtom],
     program: &[NestedInstruction],
+    capture_count: usize,
     comparisons: &mut usize,
 ) -> Result<Option<(usize, Vec<String>)>> {
     const MAX_STATES: usize = 262_144;
     // Each frame retains the capture trail length before its parent instruction.
     let mut frames = vec![(0usize, offset, 0u8, 0usize)];
-    let mut captures: [Option<(usize, usize)>; 2] = [None, None];
+    let mut captures: Vec<Option<(usize, usize)>> = vec![None; capture_count];
     let mut trail: Vec<(usize, Option<(usize, usize)>)> = Vec::new();
     while let Some((pc, position, choice, checkpoint)) = frames.last_mut() {
         if *pc == program.len() {
@@ -1050,7 +1078,7 @@ fn replace_nested_pattern(
     let mut offset = 0;
     while offset <= input.len() {
         if let Some((end, groups)) =
-            match_nested_repeat(&input, offset, atoms, program, comparisons)?
+            match_nested_repeat(&input, offset, atoms, program, names.len(), comparisons)?
         {
             let whole = latin1_decode(&input[offset..end]);
             let expanded =
@@ -2408,30 +2436,48 @@ impl Packet {
                 return Err(error("unsupported repeated capture structure"));
             }
             if !optional.is_empty() {
-                if groups.len() != 2
-                    || owner != 0
-                    || parents[1] != Some(owner)
-                    || optional.len() != 1
-                    || optional_group_owners[0] != Some(1)
-                    || limit.is_some()
-                    || min > 1
-                {
+                if owner != 0 || optional.len() + 1 != groups.len() || limit.is_some() || min > 1 {
                     return Err(error("unsupported nested repeated capture"));
                 }
-                let (inner_start, inner_end, inner_greedy) = optional[0];
-                if (inner_start, inner_end) != ranges[1]
-                    || inner_start < start
-                    || inner_end > end
-                    || end - start == inner_end - inner_start
+                let mut inner_specs = Vec::new();
+                let mut seen = vec![false; groups.len()];
+                for (&(inner_start, inner_end, inner_greedy), &group) in
+                    optional.iter().zip(&optional_group_owners)
                 {
+                    let group =
+                        group.ok_or_else(|| error("nested optional atom is not supported"))?;
+                    if group == owner
+                        || seen[group]
+                        || parents[group] != Some(owner)
+                        || (inner_start, inner_end) != ranges[group]
+                        || inner_start < start
+                        || inner_end > end
+                    {
+                        return Err(error("unsupported nested repeated capture"));
+                    }
+                    seen[group] = true;
+                    inner_specs.push((inner_start, inner_end, inner_greedy, group));
+                }
+                inner_specs.sort_by_key(|spec| spec.0);
+                let mut cursor = start;
+                let mut optional_width = 0;
+                for &(inner_start, inner_end, _, _) in &inner_specs {
+                    if inner_start < cursor {
+                        return Err(error(
+                            "overlapping nested optional captures are not supported",
+                        ));
+                    }
+                    optional_width += inner_end - inner_start;
+                    cursor = inner_end;
+                }
+                if end - start == optional_width {
                     return Err(error("nullable nested repeated capture is not supported"));
                 }
                 nested_program = Some(compile_nested_repeat(
                     atoms.len(),
                     (start, end, min, greedy),
-                    (inner_start, inner_end, inner_greedy),
+                    &inner_specs,
                     owner,
-                    1,
                 ));
             }
         }

@@ -1255,6 +1255,28 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_retention_corpus_{i}"), &packet);
     }
+    let multi_retention_patterns = [
+        "((a)?(b)?c)*",
+        "((a)??(b)?c)*",
+        "x((a)?(b)??c)+d",
+        "((?<left>a)?(?<right>b)?c)*c",
+        "((a)?x(b)?c)+?",
+    ];
+    let multi_retention_alphabet = ['a', 'b', 'c', 'd', 'x', 'é', ' ', '\n', '\u{85}'];
+    for i in 0..200 {
+        let pattern = multi_retention_patterns[i % multi_retention_patterns.len()];
+        let mut value = format!("{pattern} ac bc c abc xacbcd ");
+        for j in 0..20 {
+            value.push(multi_retention_alphabet[(i * 7 + j * 3) % multi_retention_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java_groups(pattern, "$1/$2/$3/$0", Some(1))
+            .unwrap();
+        check(&format!("substring_multi_retention_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

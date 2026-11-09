@@ -69,6 +69,8 @@
 
 ## Unreleased
 
+- Preserve multiple independent optional Java regex captures across bounded group repetition.
+
 - Restore retained inner captures for a bounded subset of variable-length repeated Java regex groups.
 
 - Support fixed-length repeated Java regex groups containing nested captures; record Java capture-retention behavior for variable-length groups.
