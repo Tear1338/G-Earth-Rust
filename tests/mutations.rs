@@ -595,7 +595,6 @@ fn java_repeated_capture_group_rejects_unsupported_nesting_transactionally() {
         "((a?)b)*",
         "(((a)?)b)*",
         "((ab)*)",
-        "(a*)*",
         "()*",
         "(ab)*(c)",
         "a?(ab)*",

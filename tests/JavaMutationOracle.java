@@ -888,6 +888,22 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_bounded_nested_corpus_" + i, sample);
         }
+        String[] innerRepeatPatterns = {"((a*)?b)*", "((a+)?b)*", "((a{1,3})?b){2,3}", "((a+?)?b)*?", "x((a*)?b)+c", "(a*)*"};
+        char[] innerRepeatAlphabet = {'a', 'b', 'c', 'x', 'é', ' ', '\n', '\r', '\u0085'};
+        for (int i = 0; i < 180; i++) {
+            String pattern = innerRepeatPatterns[i % innerRepeatPatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(" abb aaab b xabbc ");
+            for (int j = 0; j < 16; j++) value.append(innerRepeatAlphabet[(i * 7 + j * 3) % innerRepeatAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, pattern.equals("(a*)*") ? "$1/$0" : "$1/$2/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_inner_repeat_" + i, sample);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);

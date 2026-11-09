@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: compare repeated atoms inside repeated Java groups with optional captures and bounded backtracking. Full Java regex and live extension validation remain open.
+Next: compare optional atoms inside repeated Java groups, including zero-width loops and retained captures. Full Java regex and live extension validation remain open.

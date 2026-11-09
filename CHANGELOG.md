@@ -69,6 +69,8 @@
 
 ## Unreleased
 
+- Support bounded repeated atoms within supported repeated Java regex capture groups.
+
 - Support bounded repetition counts for variable-length Java regex groups with retained optional captures.
 
 - Guard zero-width repeated Java regex bodies while preserving captures across iterations.

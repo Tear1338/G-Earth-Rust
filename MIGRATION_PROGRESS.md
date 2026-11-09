@@ -230,6 +230,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Bounded `{m}`, `{m,n}` and `{m,}` repetitions now work for the supported variable-length Java regex groups with optional captures, including nullable bodies and retained captures. Seven targeted cases and 140 generated packets match the released beta-29 API; a state-limit test covers an extreme minimum. Twenty-nine mutation tests, both Clippy configurations and desktop/web build pass. Repeated atoms within those repeated groups, deeper capture nesting and general Java regex remain open. Actions run 42718787547 passed all eight jobs for multiple retained captures.
 
+- The bounded capture-restoring VM now handles repeated atoms inside its supported repeated Java regex groups, including `*`, `+`, bounded counts, optional captures and zero-width iterations. A 180-packet corpus matches the released beta-29 API; five budget/state tests, 29 mutation tests, both Clippy configurations and desktop/web build pass. Optional atoms in repeated groups, deeper capture nesting and general Java regex remain open. Windows GNU desktop/web release build succeeded at `66230f4`; Actions run 42719286908 passed all eight jobs for nullable group repetition.
+
 ## Exact next step
 
-Compare Java repeated atoms inside repeated groups with optional captures, including greedy/reluctant backtracking and retained captures; extend the bounded VM only after differential fixtures. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Compare optional atoms inside repeated Java regex groups, including `(a?)*`, retained captures and zero-width loops; extend the bounded capture VM only after differential fixtures. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

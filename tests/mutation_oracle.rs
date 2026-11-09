@@ -1342,6 +1342,37 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_bounded_nested_corpus_{i}"), &packet);
     }
+    let inner_repeat_patterns = [
+        "((a*)?b)*",
+        "((a+)?b)*",
+        "((a{1,3})?b){2,3}",
+        "((a+?)?b)*?",
+        "x((a*)?b)+c",
+        "(a*)*",
+    ];
+    let inner_repeat_alphabet = ['a', 'b', 'c', 'x', 'é', ' ', '\n', '\r', '\u{85}'];
+    for i in 0..180 {
+        let pattern = inner_repeat_patterns[i % inner_repeat_patterns.len()];
+        let mut value = format!("{pattern} abb aaab b xabbc ");
+        for j in 0..16 {
+            value.push(inner_repeat_alphabet[(i * 7 + j * 3) % inner_repeat_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java_groups(
+                pattern,
+                if pattern == "(a*)*" {
+                    "$1/$0"
+                } else {
+                    "$1/$2/$0"
+                },
+                Some(1),
+            )
+            .unwrap();
+        check(&format!("substring_inner_repeat_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")
