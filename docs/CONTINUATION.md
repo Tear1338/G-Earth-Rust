@@ -253,3 +253,5 @@ CI diagnostics showed that G-Presets rejects `fixture.invalid` before intercepti
 The revised released G-Presets loopback lifecycle fixture passed its CI job in run 42637109627. The initial failure was its unsupported host; the recognized host is metadata only, and HTTPS uses a non-serving loopback proxy. The full run had not finished when checked. Compare Java and Rust Nitro SOCKS routing next; live G-Presets game workflows remain unverified.
 
 A web-feature asynchronous SOCKS5 CONNECT primitive now exists with bounded handshake, remote DNS, authentication and cancellation fixtures. Hudsucker opens WebSockets via its own direct connector, independent of the HTTP connector; add a hook and route both paths before enabling Nitro SOCKS.
+
+Hudsucker 0.25.0 is vendored with its licenses and a TCP dialer hook for WebSocket and raw CONNECT paths. Failure does not fall back to direct dialing. Tests cover loopback routing, refused dialers and WSS hostname verification. Wire this hook and the separate HTTP connector to async SOCKS next; the Nitro option remains disabled.

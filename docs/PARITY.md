@@ -121,3 +121,5 @@ G-Presets rejected the original fixture host, causing the first disconnect. The 
 G-Presets 1.6.5 passed two controlled loopback relay sessions with bidirectional packets and reconnect in Actions run 42637109627. HTTPS is isolated through a non-serving loopback proxy. No live hotel, room, preset import or export was tested.
 
 An asynchronous SOCKS5 primitive is tested with local proxies, including authentication, remote DNS and cancellation. Nitro HTTP and WebSocket routing are not yet connected to it; the desktop still rejects Nitro SOCKS.
+
+Vendored Hudsucker now has an optional WebSocket/raw CONNECT dialer. Local tests cover success, failure without direct fallback, valid WSS and rejection of a wrong hostname. Nitro does not yet use it; HTTP connector and SOCKS integration remain open.

@@ -1,5 +1,7 @@
 # Changelog
 
+- Vendor Hudsucker 0.25.0 and add an optional WebSocket/raw CONNECT dialer; Nitro SOCKS integration remains unfinished.
+
 - Add a cancellable asynchronous SOCKS5 CONNECT primitive; Nitro routing integration remains unfinished.
 
 - Exercise released G-Presets over loopback relay connections and reconnect with its HTTPS requests isolated.
