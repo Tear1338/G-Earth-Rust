@@ -1,5 +1,6 @@
 # Changelog
 
+- Add typed EVA packet field appends for the eight Java `appendObject` categories.
 - Support Java `$0` and escaped replacement templates for nonempty literal substring patterns; full regex support remains open.
 - Extend Java height-format comparisons to negative subnormals, powers of ten and entity/furniture packet bytes.
 - Align selected Java 21 scientific height formatting, including smallest subnormal values.

@@ -79,6 +79,10 @@ public class JavaMutationOracle {
         shorts.replaceShort(8, (short) -1234);
         System.out.println("signed_shorts=" + shorts.readShort(6) + "," + shorts.readShort(8) + "," + shorts.readShort(10) + "," + shorts.readShort(12) + "," + shorts.getReadIndex());
         emit("signed_short_bytes", shorts);
+        HPacket objects = new HPacket(19);
+        objects.appendObjects((byte)-42, (short)-1234, -123456, -9000000000L, -3.25f, 0.125d, true, "Café");
+        objects.setReadIndex(7);
+        emit("append_objects", objects);
         HPacket fixed = new HPacket(1);
         fixed.appendInt(123).appendBoolean(false).appendShort((short) 7).appendLong(8).appendFloat(1.5f).appendDouble(2.5);
         fixed.setReadIndex(10);

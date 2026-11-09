@@ -72,6 +72,19 @@ impl Direction {
         }
     }
 }
+/// Types accepted by beta-29 HPacket.appendObject for EVA packets.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum PacketField<'a> {
+    Byte(i8),
+    Short(i16),
+    Integer(i32),
+    Long(i64),
+    Float(f32),
+    Double(f64),
+    Boolean(bool),
+    String(&'a str),
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PacketFormat {
     #[default]
@@ -558,6 +571,41 @@ impl Packet {
             self.bytes[..4].copy_from_slice(&n.to_be_bytes());
         }
     }
+    /// Append typed fields in order. Like Java appendObjects, successful earlier
+    /// fields remain appended if a later field cannot be encoded.
+    pub fn append_fields(&mut self, fields: &[PacketField<'_>]) -> Result<&mut Self> {
+        self.ensure_eva()?;
+        for field in fields {
+            match *field {
+                PacketField::Byte(value) => {
+                    self.put_i8(value)?;
+                }
+                PacketField::Short(value) => {
+                    self.put_i16(value)?;
+                }
+                PacketField::Integer(value) => {
+                    self.put_i32(value)?;
+                }
+                PacketField::Long(value) => {
+                    self.put_i64(value)?;
+                }
+                PacketField::Float(value) => {
+                    self.put_f32(value)?;
+                }
+                PacketField::Double(value) => {
+                    self.put_f64(value)?;
+                }
+                PacketField::Boolean(value) => {
+                    self.put_bool(value)?;
+                }
+                PacketField::String(value) => {
+                    self.put_string(value)?;
+                }
+            }
+        }
+        Ok(self)
+    }
+
     pub fn put_u8(&mut self, v: u8) -> Result<&mut Self> {
         self.append(&[v])
     }

@@ -63,3 +63,5 @@ Height formatting now matches Java 21 for the first 10,000 positive subnormal bi
 Additional Java 21 vectors cover the first 10,000 negative subnormals, powers of ten and adjacent values. Seven difficult heights also match complete entity and floor-item packet bytes from the released Java API. The comparisons are finite and real client traffic remains untested.
 
 The packet API offers Java-style replacement templates for nonempty literal substring patterns, including `$0` and backslash escapes, with ten Java oracle cases. Regex patterns, nonzero capture groups and empty patterns remain unsupported; Rust replacement is bounded and transactional and does not reproduce every Java error or partial mutation. Real extensions remain untested.
+
+`PacketField` and `append_fields` cover the eight Java `appendObject` types for EVA; a mixed vector matches Java bytes and cursor. Rust rejects non-Latin-1 strings and WEDGIE in this helper, and keeps earlier fields if a later append fails. A `fancy-regex` experiment differed from Java on zero-width iteration and default Unicode word classes; full regex replacement remains open.

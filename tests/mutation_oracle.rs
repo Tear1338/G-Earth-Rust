@@ -187,6 +187,22 @@ fn mutations_match_original_java_packets_and_cursor() {
         expected["signed_shorts"]
     );
     check("signed_short_bytes", &shorts);
+    use gearth_rust::packet::PacketField;
+    let mut objects = Packet::new(19);
+    objects
+        .append_fields(&[
+            PacketField::Byte(-42),
+            PacketField::Short(-1234),
+            PacketField::Integer(-123456),
+            PacketField::Long(-9000000000),
+            PacketField::Float(-3.25),
+            PacketField::Double(0.125),
+            PacketField::Boolean(true),
+            PacketField::String("Café"),
+        ])
+        .unwrap();
+    objects.set_cursor(7).unwrap();
+    check("append_objects", &objects);
     let mut fixed = Packet::new(1);
     fixed
         .put_i32(123)

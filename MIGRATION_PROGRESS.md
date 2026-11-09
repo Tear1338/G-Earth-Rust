@@ -80,6 +80,10 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Added `replace_substrings_java_literal` for nonempty literal patterns with Java-style `$0` group references and backslash escapes. Ten templates, including invalid groups and escapes, are checked against the beta-29 Java API; fifteen mutation tests and desktop/web Clippy pass locally. Regex patterns, other capture groups, empty patterns and Java partial-failure behavior remain unsupported; the bounded transactional Rust behavior is deliberate. This helper scans candidates twice, and real extensions remain untested.
 - GitHub Actions run 42540504234 passed all eight validation jobs for subnormal formatting.
 
+- The released Java API supports heterogeneous `appendObjects`; Rust now provides typed `PacketField` values and `append_fields` for its eight EVA types. A mixed Java vector matches bytes and cursor, and 16 mutation tests and desktop/web Clippy pass locally. Rust rejects non-Latin-1 text rather than replacing it, rejects WEDGIE for this helper and retains successfully appended fields if a later field fails. Real extensions remain untested.
+- A local regex-engine experiment showed `fancy-regex` 0.20.0 differs from Java on zero-width matches after nonempty matches and default `\w` Unicode handling. It was not added to the project. Full Java regex replacement remains open and requires a compatibility layer or a closer engine.
+- GitHub Actions run 42540787725 passed all eight validation jobs for the height packet oracle.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -99,4 +103,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect CI for the literal-pattern Java replacement helper and height serialization oracle. Compare Java `replaceXSubstrings` behavior for regex patterns, capture groups, lookarounds, zero-width matches and invalid replacements against candidate Rust regex engines; document exact unsupported cases and avoid claiming full regex parity. Validate the no-byte-view logger interaction visually when a safe desktop test session is available.
+Inspect CI for typed packet field appends and literal-pattern replacements. Investigate Java ISO-8859-1 replacement encoding for unrepresentable strings and compare with Rust packet-string APIs; add an explicit Java-compatible option with differential tests while preserving strict methods. Full Java regex replacement remains open; validate the no-byte-view logger interaction visually when a safe desktop test session is available.

@@ -332,3 +332,18 @@ fn java_literal_substring_templates_handle_group_zero_and_escapes() {
         .replace_substrings_java_literal("c.t", "$0", None)
         .is_err());
 }
+
+#[test]
+fn append_typed_fields_preserves_prior_fields_on_error() {
+    use gearth_rust::packet::{PacketField, PacketFormat};
+    let mut packet = Packet::new(7);
+    assert!(packet
+        .append_fields(&[PacketField::Integer(42), PacketField::String("☃")])
+        .is_err());
+    assert_eq!(packet.read_i32().unwrap(), 42);
+    assert_eq!(packet.remaining(), 0);
+    let mut wedgie = Packet::new_with_format(PacketFormat::WedgieOutgoing, 7).unwrap();
+    let original = wedgie.clone();
+    assert!(wedgie.append_fields(&[PacketField::Integer(1)]).is_err());
+    assert_eq!(wedgie, original);
+}
