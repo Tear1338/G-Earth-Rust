@@ -181,10 +181,8 @@ impl HFloorItem {
         let x = packet.read_i32()?;
         let y = packet.read_i32()?;
         let facing = HDirection::parse(packet.read_i32()?)?;
-        let z = packet
-            .read_string()?
-            .parse()
-            .map_err(|_| error("invalid furniture height"))?;
+        let z = super::parse_java_double(&packet.read_string()?)
+            .ok_or_else(|| error("invalid furniture height"))?;
         let size_z = packet.read_string()?;
         let extra = packet.read_i32()?;
         let stuff = StuffData::read(packet)?;

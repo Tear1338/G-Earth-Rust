@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: inspect CI for entity-update and Flash changes, then compare entity-update floating-point parsing with Java; validate logger interaction visually when possible.
+Next: inspect CI for Java-style height parsing and compare Java versus Rust float serialization at numeric boundaries; validate logger interaction visually when possible.

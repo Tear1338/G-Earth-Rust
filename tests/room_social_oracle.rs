@@ -150,3 +150,93 @@ fn entity_update_actions_match_java() {
         );
     }
 }
+
+#[test]
+#[ignore = "requires height vectors from the released beta-29 Java API"]
+fn entity_update_heights_match_java() {
+    use gearth_rust::{packet::Packet, parsers::entity::HEntityUpdate};
+    let output =
+        std::fs::read_to_string(std::env::var("GEARTH_ENTITY_UPDATE_ORACLE").unwrap()).unwrap();
+    let expected: std::collections::BTreeMap<_, _> = output
+        .lines()
+        .map(|line| line.split_once('=').unwrap())
+        .collect();
+    let heights = [
+        "1.25",
+        " 1.25 ",
+        "1.25f",
+        "-0.0D",
+        "+Infinity",
+        "NaN",
+        "nan",
+        "inf",
+        "0x1.8p1",
+        "-0X1p-1074",
+        "0x1.00000000000008p0",
+        "0x1p1024",
+        "0x1p-1075",
+        "0x1.8p-1075",
+        "0x1p0f",
+        "0x1",
+        "1_0",
+        "1e309",
+    ];
+    for index in 0..3000 {
+        let (height, bits) = expected[format!("random_{index}").as_str()]
+            .split_once(',')
+            .unwrap();
+        let mut packet = Packet::new(1);
+        packet
+            .put_i32(1)
+            .unwrap()
+            .put_i32(7)
+            .unwrap()
+            .put_i32(2)
+            .unwrap()
+            .put_i32(3)
+            .unwrap()
+            .put_string(height)
+            .unwrap()
+            .put_i32(0)
+            .unwrap()
+            .put_i32(1)
+            .unwrap()
+            .put_string("")
+            .unwrap();
+        let actual = HEntityUpdate::parse(&mut packet).unwrap();
+        assert_eq!(
+            format!("{:x}", actual[0].tile.z.to_bits()),
+            bits,
+            "random {index}: {height}"
+        );
+    }
+    for (index, height) in heights.iter().enumerate() {
+        let mut packet = Packet::new(1);
+        packet
+            .put_i32(1)
+            .unwrap()
+            .put_i32(7)
+            .unwrap()
+            .put_i32(2)
+            .unwrap()
+            .put_i32(3)
+            .unwrap()
+            .put_string(height)
+            .unwrap()
+            .put_i32(0)
+            .unwrap()
+            .put_i32(1)
+            .unwrap()
+            .put_string("")
+            .unwrap();
+        let actual = match HEntityUpdate::parse(&mut packet) {
+            Ok(updates) => format!("{:x}", updates[0].tile.z.to_bits()),
+            Err(_) => "error".to_string(),
+        };
+        assert_eq!(
+            actual,
+            expected[format!("height_{index}").as_str()],
+            "height {height:?}"
+        );
+    }
+}

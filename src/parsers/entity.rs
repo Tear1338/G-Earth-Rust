@@ -122,10 +122,8 @@ impl HEntity {
         let index = packet.read_i32()?;
         let x = packet.read_i32()?;
         let y = packet.read_i32()?;
-        let z = packet
-            .read_string()?
-            .parse()
-            .map_err(|_| error("invalid entity height"))?;
+        let z = super::parse_java_double(&packet.read_string()?)
+            .ok_or_else(|| error("invalid entity height"))?;
         let unknown = packet.read_i32()?;
         let details = match packet.read_i32()? {
             1 => HEntityDetails::Habbo {
@@ -351,10 +349,8 @@ impl HEntityUpdate {
             let index = packet.read_i32()?;
             let x = packet.read_i32()?;
             let y = packet.read_i32()?;
-            let z = packet
-                .read_string()?
-                .parse::<f64>()
-                .map_err(|_| error("invalid entity height"))?;
+            let z = super::parse_java_double(&packet.read_string()?)
+                .ok_or_else(|| error("invalid entity height"))?;
             let head_facing = HDirection::parse(packet.read_i32()?)?;
             let body_facing = HDirection::parse(packet.read_i32()?)?;
             let action_data = packet.read_string()?;
@@ -386,9 +382,8 @@ impl HEntityUpdate {
                             update.moving_to = Some(HPoint::with_height(
                                 java_integer(values[0])?,
                                 java_integer(values[1])?,
-                                values[2]
-                                    .parse()
-                                    .map_err(|_| error("invalid movement height"))?,
+                                super::parse_java_double(values[2])
+                                    .ok_or_else(|| error("invalid movement height"))?,
                             ));
                         }
                         update.action = Some(HAction::Move);

@@ -69,6 +69,9 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Java `HEntityUpdate` differential vectors exposed differences in trailing spaces/commas and invalid extra integer signs. Rust now follows Java split behavior for selected action fields and rejects those invalid `Integer.decode` forms. Eleven Java API cases, 14 local parser tests and desktop/web all-target Clippy pass; shared integer decoding also affects furniture IDs. Float syntax and exhaustive Java equivalence remain unverified.
 - GitHub Actions run 42539162353 passed all eight validation jobs for the controlled stalled-provider relay test.
 
+- Entity, movement and floor-item height parsing now supports Java-style whitespace, numeric suffixes, special values and hexadecimal floating-point literals with round-to-nearest-even. The beta-29 Java oracle passes 18 selected strings plus 3,000 deterministic hexadecimal samples; four room/social Java comparisons, 15 local parser tests and desktop/web Clippy pass. This finite corpus does not prove complete `Double.parseDouble` equivalence; live room traffic remains untested.
+- GitHub Actions run 42539723724 passed all eight validation jobs for entity-update action parsing.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -88,4 +91,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect CI for the entity-update oracle and Flash peer-EOF commits. Compare `HEntityUpdate` height parsing with Java `Double.parseDouble`, including whitespace, suffixes, special values and hexadecimal floats; implement supported behavior with differential tests. Validate the no-byte-view logger interaction visually when a safe desktop test session is available.
+Inspect CI for the Java-compatible height parser. Compare Java `Double.toString` in entity/furniture serialization against Rust for boundary and randomized floating-point bit patterns, then fix any reproducible wire differences; validate the no-byte-view logger interaction visually when a safe desktop test session is available.

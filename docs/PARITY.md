@@ -54,4 +54,6 @@ Flash metadata lookup failure with an empty revision is covered through a local 
 
 A controlled non-handshake packet with header 999 and two ordinary strings is accepted as Flash identification by both Java and Rust. This heuristic can attach the wrong revision; real handshake evidence is needed to design a more selective detector.
 
-Entity-update parsing now matches 11 selected beta-29 Java cases for trailing action separators, movement coordinates and malformed integer signs. The shared Java-style integer parser is also used by furniture IDs. Floating-point syntax and complete parser equivalence remain unverified.
+Entity-update parsing now matches 11 selected beta-29 Java cases for trailing action separators, movement coordinates and malformed integer signs. The shared Java-style integer parser is also used by furniture IDs. Floating-point parsing now covers selected Java syntax and hexadecimal rounding; complete parser equivalence remains unverified.
+
+Entity, movement and floor-item heights accept Java-style floating-point text, including hexadecimal literals. Eighteen selected vectors and 3,000 deterministic hexadecimal strings were compared against the beta-29 Java API. Decimal edge cases, serialization and real room traffic require broader validation.
