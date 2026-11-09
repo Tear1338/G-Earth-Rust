@@ -119,3 +119,5 @@ The extended G-Presets loopback fixture failed in run 42636412302 when the first
 G-Presets rejected the original fixture host, causing the first disconnect. The revised fixture uses recognized host metadata and routes its HTTPS requests to a loopback proxy; CI validation is pending.
 
 G-Presets 1.6.5 passed two controlled loopback relay sessions with bidirectional packets and reconnect in Actions run 42637109627. HTTPS is isolated through a non-serving loopback proxy. No live hotel, room, preset import or export was tested.
+
+An asynchronous SOCKS5 primitive is tested with local proxies, including authentication, remote DNS and cancellation. Nitro HTTP and WebSocket routing are not yet connected to it; the desktop still rejects Nitro SOCKS.

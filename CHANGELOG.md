@@ -1,5 +1,7 @@
 # Changelog
 
+- Add a cancellable asynchronous SOCKS5 CONNECT primitive; Nitro routing integration remains unfinished.
+
 - Exercise released G-Presets over loopback relay connections and reconnect with its HTTPS requests isolated.
 
 - Test Java extension WEDGIE injection before and after encryption, blocking and reconnect.

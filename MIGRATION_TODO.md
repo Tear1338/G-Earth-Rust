@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: implement and verify Nitro upstream SOCKS routing for HTTP, TLS and WebSocket traffic. Full Java regex and live extension validation remain open.
+Next: integrate async SOCKS with Nitro HTTP/TLS and WebSocket upstream connections, with no direct fallback. Full Java regex and live extension validation remain open.

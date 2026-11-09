@@ -168,6 +168,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - G-Presets 1.6.5 passed the extended loopback relay lifecycle fixture in GitHub Actions run 42637109627: two connections, bidirectional packets and reconnect with the released extension. Its furnidata HTTPS is directed to an unserved loopback proxy; no live hotel or room workflow was exercised. The prior failure was caused by invalid fixture host metadata, not established as a relay defect. Other jobs in that run were still in progress when checked.
 
+- A cancellable asynchronous SOCKS5 connection primitive now supports remote DNS, IPv4/IPv6 and optional username/password without accepting an authentication downgrade. Local proxy fixtures cover fragmented replies, rejection, invalid targets and cancellation; eight web-feature SOCKS tests, four default-feature SOCKS tests, desktop/web build and Clippy pass. This primitive is not yet connected to Nitro, so its SOCKS option remains unavailable. Hudsucker 0.25 opens WebSockets directly and its HTTP connector alone cannot enforce SOCKS. Actions run 42637109627 passed all eight jobs, including released G-Presets.
+
 ## Exact next step
 
-Compare Java Nitro upstream SOCKS routing with Hudsucker's HTTP and WebSocket connection paths, design an authenticated SOCKS implementation without direct-connection fallback, and verify the remaining CI jobs. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Add a controllable WebSocket upstream connection hook to the pinned Hudsucker dependency and a matching HTTP connector using the asynchronous SOCKS primitive; verify that neither path falls back to direct connections. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

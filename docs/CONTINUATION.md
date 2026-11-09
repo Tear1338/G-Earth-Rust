@@ -251,3 +251,5 @@ G-Presets CI run 42636412302 failed on first outgoing packet with EOF. Relay and
 CI diagnostics showed that G-Presets rejects `fixture.invalid` before interception. The revised test advertises `game-us.habbo.com` as metadata and sets a non-serving loopback HTTPS proxy so its background furnidata request does not reach the hotel. Await the next isolated CI result.
 
 The revised released G-Presets loopback lifecycle fixture passed its CI job in run 42637109627. The initial failure was its unsupported host; the recognized host is metadata only, and HTTPS uses a non-serving loopback proxy. The full run had not finished when checked. Compare Java and Rust Nitro SOCKS routing next; live G-Presets game workflows remain unverified.
+
+A web-feature asynchronous SOCKS5 CONNECT primitive now exists with bounded handshake, remote DNS, authentication and cancellation fixtures. Hudsucker opens WebSockets via its own direct connector, independent of the HTTP connector; add a hook and route both paths before enabling Nitro SOCKS.
