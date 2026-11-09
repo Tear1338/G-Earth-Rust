@@ -113,3 +113,5 @@ An extension compiled against the beta-29 Java API resolves a name and modifies 
 The beta-29 Java extension fixture additionally injects named WEDGIE packets before encryption and in both directions after handshake, and blocks outgoing traffic across reconnects. Windows GNU desktop/web release compiled locally on equivalent production code. Real hotels and third-party game workflows remain unverified.
 
 The released G-Presets fixture now attempts two loopback relay sessions and bidirectional interception; execution in the isolated CI job is pending. The test only compiled locally and does not represent a real game session.
+
+The extended G-Presets loopback fixture failed in run 42636412302 when the first forwarded packet encountered EOF. The cause is not yet established; token-redacted diagnostics were added for the next run.

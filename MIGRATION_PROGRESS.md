@@ -162,6 +162,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - The released G-Presets CI fixture has been extended to start a loopback relay, send packets in both directions and reconnect twice after authentication. The test compiles and desktop/web Clippy passes locally, but the extended real-extension test has not yet run: this Windows environment lacks the pinned JAR and isolated JavaFX display. The existing isolated GitHub Actions job must validate it.
 
+- GitHub Actions run 42636412302 failed its extended G-Presets fixture: the relay closed while the first client-to-server packet was awaited (`UnexpectedEof` at the fixture). The original log did not expose the relay cause or extension output. The fixture now records bounded, token-redacted relay, host and extension diagnostics on that failure; it compiles and Clippy passes locally. The real-extension test is still unverified.
+
 ## Exact next step
 
-Inspect the G-Presets CI job for the extended loopback lifecycle fixture, diagnose and fix any failure, and verify both sessions and interception; then inspect the latest Origins Java-extension CI. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Inspect the G-Presets CI diagnostics for the first-packet disconnect, fix the underlying relay or fixture behavior, and verify both sessions and bidirectional interception. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

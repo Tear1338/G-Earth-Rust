@@ -156,13 +156,24 @@ fn released_gpresets_authenticates_to_the_rust_host() {
             let received = match direction {
                 Direction::ToServer => {
                     write_frame(&mut client, &packet).unwrap();
-                    read_frame(&mut server).unwrap()
+                    read_frame(&mut server)
                 }
                 Direction::ToClient => {
                     write_frame(&mut server, &packet).unwrap();
-                    read_frame(&mut client).unwrap()
+                    read_frame(&mut client)
                 }
             };
+            let received = received.unwrap_or_else(|error| {
+                std::thread::sleep(Duration::from_millis(100));
+                let relay_log: Vec<_> = relay_events.try_iter().collect();
+                let host_log: Vec<_> = events.try_iter().collect();
+                let stderr = fs::read_to_string(directory.0.join("stderr.log"))
+                    .unwrap_or_default().replace(&token, "[token]");
+                let stdout = fs::read_to_string(directory.0.join("stdout.log"))
+                    .unwrap_or_default().replace(&token, "[token]");
+                panic!("session {session} {direction:?}: {error}; relay={relay_log:?}; host={host_log:?}; stderr={}; stdout={}",
+                    stderr.chars().take(8000).collect::<String>(), stdout.chars().take(8000).collect::<String>());
+            });
             assert_eq!(received.bytes(), packet.bytes());
         }
         drop(client);
