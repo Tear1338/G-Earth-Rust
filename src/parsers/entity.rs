@@ -331,6 +331,9 @@ pub(crate) fn java_integer(text: &str) -> Result<i32> {
     } else {
         (10, text)
     };
+    if digits.is_empty() || !digits.bytes().all(|b| (b as char).is_digit(radix)) {
+        return Err(error("invalid entity integer"));
+    }
     let value = i64::from_str_radix(digits, radix).map_err(|_| error("invalid entity integer"))?;
     i32::try_from(if negative { -value } else { value })
         .map_err(|_| error("entity integer outside range"))
@@ -367,7 +370,7 @@ impl HEntityUpdate {
                 body_facing,
             };
             for item in action_data.split('/') {
-                let mut fields = item.split(' ');
+                let mut fields = item.trim_end_matches(' ').split(' ');
                 let key = fields.next().unwrap_or("");
                 let Some(value) = fields.next() else {
                     continue;
@@ -378,7 +381,7 @@ impl HEntityUpdate {
                         update.action = Some(HAction::None);
                     }
                     "mv" => {
-                        let values: Vec<_> = value.split(',').collect();
+                        let values: Vec<_> = value.trim_end_matches(',').split(',').collect();
                         if values.len() >= 3 {
                             update.moving_to = Some(HPoint::with_height(
                                 java_integer(values[0])?,
@@ -489,6 +492,47 @@ mod tests {
         assert_eq!(update.action, Some(HAction::Sign));
         assert_eq!(update.sign, Some(11));
     }
+    #[test]
+    fn java_action_delimiters_and_integer_signs_match_selected_cases() {
+        for text in ["-+1", "--1", "0x-1", "0x+1", "08", "2147483648"] {
+            assert!(super::java_integer(text).is_err(), "{text}");
+        }
+        assert_eq!(super::java_integer("-0x80000000").unwrap(), i32::MIN);
+        assert_eq!(super::java_integer("+0x7fffffff").unwrap(), i32::MAX);
+        for (text, expected_action, expected_position) in [
+            ("sit ", None, None),
+            ("flatctrl ", None, None),
+            ("mv 1,2,", Some(HAction::Move), None),
+            (
+                "mv 1,2,3,",
+                Some(HAction::Move),
+                Some(HPoint::with_height(1, 2, 3.0)),
+            ),
+        ] {
+            let mut packet = Packet::new(1);
+            packet
+                .put_i32(1)
+                .unwrap()
+                .put_i32(1)
+                .unwrap()
+                .put_i32(1)
+                .unwrap()
+                .put_i32(1)
+                .unwrap()
+                .put_string("0")
+                .unwrap()
+                .put_i32(0)
+                .unwrap()
+                .put_i32(0)
+                .unwrap()
+                .put_string(text)
+                .unwrap();
+            let update = HEntityUpdate::parse(&mut packet).unwrap().remove(0);
+            assert_eq!(update.action, expected_action, "{text:?}");
+            assert_eq!(update.moving_to, expected_position, "{text:?}");
+        }
+    }
+
     #[test]
     fn room_entity_variants_round_trip() {
         let details = [

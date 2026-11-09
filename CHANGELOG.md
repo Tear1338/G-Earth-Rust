@@ -1,5 +1,6 @@
 # Changelog
 
+- Align selected entity-update action delimiters and integer sign parsing with the Java API.
 - Added a Flash oracle case demonstrating the shared false-identification risk on ordinary two-string packets.
 - Stop Flash metadata initialization on visible peer EOF during lookup and preserve any prior extension session.
 - Make Flash metadata waits cancellable on explicit stop, with bounded in-flight worker lookups; test empty-revision failure and a stalled provider through the relay.

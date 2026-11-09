@@ -126,12 +126,14 @@ jobs:
         run: |
           api_jar=$(find /tmp/upstream-gearth -name 'G-Earth-Api-1.5.4-beta-29.jar' -print -quit)
           test -n "$api_jar"
-          javac -cp "$api_jar" tests/JavaEntityConstructOracle.java tests/JavaFriendUpdateOracle.java
+          javac -cp "$api_jar" tests/JavaEntityConstructOracle.java tests/JavaFriendUpdateOracle.java tests/JavaEntityUpdateOracle.java
           java -cp "$api_jar:tests" JavaEntityConstructOracle > /tmp/entity-oracle.txt
+          java -cp "$api_jar:tests" JavaEntityUpdateOracle > /tmp/entity-update-oracle.txt
           java -cp "$api_jar:tests" JavaFriendUpdateOracle > /tmp/friend-oracle.txt
           cargo test --locked --test room_social_oracle -- --ignored
         env:
           GEARTH_ENTITY_ORACLE: /tmp/entity-oracle.txt
+          GEARTH_ENTITY_UPDATE_ORACLE: /tmp/entity-update-oracle.txt
           GEARTH_FRIEND_ORACLE: /tmp/friend-oracle.txt
       - name: Compare structure prediction against the original Java API
         run: |

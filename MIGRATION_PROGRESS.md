@@ -66,6 +66,9 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - A controlled non-handshake packet with header 999 and two ordinary strings is identified as a Flash hello by both the pinned Java method and Rust. This demonstrates a false-positive risk in the shared heuristic; there is no evidence here for a safe universal header or version rule. Real handshake captures are needed before tightening it.
 
+- Java `HEntityUpdate` differential vectors exposed differences in trailing spaces/commas and invalid extra integer signs. Rust now follows Java split behavior for selected action fields and rejects those invalid `Integer.decode` forms. Eleven Java API cases, 14 local parser tests and desktop/web all-target Clippy pass; shared integer decoding also affects furniture IDs. Float syntax and exhaustive Java equivalence remain unverified.
+- GitHub Actions run 42539162353 passed all eight validation jobs for the controlled stalled-provider relay test.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -85,4 +88,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect CI for Flash lookup cancellation and peer-EOF handling. Compare Java and Rust `HEntityUpdate` parsing for trailing action delimiters and Java `Integer.decode` sign/radix edge cases; implement and validate any discrepancies with a Java oracle. Validate the no-byte-view logger interaction visually when a safe desktop test session is available.
+Inspect CI for the entity-update oracle and Flash peer-EOF commits. Compare `HEntityUpdate` height parsing with Java `Double.parseDouble`, including whitespace, suffixes, special values and hexadecimal floats; implement supported behavior with differential tests. Validate the no-byte-view logger interaction visually when a safe desktop test session is available.

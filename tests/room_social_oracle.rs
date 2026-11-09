@@ -60,3 +60,93 @@ fn friend_update_matches_a_packet_accepted_by_java() {
     let rust = HFriend::construct_update(&changes, 3).unwrap();
     assert_eq!(rust.bytes(), java_bytes("GEARTH_FRIEND_ORACLE"));
 }
+
+#[test]
+#[ignore = "requires entity update vectors from the released beta-29 Java API"]
+fn entity_update_actions_match_java() {
+    use gearth_rust::{packet::Packet, parsers::entity::HEntityUpdate};
+    let output =
+        std::fs::read_to_string(std::env::var("GEARTH_ENTITY_UPDATE_ORACLE").unwrap()).unwrap();
+    let expected: std::collections::BTreeMap<_, _> = output
+        .lines()
+        .map(|line| line.split_once('=').unwrap())
+        .collect();
+    let cases = [
+        "sit ",
+        "lay  ",
+        "flatctrl ",
+        "mv 1,2,",
+        "mv 0x-1,2,3",
+        "sign -+1",
+        "mv +0x1,-02,3",
+        "sit  /sign 1",
+        "mv 1,2,3,",
+        "sign 0x1",
+        "mv --1,2,3",
+    ];
+    for (index, action) in cases.iter().enumerate() {
+        let mut packet = Packet::new(1);
+        packet
+            .put_i32(1)
+            .unwrap()
+            .put_i32(7)
+            .unwrap()
+            .put_i32(2)
+            .unwrap()
+            .put_i32(3)
+            .unwrap()
+            .put_string("1.0")
+            .unwrap()
+            .put_i32(0)
+            .unwrap()
+            .put_i32(1)
+            .unwrap()
+            .put_string(action)
+            .unwrap();
+        let actual = match HEntityUpdate::parse(&mut packet) {
+            Ok(updates) => {
+                let update = &updates[0];
+                let action = update
+                    .action
+                    .map_or("null".to_string(), |a| format!("{a:?}"));
+                let stance = update
+                    .stance
+                    .map_or("null".to_string(), |a| format!("{a:?}"));
+                let sign = update.sign.map_or("null".to_string(), |a| {
+                    [
+                        "Zero",
+                        "One",
+                        "Two",
+                        "Three",
+                        "Four",
+                        "Five",
+                        "Six",
+                        "Seven",
+                        "Eight",
+                        "Nine",
+                        "Ten",
+                        "Heart",
+                        "Skull",
+                        "Exclamation",
+                        "Soccerball",
+                        "Smiley",
+                        "Redcard",
+                        "Yellowcard",
+                        "Invisible",
+                    ][usize::from(a)]
+                    .to_string()
+                });
+                let moving = update.moving_to.map_or("none".to_string(), |p| {
+                    format!("{},{},{:.1}", p.x, p.y, p.z)
+                });
+                format!("{action};{stance};{sign};{};{moving}", update.is_controller)
+            }
+            Err(_) => "error".to_string(),
+        };
+        assert_eq!(
+            actual,
+            expected[format!("case_{index}").as_str()],
+            "case {index}: {action:?}"
+        );
+    }
+}
