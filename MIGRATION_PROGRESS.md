@@ -196,6 +196,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Fixed-pattern substring replacement now recognizes Java `\Q...\E` quoting and named capture groups/references. Eleven cases were compared with the released beta-29 API, including empty or unterminated quoting, nested named captures and invalid names; focused tests cover transactional failures. Mutation tests, both Clippy configurations and desktop/web build pass. Dynamic regex constructs and real extension use remain unverified. Actions runs 42709870503 and 42710181296 passed all eight jobs for multiple and nested groups.
 
+- Fixed-length Java regex replacement now supports the dot wildcard with per-match numbered or named captures. Five targeted cases and a 120-packet corpus were compared against the released beta-29 Java API, including Latin-1 and Java line terminators. A comparison budget and field-size limits bound work, and expansion errors leave the packet unchanged. Twenty-two mutation tests, both Clippy configurations and desktop/web build pass locally; quantifiers, character classes, alternation and real extension use remain open. Actions run 42710444129 passed all eight jobs for zero-width groups.
+
 ## Exact next step
 
-Compare Java regex dynamic single-character matching (`.`), line terminators and group references with the released beta-29 API; design a bounded matcher and add differential tests before implementation. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Compare Java regex character classes and negation in Latin-1 fields with the released beta-29 API, including escapes and per-match captures; add bounded differential tests before extending the matcher. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

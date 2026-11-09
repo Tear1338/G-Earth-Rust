@@ -448,6 +448,29 @@ fn java_named_group_rejects_invalid_names_and_references_transactionally() {
 }
 
 #[test]
+fn java_dot_group_captures_each_match_and_bounds_expansion() {
+    let mut packet = Packet::new(9);
+    packet.put_string("(c.t) cat cét c\nt").unwrap();
+    assert_eq!(
+        packet
+            .replace_substrings_java_groups("(c.t)", "[$1]", None)
+            .unwrap(),
+        1
+    );
+    packet.reset();
+    assert_eq!(packet.read_string().unwrap(), "([c.t]) [cat] [cét] c\nt");
+    let mut large = Packet::new(9);
+    large
+        .put_string(&format!("(.){}", "a".repeat(40_000)))
+        .unwrap();
+    let before = large.clone();
+    assert!(large
+        .replace_substrings_java_groups("(.)", "[$1]", None)
+        .is_err());
+    assert_eq!(large, before);
+}
+
+#[test]
 fn append_typed_fields_preserves_prior_fields_on_error() {
     use gearth_rust::packet::{PacketField, PacketFormat};
     let mut packet = Packet::new(7);

@@ -410,6 +410,43 @@ public class JavaMutationOracle {
             if (failed) System.out.println("substring_named_" + i + "=error");
             else emit("substring_named_" + i, sample);
         }
+        String[][] dotGroups = {
+            {"(c.t) cat cot c.t", "(c.t)", "[$1]", "1"},
+            {"x(.)y xay xéy x\ny", "x(.)y", "$1:$0", "1"},
+            {"(?<g>.) a\rb\nc\u0085d", "(?<g>.)", "${g}", "1"},
+            {"x(.)y x\ny", "x(.)y", "$9", "1"},
+            {"(c.t) cat", "(c.t)", "$2", "1"},
+        };
+        for (int i = 0; i < dotGroups.length; i++) {
+            HPacket sample = new HPacket(9);
+            sample.appendString(dotGroups[i][0]);
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            boolean failed = false;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(dotGroups[i][1], dotGroups[i][2], Integer.parseInt(dotGroups[i][3]));
+            } catch (RuntimeException expected) { failed = true; }
+            finally { System.setOut(original); }
+            if (failed) System.out.println("substring_dot_" + i + "=error");
+            else emit("substring_dot_" + i, sample);
+        }
+        String[] dotPatterns = {"(.)", "(a.)", "a(.)b", "(.)(.)", "(?<one>.)(?<two>.)"};
+        char[] dotAlphabet = {'a', 'b', '.', '\n', '\r', '\u0085', 'é', '(', ')'};
+        for (int i = 0; i < 120; i++) {
+            String pattern = dotPatterns[i % dotPatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(' ');
+            for (int j = 0; j < 24; j++) value.append(dotAlphabet[(i * 7 + j * 5) % dotAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, "$1/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_dot_corpus_" + i, sample);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);

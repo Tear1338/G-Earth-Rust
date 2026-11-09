@@ -351,6 +351,69 @@ fn expand_literal_groups(
     Ok(expanded)
 }
 
+fn replace_dot_pattern(
+    text: &str,
+    atoms: &[Option<u8>],
+    ranges: &[(usize, usize)],
+    names: &[Option<String>],
+    replacement: &str,
+    comparisons: &mut usize,
+) -> Result<String> {
+    let input = latin1_encode(text)?;
+    let mut output = Vec::new();
+    let mut copied = 0;
+    let mut offset = 0;
+    while offset + atoms.len() <= input.len() {
+        let mut matches = true;
+        for (index, atom) in atoms.iter().enumerate() {
+            *comparisons = comparisons
+                .checked_add(1)
+                .filter(|n| *n <= MAX_FRAME * 4)
+                .ok_or_else(|| error("regex comparison limit exceeded"))?;
+            let byte = input[offset + index];
+            if atom.is_some_and(|expected| expected != byte)
+                || (atom.is_none() && matches!(byte, b'\n' | b'\r' | 0x85))
+            {
+                matches = false;
+                break;
+            }
+        }
+        if matches {
+            let groups = ranges
+                .iter()
+                .map(|&(start, end)| latin1_decode(&input[offset + start..offset + end]))
+                .collect::<Vec<_>>();
+            let whole = latin1_decode(&input[offset..offset + atoms.len()]);
+            let expanded =
+                latin1_encode(&expand_literal_groups(replacement, &whole, &groups, names)?)?;
+            let prefix = offset - copied;
+            if output
+                .len()
+                .checked_add(prefix)
+                .and_then(|n| n.checked_add(expanded.len()))
+                .is_none_or(|n| n > usize::from(u16::MAX))
+            {
+                return Err(error("short string too long"));
+            }
+            output.extend_from_slice(&input[copied..offset]);
+            output.extend_from_slice(&expanded);
+            offset += atoms.len();
+            copied = offset;
+        } else {
+            offset += 1;
+        }
+    }
+    if output
+        .len()
+        .checked_add(input.len() - copied)
+        .is_none_or(|n| n > usize::from(u16::MAX))
+    {
+        return Err(error("short string too long"));
+    }
+    output.extend_from_slice(&input[copied..]);
+    Ok(latin1_decode(&output))
+}
+
 impl Packet {
     pub fn new(header: u16) -> Self {
         let mut bytes = Vec::with_capacity(64);
@@ -1416,8 +1479,8 @@ impl Packet {
     }
 
     /// Java replacement for fixed literal patterns with capture groups, including
-    /// named, nested and empty groups, escaped metacharacters and quoted literals.
-    /// Other regex constructs remain unsupported.
+    /// named, nested and empty groups, escaped metacharacters, quoted literals
+    /// and the Java dot wildcard. Other regex constructs remain unsupported.
     pub fn replace_substrings_java_groups(
         &mut self,
         pattern: &str,
@@ -1435,6 +1498,9 @@ impl Packet {
         let mut literal = String::new();
         let mut groups: Vec<String> = Vec::new();
         let mut names: Vec<Option<String>> = Vec::new();
+        let mut atoms: Vec<Option<u8>> = Vec::new();
+        let mut ranges: Vec<(usize, usize)> = Vec::new();
+        let mut dynamic = false;
         let mut open: Vec<usize> = Vec::new();
         let mut chars = pattern.chars().peekable();
         let mut quoted = false;
@@ -1446,6 +1512,7 @@ impl Packet {
                     continue;
                 }
                 literal.push(c);
+                atoms.push(Some(c as u8));
                 for &index in &open {
                     groups[index].push(c);
                 }
@@ -1483,11 +1550,14 @@ impl Packet {
                     open.push(groups.len());
                     groups.push(String::new());
                     names.push(name);
+                    ranges.push((atoms.len(), atoms.len()));
                     continue;
                 }
                 ')' => {
-                    open.pop()
+                    let group = open
+                        .pop()
                         .ok_or_else(|| error("unbalanced capture group"))?;
+                    ranges[group].1 = atoms.len();
                     continue;
                 }
                 '\\' => {
@@ -1502,12 +1572,18 @@ impl Packet {
                         return Err(error("unsupported regex escape"));
                     }
                 }
-                '.' | '^' | '$' | '|' | '?' | '*' | '+' | '[' | ']' | '{' | '}' => {
+                '.' => {
+                    atoms.push(None);
+                    dynamic = true;
+                    continue;
+                }
+                '^' | '$' | '|' | '?' | '*' | '+' | '[' | ']' | '{' | '}' => {
                     return Err(error("unsupported regex construct"));
                 }
                 _ => {}
             }
             literal.push(c);
+            atoms.push(Some(c as u8));
             for &index in &open {
                 groups[index].push(c);
             }
@@ -1521,6 +1597,7 @@ impl Packet {
         let mut max = candidate.bytes.len();
         let mut count = 0;
         let mut scanned_bytes = 0usize;
+        let mut comparisons = 0usize;
         while offset >= candidate.format.body_offset() as isize {
             let i = offset as usize;
             if i + 2 <= candidate.bytes.len() {
@@ -1534,10 +1611,19 @@ impl Packet {
                         .ok_or_else(|| error("substring scan limit exceeded"))?;
                     let text = latin1_decode(&candidate.bytes[i + 2..end]);
                     if text.contains(pattern) {
-                        let occurrences = text.matches(&literal).count();
-                        let result = if occurrences == 0 {
+                        let result = if dynamic {
+                            replace_dot_pattern(
+                                &text,
+                                &atoms,
+                                &ranges,
+                                &names,
+                                replacement,
+                                &mut comparisons,
+                            )?
+                        } else if !text.contains(&literal) {
                             text
                         } else {
+                            let occurrences = text.matches(&literal).count();
                             let expanded =
                                 expand_literal_groups(replacement, &literal, &groups, &names)?;
                             let expanded_bytes = latin1_encode(&expanded)?;
@@ -1555,6 +1641,11 @@ impl Packet {
                             }
                             text.replace(&literal, &expanded)
                         };
+                        if candidate.bytes.len() - length + latin1_encode(&result)?.len()
+                            > MAX_FRAME + 4
+                        {
+                            return Err(error("packet too large"));
+                        }
                         candidate.replace_string(i, &result)?;
                         count += 1;
                         offset -= 1 + pattern_bytes.len() as isize;

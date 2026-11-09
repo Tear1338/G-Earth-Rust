@@ -69,6 +69,8 @@
 
 ## Unreleased
 
+- Support bounded Java dot-wildcard matching and dynamic capture replacement, with Java differential corpus.
+
 - Support Java quoted literal patterns and named fixed-pattern capture groups in bounded substring replacement.
 
 - Handle bounded zero-width Java empty-group replacement at Latin-1 character boundaries.

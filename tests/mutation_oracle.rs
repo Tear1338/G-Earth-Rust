@@ -756,6 +756,43 @@ fn mutations_match_original_java_packets_and_cursor() {
             }
         }
     }
+    let dot_groups = [
+        ("(c.t) cat cot c.t", "(c.t)", "[$1]", Some(1)),
+        ("x(.)y xay xéy x\ny", "x(.)y", "$1:$0", Some(1)),
+        ("(?<g>.) a\rb\nc\u{85}d", "(?<g>.)", "${g}", Some(1)),
+        ("x(.)y x\ny", "x(.)y", "$9", Some(1)),
+        ("(c.t) cat", "(c.t)", "$2", Some(1)),
+    ];
+    for (i, (value, pattern, replacement, limit)) in dot_groups.iter().enumerate() {
+        let mut packet = Packet::new(9);
+        packet.put_string(value).unwrap();
+        packet.set_cursor(7).unwrap();
+        let before = packet.clone();
+        let key = format!("substring_dot_{i}");
+        match packet.replace_substrings_java_groups(pattern, replacement, *limit) {
+            Ok(_) => check(&key, &packet),
+            Err(_) => {
+                assert_eq!(expected[key.as_str()], "error");
+                assert_eq!(packet, before);
+            }
+        }
+    }
+    let dot_patterns = ["(.)", "(a.)", "a(.)b", "(.)(.)", "(?<one>.)(?<two>.)"];
+    let dot_alphabet = ['a', 'b', '.', '\n', '\r', '\u{85}', 'é', '(', ')'];
+    for i in 0..120 {
+        let pattern = dot_patterns[i % dot_patterns.len()];
+        let mut value = format!("{pattern} ");
+        for j in 0..24 {
+            value.push(dot_alphabet[(i * 7 + j * 5) % dot_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java_groups(pattern, "$1/$0", Some(1))
+            .unwrap();
+        check(&format!("substring_dot_corpus_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")
