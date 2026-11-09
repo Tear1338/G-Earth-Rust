@@ -987,6 +987,54 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_backtrack_{i}"), &packet);
     }
+    let optional_captures = [
+        ("(a)? a b", "(a)?", "[$1]", Some(1)),
+        ("(a)?? a b", "(a)??", "[$1]", Some(1)),
+        ("x(ab)?c xc xabc", "x(ab)?c", "$1/$0", Some(1)),
+        ("x(ab)??c xc xabc", "x(ab)??c", "$1/$0", Some(1)),
+        ("x((a)b)?c xc xabc", "x((a)b)?c", "$1/$2/$0", Some(1)),
+        ("()? x", "()?", "[$1]", Some(1)),
+        ("(a)?", "(a)?", "$2", Some(1)),
+    ];
+    for (i, (value, pattern, replacement, limit)) in optional_captures.iter().enumerate() {
+        let mut packet = Packet::new(9);
+        packet.put_string(value).unwrap();
+        packet.set_cursor(7).unwrap();
+        let before = packet.clone();
+        let key = format!("substring_optional_capture_{i}");
+        match packet.replace_substrings_java_groups(pattern, replacement, *limit) {
+            Ok(_) => check(&key, &packet),
+            Err(_) => {
+                assert_eq!(expected[key.as_str()], "error");
+                assert_eq!(packet, before);
+            }
+        }
+    }
+    let optional_capture_patterns = [
+        "(a)?",
+        "(a)??",
+        "x(ab)?c",
+        "x(ab)??ab",
+        "x((a)b)?c",
+        "(a)?(b)?",
+        "()?",
+    ];
+    let optional_capture_alphabet = ['a', 'b', 'c', 'x', 'é', ' ', '\n', '\r', '\u{85}'];
+    for i in 0..140 {
+        let pattern = optional_capture_patterns[i % optional_capture_patterns.len()];
+        let mut value = format!("{pattern} xc xabc xab ");
+        for j in 0..24 {
+            value
+                .push(optional_capture_alphabet[(i * 7 + j * 5) % optional_capture_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java_groups(pattern, "$1/$0", Some(1))
+            .unwrap();
+        check(&format!("substring_optional_capture_corpus_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

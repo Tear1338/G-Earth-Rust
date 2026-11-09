@@ -502,7 +502,7 @@ fn match_fixed_at(
     input: &[u8],
     offset: usize,
     atoms: &[FixedRegexAtom],
-    optional: &[Option<bool>],
+    optional: &[Option<(usize, bool)>],
     comparisons: &mut usize,
 ) -> Result<Option<Vec<usize>>> {
     let mut positions = vec![offset];
@@ -531,11 +531,17 @@ fn match_fixed_at(
             .ok_or_else(|| error("regex comparison limit exceeded"))?;
         let choice = choices[index];
         choices[index] += 1;
-        let skip = optional[index].is_some_and(|greedy| (choice == 0) != greedy);
+        let skip = optional[index].is_some_and(|(_, greedy)| (choice == 0) != greedy);
         let position = positions[index];
         if skip {
-            positions.push(position);
-            index += 1;
+            let end = optional[index].unwrap().0;
+            for skipped in index..end {
+                positions.push(position);
+                if skipped != index {
+                    choices.push(1);
+                }
+            }
+            index = end;
             continue;
         }
         let Some(&byte) = input.get(position) else {
@@ -560,7 +566,7 @@ fn replace_fixed_pattern(
     names: &[Option<String>],
     replacement: &str,
     comparisons: &mut usize,
-    optional: &[Option<bool>],
+    optional: &[Option<(usize, bool)>],
 ) -> Result<String> {
     let input = latin1_encode(text)?;
     let mut output = Vec::new();
@@ -617,7 +623,7 @@ mod regex_budget_tests {
             b"ac",
             0,
             &atoms,
-            &[Some(true), Some(true)],
+            &[Some((1, true)), Some((2, true))],
             &mut comparisons,
         )
         .unwrap_err();
@@ -1715,6 +1721,7 @@ impl Packet {
         let mut dynamic = false;
         let mut optional = Vec::new();
         let mut quantifiable = false;
+        let mut last_closed_group = None;
         let mut open: Vec<usize> = Vec::new();
         let mut chars = pattern.chars().peekable();
         let mut quoted = false;
@@ -1728,6 +1735,7 @@ impl Packet {
                 literal.push(c);
                 atoms.push(FixedRegexAtom::Literal(c as u8));
                 quantifiable = true;
+                last_closed_group = None;
                 for &index in &open {
                     groups[index].push(c);
                 }
@@ -1763,6 +1771,7 @@ impl Packet {
                         None
                     };
                     quantifiable = false;
+                    last_closed_group = None;
                     open.push(groups.len());
                     groups.push(String::new());
                     names.push(name);
@@ -1775,6 +1784,7 @@ impl Packet {
                         .ok_or_else(|| error("unbalanced capture group"))?;
                     ranges[group].1 = atoms.len();
                     quantifiable = false;
+                    last_closed_group = Some(group);
                     continue;
                 }
                 '\\' => {
@@ -1789,6 +1799,7 @@ impl Packet {
                         atoms.push(FixedRegexAtom::Class(class));
                         dynamic = true;
                         quantifiable = true;
+                        last_closed_group = None;
                         continue;
                     }
                     if let Some(byte) = control_escape(c, &mut chars)? {
@@ -1801,16 +1812,18 @@ impl Packet {
                     atoms.push(FixedRegexAtom::Dot);
                     dynamic = true;
                     quantifiable = true;
+                    last_closed_group = None;
                     continue;
                 }
                 '[' => {
                     atoms.push(FixedRegexAtom::Class(parse_character_class(&mut chars)?));
                     dynamic = true;
                     quantifiable = true;
+                    last_closed_group = None;
                     continue;
                 }
                 '?' => {
-                    if !quantifiable {
+                    if !quantifiable && last_closed_group.is_none() {
                         return Err(error("unsupported optional quantifier"));
                     }
                     let greedy = if chars.peek() == Some(&'?') {
@@ -1822,9 +1835,17 @@ impl Packet {
                     if chars.peek() == Some(&'+') {
                         return Err(error("unsupported possessive quantifier"));
                     }
-                    optional.push((atoms.len() - 1, greedy));
+                    let (start, end) = if quantifiable {
+                        (atoms.len() - 1, atoms.len())
+                    } else {
+                        ranges[last_closed_group.unwrap()]
+                    };
+                    if start != end {
+                        optional.push((start, end, greedy));
+                    }
                     dynamic = true;
                     quantifiable = false;
+                    last_closed_group = None;
                     continue;
                 }
                 '^' | '$' | '|' | '*' | '+' | ']' | '{' | '}' => {
@@ -1835,6 +1856,7 @@ impl Packet {
             literal.push(c);
             atoms.push(FixedRegexAtom::Literal(c as u8));
             quantifiable = true;
+            last_closed_group = None;
             for &index in &open {
                 groups[index].push(c);
             }
@@ -1844,8 +1866,13 @@ impl Packet {
         }
         let needle = latin1_encode(&literal)?;
         let mut optional_atoms = vec![None; atoms.len()];
-        for (index, greedy) in optional {
-            optional_atoms[index] = Some(greedy);
+        let mut occupied = vec![false; atoms.len()];
+        for (start, end, greedy) in optional {
+            if occupied[start..end].iter().any(|value| *value) {
+                return Err(error("overlapping optional quantifiers are not supported"));
+            }
+            occupied[start..end].fill(true);
+            optional_atoms[start] = Some((end, greedy));
         }
         let mut candidate = self.clone();
         let mut offset = candidate.bytes.len() as isize - 2 - pattern_bytes.len() as isize;

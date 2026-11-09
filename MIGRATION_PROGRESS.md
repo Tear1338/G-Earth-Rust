@@ -210,6 +210,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Multiple greedy and reluctant optional atoms now use iterative backtracking with a shared work budget and bounded memory. A 160-packet corpus matches the released beta-29 Java API, including fallback from greedy choices, nested captures and zero-width matches; a focused unit test checks exhaustion of the work budget. Twenty-five mutation tests, both Clippy configurations and desktop/web build pass. Quantified groups, possessive and repetition quantifiers, and general regex remain open. Actions run 42713073944 passed all eight jobs for control and hexadecimal escapes.
 
+- The iterative regex matcher now supports non-overlapping optional capture groups, including empty groups, nested captures and greedy/reluctant backtracking. Seven targeted cases and 140 generated packets match the released beta-29 Java API. The shared work bound remains tested; overlapping optional quantifiers, repetition/possessive quantifiers and full Java regex remain unsupported. Twenty-five mutation tests, both Clippy configurations and desktop/web build pass. Actions run 42713640085 passed all eight jobs for one optional atom.
+
 ## Exact next step
 
-Compare Java optional quantifiers applied to capture groups, including unmatched nested captures, greediness and zero-width behavior, against the released beta-29 API; extend the iterative matcher only with bounded work and differential fixtures. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Compare overlapping nested optional quantifiers and unmatched captures with the released beta-29 Java API; design bounded iterative state restoration and differential fixtures before extending the matcher. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
