@@ -640,6 +640,30 @@ fn mutations_match_original_java_packets_and_cursor() {
             }
         }
     }
+    let multi_groups = [
+        ("a(b)c abc", "a(b)c", "[$0:$1]", None),
+        ("a(b)c", "a(b)c", "$2", Some(1)),
+        ("a(b)c abc", "a(b)c", "$2", Some(1)),
+        ("(ab)(cd) abcd", "(ab)(cd)", "$2-$1-$0-$12", Some(1)),
+        ("x(a)y(b)z xaybz", "x(a)y(b)z", "$01/$02/$00", None),
+        ("x(a)y(b)z", "x(a)y(b)z", "\\$", Some(1)),
+        ("ordinary text", "a(b)c", "$2", Some(1)),
+        ("a(b)c abc", "a(b)c", "$", Some(0)),
+    ];
+    for (i, (value, pattern, replacement, limit)) in multi_groups.iter().enumerate() {
+        let mut packet = Packet::new(9);
+        packet.put_string(value).unwrap();
+        packet.set_cursor(7).unwrap();
+        let before = packet.clone();
+        let key = format!("substring_multi_{i}");
+        match packet.replace_substrings_java_groups(pattern, replacement, *limit) {
+            Ok(_) => check(&key, &packet),
+            Err(_) => {
+                assert_eq!(expected[key.as_str()], "error");
+                assert_eq!(packet, before);
+            }
+        }
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

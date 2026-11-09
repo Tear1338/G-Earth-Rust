@@ -69,6 +69,8 @@
 
 ## Unreleased
 
+- Extend bounded Java substring replacement to multiple literal groups, including no-match replacement-validation timing.
+
 - Add bounded substring replacement for a single literal capture group with Java-compatible replacement references, checked against the beta-29 API.
 
 - Route Unity asset and game WebSocket proxy traffic through configured SOCKS, expose shared desktop controls, and test local TLS and refusal behavior.

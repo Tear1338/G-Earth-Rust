@@ -281,6 +281,46 @@ pub struct Packet {
     cursor: usize,
     pub edited: bool,
 }
+fn expand_literal_groups(replacement: &str, whole: &str, groups: &[String]) -> Result<String> {
+    let mut expanded = String::new();
+    let mut chars = replacement.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => expanded.push(
+                chars
+                    .next()
+                    .ok_or_else(|| error("invalid replacement escape"))?,
+            ),
+            '$' => {
+                let mut group = chars
+                    .next()
+                    .and_then(|c| c.to_digit(10))
+                    .filter(|n| (*n as usize) <= groups.len())
+                    .ok_or_else(|| error("invalid replacement group"))?
+                    as usize;
+                while let Some(next) = chars.peek().and_then(|c| c.to_digit(10)) {
+                    let candidate = group * 10 + next as usize;
+                    if candidate > groups.len() {
+                        break;
+                    }
+                    group = candidate;
+                    chars.next();
+                }
+                expanded.push_str(if group == 0 {
+                    whole
+                } else {
+                    &groups[group - 1]
+                });
+            }
+            _ => expanded.push(c),
+        }
+        if expanded.len() > usize::from(u16::MAX) * 2 {
+            return Err(error("short string too long"));
+        }
+    }
+    Ok(expanded)
+}
+
 impl Packet {
     pub fn new(header: u16) -> Self {
         let mut bytes = Vec::with_capacity(64);
@@ -1337,47 +1377,114 @@ impl Packet {
         if limit == Some(0) {
             return Ok(0);
         }
-        let literal = pattern
+        pattern
             .strip_prefix('(')
             .and_then(|s| s.strip_suffix(')'))
             .filter(|s| !s.is_empty() && !s.chars().any(|c| ".^$|?*+()[]{}\\".contains(c)))
             .ok_or_else(|| error("only one nonempty literal capture group is supported"))?;
-        let mut probe = self.clone();
-        if probe.replace_substrings_literal_inner(pattern, literal, literal, limit)? == 0 {
+        self.replace_substrings_java_groups(pattern, replacement, limit)
+    }
+
+    /// Java replacement for literal patterns containing nonempty literal capture
+    /// groups. General regex syntax, nested groups and empty groups are rejected.
+    pub fn replace_substrings_java_groups(
+        &mut self,
+        pattern: &str,
+        replacement: &str,
+        limit: Option<usize>,
+    ) -> Result<usize> {
+        self.ensure_eva()?;
+        if limit == Some(0) {
             return Ok(0);
         }
-        let mut expanded = String::new();
-        let mut chars = replacement.chars().peekable();
-        while let Some(c) = chars.next() {
+        if pattern.len() > usize::from(u16::MAX) * 2 {
+            return Err(error("short string too long"));
+        }
+        let pattern_bytes = latin1_encode(pattern)?;
+        let mut literal = String::new();
+        let mut groups = Vec::new();
+        let mut current: Option<String> = None;
+        for c in pattern.chars() {
             match c {
-                '\\' => expanded.push(
-                    chars
-                        .next()
-                        .ok_or_else(|| error("invalid replacement escape"))?,
-                ),
-                '$' => {
-                    let first = chars
-                        .next()
-                        .filter(|c| *c == '0' || *c == '1')
-                        .ok_or_else(|| error("invalid replacement group"))?;
-                    let mut group = first.to_digit(10).unwrap();
-                    while let Some(next) = chars.peek().and_then(|c| c.to_digit(10)) {
-                        let next_group = group * 10 + next;
-                        if next_group > 1 {
-                            break;
-                        }
-                        group = next_group;
-                        chars.next();
+                '(' if current.is_none() => current = Some(String::new()),
+                ')' if current.is_some() => {
+                    let group = current.take().unwrap();
+                    if group.is_empty() || groups.len() == 99 {
+                        return Err(error("unsupported capture group"));
                     }
-                    expanded.push_str(literal);
+                    groups.push(group);
                 }
-                _ => expanded.push(c),
-            }
-            if expanded.len() > usize::from(u16::MAX) * 2 {
-                return Err(error("short string too long"));
+                '(' | ')' | '.' | '^' | '$' | '|' | '?' | '*' | '+' | '[' | ']' | '{' | '}'
+                | '\\' => {
+                    return Err(error("unsupported regex construct"));
+                }
+                _ => {
+                    literal.push(c);
+                    if let Some(group) = &mut current {
+                        group.push(c);
+                    }
+                }
             }
         }
-        self.replace_substrings_literal_inner(pattern, literal, &expanded, limit)
+        if current.is_some() || groups.is_empty() {
+            return Err(error("invalid capture pattern"));
+        }
+        let needle = latin1_encode(&literal)?;
+        let mut candidate = self.clone();
+        let mut offset = candidate.bytes.len() as isize - 2 - pattern_bytes.len() as isize;
+        let mut max = candidate.bytes.len();
+        let mut count = 0;
+        let mut scanned_bytes = 0usize;
+        while offset >= candidate.format.body_offset() as isize {
+            let i = offset as usize;
+            if i + 2 <= candidate.bytes.len() {
+                let length =
+                    u16::from_be_bytes([candidate.bytes[i], candidate.bytes[i + 1]]) as usize;
+                let end = i + 2 + length;
+                if end <= candidate.bytes.len() && end <= max {
+                    scanned_bytes = scanned_bytes
+                        .checked_add(length)
+                        .filter(|n| *n <= MAX_FRAME)
+                        .ok_or_else(|| error("substring scan limit exceeded"))?;
+                    let text = latin1_decode(&candidate.bytes[i + 2..end]);
+                    if text.contains(pattern) {
+                        let occurrences = text.matches(&literal).count();
+                        let result = if occurrences == 0 {
+                            text
+                        } else {
+                            let expanded = expand_literal_groups(replacement, &literal, &groups)?;
+                            let expanded_bytes = latin1_encode(&expanded)?;
+                            let result_len = length
+                                .checked_sub(occurrences * needle.len())
+                                .and_then(|n| {
+                                    occurrences
+                                        .checked_mul(expanded_bytes.len())
+                                        .and_then(|size| n.checked_add(size))
+                                })
+                                .filter(|n| *n <= usize::from(u16::MAX))
+                                .ok_or_else(|| error("short string too long"))?;
+                            if candidate.bytes.len() - length + result_len > MAX_FRAME + 4 {
+                                return Err(error("packet too large"));
+                            }
+                            text.replace(&literal, &expanded)
+                        };
+                        candidate.replace_string(i, &result)?;
+                        count += 1;
+                        offset -= 1 + pattern_bytes.len() as isize;
+                        if limit == Some(count) {
+                            break;
+                        }
+                        if offset < 0 {
+                            break;
+                        }
+                        max = offset as usize;
+                    }
+                }
+            }
+            offset -= 1;
+        }
+        *self = candidate;
+        Ok(count)
     }
 
     fn replace_substrings_literal_inner(

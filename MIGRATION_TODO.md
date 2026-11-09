@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: expand the Java regex oracle to multiple groups and surrounding literals before extending bounded substring replacement. Full Java regex and live extension validation remain open.
+Next: compare escaped regex literals and empty/nested groups with Java before extending bounded substring replacement. Full Java regex and live extension validation remain open.

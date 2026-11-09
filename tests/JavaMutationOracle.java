@@ -298,6 +298,31 @@ public class JavaMutationOracle {
             if (failed) System.out.println("substring_group_" + i + "=error");
             else emit("substring_group_" + i, sample);
         }
+        String[][] multiGroups = {
+            {"a(b)c abc", "a(b)c", "[$0:$1]", "-1"},
+            {"a(b)c", "a(b)c", "$2", "1"},
+            {"a(b)c abc", "a(b)c", "$2", "1"},
+            {"(ab)(cd) abcd", "(ab)(cd)", "$2-$1-$0-$12", "1"},
+            {"x(a)y(b)z xaybz", "x(a)y(b)z", "$01/$02/$00", "-1"},
+            {"x(a)y(b)z", "x(a)y(b)z", "\\$", "1"},
+            {"ordinary text", "a(b)c", "$2", "1"},
+            {"a(b)c abc", "a(b)c", "$", "0"},
+        };
+        for (int i = 0; i < multiGroups.length; i++) {
+            HPacket sample = new HPacket(9);
+            sample.appendString(multiGroups[i][0]);
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            boolean failed = false;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(multiGroups[i][1], multiGroups[i][2], Integer.parseInt(multiGroups[i][3]));
+            } catch (RuntimeException expected) {
+                failed = true;
+            } finally { System.setOut(original); }
+            if (failed) System.out.println("substring_multi_" + i + "=error");
+            else emit("substring_multi_" + i, sample);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);

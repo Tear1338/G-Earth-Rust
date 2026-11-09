@@ -373,6 +373,41 @@ fn java_literal_capture_group_requires_raw_pattern_and_is_transactional() {
 }
 
 #[test]
+fn java_literal_groups_keep_no_match_and_reject_unsupported_patterns_transactionally() {
+    let mut no_match = Packet::new(9);
+    no_match.put_string("a(b)c").unwrap();
+    assert_eq!(
+        no_match
+            .replace_substrings_java_groups("a(b)c", "$9", None)
+            .unwrap(),
+        1
+    );
+    no_match.reset();
+    assert_eq!(no_match.read_string().unwrap(), "a(b)c");
+    let mut packet = Packet::new(9);
+    packet.put_string("(a)(b) ab").unwrap();
+    let before = packet.clone();
+    for pattern in ["((a))", "(a.*)", "()", "(a", "a)", "abc"] {
+        assert!(packet
+            .replace_substrings_java_groups(pattern, "$1", None)
+            .is_err());
+        assert_eq!(packet, before);
+    }
+    assert!(packet
+        .replace_substrings_java_groups("(a)(b)", "$3", None)
+        .is_err());
+    assert_eq!(packet, before);
+    assert_eq!(
+        packet
+            .replace_substrings_java_groups("(a)(b)", "$2$1", None)
+            .unwrap(),
+        1
+    );
+    packet.reset();
+    assert_eq!(packet.read_string().unwrap(), "(a)(b) ba");
+}
+
+#[test]
 fn append_typed_fields_preserves_prior_fields_on_error() {
     use gearth_rust::packet::{PacketField, PacketFormat};
     let mut packet = Packet::new(7);
