@@ -1369,7 +1369,7 @@ mod lifecycle_tests {
             .build();
         let runtime = tokio::runtime::Runtime::new().unwrap();
         runtime.block_on(async {
-            for mode in ["success", "failure", "stall"] {
+            for mode in ["success", "failure", "malformed", "truncated", "oversized", "stall"] {
                 let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
                 let address = format!("localhost:{}", listener.local_addr().unwrap().port());
                 let server_config = authority.gen_server_config(&address.parse().unwrap()).await;
@@ -1385,20 +1385,41 @@ mod lifecycle_tests {
                     assert!(request.starts_with(b"GET /fixture HTTP/1.1\r\n"));
                     request_tx.send(()).unwrap();
                     if mode == "stall" { release_rx.await.unwrap(); }
-                    let body = if mode == "failure" { "offline" } else { r#"{"messages":{"incoming":[],"outgoing":[{"id":900,"name":"KnownComposer"}]}}"# };
+                    let body = match mode {
+                        "failure" => "offline".to_string(),
+                        "malformed" | "truncated" => "{".to_string(),
+                        "oversized" => "x".repeat(8 * 1024 * 1024 + 1),
+                        _ => r#"{"messages":{"incoming":[],"outgoing":[{"id":900,"name":"KnownComposer"}]}}"#.to_string(),
+                    };
                     let status = if mode == "failure" { "503 Service Unavailable" } else { "200 OK" };
-                    let response = format!("HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
-                    let _ = tls.write_all(response.as_bytes()).await;
+                    let length = if mode == "truncated" { body.len() + 100 } else { body.len() };
+                    let headers = format!("HTTP/1.1 {status}\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n");
+                    let _ = tls.write_all(headers.as_bytes()).await;
+                    let _ = tls.write_all(body.as_bytes()).await;
+                    let _ = tls.shutdown().await;
                 });
                 let url = format!("https://{address}/fixture");
                 let agent = agent.clone();
                 let (done_tx, done_rx) = mpsc::channel();
                 let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), PathBuf::new());
+                let extension_fixture = if !matches!(mode, "success" | "stall") {
+                    let (host, host_events) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+                    let mut peer = TcpStream::connect(host.address).unwrap();
+                    peer.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+                    assert_eq!(read_frame(&mut peer).unwrap().header(), 2);
+                    let info = ExtensionInfo { title: "fixture".into(), author: "test".into(), version: "1".into(), description: String::new(), on_click: false, file: None, cookie: String::new(), can_leave: true, can_delete: true };
+                    write_frame(&mut peer, &extension::info_response(&info).unwrap()).unwrap();
+                    let id = match host_events.recv_timeout(Duration::from_secs(3)).unwrap() { HostEvent::Pending { id, .. } => id, event => panic!("{event:?}") };
+                    host.approve(id).unwrap();
+                    assert_eq!(read_frame(&mut peer).unwrap().header(), 7);
+                    options.extensions = Some(host.clone());
+                    Some((host, peer))
+                } else { None };
                 let safety = Arc::new(Mutex::new(PacketSafety::default()));
                 options.packet_safety = Some(safety.clone());
                 options.nitro_lookup = Some(Arc::new(move || {
                     let result = download_json(&agent, &url).and_then(|bytes| PacketInfoManager::from_json(NITRO_REVISION, &bytes).map_err(io::Error::other));
-                    let _ = done_tx.send(());
+                    let _ = done_tx.send(result.as_ref().err().map(ToString::to_string));
                     result
                 }));
                 let (events, receiver) = mpsc::sync_channel(16);
@@ -1412,12 +1433,36 @@ mod lifecycle_tests {
                     assert_eq!(tokio::time::timeout(Duration::from_secs(2), task).await.unwrap().unwrap().unwrap_err().kind(), io::ErrorKind::Interrupted);
                     release_tx.send(()).unwrap();
                 } else {
-                    tokio::time::timeout(Duration::from_secs(3), task).await.unwrap().unwrap().unwrap();
+                    tokio::time::timeout(Duration::from_secs(15), task).await.unwrap().unwrap().unwrap();
                     assert!(peer.ready.load(Ordering::Acquire));
                     assert_eq!(safety.lock().unwrap().is_safe(Some(NITRO_REVISION), Direction::ToServer, 900), mode == "success");
+                    if let Some((_, mut extension_peer)) = extension_fixture {
+                        let mut start = read_frame(&mut extension_peer).unwrap();
+                        assert_eq!(start.header(), 5);
+                        start.read_string().unwrap(); start.read_i32().unwrap();
+                        let version = start.read_string().unwrap(); start.read_string().unwrap(); start.read_string().unwrap();
+                        assert!(PacketInfoManager::read_from(version, &mut start).unwrap().entries().is_empty());
+                        let packet = Packet::new(77);
+                        let pipeline = state.clone();
+                        let forward = tokio::spawn(async move { pipeline.packet(Direction::ToServer, packet, false).await });
+                        let mut intercepted = read_frame(&mut extension_peer).unwrap();
+                        assert_eq!(intercepted.header(), 3);
+                        let message = Message::parse(&intercepted.read_long_string().unwrap()).unwrap();
+                        write_frame(&mut extension_peer, &extension::manipulated(&message).unwrap()).unwrap();
+                        assert_eq!(forward.await.unwrap().unwrap().unwrap().header(), 77);
+                        state.close(&peer);
+                        assert_eq!(read_frame(&mut extension_peer).unwrap().header(), 6);
+                    }
                 }
-                done_rx.recv_timeout(Duration::from_secs(3)).unwrap();
-                tokio::time::timeout(Duration::from_secs(3), server).await.unwrap().unwrap();
+                let error = done_rx.recv_timeout(Duration::from_secs(15)).unwrap();
+                match mode {
+                    "success" | "stall" => assert!(error.is_none(), "{error:?}"),
+                    "failure" => assert!(error.unwrap().contains("503")),
+                    "oversized" => assert!(error.unwrap().contains("8 MiB")),
+                    "malformed" | "truncated" => assert!(error.is_some(), "{mode} unexpectedly succeeded"),
+                    _ => unreachable!(),
+                }
+                tokio::time::timeout(Duration::from_secs(15), server).await.unwrap().unwrap();
                 if mode == "stall" { assert!(!receiver.try_iter().any(|event| matches!(event, Event::PacketIdentifiers(_) | Event::Connected(_)))); }
                 state.close(&peer);
             }

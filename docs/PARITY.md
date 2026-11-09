@@ -88,4 +88,4 @@ Nitro metadata lookup is cancellable on peer close and limited to four in-flight
 
 A controlled Nitro test cancels one blocked metadata lookup, starts a replacement connection and verifies that an extension protocol peer receives only the new database. This does not prove live hotel or real extension behavior.
 
-A local HTTPS metadata fixture now exercises the actual JSON downloader for successful data, HTTP 503 and cancellation during a stalled response, with a temporary CA trusted only by the test client. It does not validate the production metadata service or a live hotel.
+A local HTTPS metadata fixture now exercises the actual JSON downloader for successful data, HTTP 503, malformed JSON, truncated and oversized responses, and cancellation during a stalled response, with a temporary CA trusted only by the test client. A controlled extension peer can initialize and forward a packet after each error. It does not validate the production metadata service, a real extension session or a live hotel.

@@ -136,6 +136,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Windows GNU release build succeeded for the source of commit `3ec69f57cfc29bb930b68fae0c306ebfa4c23c1d`; only the hexdump test cases changed during that build. The release is not a live-client or visual validation.
 - Official client/game workflows, performance benefit and full visual equivalence remain unverified.
 
+- The local HTTPS Nitro fixture also covers malformed JSON, truncated responses and the 8 MiB limit. For each failure, a controlled extension protocol peer receives an empty database and can intercept and forward a packet. The test CA is isolated to the test client. The focused test and desktop/web Clippy pass locally; Actions runs 42544992296 and 42544746709 passed all eight jobs for the preceding HTTPS and replacement fixtures. Real hotels and real extension sessions remain unverified.
+
 ## Exact next step
 
-Inspect CI for the local HTTPS Nitro metadata fixture and cancellation/replacement test. Compare handling of malformed, oversized and truncated metadata responses with the beta-29 provider, then add bounded HTTP fixtures and verify forwarding and extension initialization on failure. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Compare Sulek cache expiry and offline fallback with the beta-29 Java provider, implement and test revision-safe refresh and fallback, then run the relevant build and validation. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
