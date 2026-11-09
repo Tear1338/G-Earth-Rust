@@ -502,35 +502,55 @@ fn match_fixed_at(
     input: &[u8],
     offset: usize,
     atoms: &[FixedRegexAtom],
-    omit: Option<usize>,
+    optional: &[Option<bool>],
     comparisons: &mut usize,
 ) -> Result<Option<Vec<usize>>> {
-    let mut position = offset;
-    let mut positions = vec![position];
-    for (index, atom) in atoms.iter().enumerate() {
-        if omit == Some(index) {
-            positions.push(position);
+    let mut positions = vec![offset];
+    let mut choices: Vec<u8> = Vec::new();
+    let mut index = 0;
+    loop {
+        if index == atoms.len() {
+            return Ok(Some(positions));
+        }
+        if choices.len() == index {
+            choices.push(0);
+        }
+        let max_choices = if optional[index].is_some() { 2 } else { 1 };
+        if choices[index] == max_choices {
+            choices.pop();
+            positions.pop();
+            if index == 0 {
+                return Ok(None);
+            }
+            index -= 1;
             continue;
         }
-        let Some(&byte) = input.get(position) else {
-            return Ok(None);
-        };
         *comparisons = comparisons
             .checked_add(1)
             .filter(|n| *n <= MAX_FRAME * 4)
             .ok_or_else(|| error("regex comparison limit exceeded"))?;
-        let accepted = match atom {
+        let choice = choices[index];
+        choices[index] += 1;
+        let skip = optional[index].is_some_and(|greedy| (choice == 0) != greedy);
+        let position = positions[index];
+        if skip {
+            positions.push(position);
+            index += 1;
+            continue;
+        }
+        let Some(&byte) = input.get(position) else {
+            continue;
+        };
+        let accepted = match &atoms[index] {
             FixedRegexAtom::Literal(expected) => *expected == byte,
             FixedRegexAtom::Dot => !matches!(byte, b'\n' | b'\r' | 0x85),
             FixedRegexAtom::Class(class) => class[usize::from(byte)],
         };
-        if !accepted {
-            return Ok(None);
+        if accepted {
+            positions.push(position + 1);
+            index += 1;
         }
-        position += 1;
-        positions.push(position);
     }
-    Ok(Some(positions))
 }
 
 fn replace_fixed_pattern(
@@ -540,23 +560,14 @@ fn replace_fixed_pattern(
     names: &[Option<String>],
     replacement: &str,
     comparisons: &mut usize,
-    optional: Option<(usize, bool)>,
+    optional: &[Option<bool>],
 ) -> Result<String> {
     let input = latin1_encode(text)?;
     let mut output = Vec::new();
     let mut copied = 0;
     let mut offset = 0;
     while offset <= input.len() {
-        let positions = if let Some((index, greedy)) = optional {
-            let first = if greedy { None } else { Some(index) };
-            let second = if greedy { Some(index) } else { None };
-            match match_fixed_at(&input, offset, atoms, first, comparisons)? {
-                Some(positions) => Some(positions),
-                None => match_fixed_at(&input, offset, atoms, second, comparisons)?,
-            }
-        } else {
-            match_fixed_at(&input, offset, atoms, None, comparisons)?
-        };
+        let positions = match_fixed_at(&input, offset, atoms, optional, comparisons)?;
         if let Some(positions) = positions {
             let end = *positions.last().unwrap();
             let groups = ranges
@@ -592,6 +603,26 @@ fn replace_fixed_pattern(
     }
     output.extend_from_slice(&input[copied..]);
     Ok(latin1_decode(&output))
+}
+
+#[cfg(test)]
+mod regex_budget_tests {
+    use super::*;
+
+    #[test]
+    fn optional_backtracking_respects_shared_comparison_budget() {
+        let atoms = [FixedRegexAtom::Literal(b'a'), FixedRegexAtom::Literal(b'b')];
+        let mut comparisons = MAX_FRAME * 4 - 1;
+        let error = match_fixed_at(
+            b"ac",
+            0,
+            &atoms,
+            &[Some(true), Some(true)],
+            &mut comparisons,
+        )
+        .unwrap_err();
+        assert!(error.0.contains("comparison limit"));
+    }
 }
 
 impl Packet {
@@ -1682,7 +1713,7 @@ impl Packet {
         let mut atoms: Vec<FixedRegexAtom> = Vec::new();
         let mut ranges: Vec<(usize, usize)> = Vec::new();
         let mut dynamic = false;
-        let mut optional = None;
+        let mut optional = Vec::new();
         let mut quantifiable = false;
         let mut open: Vec<usize> = Vec::new();
         let mut chars = pattern.chars().peekable();
@@ -1779,7 +1810,7 @@ impl Packet {
                     continue;
                 }
                 '?' => {
-                    if !quantifiable || optional.is_some() {
+                    if !quantifiable {
                         return Err(error("unsupported optional quantifier"));
                     }
                     let greedy = if chars.peek() == Some(&'?') {
@@ -1791,7 +1822,7 @@ impl Packet {
                     if chars.peek() == Some(&'+') {
                         return Err(error("unsupported possessive quantifier"));
                     }
-                    optional = Some((atoms.len() - 1, greedy));
+                    optional.push((atoms.len() - 1, greedy));
                     dynamic = true;
                     quantifiable = false;
                     continue;
@@ -1812,6 +1843,10 @@ impl Packet {
             return Err(error("invalid capture pattern"));
         }
         let needle = latin1_encode(&literal)?;
+        let mut optional_atoms = vec![None; atoms.len()];
+        for (index, greedy) in optional {
+            optional_atoms[index] = Some(greedy);
+        }
         let mut candidate = self.clone();
         let mut offset = candidate.bytes.len() as isize - 2 - pattern_bytes.len() as isize;
         let mut max = candidate.bytes.len();
@@ -1839,7 +1874,7 @@ impl Packet {
                                 &names,
                                 replacement,
                                 &mut comparisons,
-                                optional,
+                                &optional_atoms,
                             )?
                         } else if !text.contains(&literal) {
                             text

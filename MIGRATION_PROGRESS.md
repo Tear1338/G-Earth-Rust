@@ -208,6 +208,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - The bounded matcher supports one greedy or reluctant `?` quantifier on a single atom, including dynamic captures and zero-width progress. Seven targeted cases and 140 generated packets match the released beta-29 Java API. Twenty-five mutation tests, both Clippy configurations and desktop/web build pass. Multiple quantifiers, quantified groups, possessive quantifiers and general Java regex remain unsupported. Actions run 42712775286 passed all eight jobs for predefined classes in unions.
 
+- Multiple greedy and reluctant optional atoms now use iterative backtracking with a shared work budget and bounded memory. A 160-packet corpus matches the released beta-29 Java API, including fallback from greedy choices, nested captures and zero-width matches; a focused unit test checks exhaustion of the work budget. Twenty-five mutation tests, both Clippy configurations and desktop/web build pass. Quantified groups, possessive and repetition quantifiers, and general regex remain open. Actions run 42713073944 passed all eight jobs for control and hexadecimal escapes.
+
 ## Exact next step
 
-Compare multiple greedy/reluctant optional regex quantifiers and backtracking against the released beta-29 API; design an iterative matcher with explicit work and memory bounds, then add differential fixtures before implementation. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Compare Java optional quantifiers applied to capture groups, including unmatched nested captures, greediness and zero-width behavior, against the released beta-29 API; extend the iterative matcher only with bounded work and differential fixtures. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

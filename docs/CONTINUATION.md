@@ -1,5 +1,7 @@
 # Continuation state
 
+Multiple greedy and reluctant optional atoms now use iterative backtracking with a shared work budget and bounded memory. A 160-packet corpus matches the released beta-29 Java API, including fallback from greedy choices, nested captures and zero-width matches; a focused unit test checks exhaustion of the work budget. Twenty-five mutation tests, both Clippy configurations and desktop/web build pass. Quantified groups, possessive and repetition quantifiers, and general regex remain open. Next compare optional capture-group quantifiers against Java.
+
 The bounded matcher supports one greedy or reluctant `?` quantifier on a single atom, including dynamic captures and zero-width progress. Seven targeted cases and 140 generated packets match the released beta-29 Java API. Twenty-five mutation tests, both Clippy configurations and desktop/web build pass. Multiple quantifiers, quantified groups, possessive quantifiers and general Java regex remain unsupported. Next compare multiple optional quantifiers and backtracking against Java.
 
 Java regex control escapes and two-digit hexadecimal/four-digit Unicode escapes within Latin-1 are supported inside and outside bracket classes. A 140-packet corpus matches the released beta-29 Java API, and invalid or outside-Latin-1 escapes fail transactionally. Twenty-four mutation tests, both Clippy configurations and desktop/web build pass locally. Other escape forms, quantifiers and full Java regex remain incomplete. Next compare optional quantifiers and zero-width matching against Java.

@@ -69,6 +69,8 @@
 
 ## Unreleased
 
+- Support bounded iterative backtracking for multiple Java regex optional atoms.
+
 - Support one bounded greedy or reluctant Java regex optional atom, including zero-width matches and captures.
 
 - Support bounded Java regex control and Latin-1 hexadecimal escapes inside and outside character classes.
