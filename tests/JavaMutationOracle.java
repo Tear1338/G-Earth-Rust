@@ -962,6 +962,44 @@ public class JavaMutationOracle {
             maximumDepth.replaceXSubstrings(maximumDepthPattern, "$99", 1);
         } finally { System.setOut(beforeDepth); }
         emit("substring_maximum_depth", maximumDepth);
+        String[][] anchors = {
+            {"a ^(a)", "^(a)"},
+            {"a \\A(a)", "\\A(a)"},
+            {"(a)$a\n", "(a)$"},
+            {"(a)$a\r\n", "(a)$"},
+            {"(a)\\Za\u0085", "(a)\\Z"},
+            {"(a)\\za", "(a)\\z"},
+            {"x($)", "x($)"},
+            {"(^) value", "(^)"},
+            {"(\\z) value", "(\\z)"},
+            {"(a)$a\r", "(a)$"},
+        };
+        for (int i = 0; i < anchors.length; i++) {
+            HPacket sample = new HPacket(9);
+            sample.appendString(anchors[i][0]);
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(anchors[i][1], "$1/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_anchor_" + i, sample);
+        }
+        String[] anchorPatterns = {"^(a)", "\\A(a)", "(a)$", "(a)\\z", "(a)\\Z", "(.)$", "(^)", "(\\z)"};
+        String[] anchorSuffixes = {"", "\n", "\r\n", "\r", "\u0085", "b"};
+        for (int i = 0; i < 144; i++) {
+            String pattern = anchorPatterns[i % anchorPatterns.length];
+            String value = "a " + pattern + " a" + anchorSuffixes[(i / anchorPatterns.length) % anchorSuffixes.length];
+            HPacket sample = new HPacket(9);
+            sample.appendString(value);
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, "$1/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_anchor_corpus_" + i, sample);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);

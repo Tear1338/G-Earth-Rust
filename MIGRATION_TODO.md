@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: compare Java start/end anchors and line terminators with the released API. Full Java regex and live extension validation remain open.
+Next: compare Java 21 regex word boundaries with the released API, including Latin-1 edge cases. Full Java regex and live extension validation remain open.

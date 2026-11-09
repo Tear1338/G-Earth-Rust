@@ -1,5 +1,7 @@
 # Continuation state
 
+Java regex anchors `^`, `$`, `\A`, `\Z` and `\z` are supported as bounded zero-width matches, including Java’s final CRLF and Latin-1 line terminators. Ten targeted cases and 144 generated packets match the released beta-29 Java API. Eight budget/state tests, 29 mutation tests, both Clippy configurations and desktop/web build pass. Anchors inside repeated groups and full Java regex remain unsupported. Next compare Java 21 word boundaries.
+
 Repeated Java regex groups now support deeper nested capture events with optional descendants and bounded capture restoration. A 180-packet corpus and a 99-group depth case match the released beta-29 API. Seven budget/state tests, 29 mutation tests, both Clippy configurations and desktop/web build pass. Multiple repeated group quantifiers and general Java regex remain open. Next compare zero-width Java regex anchors and line terminators.
 
 Repeated Java regex groups now support optional atoms inside direct nonoptional or optional nested captures, such as `((a?)b)*`. A 210-packet corpus matches the released beta-29 API; a focused test distinguishes a capture overwritten with empty from a skipped capture retaining its previous value. Seven budget/state tests, 29 mutation tests, both Clippy configurations and desktop/web build pass. More deeply nested captures and general Java regex remain open. Next compare deeper nested captures inside repeated groups.

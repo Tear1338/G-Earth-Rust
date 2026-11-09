@@ -238,6 +238,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Repeated Java regex groups now support deeper nested capture events with optional descendants and bounded capture restoration. A 180-packet corpus and a 99-group depth case match the released beta-29 API. Seven budget/state tests, 29 mutation tests, both Clippy configurations and desktop/web build pass. Multiple repeated group quantifiers and general Java regex remain open. Actions run 42721123873 passed all eight jobs for optional atoms in nested captures.
 
+- Java regex anchors `^`, `$`, `\A`, `\Z` and `\z` are supported as bounded zero-width matches, including Java’s final CRLF and Latin-1 line terminators. Ten targeted cases and 144 generated packets match the released beta-29 Java API. Eight budget/state tests, 29 mutation tests, both Clippy configurations and desktop/web build pass. Anchors inside repeated groups and full Java regex remain unsupported. Windows GNU desktop/web release build succeeded at `c6f826f`.
+
 ## Exact next step
 
-Compare Java regex start/end anchors (`^`, `$`, `\A`, `\z`) and line-terminator edge cases with the released beta-29 API; add differential fixtures and preserve bounded zero-width matching. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Compare Java 21 regex word boundaries `\b`/`\B` in Latin-1 fields against the released beta-29 API, including empty strings and accented characters; add differential fixtures and bounded zero-width matching. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

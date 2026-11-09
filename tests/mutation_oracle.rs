@@ -1453,6 +1453,45 @@ fn mutations_match_original_java_packets_and_cursor() {
         .replace_substrings_java_groups(&maximum_depth_pattern, "$99", Some(1))
         .unwrap();
     check("substring_maximum_depth", &maximum_depth);
+    let anchors = [
+        ("a ^(a)", "^(a)"),
+        ("a \\A(a)", "\\A(a)"),
+        ("(a)$a\n", "(a)$"),
+        ("(a)$a\r\n", "(a)$"),
+        ("(a)\\Za\u{85}", "(a)\\Z"),
+        ("(a)\\za", "(a)\\z"),
+        ("x($)", "x($)"),
+        ("(^) value", "(^)"),
+        ("(\\z) value", "(\\z)"),
+        ("(a)$a\r", "(a)$"),
+    ];
+    for (i, (value, pattern)) in anchors.iter().enumerate() {
+        let mut packet = Packet::new(9);
+        packet.put_string(value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java_groups(pattern, "$1/$0", Some(1))
+            .unwrap();
+        check(&format!("substring_anchor_{i}"), &packet);
+    }
+    let anchor_patterns = [
+        "^(a)", "\\A(a)", "(a)$", "(a)\\z", "(a)\\Z", "(.)$", "(^)", "(\\z)",
+    ];
+    let anchor_suffixes = ["", "\n", "\r\n", "\r", "\u{85}", "b"];
+    for i in 0..144 {
+        let pattern = anchor_patterns[i % anchor_patterns.len()];
+        let value = format!(
+            "a {pattern} a{}",
+            anchor_suffixes[(i / anchor_patterns.len()) % anchor_suffixes.len()]
+        );
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java_groups(pattern, "$1/$0", Some(1))
+            .unwrap();
+        check(&format!("substring_anchor_corpus_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

@@ -354,6 +354,9 @@ fn expand_literal_groups(
 enum FixedRegexAtom {
     Literal(u8),
     Dot,
+    Start,
+    End,
+    EndStrict,
     Class(Box<[bool; 256]>),
 }
 
@@ -620,7 +623,26 @@ fn atom_accepts(atom: &FixedRegexAtom, byte: u8) -> bool {
     match atom {
         FixedRegexAtom::Literal(expected) => *expected == byte,
         FixedRegexAtom::Dot => !matches!(byte, b'\n' | b'\r' | 0x85),
+        FixedRegexAtom::Start | FixedRegexAtom::End | FixedRegexAtom::EndStrict => false,
         FixedRegexAtom::Class(class) => class[usize::from(byte)],
+    }
+}
+
+fn atom_width(atom: &FixedRegexAtom, input: &[u8], position: usize) -> Option<usize> {
+    match atom {
+        FixedRegexAtom::Start => (position == 0).then_some(0),
+        FixedRegexAtom::EndStrict => (position == input.len()).then_some(0),
+        FixedRegexAtom::End => {
+            let final_terminator = position + 1 == input.len()
+                && matches!(input[position], b'\n' | b'\r' | 0x85)
+                && !(input[position] == b'\n' && position > 0 && input[position - 1] == b'\r');
+            let final_crlf = position + 2 == input.len() && &input[position..] == b"\r\n";
+            (position == input.len() || final_terminator || final_crlf).then_some(0)
+        }
+        _ => input
+            .get(position)
+            .filter(|byte| atom_accepts(atom, **byte))
+            .map(|_| 1),
     }
 }
 
@@ -758,13 +780,10 @@ fn match_fixed_at(
                 }
             }
             RegexInstruction::Atom(index) => {
-                let Some(&byte) = input.get(position) else {
-                    continue;
-                };
-                if atom_accepts(&atoms[*index], byte) {
+                if let Some(width) = atom_width(&atoms[*index], input, position) {
                     positions[*index] = position;
-                    positions[*index + 1] = position + 1;
-                    frames.push((pc + 1, position + 1, 0, None));
+                    positions[*index + 1] = position + width;
+                    frames.push((pc + 1, position + width, 0, None));
                 }
             }
             RegexInstruction::Repeat {
@@ -860,6 +879,16 @@ fn replace_fixed_pattern(
 #[cfg(test)]
 mod regex_budget_tests {
     use super::*;
+
+    #[test]
+    fn java_end_anchor_handles_crlf_as_one_terminator() {
+        let input = b"a\r\n";
+        assert_eq!(atom_width(&FixedRegexAtom::End, input, 1), Some(0));
+        assert_eq!(atom_width(&FixedRegexAtom::End, input, 2), None);
+        assert_eq!(atom_width(&FixedRegexAtom::End, input, 3), Some(0));
+        assert_eq!(atom_width(&FixedRegexAtom::EndStrict, input, 1), None);
+        assert_eq!(atom_width(&FixedRegexAtom::EndStrict, input, 3), Some(0));
+    }
 
     #[test]
     fn optional_backtracking_respects_shared_comparison_budget() {
@@ -1325,13 +1354,10 @@ fn match_nested_repeat(
         let checkpoint = trail.len();
         let next = match program[pc] {
             NestedInstruction::Atom(index) => {
-                if !input
-                    .get(position)
-                    .is_some_and(|byte| atom_accepts(&atoms[index], *byte))
-                {
+                let Some(width) = atom_width(&atoms[index], input, position) else {
                     continue;
-                }
-                (pc + 1, position + 1, iterations)
+                };
+                (pc + 1, position + width, iterations)
             }
             NestedInstruction::Repeat { min, greedy, .. } => {
                 let length = if greedy {
@@ -2619,6 +2645,17 @@ impl Packet {
                         quoted = true;
                         continue;
                     }
+                    if matches!(c, 'A' | 'z' | 'Z') {
+                        atoms.push(match c {
+                            'A' => FixedRegexAtom::Start,
+                            'z' => FixedRegexAtom::EndStrict,
+                            _ => FixedRegexAtom::End,
+                        });
+                        dynamic = true;
+                        quantifiable = false;
+                        last_closed_group = None;
+                        continue;
+                    }
                     if let Some(class) = predefined_class(c) {
                         atoms.push(FixedRegexAtom::Class(class));
                         dynamic = true;
@@ -2631,6 +2668,17 @@ impl Packet {
                     } else if !".^$|?*+()[]{}\\".contains(c) {
                         return Err(error("unsupported regex escape"));
                     }
+                }
+                '^' | '$' => {
+                    atoms.push(if c == '^' {
+                        FixedRegexAtom::Start
+                    } else {
+                        FixedRegexAtom::End
+                    });
+                    dynamic = true;
+                    quantifiable = false;
+                    last_closed_group = None;
+                    continue;
                 }
                 '.' => {
                     atoms.push(FixedRegexAtom::Dot);
@@ -2741,7 +2789,7 @@ impl Packet {
                     last_closed_group = None;
                     continue;
                 }
-                '^' | '$' | '|' | ']' | '}' => {
+                '|' | ']' | '}' => {
                     return Err(error("unsupported regex construct"));
                 }
                 _ => {}
@@ -2777,6 +2825,12 @@ impl Packet {
             });
             if !descendants_only
                 || start == end
+                || atoms[start..end].iter().any(|atom| {
+                    matches!(
+                        atom,
+                        FixedRegexAtom::Start | FixedRegexAtom::End | FixedRegexAtom::EndStrict
+                    )
+                })
                 || repeated
                     .iter()
                     .any(|(index, ..)| *index < start || *index >= end)

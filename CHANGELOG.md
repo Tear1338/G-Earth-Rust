@@ -69,6 +69,8 @@
 
 ## Unreleased
 
+- Support bounded Java start/end regex anchors, including final line terminators.
+
 - Restore deeply nested Java regex captures inside repeated groups under explicit state limits.
 
 - Support optional atoms in direct nested captures within repeated Java regex groups.
