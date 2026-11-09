@@ -357,7 +357,9 @@ enum FixedRegexAtom {
     Dot,
     DotAll,
     Start,
+    StartLine,
     End,
+    EndLine,
     EndStrict,
     WordBoundary,
     NonWordBoundary,
@@ -650,6 +652,8 @@ fn atom_accepts(atom: &FixedRegexAtom, byte: u8) -> bool {
         FixedRegexAtom::Start
         | FixedRegexAtom::End
         | FixedRegexAtom::EndStrict
+        | FixedRegexAtom::StartLine
+        | FixedRegexAtom::EndLine
         | FixedRegexAtom::WordBoundary
         | FixedRegexAtom::NonWordBoundary => false,
         FixedRegexAtom::Class(class) => class[usize::from(byte)],
@@ -660,6 +664,21 @@ fn atom_width(atom: &FixedRegexAtom, input: &[u8], position: usize) -> Option<us
     match atom {
         FixedRegexAtom::Start => (position == 0).then_some(0),
         FixedRegexAtom::EndStrict => (position == input.len()).then_some(0),
+        FixedRegexAtom::StartLine => {
+            let after_terminator = position > 0
+                && matches!(input[position - 1], b'\n' | b'\r' | 0x85)
+                && !(input[position - 1] == b'\r' && input.get(position) == Some(&b'\n'));
+            (position < input.len() && (position == 0 || after_terminator)).then_some(0)
+        }
+        FixedRegexAtom::EndLine => {
+            let at_terminator = input
+                .get(position)
+                .is_some_and(|byte| matches!(*byte, b'\n' | b'\r' | 0x85))
+                && !(input.get(position) == Some(&b'\n')
+                    && position > 0
+                    && input[position - 1] == b'\r');
+            (position == input.len() || at_terminator).then_some(0)
+        }
         FixedRegexAtom::WordBoundary | FixedRegexAtom::NonWordBoundary => {
             let word = |byte: u8| byte.is_ascii_alphanumeric() || byte == b'_';
             let before = position
@@ -938,6 +957,18 @@ mod regex_budget_tests {
             atom_width(&FixedRegexAtom::WordBoundary, &input, 3),
             Some(0)
         );
+    }
+
+    #[test]
+    fn java_multiline_anchors_handle_empty_and_crlf() {
+        assert_eq!(atom_width(&FixedRegexAtom::StartLine, b"", 0), None);
+        assert_eq!(atom_width(&FixedRegexAtom::EndLine, b"", 0), Some(0));
+        let input = b"a\r\nb";
+        assert_eq!(atom_width(&FixedRegexAtom::EndLine, input, 1), Some(0));
+        assert_eq!(atom_width(&FixedRegexAtom::EndLine, input, 2), None);
+        assert_eq!(atom_width(&FixedRegexAtom::StartLine, input, 2), None);
+        assert_eq!(atom_width(&FixedRegexAtom::StartLine, input, 3), Some(0));
+        assert_eq!(atom_width(&FixedRegexAtom::StartLine, b"a\n", 2), None);
     }
 
     #[test]
@@ -2630,20 +2661,18 @@ impl Packet {
         let mut pattern_source = pattern;
         let mut case_insensitive = false;
         let mut dot_all = false;
-        loop {
-            let (prefix, insensitive, dotall) =
-                if pattern_source.starts_with("(?is)") || pattern_source.starts_with("(?si)") {
-                    (5, true, true)
-                } else if pattern_source.starts_with("(?i)") {
-                    (4, true, false)
-                } else if pattern_source.starts_with("(?s)") {
-                    (4, false, true)
-                } else {
-                    break;
-                };
-            pattern_source = &pattern_source[prefix..];
-            case_insensitive |= insensitive;
-            dot_all |= dotall;
+        let mut multiline = false;
+        while let Some(flags) = pattern_source
+            .strip_prefix("(?")
+            .and_then(|source| source.split_once(')'))
+        {
+            if flags.0.is_empty() || !flags.0.chars().all(|flag| matches!(flag, 'i' | 's' | 'm')) {
+                break;
+            }
+            case_insensitive |= flags.0.contains('i');
+            dot_all |= flags.0.contains('s');
+            multiline |= flags.0.contains('m');
+            pattern_source = flags.1;
         }
         let mut literal = String::new();
         let mut groups: Vec<String> = Vec::new();
@@ -2760,10 +2789,11 @@ impl Packet {
                     }
                 }
                 '^' | '$' => {
-                    atoms.push(if c == '^' {
-                        FixedRegexAtom::Start
-                    } else {
-                        FixedRegexAtom::End
+                    atoms.push(match (c, multiline) {
+                        ('^', true) => FixedRegexAtom::StartLine,
+                        ('^', false) => FixedRegexAtom::Start,
+                        (_, true) => FixedRegexAtom::EndLine,
+                        _ => FixedRegexAtom::End,
                     });
                     dynamic = true;
                     quantifiable = false;
@@ -2926,7 +2956,9 @@ impl Packet {
                     matches!(
                         atom,
                         FixedRegexAtom::Start
+                            | FixedRegexAtom::StartLine
                             | FixedRegexAtom::End
+                            | FixedRegexAtom::EndLine
                             | FixedRegexAtom::EndStrict
                             | FixedRegexAtom::WordBoundary
                             | FixedRegexAtom::NonWordBoundary

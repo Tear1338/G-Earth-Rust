@@ -1074,6 +1074,22 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_dotall_" + i, sample);
         }
+        String[] multilinePatterns = {"(?m)^(a)", "(?m)(a)$", "(?m)\\A(a)", "(?m)(a)\\Z", "(?m)(a)\\z", "(?im)^(a)", "(?ms)(.)$", "(?m)(^)"};
+        char[] multilineAlphabet = {'a', 'A', 'b', 'é', ' ', '\n', '\r', '\u0085'};
+        for (int i = 0; i < 200; i++) {
+            String pattern = multilinePatterns[i % multilinePatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(" a\r\na\nA\r\u0085a ");
+            for (int j = 0; j < 16; j++) value.append(multilineAlphabet[(i * 7 + j * 3) % multilineAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, "$1/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_multiline_" + i, sample);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);

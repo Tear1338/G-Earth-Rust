@@ -1,5 +1,7 @@
 # Continuation state
 
+Java global multiline `(?m)` and leading combinations with `(?i)`/`(?s)` now distinguish line anchors from strict `\A`, `\Z` and `\z`, including empty input and CRLF. A 200-packet corpus matches the released beta-29 API; ten budget/state tests, 30 mutation tests, both Clippy configurations and desktop/web build pass. Anchors within repeated groups, embedded flags and general Java regex remain open. Next compare Unicode case-insensitive matching over Latin-1.
+
 Java global dotall `(?s)` and leading combinations with `(?i)` now make dot match Latin-1 line terminators while preserving captures and bounded repetition. A 175-packet corpus matches the released beta-29 API; nine budget/state tests, 30 mutation tests, both Clippy configurations and desktop/web build pass. Other embedded flags and full Java regex remain open. Next compare Java multiline anchor semantics.
 
 Java regex replacement now accepts patterns without capture groups, including empty patterns and `$0`; invalid references and size overflow remain transactional. Ten cases match the released beta-29 Java API, and a focused large-field test covers zero-width growth. Nine budget/state tests, 30 mutation tests, both Clippy configurations and desktop/web build pass. General regex syntax and live-extension compatibility remain open. Next compare the global dotall flag with Java.

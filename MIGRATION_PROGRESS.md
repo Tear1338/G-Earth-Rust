@@ -250,6 +250,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Java global dotall `(?s)` and leading combinations with `(?i)` now make dot match Latin-1 line terminators while preserving captures and bounded repetition. A 175-packet corpus matches the released beta-29 API; nine budget/state tests, 30 mutation tests, both Clippy configurations and desktop/web build pass. Other embedded flags and full Java regex remain open. Actions runs 42723185570 and 42723508780 passed all eight jobs for word boundaries and case-insensitive matching.
 
+- Java global multiline `(?m)` and leading combinations with `(?i)`/`(?s)` now distinguish line anchors from strict `\A`, `\Z` and `\z`, including empty input and CRLF. A 200-packet corpus matches the released beta-29 API; ten budget/state tests, 30 mutation tests, both Clippy configurations and desktop/web build pass. Anchors within repeated groups, embedded flags and general Java regex remain open. Actions run 42723871382 passed all eight jobs for no-capture replacement.
+
 ## Exact next step
 
-Compare Java global multiline flag `(?m)` and its `^`/`$` behavior on empty strings, CRLF and Latin-1 terminators against the released beta-29 API; keep `\A`/`\Z`/`\z` semantics distinct and add differential fixtures. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Compare Java Unicode case-insensitive regex mode `(?iu)` over all Latin-1 case pairs, classes and negation against the released beta-29 API; extend bounded matching only after differential fixtures. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

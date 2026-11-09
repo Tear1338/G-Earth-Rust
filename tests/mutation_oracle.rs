@@ -1594,6 +1594,31 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_dotall_{i}"), &packet);
     }
+    let multiline_patterns = [
+        "(?m)^(a)",
+        "(?m)(a)$",
+        "(?m)\\A(a)",
+        "(?m)(a)\\Z",
+        "(?m)(a)\\z",
+        "(?im)^(a)",
+        "(?ms)(.)$",
+        "(?m)(^)",
+    ];
+    let multiline_alphabet = ['a', 'A', 'b', 'é', ' ', '\n', '\r', '\u{85}'];
+    for i in 0..200 {
+        let pattern = multiline_patterns[i % multiline_patterns.len()];
+        let mut value = format!("{pattern} a\r\na\nA\r\u{85}a ");
+        for j in 0..16 {
+            value.push(multiline_alphabet[(i * 7 + j * 3) % multiline_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, "$1/$0", Some(1))
+            .unwrap();
+        check(&format!("substring_multiline_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

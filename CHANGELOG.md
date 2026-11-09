@@ -69,6 +69,8 @@
 
 ## Unreleased
 
+- Support Java global multiline regex anchors and combinations with dotall/case-insensitive modes.
+
 - Support global Java dotall regex matching and combinations with case-insensitive mode.
 
 - Support Java regex replacement without captures, including empty patterns and bounded zero-width expansion.
