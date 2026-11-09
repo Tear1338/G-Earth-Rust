@@ -71,8 +71,8 @@ pub struct WebOptions {
     pub listen: SocketAddr,
     pub identity_directory: PathBuf,
     pub packet_info: PacketInfoManager,
-    /// Route upstream traffic through SOCKS5. Until auxiliary HTTP lookups
-    /// support SOCKS, packet-info fetching and the City helper must be disabled.
+    /// Route upstream traffic and packet-info fetching through SOCKS5. The City
+    /// helper must remain disabled until it also supports SOCKS.
     pub upstream_socks: Option<crate::socks::SocksConfig>,
     /// Fetch missing Nitro identifiers from the upstream provider.
     pub fetch_packet_info: bool,
@@ -333,11 +333,15 @@ impl Shared {
                 Ok(slot) => {
                     #[cfg(test)]
                     let lookup = self.options.nitro_lookup.clone();
+                    let socks = self.options.upstream_socks.clone();
                     let worker = tokio::task::spawn_blocking(move || {
                         let _slot = slot;
                         #[cfg(test)]
                         if let Some(lookup) = lookup {
                             return lookup();
+                        }
+                        if let Some(socks) = socks {
+                            return crate::web_socks::fetch_nitro(socks);
                         }
                         PacketInfoManager::fetch_sulek(NITRO_REVISION, false)
                     });
@@ -784,10 +788,11 @@ impl WebProxy {
         if !options.listen.ip().is_loopback() {
             return Err(io::Error::other("HTTP proxy must bind loopback"));
         }
-        if options.upstream_socks.is_some()
-            && (options.fetch_packet_info || options.allow_city_helper)
-        {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "SOCKS requires packet-info fetching and the City helper to be disabled until those lookups support SOCKS"));
+        if options.upstream_socks.is_some() && options.allow_city_helper {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "SOCKS requires the City helper to be disabled until it supports SOCKS",
+            ));
         }
         let identity = ProxyIdentity::ensure(&options.identity_directory)?;
         let ca = identity.authority()?;

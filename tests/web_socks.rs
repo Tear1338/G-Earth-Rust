@@ -414,18 +414,13 @@ async fn rejected_socks_never_falls_back_to_direct_http_websocket_or_raw() {
 }
 
 #[test]
-fn socks_rejects_auxiliary_direct_network_paths() {
+fn socks_rejects_city_helper_until_it_is_routed() {
     let directory = Directory::new();
     let mut opts = WebOptions::new("127.0.0.1:0".parse().unwrap(), directory.0.join("proxy"));
     opts.upstream_socks = Some(SocksConfig {
         proxy: "127.0.0.1:9".into(),
         credentials: None,
     });
-    assert_eq!(
-        WebProxy::start(opts.clone()).err().unwrap().kind(),
-        io::ErrorKind::InvalidInput
-    );
-    opts.fetch_packet_info = false;
     opts.allow_city_helper = true;
     assert_eq!(
         WebProxy::start(opts).err().unwrap().kind(),

@@ -1319,6 +1319,7 @@ dependencies = [
  "tokio-rustls",
  "tower-service",
  "ureq",
+ "url",
  "wasm-encoder",
  "wasmparser",
  "wat",

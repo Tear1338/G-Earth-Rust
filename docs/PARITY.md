@@ -125,3 +125,5 @@ An asynchronous SOCKS5 primitive is tested with local proxies, including authent
 Vendored Hudsucker now has an optional WebSocket/raw CONNECT dialer. Local tests cover success, failure without direct fallback, valid WSS and rejection of a wrong hostname. Nitro does not yet use it; HTTP connector and SOCKS integration remain open.
 
 The web backend routes HTTP, HTTPS, WebSocket, WSS and raw CONNECT through optional SOCKS5, with local authenticated proxy and TLS fixtures. It refuses SOCKS when automatic metadata or the City helper is enabled; the desktop option and real SOCKS/hotel validation remain open.
+
+Nitro metadata retrieval and its cache now use SOCKS when configured. Local authenticated HTTPS tests cover redirects, malformed and oversized responses and stale cache fallback. The City helper and desktop SOCKS option remain unavailable; real services remain unverified.

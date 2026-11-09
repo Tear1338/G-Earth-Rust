@@ -1,5 +1,7 @@
 # Changelog
 
+- Route Nitro packet metadata HTTPS and its cache refresh through SOCKS5; City helper and desktop enablement remain unfinished.
+
 - Route web proxy HTTP, HTTPS, WebSocket and raw CONNECT upstreams through optional SOCKS5; auxiliary lookups and desktop enablement remain unfinished.
 
 - Vendor Hudsucker 0.25.0 and add an optional WebSocket/raw CONNECT dialer; Nitro SOCKS integration remains unfinished.
