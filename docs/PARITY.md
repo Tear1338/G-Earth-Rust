@@ -85,3 +85,5 @@ The no-extension-host Flash metadata lookup is covered with a controlled provide
 Nitro rejects preloaded metadata labeled for another revision, including unversioned metadata, before registering safe IDs. Unity intentionally uses static metadata across revisions as Java does; incorrect Unity metadata can authorize incorrect IDs. Controlled Nitro and two-revision Unity fixtures cover these paths; real clients remain unverified. Nitro now fetches missing metadata without an extension host by default; `WebOptions::fetch_packet_info` disables the lookup for offline use.
 
 Nitro metadata lookup is cancellable on peer close and limited to four in-flight workers. A controlled provider covers success and failure, while a full local proxy fixture checks stopping with a stalled provider. Workers already in flight can continue after cancellation; real metadata-service behavior and live clients remain unverified.
+
+A controlled Nitro test cancels one blocked metadata lookup, starts a replacement connection and verifies that an extension protocol peer receives only the new database. This does not prove live hotel or real extension behavior.

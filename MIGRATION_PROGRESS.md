@@ -114,6 +114,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Nitro now fetches missing metadata even without an extension host, like the Java proxy; `WebOptions::fetch_packet_info` can disable this for offline use. Controlled success/failure tests and a full local proxy test with a stalled provider verify stop and session cleanup. Up to four lookup workers may continue after cancellation; they are not forcibly stopped. Metadata is published only after connection revalidation. Five lifecycle tests, seven Nitro and four Unity fixtures, desktop/web Clippy and debug build pass locally. Real network behavior and clients remain unverified.
 - GitHub Actions run 42544007669 passed all eight validation jobs for Nitro metadata revision validation.
 
+- A controlled Nitro lifecycle test starts a second connection while the first metadata worker remains blocked, then releases the old worker. An extension protocol peer receives only the new metadata, no stale database event is emitted, and the new session disconnects normally. Six lifecycle tests and desktop/web Clippy pass locally. This does not establish real hotel or extension behavior.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -133,4 +135,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect CI for Nitro metadata lookup without an extension host. Verify the real Java extension fixture and G-Presets CI against the new initialization behavior; then investigate whether an extension can receive stale metadata when a Nitro lookup races disconnection or replacement. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Inspect complete CI for Nitro metadata lookup and the cancellation/replacement fixture, including the real Java extension and G-Presets jobs. Investigate Nitro metadata failure and cancellation with a controllable HTTP endpoint rather than a simulated provider, while preserving TLS verification. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

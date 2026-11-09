@@ -976,8 +976,11 @@ mod lifecycle_tests {
     };
     use std::net::TcpStream;
 
+    static NITRO_LOOKUP_TEST_LOCK: Mutex<()> = Mutex::new(());
+
     #[test]
     fn nitro_fetches_metadata_without_extension_host_and_handles_failure() {
+        let _test_lock = NITRO_LOOKUP_TEST_LOCK.lock().unwrap();
         use crate::{packet_info::PacketInfo, packet_safety::PacketSafety};
         for succeed in [true, false] {
             let safety = Arc::new(Mutex::new(PacketSafety::default()));
@@ -1047,6 +1050,7 @@ mod lifecycle_tests {
 
     #[test]
     fn closing_nitro_peer_cancels_wait_for_stalled_metadata_without_starting_session() {
+        let _test_lock = NITRO_LOOKUP_TEST_LOCK.lock().unwrap();
         let (started_tx, started_rx) = mpsc::channel();
         let (release_tx, release_rx) = mpsc::channel();
         let (finished_tx, finished_rx) = mpsc::channel();
@@ -1119,6 +1123,7 @@ mod lifecycle_tests {
 
     #[test]
     fn nitro_proxy_stop_returns_while_metadata_provider_is_stalled() {
+        let _test_lock = NITRO_LOOKUP_TEST_LOCK.lock().unwrap();
         use hudsucker::tokio_tungstenite::{
             accept_async, client_async, tungstenite::Message as WsMessage,
         };
@@ -1204,6 +1209,119 @@ mod lifecycle_tests {
                 .unwrap()
                 .unwrap();
         });
+    }
+
+    #[test]
+    fn cancelled_nitro_lookup_cannot_replace_new_extension_metadata() {
+        use crate::packet_info::PacketInfo;
+        let _test_lock = NITRO_LOOKUP_TEST_LOCK.lock().unwrap();
+        let (host, host_events) =
+            ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+        let mut extension_peer = TcpStream::connect(host.address).unwrap();
+        extension_peer
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        assert_eq!(read_frame(&mut extension_peer).unwrap().header(), 2);
+        let info = ExtensionInfo {
+            title: "fixture".into(),
+            author: "test".into(),
+            version: "1".into(),
+            description: String::new(),
+            on_click: false,
+            file: None,
+            cookie: String::new(),
+            can_leave: true,
+            can_delete: true,
+        };
+        write_frame(
+            &mut extension_peer,
+            &extension::info_response(&info).unwrap(),
+        )
+        .unwrap();
+        let id = match host_events.recv_timeout(Duration::from_secs(3)).unwrap() {
+            HostEvent::Pending { id, .. } => id,
+            event => panic!("{event:?}"),
+        };
+        host.approve(id).unwrap();
+        assert_eq!(read_frame(&mut extension_peer).unwrap().header(), 7);
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let (finished_tx, finished_rx) = mpsc::channel();
+        let release_rx = Mutex::new(release_rx);
+        let calls = AtomicUsize::new(0);
+        let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), PathBuf::new());
+        options.extensions = Some(host.clone());
+        options.nitro_lookup = Some(Arc::new(move || {
+            let index = calls.fetch_add(1, Ordering::AcqRel);
+            if index == 0 {
+                started_tx.send(()).unwrap();
+                release_rx.lock().unwrap().recv().unwrap();
+                finished_tx.send(()).unwrap();
+            }
+            let header = if index == 0 { 901 } else { 902 };
+            Ok(PacketInfoManager::new(
+                NITRO_REVISION,
+                vec![PacketInfo {
+                    header,
+                    name: Some("Known".into()),
+                    hash: None,
+                    structure: None,
+                    direction: Direction::ToServer,
+                    source: "fixture".into(),
+                }],
+            ))
+        }));
+        let (events, receiver) = mpsc::sync_channel(32);
+        let state = Arc::new(Shared {
+            options,
+            hartico_key: Mutex::new(None),
+            city_keys: Mutex::new(None),
+            peers: Mutex::new(HashMap::new()),
+            active: Mutex::new(None),
+            rules: Mutex::new(Rules::default()),
+            pipeline: Mutex::new(()),
+            events,
+            index: AtomicI32::new(0),
+            stop: AtomicBool::new(false),
+        });
+        let peer = |port| {
+            Arc::new(Peer::new(
+                PeerKey {
+                    client: format!("127.0.0.1:{port}").parse().unwrap(),
+                    uri: "ws://fixture".into(),
+                },
+                Modifier::new(&crate::nitro::HotelKind::Plain).unwrap(),
+            ))
+        };
+        let old = peer(1234);
+        let new = peer(1235);
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let old_state = state.clone(); let old_peer = old.clone();
+            let task = tokio::spawn(async move { old_state.activate(&old_peer, &"ws://fixture".parse().unwrap()).await });
+            started_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+            state.close(&old);
+            assert_eq!(tokio::time::timeout(Duration::from_secs(2), task).await.unwrap().unwrap().unwrap_err().kind(), io::ErrorKind::Interrupted);
+            state.activate(&new, &"ws://fixture".parse().unwrap()).await.unwrap();
+            let mut start = read_frame(&mut extension_peer).unwrap();
+            assert_eq!(start.header(), 5);
+            start.read_string().unwrap(); start.read_i32().unwrap();
+            let version = start.read_string().unwrap(); start.read_string().unwrap(); start.read_string().unwrap();
+            let metadata = PacketInfoManager::read_from(version, &mut start).unwrap();
+            assert_eq!(metadata.entries()[0].header, 902);
+            release_tx.send(()).unwrap();
+            finished_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+            write_frame(&mut extension_peer, &Packet::new(3)).unwrap();
+            assert_eq!(read_frame(&mut extension_peer).unwrap().header(), 4);
+            let events: Vec<_> = receiver.try_iter().collect();
+            assert_eq!(events.iter().filter(|event| matches!(event, Event::Connected(_))).count(), 1);
+            assert!(events.iter().any(|event| matches!(event, Event::PacketIdentifiers(db) if db.entries().first().is_some_and(|entry| entry.header == 902))));
+            assert!(!events.iter().any(|event| matches!(event, Event::PacketIdentifiers(db) if db.entries().first().is_some_and(|entry| entry.header == 901))));
+            state.close(&new);
+            assert_eq!(read_frame(&mut extension_peer).unwrap().header(), 6);
+        });
+        drop(extension_peer);
+        host.stop();
     }
 
     #[test]
