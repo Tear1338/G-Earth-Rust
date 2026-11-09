@@ -387,7 +387,7 @@ fn java_literal_groups_keep_no_match_and_reject_unsupported_patterns_transaction
     let mut packet = Packet::new(9);
     packet.put_string("(a)(b) ab").unwrap();
     let before = packet.clone();
-    for pattern in ["(a.*)", "(\\p)", "(a", "a)", "abc"] {
+    for pattern in ["(a.{2})", "(\\p)", "(a", "a)", "abc"] {
         assert!(packet
             .replace_substrings_java_groups(pattern, "$1", None)
             .is_err());
@@ -530,6 +530,41 @@ fn java_optional_regex_quantifier_is_bounded_and_rejects_unsupported_forms() {
         .replace_substrings_java_groups("(a?)", "[$1]", None)
         .is_err());
     assert_eq!(large, original);
+}
+
+#[test]
+fn java_regex_repetition_bounds_growth_and_rejects_possessive_forms() {
+    let mut packet = Packet::new(9);
+    packet.put_string("(a*) aaa").unwrap();
+    let before = packet.clone();
+    assert!(packet
+        .replace_substrings_java_groups("(a*+)", "x", None)
+        .is_err());
+    assert_eq!(packet, before);
+    let mut large = Packet::new(9);
+    large
+        .put_string(&format!("(a*){}", "a".repeat(40_000)))
+        .unwrap();
+    let original = large.clone();
+    assert!(large
+        .replace_substrings_java_groups("(a*)", "[$1$1]", None)
+        .is_err());
+    assert_eq!(large, original);
+}
+
+#[test]
+fn java_reluctant_repetition_does_not_rescan_the_remaining_field() {
+    let mut packet = Packet::new(9);
+    let value = format!("(.*?){}", "ÿ".repeat(40_000));
+    packet.put_string(&value).unwrap();
+    assert_eq!(
+        packet
+            .replace_substrings_java_groups("(.*?)", "$0", Some(1))
+            .unwrap(),
+        1
+    );
+    packet.reset();
+    assert_eq!(packet.read_string().unwrap(), value);
 }
 
 #[test]

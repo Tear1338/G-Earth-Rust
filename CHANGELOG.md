@@ -69,6 +69,8 @@
 
 ## Unreleased
 
+- Support bounded Java greedy and reluctant `*`/`+` repetition on individual regex atoms.
+
 - Support bounded nested optional Java regex quantifiers with capture restoration.
 
 - Support bounded non-overlapping optional Java regex capture groups.

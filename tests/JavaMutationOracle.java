@@ -666,6 +666,46 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_overlapping_" + i, sample);
         }
+        String[][] repeatGroups = {
+            {"(a*) aaa b", "(a*)", "[$1]", "1"},
+            {"(a*?) aaa b", "(a*?)", "[$1]", "1"},
+            {"(a+) aaa b", "(a+)", "[$1]", "1"},
+            {"(a+?) aaa b", "(a+?)", "[$1]", "1"},
+            {"x(a*)ab xaab xab", "x(a*)ab", "$1/$0", "1"},
+            {"x(a*?)ab xaab xab", "x(a*?)ab", "$1/$0", "1"},
+            {"(\\d*) 123 a", "(\\d*)", "<$1>", "1"},
+            {"(.+) a\nb", "(.+)", "[$1]", "1"},
+        };
+        for (int i = 0; i < repeatGroups.length; i++) {
+            HPacket sample = new HPacket(9);
+            sample.appendString(repeatGroups[i][0]);
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            boolean failed = false;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(repeatGroups[i][1], repeatGroups[i][2], Integer.parseInt(repeatGroups[i][3]));
+            } catch (RuntimeException expected) { failed = true; }
+            finally { System.setOut(original); }
+            if (failed) System.out.println("substring_repeat_" + i + "=error");
+            else emit("substring_repeat_" + i, sample);
+        }
+        String[] repeatPatterns = {"(a*)", "(a+?)", "x(a*)ab", "((a*)b)?", "x(\\d+)b", "((a*)b?)", "([ab]+)(a*)", "((a*)b*)"};
+        char[] repeatAlphabet = {'a', 'b', 'c', 'x', '0', '1', 'é', ' ', '\n', '\u0085'};
+        for (int i = 0; i < 160; i++) {
+            String pattern = repeatPatterns[i % repeatPatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(" aaaa ab aaab xab xaab x123b ");
+            for (int j = 0; j < 24; j++) value.append(repeatAlphabet[(i * 7 + j * 3) % repeatAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, "$1/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_repeat_corpus_" + i, sample);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);
