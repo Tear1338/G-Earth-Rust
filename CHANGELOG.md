@@ -1,5 +1,7 @@
 # Changelog
 
+- Enable authenticated SOCKS5 in desktop Nitro settings, including metadata and explicitly opted-in City helper requests.
+
 - Route opt-in Nitro City helper uploads through SOCKS5 without forwarding uploads across redirects.
 
 - Route Nitro packet metadata HTTPS and its cache refresh through SOCKS5; City helper and desktop enablement remain unfinished.

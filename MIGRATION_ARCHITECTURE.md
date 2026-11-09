@@ -25,3 +25,5 @@ The pinned Hudsucker 0.25.0 source is vendored under `crates/hudsucker` with its
 When SOCKS is configured, Nitro metadata HTTPS now uses the same SOCKS transport and revision cache; redirects are HTTPS-only and bounded. The City helper still cannot be enabled with SOCKS.
 
 With SOCKS configured, the session-opted-in Nitro City helper also uses authenticated SOCKS and bounded HTTPS; it does not follow upload redirects.
+
+The desktop Nitro panel shares validated SOCKS settings with the relay, applies them to manual Nitro metadata retrieval and the browser proxy, and retains session-only City Helper opt-in. Unity still rejects SOCKS.

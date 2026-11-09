@@ -22,7 +22,7 @@ use gearth_rust::{
     settings::{ScheduleTemplate, Settings},
     socks::SocksConfig,
     web_ca::ProxyIdentity,
-    web_proxy::{WebOptions, WebProxy, NITRO_REVISION},
+    web_proxy::{fetch_nitro_metadata, WebOptions, WebProxy, NITRO_REVISION},
 };
 use std::{
     collections::{HashSet, VecDeque},
@@ -36,6 +36,89 @@ use std::{
 
 // Both lazy prediction caches count against the capture byte budget.
 const LOG_PREDICTION_LIMIT: usize = 1024;
+
+fn configured_socks(
+    enabled: bool,
+    proxy: &str,
+    user: &str,
+    password: &str,
+) -> std::io::Result<Option<SocksConfig>> {
+    if !enabled {
+        return Ok(None);
+    }
+    let proxy = proxy.trim();
+    let (host, port) = proxy
+        .rsplit_once(':')
+        .ok_or_else(|| std::io::Error::other("SOCKS5 proxy requires host:port"))?;
+    let valid_host = if let Some(ip) = host
+        .strip_prefix('[')
+        .and_then(|value| value.strip_suffix(']'))
+    {
+        ip.parse::<std::net::Ipv6Addr>().is_ok()
+    } else {
+        !host.is_empty()
+            && !host.contains(['[', ']', ':'])
+            && !host.chars().any(char::is_whitespace)
+    };
+    if !valid_host || !port.parse::<u16>().is_ok_and(|port| port != 0) {
+        return Err(std::io::Error::other(
+            "SOCKS5 proxy requires a valid host and port",
+        ));
+    }
+    let credentials = if user.is_empty() && password.is_empty() {
+        None
+    } else if user.is_empty() || password.is_empty() || user.len() > 255 || password.len() > 255 {
+        return Err(std::io::Error::other(
+            "SOCKS5 username and password must both be 1–255 bytes",
+        ));
+    } else {
+        Some((user.to_owned(), password.to_owned()))
+    };
+    Ok(Some(SocksConfig {
+        proxy: proxy.to_owned(),
+        credentials,
+    }))
+}
+
+#[cfg(test)]
+mod socks_settings_tests {
+    use super::configured_socks;
+
+    #[test]
+    fn validates_proxy_and_preserves_optional_credentials() {
+        assert!(configured_socks(false, "bad", "user", "")
+            .unwrap()
+            .is_none());
+        let configured = configured_socks(true, " localhost:1080 ", "user:name", "p@ss")
+            .unwrap()
+            .unwrap();
+        assert_eq!(configured.proxy, "localhost:1080");
+        assert_eq!(
+            configured.credentials.unwrap(),
+            ("user:name".into(), "p@ss".into())
+        );
+        assert!(configured_socks(true, "[::1]:1080", "", "")
+            .unwrap()
+            .unwrap()
+            .credentials
+            .is_none());
+        for proxy in [
+            "",
+            "localhost",
+            ":1080",
+            "localhost:0",
+            "localhost:65536",
+            "::1:1080",
+            "[bad]:1080",
+            "bad host:1080",
+        ] {
+            assert!(configured_socks(true, proxy, "", "").is_err(), "{proxy}");
+        }
+        assert!(configured_socks(true, "localhost:1080", "user", "").is_err());
+        assert!(configured_socks(true, "localhost:1080", "", "password").is_err());
+        assert!(configured_socks(true, "localhost:1080", &"é".repeat(128), "password").is_err());
+    }
+}
 
 #[cfg(windows)]
 fn browse_path(
@@ -1512,9 +1595,12 @@ impl Desktop {
         if self.unity {
             return self.start_unity();
         }
-        if self.socks_enabled {
-            return Err(std::io::Error::other("Nitro upstream SOCKS5 support is not implemented; disable the SOCKS proxy to use a direct connection"));
-        }
+        let socks = configured_socks(
+            self.socks_enabled,
+            &self.socks_proxy,
+            &self.socks_user,
+            &self.socks_password,
+        )?;
         self.prepare_certificate()?;
         self.hotel_version = NITRO_REVISION.into();
         self.client_identifier = "HTML5".into();
@@ -1531,6 +1617,7 @@ impl Desktop {
             self.identity_directory(),
         );
         options.packet_info = self.packet_info.clone();
+        options.upstream_socks = socks;
         options.packet_safety = Some(self.packet_safety.clone());
         options.admin_service = Some(self.admin_service.clone());
         options.extensions = self.extension_host.clone();
@@ -1691,6 +1778,28 @@ impl Desktop {
                             self.i18n.text("rust.browser.city_helper"),
                         ),
                     );
+                    ui.add_enabled_ui(self.relay.is_none(), |ui| {
+                        ui.checkbox(
+                            &mut self.socks_enabled,
+                            self.i18n.text("tab.extra.options.advanced.socks"),
+                        );
+                        egui::Grid::new("nitro-socks-options").show(ui, |ui| {
+                            for (key, value) in [
+                                ("rust.connection.socks_proxy", &mut self.socks_proxy),
+                                ("rust.connection.socks_user", &mut self.socks_user),
+                            ] {
+                                let label = ui.label(self.i18n.text(key));
+                                ui.text_edit_singleline(value).labelled_by(label.id);
+                                ui.end_row();
+                            }
+                            let label = ui.label(self.i18n.text("rust.connection.socks_password"));
+                            ui.add(
+                                egui::TextEdit::singleline(&mut self.socks_password).password(true),
+                            )
+                            .labelled_by(label.id);
+                            ui.end_row();
+                        });
+                    });
                     ui.label(self.i18n.text("rust.browser.manual_proxy_hint"));
                 },
             );
@@ -1702,11 +1811,23 @@ impl Desktop {
                     )
                     .clicked()
                 {
+                    let socks = match configured_socks(
+                        self.socks_enabled,
+                        &self.socks_proxy,
+                        &self.socks_user,
+                        &self.socks_password,
+                    ) {
+                        Ok(socks) => socks,
+                        Err(error) => {
+                            self.status = error.to_string();
+                            return;
+                        }
+                    };
                     let (send, receive) = std::sync::mpsc::channel();
                     self.packet_download = Some(receive);
                     self.status = self.i18n.text("rust.connection.loading_identifiers");
                     std::thread::spawn(move || {
-                        let _ = send.send(PacketInfoManager::fetch_sulek(NITRO_REVISION, false));
+                        let _ = send.send(fetch_nitro_metadata(socks));
                     });
                 }
                 ui.label(format!(
@@ -4185,23 +4306,12 @@ impl Desktop {
             disable_origins_metadata: false,
             extensions: self.extension_host.clone(),
             connection: Some(connection),
-            socks: if !self.socks_enabled {
-                None
-            } else {
-                if self.socks_proxy.trim().is_empty() {
-                    return Err(std::io::Error::other(
-                        "SOCKS5 proxy address is required when enabled",
-                    ));
-                }
-                Some(SocksConfig {
-                    proxy: self.socks_proxy.clone(),
-                    credentials: if self.socks_user.is_empty() {
-                        None
-                    } else {
-                        Some((self.socks_user.clone(), self.socks_password.clone()))
-                    },
-                })
-            },
+            socks: configured_socks(
+                self.socks_enabled,
+                &self.socks_proxy,
+                &self.socks_user,
+                &self.socks_password,
+            )?,
             outgoing_rc4: cipher(&self.outgoing_key)?,
             incoming_rc4: cipher(&self.incoming_key)?,
         })

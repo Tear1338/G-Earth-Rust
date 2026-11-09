@@ -33,6 +33,15 @@ use std::{
 };
 use tokio::sync::{mpsc as asynchronous, oneshot, watch, Notify};
 pub const NITRO_REVISION: &str = "PRODUCTION-201611291003-338511768";
+/// Fetch Nitro packet names on a worker thread, optionally through SOCKS5.
+pub fn fetch_nitro_metadata(
+    socks: Option<crate::socks::SocksConfig>,
+) -> io::Result<PacketInfoManager> {
+    match socks {
+        Some(socks) => crate::web_socks::fetch_nitro(socks),
+        None => PacketInfoManager::fetch_sulek(NITRO_REVISION, false),
+    }
+}
 const MAX_QUEUED: usize = 32 * 1024 * 1024;
 const MAX_NITRO_LOOKUPS: usize = 4;
 static ACTIVE_NITRO_LOOKUPS: AtomicUsize = AtomicUsize::new(0);
@@ -339,10 +348,7 @@ impl Shared {
                         if let Some(lookup) = lookup {
                             return lookup();
                         }
-                        if let Some(socks) = socks {
-                            return crate::web_socks::fetch_nitro(socks);
-                        }
-                        PacketInfoManager::fetch_sulek(NITRO_REVISION, false)
+                        fetch_nitro_metadata(socks)
                     });
                     let mut closed = peer.stop.subscribe();
                     if peer.closed.load(Ordering::Acquire) || self.stop.load(Ordering::Acquire) {

@@ -178,6 +178,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - The opt-in Nitro City helper now uploads through SOCKS when configured. Its bounded multipart payload and HTTPS response are tested through an authenticated loopback SOCKS/TLS fixture; redirects and responses above 64 KiB are rejected, and a separate test confirms no upload occurs without the session opt-in. No real module was uploaded. Local web/SOCKS and proxy tests, City unit tests, desktop/web build and Clippy pass. The desktop SOCKS option remains disabled pending integration and review.
 
+- Desktop Nitro options now expose the existing SOCKS5 settings and use them for proxy traffic, automatic and manual metadata lookup and the explicitly opted-in City helper. Invalid proxy addresses or incomplete credentials produce an error before starting. Better Design accessibility/forms and review guidance was applied; new labels are associated with their inputs. The settings unit test, local SOCKS/TLS and metadata/helper fixtures, desktop/web build and Clippy pass. The UI has not been interactively or visually verified, and no real SOCKS server or hotel was used. CI run 42644073525 passed all eight validation jobs for the helper route.
+
 ## Exact next step
 
-Wire the existing desktop SOCKS settings into Nitro WebOptions, preserve explicit City Helper opt-in and safe validation, run desktop and web tests, and review the interaction with the required Better Design tools. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Compare Flash and Origins metadata downloads with SOCKS-enabled relay settings; route their automatic and manual metadata lookups through SOCKS without direct fallback, and verify the latest desktop CI. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

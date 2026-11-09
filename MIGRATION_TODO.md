@@ -11,7 +11,7 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | TCP relay and reconnect | Partial | Real client, firewall and lifecycle tests. |
 | RC4 and Flash attachment | Partial | Real AIR traffic, memory layouts and multi-instance testing. |
 | Origins encryption and attachment | Partial | Official client end-to-end testing. |
-| Nitro proxy, crypto and assets | Partial | Real hotel, TLS fingerprint, upstream SOCKS and platform cleanup. |
+| Nitro proxy, crypto and assets | Partial | Real hotel and SOCKS servers, TLS fingerprint, interactive desktop controls and platform cleanup. |
 | Unity communicator and WASM hooks | Partial | Real client revisions and extensions. |
 | Java extension host | Partial | Live G-Presets workflows, other extensions and lifecycle parity. |
 | G-Python and Node integrations | Partial | Real sessions and visual QtConsole validation. |
@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: enable and validate the existing desktop Nitro SOCKS settings, including explicit helper opt-in. Full Java regex and live extension validation remain open.
+Next: route Flash and Origins metadata lookups through configured SOCKS and validate with local proxies. Full Java regex and live extension validation remain open.

@@ -261,3 +261,5 @@ The web backend now uses async SOCKS for HTTP/TLS plus the vendored WebSocket/ra
 Nitro metadata now fetches through authenticated SOCKS with its revision cache and bounded HTTPS-only redirects. Local tests cover cache fallback, malformed/truncated/oversized data and unsafe redirects. The optional City helper is still prohibited with SOCKS, and desktop still rejects Nitro SOCKS. Implement the helper route next.
 
 The City helper now uses authenticated SOCKS when configured, without following redirects, and retains the explicit session opt-in. A local SOCKS/TLS fixture checks the multipart request and bounded responses; a no-opt-in fixture checks no upload occurs. Wire the desktop settings next and review interaction behavior.
+
+Nitro desktop now exposes and validates shared SOCKS settings, applies them to the browser proxy and manual metadata lookup, and preserves City Helper opt-in. Better Design source review and comprehension checks were performed; visual interaction has not been checked. Real SOCKS/hotel sessions remain open. Compare Flash/Origins metadata fetching with SOCKS next.
