@@ -1,5 +1,7 @@
 # Changelog
 
+- Prevent older concurrent Sulek refreshes within one process from overwriting a newer cache result.
+
 - Exercise Sulek cache refresh, offline fallback and cancelled workers over a locally trusted HTTPS server.
 
 - Refresh Sulek metadata caches after five minutes and retain a valid matching cache on fetch or parse failure.

@@ -142,6 +142,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Local HTTPS now exercises stale-cache refresh, HTTP 503 fallback and cancellation while the worker continues. A cancelled lookup publishes no stale Nitro session, but can still update the cache after cancellation. The focused HTTPS fixture and desktop/web Clippy pass. CI run 42545396795 passed all eight jobs. The real Sulek service remains unverified.
 
+- Concurrent refreshes of the same cache in one process now allow only the latest started refresh to write. Deterministic tests release an older worker after a newer success or failure; the older result cannot overwrite the cache. The caller of the older worker can still receive its result, and separate processes are not coordinated. Both cache tests, local HTTPS lifecycle, desktop/web build and Clippy pass.
+
 ## Exact next step
 
-Reproduce and address out-of-order concurrent refreshes of the same Sulek cache, including an older cancelled lookup finishing after a replacement; inspect CI for the latest pushed changes. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Add a full local HTTPS lifecycle fixture with a cancelled old Nitro lookup and a newer lookup sharing one cache, proving both extension session and cache retain the newer data; inspect CI for the latest pushed changes. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

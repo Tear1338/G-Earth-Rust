@@ -93,3 +93,5 @@ A local HTTPS metadata fixture now exercises the actual JSON downloader for succ
 Sulek caches refresh after five minutes and fall back to a valid matching cache on network or parse failure. Unlike Java, malformed downloaded JSON does not overwrite the last valid cache. Tests use controlled fetch results; production service and concurrent refresh behavior remain unverified.
 
 A local HTTPS fixture now covers cache refresh, HTTP 503 fallback and a cancelled Nitro lookup whose worker finishes later and updates the cache. It verifies no stale Nitro session is published; concurrent cache writes and live service behavior remain open.
+
+Within one process, an older concurrent cache refresh cannot overwrite a later-started refresh, including when the latter fails. The older caller can still receive its own result. Separate processes are not coordinated; the combined cancelled-session and concurrent HTTPS case remains to be tested.

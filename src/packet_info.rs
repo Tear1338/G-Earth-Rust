@@ -2,6 +2,45 @@
 use crate::packet::{error, Direction, Packet, Result};
 use std::collections::HashMap;
 
+// Only the most recently started refresh for a path may publish its result.
+// Entries live only while a refresh is in progress.
+struct RefreshGuard {
+    path: std::path::PathBuf,
+    generation: u64,
+}
+impl RefreshGuard {
+    fn active() -> &'static std::sync::Mutex<HashMap<std::path::PathBuf, u64>> {
+        static ACTIVE: std::sync::OnceLock<std::sync::Mutex<HashMap<std::path::PathBuf, u64>>> =
+            std::sync::OnceLock::new();
+        ACTIVE.get_or_init(Default::default)
+    }
+    fn new(path: &std::path::Path) -> Self {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(1);
+        let mut active = Self::active().lock().unwrap_or_else(|e| e.into_inner());
+        let guard = Self {
+            path: path.to_owned(),
+            generation: NEXT.fetch_add(1, Ordering::Relaxed),
+        };
+        active.insert(guard.path.clone(), guard.generation);
+        guard
+    }
+    fn save_if_current(&self, database: &PacketInfoManager) {
+        let active = Self::active().lock().unwrap_or_else(|e| e.into_inner());
+        if active.get(&self.path) == Some(&self.generation) {
+            let _ = database.save_cache(&self.path);
+        }
+    }
+}
+impl Drop for RefreshGuard {
+    fn drop(&mut self) {
+        let mut active = Self::active().lock().unwrap_or_else(|e| e.into_inner());
+        if active.get(&self.path) == Some(&self.generation) {
+            active.remove(&self.path);
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PacketInfo {
     pub header: u16,
@@ -141,9 +180,10 @@ impl PacketInfoManager {
                 return Ok(database.clone());
             }
         }
+        let refresh = RefreshGuard::new(path);
         match fetch() {
             Ok(database) => {
-                let _ = database.save_cache(path);
+                refresh.save_if_current(&database);
                 Ok(database)
             }
             Err(error) => cached.ok_or(error),
@@ -335,6 +375,89 @@ pub(crate) fn download_json(agent: &ureq::Agent, url: &str) -> std::io::Result<V
 mod cache_refresh_tests {
     use super::*;
     use std::time::{Duration, SystemTime};
+
+    #[test]
+    fn older_refresh_cannot_replace_newer_refresh_even_after_it_finishes() {
+        let mut random = [0; 16];
+        getrandom::fill(&mut random).unwrap();
+        let name = random
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>();
+        let path = std::env::temp_dir().join(format!("gearth-refresh-race-{name}.bin"));
+        let database = |id| {
+            PacketInfoManager::from_json("REV", format!(r#"{{"messages":{{"incoming":[{{"id":{id},"name":"TestEvent"}}],"outgoing":[]}}}}"#).as_bytes()).unwrap()
+        };
+        database(1).save_cache(&path).unwrap();
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let old_path = path.clone();
+        let worker = std::thread::spawn(move || {
+            PacketInfoManager::load_or_refresh(
+                &old_path,
+                "REV",
+                SystemTime::now() + Duration::from_secs(301),
+                || {
+                    started_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                    Ok(database(2))
+                },
+            )
+            .unwrap()
+        });
+        started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        PacketInfoManager::load_or_refresh(
+            &path,
+            "REV",
+            SystemTime::now() + Duration::from_secs(301),
+            || Ok(database(3)),
+        )
+        .unwrap();
+        release_tx.send(()).unwrap();
+        assert_eq!(worker.join().unwrap().entries()[0].header, 2);
+        assert_eq!(
+            PacketInfoManager::load_cache(&path, "REV")
+                .unwrap()
+                .entries()[0]
+                .header,
+            3
+        );
+        let (started_tx, started_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let old_path = path.clone();
+        let worker = std::thread::spawn(move || {
+            PacketInfoManager::load_or_refresh(
+                &old_path,
+                "REV",
+                SystemTime::now() + Duration::from_secs(301),
+                || {
+                    started_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                    Ok(database(4))
+                },
+            )
+            .unwrap()
+        });
+        started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let fallback = PacketInfoManager::load_or_refresh(
+            &path,
+            "REV",
+            SystemTime::now() + Duration::from_secs(301),
+            || Err(std::io::Error::other("offline")),
+        )
+        .unwrap();
+        assert_eq!(fallback.entries()[0].header, 3);
+        release_tx.send(()).unwrap();
+        assert_eq!(worker.join().unwrap().entries()[0].header, 4);
+        assert_eq!(
+            PacketInfoManager::load_cache(&path, "REV")
+                .unwrap()
+                .entries()[0]
+                .header,
+            3
+        );
+        std::fs::remove_file(path).unwrap();
+    }
 
     #[test]
     fn refreshes_expired_cache_and_falls_back_only_to_valid_matching_data() {
