@@ -1,5 +1,7 @@
 # Continuation state
 
+Actions run 42721796496 failed its Windows G-Python job when two concurrent Jupyter kernels timed out after 20 seconds; the next run 42722422100 passed all eight jobs. The G-Python CI tests now run serially to reduce competition with isolated environment installs. All five serial G-Python tests pass locally on Windows, including real G-Python kernel injection and offscreen QtConsole. The exact runner cause remains unproven; the next Actions run must verify the mitigation.
+
 Java regex anchors `^`, `$`, `\A`, `\Z` and `\z` are supported as bounded zero-width matches, including Java’s final CRLF and Latin-1 line terminators. Ten targeted cases and 144 generated packets match the released beta-29 Java API. Eight budget/state tests, 29 mutation tests, both Clippy configurations and desktop/web build pass. Anchors inside repeated groups and full Java regex remain unsupported. Next compare Java 21 word boundaries.
 
 Repeated Java regex groups now support deeper nested capture events with optional descendants and bounded capture restoration. A 180-packet corpus and a 99-group depth case match the released beta-29 API. Seven budget/state tests, 29 mutation tests, both Clippy configurations and desktop/web build pass. Multiple repeated group quantifiers and general Java regex remain open. Next compare zero-width Java regex anchors and line terminators.

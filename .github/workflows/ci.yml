@@ -349,4 +349,4 @@ jobs:
         run: cargo test --locked --lib manual_python_launch_captures_stdout_and_stderr -- --ignored
         env:
           GEARTH_TEST_PYTHON: python
-      - run: cargo test --locked --test gpython -- --ignored --nocapture
+      - run: cargo test --locked --test gpython -- --ignored --nocapture --test-threads=1

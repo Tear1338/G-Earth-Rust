@@ -1,6 +1,6 @@
 # G-Earth Rust migration progress
 
-Last updated: 2026-11-08. Baseline: Java 1.5.4-beta-29; current status and changes are tracked in the GitHub main branch.
+Last updated: 2026-11-10. Baseline: Java 1.5.4-beta-29; current status and changes are tracked in the GitHub main branch.
 
 The migration is **not complete**. Implemented code and finite fixtures do not establish live-client compatibility or performance gains. See `docs/PARITY.md` and `docs/CONTINUATION.md` for detailed evidence and limitations.
 
@@ -239,6 +239,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Repeated Java regex groups now support deeper nested capture events with optional descendants and bounded capture restoration. A 180-packet corpus and a 99-group depth case match the released beta-29 API. Seven budget/state tests, 29 mutation tests, both Clippy configurations and desktop/web build pass. Multiple repeated group quantifiers and general Java regex remain open. Actions run 42721123873 passed all eight jobs for optional atoms in nested captures.
 
 - Java regex anchors `^`, `$`, `\A`, `\Z` and `\z` are supported as bounded zero-width matches, including Java’s final CRLF and Latin-1 line terminators. Ten targeted cases and 144 generated packets match the released beta-29 Java API. Eight budget/state tests, 29 mutation tests, both Clippy configurations and desktop/web build pass. Anchors inside repeated groups and full Java regex remain unsupported. Windows GNU desktop/web release build succeeded at `c6f826f`.
+
+- Actions run 42721796496 failed its Windows G-Python job when two concurrent Jupyter kernels timed out after 20 seconds; the next run 42722422100 passed all eight jobs. The G-Python CI tests now run serially to reduce competition with isolated environment installs. All five serial G-Python tests pass locally on Windows, including real G-Python kernel injection and offscreen QtConsole. The exact runner cause remains unproven; the next Actions run must verify the mitigation.
 
 ## Exact next step
 
