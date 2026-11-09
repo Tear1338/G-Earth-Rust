@@ -73,6 +73,13 @@ fn packet(header: u16, value: i32) -> Packet {
     p
 }
 
+// WebSocket fixtures are deterministic and must never query the public metadata service.
+fn offline_web_options(listen: std::net::SocketAddr, directory: std::path::PathBuf) -> WebOptions {
+    let mut options = WebOptions::new(listen, directory);
+    options.fetch_packet_info = false;
+    options
+}
+
 #[test]
 fn client_permissions_are_rewritten_and_restored_through_nitro() {
     use gearth_rust::admin_service::AdminService;
@@ -83,7 +90,8 @@ fn client_permissions_are_rewritten_and_restored_through_nitro() {
     tokio::runtime::Runtime::new().unwrap().block_on(async {
         let upstream_listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = upstream_listener.local_addr().unwrap();
-        let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), directory.0.join("ca"));
+        let mut options =
+            offline_web_options("127.0.0.1:0".parse().unwrap(), directory.0.join("ca"));
         options.admin_service = Some(service.clone());
         let (mut proxy, _) = WebProxy::start(options).unwrap();
         let mut original = Packet::new(88);
@@ -151,7 +159,7 @@ fn rejects_untrusted_upstream_tls_even_when_client_trusts_the_local_proxy() {
         .unwrap()
         .authority()
         .unwrap();
-    let (mut proxy, _) = WebProxy::start(WebOptions::new(
+    let (mut proxy, _) = WebProxy::start(offline_web_options(
         "127.0.0.1:0".parse().unwrap(),
         directory.0.join("proxy"),
     ))
@@ -219,7 +227,8 @@ fn configured_hotel_bypasses_hubbe_prelude_and_then_processes_packets() {
         let server = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let address = server.local_addr().unwrap();
         let url = format!("ws://{address}/game");
-        let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), directory.0.join("ca"));
+        let mut options =
+            offline_web_options("127.0.0.1:0".parse().unwrap(), directory.0.join("ca"));
         options.hotels = Hotels {
             entries: vec![Hotel {
                 name: "controlled Hubbe fixture".into(),
@@ -293,7 +302,8 @@ fn validates_both_tls_legs_and_routes_nitro_over_wss_without_changing_system_tru
     let directory = Directory::new();
     let upstream_identity = ProxyIdentity::ensure(&directory.0.join("upstream-ca")).unwrap();
     let authority = upstream_identity.authority().unwrap();
-    let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), directory.0.join("proxy-ca"));
+    let mut options =
+        offline_web_options("127.0.0.1:0".parse().unwrap(), directory.0.join("proxy-ca"));
     options
         .extra_roots
         .push(upstream_identity.certificate_der.clone());
@@ -395,7 +405,7 @@ fn forwards_plain_http_and_stops_without_external_network() {
             .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\nConnection: close\r\n\r\nhello")
             .unwrap();
     });
-    let (mut proxy, _) = WebProxy::start(WebOptions::new(
+    let (mut proxy, _) = WebProxy::start(offline_web_options(
         "127.0.0.1:0".parse().unwrap(),
         dir.0.join("ca"),
     ))
@@ -424,7 +434,7 @@ fn nitro_websocket_supports_block_replace_and_bidirectional_injection() {
     let safety = std::sync::Arc::new(std::sync::Mutex::new(
         gearth_rust::packet_safety::PacketSafety::default(),
     ));
-    let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), dir.0.join("ca"));
+    let mut options = offline_web_options("127.0.0.1:0".parse().unwrap(), dir.0.join("ca"));
     options.packet_safety = Some(safety.clone());
     options.packet_info = gearth_rust::packet_info::PacketInfoManager::new(
         gearth_rust::web_proxy::NITRO_REVISION,

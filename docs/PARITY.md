@@ -82,4 +82,6 @@ Automatic Flash identification no longer trusts or passes preloaded metadata who
 
 The no-extension-host Flash metadata lookup is covered with a controlled provider for success, failure and forwarding. Real metadata-service failures and client sessions remain unverified.
 
-Nitro rejects preloaded metadata labeled for another revision, including unversioned metadata, before registering safe IDs. Unity intentionally uses static metadata across revisions as Java does; incorrect Unity metadata can authorize incorrect IDs. Controlled Nitro and two-revision Unity fixtures cover these paths; real clients remain unverified. Nitro still skips automatic metadata lookup without an extension host.
+Nitro rejects preloaded metadata labeled for another revision, including unversioned metadata, before registering safe IDs. Unity intentionally uses static metadata across revisions as Java does; incorrect Unity metadata can authorize incorrect IDs. Controlled Nitro and two-revision Unity fixtures cover these paths; real clients remain unverified. Nitro now fetches missing metadata without an extension host by default; `WebOptions::fetch_packet_info` disables the lookup for offline use.
+
+Nitro metadata lookup is cancellable on peer close and limited to four in-flight workers. A controlled provider covers success and failure, while a full local proxy fixture checks stopping with a stalled provider. Workers already in flight can continue after cancellation; real metadata-service behavior and live clients remain unverified.

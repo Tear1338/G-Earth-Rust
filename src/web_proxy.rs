@@ -34,6 +34,36 @@ use std::{
 use tokio::sync::{mpsc as asynchronous, oneshot, watch, Notify};
 pub const NITRO_REVISION: &str = "PRODUCTION-201611291003-338511768";
 const MAX_QUEUED: usize = 32 * 1024 * 1024;
+const MAX_NITRO_LOOKUPS: usize = 4;
+static ACTIVE_NITRO_LOOKUPS: AtomicUsize = AtomicUsize::new(0);
+struct NitroLookupSlot;
+impl NitroLookupSlot {
+    fn reserve() -> io::Result<Self> {
+        let mut count = ACTIVE_NITRO_LOOKUPS.load(Ordering::Acquire);
+        loop {
+            if count >= MAX_NITRO_LOOKUPS {
+                return Err(io::Error::other(
+                    "too many Nitro metadata lookups still in progress",
+                ));
+            }
+            match ACTIVE_NITRO_LOOKUPS.compare_exchange_weak(
+                count,
+                count + 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return Ok(Self),
+                Err(actual) => count = actual,
+            }
+        }
+    }
+}
+impl Drop for NitroLookupSlot {
+    fn drop(&mut self) {
+        ACTIVE_NITRO_LOOKUPS.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
 #[derive(Clone)]
 pub struct WebOptions {
     pub unity: Option<crate::unity_assets::UnityAssets>,
@@ -41,6 +71,10 @@ pub struct WebOptions {
     pub listen: SocketAddr,
     pub identity_directory: PathBuf,
     pub packet_info: PacketInfoManager,
+    /// Fetch missing Nitro identifiers from the upstream provider.
+    pub fetch_packet_info: bool,
+    #[cfg(test)]
+    nitro_lookup: Option<Arc<dyn Fn() -> io::Result<PacketInfoManager> + Send + Sync>>,
     pub packet_safety: Option<Arc<Mutex<crate::packet_safety::PacketSafety>>>,
     pub admin_service: Option<Arc<Mutex<crate::admin_service::AdminService>>>,
     pub extensions: Option<Arc<ExtensionHost>>,
@@ -58,6 +92,9 @@ impl WebOptions {
             unity: None,
             detect_nitro: true,
             packet_info: PacketInfoManager::default(),
+            fetch_packet_info: true,
+            #[cfg(test)]
+            nitro_lookup: None,
             packet_safety: None,
             admin_service: None,
             extensions: None,
@@ -275,35 +312,55 @@ impl Shared {
             peer.active.store(true, Ordering::Release);
         }
         let mut database = self.options.packet_info.clone();
+        let mut publish_database = false;
         if !database.entries().is_empty() && database.version != NITRO_REVISION {
             let _ = self.events.try_send(Event::Status(format!(
                 "Ignoring Nitro packet identifiers for revision {:?}; expected {:?}",
                 database.version, NITRO_REVISION
             )));
             database = PacketInfoManager::new(NITRO_REVISION, Vec::new());
-            let _ = self
-                .events
-                .try_send(Event::PacketIdentifiers(database.clone()));
+            publish_database = true;
         }
-        if database.entries().is_empty() && self.options.extensions.is_some() {
+        if database.entries().is_empty() && self.options.fetch_packet_info {
             let _ = self
                 .events
                 .try_send(Event::Status("Loading Nitro packet identifiers...".into()));
-            match tokio::task::spawn_blocking(|| {
-                PacketInfoManager::fetch_sulek(NITRO_REVISION, false)
-            })
-            .await
-            {
-                Ok(Ok(info)) => {
-                    let _ = self.events.try_send(Event::PacketIdentifiers(info.clone()));
-                    database = info;
+            let result = match NitroLookupSlot::reserve() {
+                Ok(slot) => {
+                    #[cfg(test)]
+                    let lookup = self.options.nitro_lookup.clone();
+                    let worker = tokio::task::spawn_blocking(move || {
+                        let _slot = slot;
+                        #[cfg(test)]
+                        if let Some(lookup) = lookup {
+                            return lookup();
+                        }
+                        PacketInfoManager::fetch_sulek(NITRO_REVISION, false)
+                    });
+                    let mut closed = peer.stop.subscribe();
+                    if peer.closed.load(Ordering::Acquire) || self.stop.load(Ordering::Acquire) {
+                        return Err(io::Error::new(
+                            io::ErrorKind::Interrupted,
+                            "Nitro connection stopped",
+                        ));
+                    }
+                    tokio::select! {
+                        result = worker => result.map_err(|e| io::Error::other(e.to_string()))?,
+                        _ = closed.changed() => return Err(io::Error::new(io::ErrorKind::Interrupted, "Nitro connection stopped")),
+                    }
                 }
-                Ok(Err(e)) => {
+                Err(error) => Err(error),
+            };
+            match result {
+                Ok(info) => {
+                    database = info;
+                    publish_database = true;
+                }
+                Err(e) => {
                     let _ = self.events.try_send(Event::Status(format!(
                         "Nitro connected without packet names: {e}"
                     )));
                 }
-                Err(e) => return Err(io::Error::other(e.to_string())),
             }
         }
         // Serialize extension initialization with close(), so stopping during a
@@ -317,6 +374,11 @@ impl Shared {
                 io::ErrorKind::Interrupted,
                 "Nitro connection stopped",
             ));
+        }
+        if publish_database {
+            let _ = self
+                .events
+                .try_send(Event::PacketIdentifiers(database.clone()));
         }
         if let Some(safety) = &self.options.packet_safety {
             if let Ok(mut safety) = safety.lock() {
@@ -915,12 +977,243 @@ mod lifecycle_tests {
     use std::net::TcpStream;
 
     #[test]
+    fn nitro_fetches_metadata_without_extension_host_and_handles_failure() {
+        use crate::{packet_info::PacketInfo, packet_safety::PacketSafety};
+        for succeed in [true, false] {
+            let safety = Arc::new(Mutex::new(PacketSafety::default()));
+            let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), PathBuf::new());
+            options.packet_safety = Some(safety.clone());
+            options.nitro_lookup = Some(Arc::new(move || {
+                if !succeed {
+                    return Err(io::Error::other("fixture offline"));
+                }
+                Ok(PacketInfoManager::new(
+                    NITRO_REVISION,
+                    vec![PacketInfo {
+                        header: 900,
+                        name: Some("Known".into()),
+                        hash: None,
+                        structure: None,
+                        direction: Direction::ToServer,
+                        source: "fixture".into(),
+                    }],
+                ))
+            }));
+            let (events, receiver) = mpsc::sync_channel(16);
+            let state = Arc::new(Shared {
+                options,
+                hartico_key: Mutex::new(None),
+                city_keys: Mutex::new(None),
+                peers: Mutex::new(HashMap::new()),
+                active: Mutex::new(None),
+                rules: Mutex::new(Rules::default()),
+                pipeline: Mutex::new(()),
+                events,
+                index: AtomicI32::new(0),
+                stop: AtomicBool::new(false),
+            });
+            let peer = Arc::new(Peer::new(
+                PeerKey {
+                    client: "127.0.0.1:1234".parse().unwrap(),
+                    uri: "ws://fixture".into(),
+                },
+                Modifier::new(&crate::nitro::HotelKind::Plain).unwrap(),
+            ));
+            tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(state.activate(&peer, &"ws://fixture".parse().unwrap()))
+                .unwrap();
+            assert!(peer.ready.load(Ordering::Acquire));
+            assert_eq!(
+                safety
+                    .lock()
+                    .unwrap()
+                    .is_safe(Some(NITRO_REVISION), Direction::ToServer, 900),
+                succeed
+            );
+            let events: Vec<_> = receiver.try_iter().collect();
+            if succeed {
+                assert!(events.iter().any(
+                    |event| matches!(event, Event::PacketIdentifiers(db) if db.entries().len() == 1)
+                ));
+            } else {
+                assert!(events.iter().any(
+                    |event| matches!(event, Event::Status(text) if text.contains("fixture offline"))
+                ));
+            }
+            state.close(&peer);
+        }
+    }
+
+    #[test]
+    fn closing_nitro_peer_cancels_wait_for_stalled_metadata_without_starting_session() {
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let (finished_tx, finished_rx) = mpsc::channel();
+        let release_rx = Mutex::new(release_rx);
+        let (host, _) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+        let epoch = host
+            .start_owned_connection(ConnectionDetails {
+                host: "old".into(),
+                port: 1,
+                version: "OLD".into(),
+                identifier: String::new(),
+                client_type: "FLASH".into(),
+                packets: PacketInfoManager::default(),
+            })
+            .unwrap();
+        let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), PathBuf::new());
+        options.extensions = Some(host.clone());
+        options.nitro_lookup = Some(Arc::new(move || {
+            started_tx.send(()).unwrap();
+            release_rx.lock().unwrap().recv().unwrap();
+            finished_tx.send(()).unwrap();
+            Ok(PacketInfoManager::default())
+        }));
+        let (events, receiver) = mpsc::sync_channel(16);
+        let state = Arc::new(Shared {
+            options,
+            hartico_key: Mutex::new(None),
+            city_keys: Mutex::new(None),
+            peers: Mutex::new(HashMap::new()),
+            active: Mutex::new(None),
+            rules: Mutex::new(Rules::default()),
+            pipeline: Mutex::new(()),
+            events,
+            index: AtomicI32::new(0),
+            stop: AtomicBool::new(false),
+        });
+        let peer = Arc::new(Peer::new(
+            PeerKey {
+                client: "127.0.0.1:1234".parse().unwrap(),
+                uri: "ws://fixture".into(),
+            },
+            Modifier::new(&crate::nitro::HotelKind::Plain).unwrap(),
+        ));
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let task_state = state.clone();
+            let task_peer = peer.clone();
+            let task = tokio::spawn(async move {
+                task_state
+                    .activate(&task_peer, &"ws://fixture".parse().unwrap())
+                    .await
+            });
+            started_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+            state.close(&peer);
+            let result = tokio::time::timeout(Duration::from_secs(2), task)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(result.unwrap_err().kind(), io::ErrorKind::Interrupted);
+            assert!(!peer.ready.load(Ordering::Acquire));
+            release_tx.send(()).unwrap();
+            finished_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+        });
+        assert!(!receiver
+            .try_iter()
+            .any(|event| matches!(event, Event::Connected(_) | Event::PacketIdentifiers(_))));
+        assert!(host.end_owned_connection(epoch));
+        host.stop();
+    }
+
+    #[test]
+    fn nitro_proxy_stop_returns_while_metadata_provider_is_stalled() {
+        use hudsucker::tokio_tungstenite::{
+            accept_async, client_async, tungstenite::Message as WsMessage,
+        };
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        struct Directory(PathBuf);
+        impl Drop for Directory {
+            fn drop(&mut self) {
+                for file in ["ca/gearth-proxy-cert.pem", "ca/gearth-proxy-key.pem"] {
+                    let _ = std::fs::remove_file(self.0.join(file));
+                }
+                let _ = std::fs::remove_dir(self.0.join("ca"));
+                let _ = std::fs::remove_dir(&self.0);
+            }
+        }
+        let mut random = [0u8; 16];
+        getrandom::fill(&mut random).unwrap();
+        let directory = Directory(std::env::temp_dir().join(format!(
+            "gearth-nitro-stop-{:032x}",
+            u128::from_ne_bytes(random)
+        )));
+        std::fs::create_dir(&directory.0).unwrap();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let (finished_tx, finished_rx) = mpsc::channel();
+        let release_rx = Mutex::new(release_rx);
+        let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), directory.0.join("ca"));
+        options.nitro_lookup = Some(Arc::new(move || {
+            started_tx.send(()).unwrap();
+            release_rx.lock().unwrap().recv().unwrap();
+            finished_tx.send(()).unwrap();
+            Ok(PacketInfoManager::default())
+        }));
+        let (mut proxy, _) = WebProxy::start(options).unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let remote = listener.local_addr().unwrap();
+            let upstream = tokio::spawn(async move {
+                let (stream, _) = listener.accept().await.unwrap();
+                let mut socket = accept_async(stream).await.unwrap();
+                let _ = socket.next().await;
+            });
+            let mut stream = tokio::net::TcpStream::connect(proxy.address).await.unwrap();
+            stream
+                .write_all(
+                    format!("CONNECT {remote} HTTP/1.1\r\nHost: {remote}\r\n\r\n").as_bytes(),
+                )
+                .await
+                .unwrap();
+            let mut response = Vec::new();
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while !response.ends_with(b"\r\n\r\n") {
+                    let mut byte = [0];
+                    stream.read_exact(&mut byte).await.unwrap();
+                    response.push(byte[0]);
+                    assert!(response.len() < 8192);
+                }
+            })
+            .await
+            .unwrap();
+            assert!(String::from_utf8(response)
+                .unwrap()
+                .starts_with("HTTP/1.1 200"));
+            let (mut client, _) = client_async(format!("ws://{remote}/game"), stream)
+                .await
+                .unwrap();
+            let mut hello = Packet::new(4000);
+            hello.put_i32(0).unwrap();
+            client
+                .send(WsMessage::Binary(hello.bytes().to_vec().into()))
+                .await
+                .unwrap();
+            started_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            let start = std::time::Instant::now();
+            proxy.stop();
+            assert!(start.elapsed() < Duration::from_secs(3));
+            assert!(!proxy.connected());
+            release_tx.send(()).unwrap();
+            finished_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+            drop(client);
+            tokio::time::timeout(Duration::from_secs(5), upstream)
+                .await
+                .unwrap()
+                .unwrap();
+        });
+    }
+
+    #[test]
     fn nitro_discards_metadata_from_another_revision_without_extension_host() {
         use crate::{packet_info::PacketInfo, packet_safety::PacketSafety};
         for original in ["OLD", ""] {
             let safety = Arc::new(Mutex::new(PacketSafety::default()));
             let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), PathBuf::new());
             options.packet_safety = Some(safety.clone());
+            options.fetch_packet_info = false;
             options.packet_info = PacketInfoManager::new(
                 original,
                 vec![PacketInfo {

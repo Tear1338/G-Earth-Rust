@@ -1,5 +1,6 @@
 # Changelog
 
+- Load missing Nitro metadata without an extension host, with bounded cancellable lookup and an offline option.
 - Reject Nitro metadata labeled for a different revision and test Unity static metadata across revisions.
 - Load Flash packet metadata even when no extension host is active.
 - Reject stale or unversioned preloaded metadata after automatic Flash revision detection.

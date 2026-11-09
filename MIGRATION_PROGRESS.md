@@ -111,6 +111,9 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Nitro now rejects preloaded metadata whose revision differs from its fixed beta-29 revision, including unversioned data; a controlled no-host test verifies stale IDs are not trusted. Unity differs: Java reads a static `messages.json` independent of revision, and a two-revision Rust fixture confirms that data is registered separately under each revision, as Java does. A stale Unity file can consequently authorize incorrect IDs. Seven Nitro, four Unity fixtures, desktop/web Clippy and debug build pass locally; real clients remain unverified.
 - GitHub Actions runs 42543325326 and 42543374181 passed all eight validation jobs for the G-Python synchronization and Flash metadata revision fixes.
 
+- Nitro now fetches missing metadata even without an extension host, like the Java proxy; `WebOptions::fetch_packet_info` can disable this for offline use. Controlled success/failure tests and a full local proxy test with a stalled provider verify stop and session cleanup. Up to four lookup workers may continue after cancellation; they are not forcibly stopped. Metadata is published only after connection revalidation. Five lifecycle tests, seven Nitro and four Unity fixtures, desktop/web Clippy and debug build pass locally. Real network behavior and clients remain unverified.
+- GitHub Actions run 42544007669 passed all eight validation jobs for Nitro metadata revision validation.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -130,4 +133,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect CI for Nitro metadata revision validation. Compare and implement Nitro metadata lookup without an extension host, preserving deterministic offline tests and safe shutdown while a provider is stalled. Unity static metadata can still be stale by design; real clients, full Java regex replacement and visual logger interaction remain open.
+Inspect CI for Nitro metadata lookup without an extension host. Verify the real Java extension fixture and G-Presets CI against the new initialization behavior; then investigate whether an extension can receive stale metadata when a Nitro lookup races disconnection or replacement. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
