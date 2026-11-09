@@ -74,6 +74,9 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Java 21 `Double.toString` formats the smallest subnormals as `4.9E-324` and `9.9E-324`; Rust previously produced different equivalent decimals. Scientific formatting now selects the closest two-digit representation for single-digit shortest values. Comparisons pass for the first 10,000 positive subnormal bit patterns, boundary values and approximately 5,000 deterministic random finite values. The same formatter is used in entity and furniture output; full equivalence, other Java versions and live traffic remain unverified.
 
+- The Java 21 formatting corpus now includes the first 10,000 negative subnormals and the immediate neighbors of powers of ten. Seven selected difficult heights were additionally compared byte-for-byte in Java and Rust entity and floor-item packets. All six Java room/social oracle tests and desktop/web Clippy pass locally. A Windows GNU release build with desktop and web succeeded for commit `e668ae2`; this is not live compatibility evidence.
+- GitHub Actions run 42540214388 passed all eight validation jobs for Java-style height parsing.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -93,4 +96,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect CI for height parsing and formatting. Expand Java-versus-Rust serialization comparisons around powers of ten, negative subnormals and rounding ties, and add entity/furniture packet-byte oracles for difficult heights; validate the no-byte-view logger interaction visually when a safe desktop test session is available.
+Inspect CI for the expanded height serialization oracle. Compare the remaining `HPacket.replaceXSubstrings` Java regex and replacement behavior against the existing Rust literal-only method; determine a compatible implementation and explicit unsupported cases. Validate the no-byte-view logger interaction visually when a safe desktop test session is available.

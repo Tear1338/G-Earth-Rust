@@ -1,5 +1,6 @@
 # Changelog
 
+- Extend Java height-format comparisons to negative subnormals, powers of ten and entity/furniture packet bytes.
 - Align selected Java 21 scientific height formatting, including smallest subnormal values.
 - Parse Java-style decimal and hexadecimal floating-point height strings for entities and floor items.
 - Align selected entity-update action delimiters and integer sign parsing with the Java API.

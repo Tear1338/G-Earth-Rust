@@ -258,3 +258,82 @@ fn entity_height_format_matches_java_samples() {
         assert_eq!(actual, expected, "bits {bits}");
     }
 }
+
+#[test]
+#[ignore = "requires Java entity and floor item packet vectors"]
+fn entity_and_furniture_height_packets_match_java() {
+    use gearth_rust::{packet::Packet, parsers::furniture::HFloorItem};
+    let output =
+        std::fs::read_to_string(std::env::var("GEARTH_HEIGHT_PACKET_ORACLE").unwrap()).unwrap();
+    for line in output.lines() {
+        let (bits, fields) = line.split_once('=').unwrap();
+        let fields: Vec<_> = fields.split(';').collect();
+        let height = fields[0];
+        let mut input = Packet::new(1);
+        input
+            .put_i32(17)
+            .unwrap()
+            .put_string("Bot")
+            .unwrap()
+            .put_string("hello")
+            .unwrap()
+            .put_string("figure")
+            .unwrap()
+            .put_i32(23)
+            .unwrap()
+            .put_i32(3)
+            .unwrap()
+            .put_i32(4)
+            .unwrap()
+            .put_string(height)
+            .unwrap()
+            .put_i32(5)
+            .unwrap()
+            .put_i32(3)
+            .unwrap();
+        let entity = HEntity::read(&mut input).unwrap();
+        let mut output = Packet::new(42);
+        entity.append(&mut output).unwrap();
+        assert_eq!(
+            output.bytes(),
+            expression::parse_hex(fields[1]).unwrap(),
+            "entity {bits}"
+        );
+        let mut input = Packet::new(1);
+        input
+            .put_i32(17)
+            .unwrap()
+            .put_i32(4)
+            .unwrap()
+            .put_i32(3)
+            .unwrap()
+            .put_i32(4)
+            .unwrap()
+            .put_i32(1)
+            .unwrap()
+            .put_string(height)
+            .unwrap()
+            .put_string("1")
+            .unwrap()
+            .put_i32(0)
+            .unwrap()
+            .put_i32(0)
+            .unwrap()
+            .put_string("0")
+            .unwrap()
+            .put_i32(0)
+            .unwrap()
+            .put_i32(0)
+            .unwrap()
+            .put_i32(99)
+            .unwrap();
+        let item = HFloorItem::read(&mut input).unwrap();
+        let mut output = Packet::new(42);
+        item.append(&mut output).unwrap();
+        assert_eq!(
+            output.bytes(),
+            expression::parse_hex(fields[2]).unwrap(),
+            "furniture {bits}"
+        );
+    }
+}
