@@ -52,10 +52,16 @@ fn released_gpresets_authenticates_to_the_rust_host() {
     let token = host.register_launch(filename).unwrap();
     let stdout = fs::File::create(directory.0.join("stdout.log")).unwrap();
     let stderr = fs::File::create(directory.0.join("stderr.log")).unwrap();
+    // G-Presets loads public furnidata after connection. Keep its HTTPS traffic
+    // on loopback, where an unserved listener prevents external requests.
+    let offline_proxy = TcpListener::bind("127.0.0.1:0").unwrap();
+    let proxy_port = offline_proxy.local_addr().unwrap().port();
     let mut process = Process(
         Command::new("java")
             .current_dir(&directory.0)
             .arg(format!("-Duser.home={}", directory.0.display()))
+            .arg("-Dhttps.proxyHost=127.0.0.1")
+            .arg(format!("-Dhttps.proxyPort={proxy_port}"))
             .arg("--module-path")
             .arg(modules)
             .arg("--add-modules=javafx.controls,javafx.fxml,javafx.web,javafx.swing")
@@ -122,7 +128,7 @@ fn released_gpresets_authenticates_to_the_rust_host() {
     // interception and disconnection IPC without joining a hotel.
     let remote = TcpListener::bind("127.0.0.1:0").unwrap();
     let details = ConnectionDetails {
-        host: "fixture.invalid".into(),
+        host: "game-us.habbo.com".into(),
         port: 30000,
         version: "FIXTURE".into(),
         identifier: "fixture".into(),

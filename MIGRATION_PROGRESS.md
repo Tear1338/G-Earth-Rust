@@ -164,6 +164,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - GitHub Actions run 42636412302 failed its extended G-Presets fixture: the relay closed while the first client-to-server packet was awaited (`UnexpectedEof` at the fixture). The original log did not expose the relay cause or extension output. The fixture now records bounded, token-redacted relay, host and extension diagnostics on that failure; it compiles and Clippy passes locally. The real-extension test is still unverified.
 
+- Diagnostics from G-Presets CI run 42636827173 identify the first disconnect: the extension rejects the unsupported fixture host `fixture.invalid`. Its pinned source resolves recognized hotel hosts and starts a background HTTPS furnidata request. The fixture now supplies `game-us.habbo.com` as connection metadata and points Java HTTPS at an unserved loopback proxy; the TCP relay endpoints remain loopback. Local test compilation and Clippy pass; the real G-Presets run is pending. The release build at commit 3eeb474 also passed on Windows GNU desktop/web.
+
 ## Exact next step
 
-Inspect the G-Presets CI diagnostics for the first-packet disconnect, fix the underlying relay or fixture behavior, and verify both sessions and bidirectional interception. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Inspect the next G-Presets CI run with a recognized metadata host and loopback HTTPS proxy, fix any remaining failure, and verify both sessions and bidirectional interception. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

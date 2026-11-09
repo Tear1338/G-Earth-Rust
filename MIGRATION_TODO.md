@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: diagnose the G-Presets first-packet relay disconnect in CI and validate reconnect. Full Java regex and live extension validation remain open.
+Next: validate the G-Presets reconnect fixture with a recognized metadata host and isolated HTTPS proxy in CI. Full Java regex and live extension validation remain open.

@@ -247,3 +247,5 @@ The real beta-29 Java API fixture now tests WEDGIE injection before and after ha
 The pinned G-Presets fixture now drives two loopback TCP relay sessions with traffic in both directions. Local compilation and Clippy pass, but the extended real-extension run requires the existing Linux JavaFX/Xvfb CI job; inspect and fix that run next. No hotel is contacted.
 
 G-Presets CI run 42636412302 failed on first outgoing packet with EOF. Relay and extension diagnostics were absent; the fixture now emits bounded redacted event and process logs. Inspect its next CI run and fix the cause before claiming this path works.
+
+CI diagnostics showed that G-Presets rejects `fixture.invalid` before interception. The revised test advertises `game-us.habbo.com` as metadata and sets a non-serving loopback HTTPS proxy so its background furnidata request does not reach the hotel. Await the next isolated CI result.

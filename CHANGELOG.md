@@ -1,6 +1,6 @@
 # Changelog
 
-- Extend the isolated G-Presets fixture to exercise loopback relay traffic and reconnect; first CI run exposed a disconnect, with diagnosis pending.
+- Extend the isolated G-Presets fixture to exercise loopback relay traffic and reconnect; use recognized host metadata and an isolated HTTPS proxy (CI validation pending).
 
 - Test Java extension WEDGIE injection before and after encryption, blocking and reconnect.
 

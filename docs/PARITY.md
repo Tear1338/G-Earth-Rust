@@ -115,3 +115,5 @@ The beta-29 Java extension fixture additionally injects named WEDGIE packets bef
 The released G-Presets fixture now attempts two loopback relay sessions and bidirectional interception; execution in the isolated CI job is pending. The test only compiled locally and does not represent a real game session.
 
 The extended G-Presets loopback fixture failed in run 42636412302 when the first forwarded packet encountered EOF. The cause is not yet established; token-redacted diagnostics were added for the next run.
+
+G-Presets rejected the original fixture host, causing the first disconnect. The revised fixture uses recognized host metadata and routes its HTTPS requests to a loopback proxy; CI validation is pending.
