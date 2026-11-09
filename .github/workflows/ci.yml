@@ -105,7 +105,7 @@ jobs:
             curl --fail --location --retry 3 "https://raw.githubusercontent.com/G-Realm/G-Earth/242155c291b1109d6c9a02370f6a2af1ead41ea8/G-Earth/src/main/java/gearth/app/protocol/crypto/$source.java" -o "/tmp/original-crypto/$source.java"
           done
           javac -cp "$bcprov" -d /tmp/original-classes /tmp/original-crypto/*.java
-          javac -cp "$api_jar:$bcprov:/tmp/original-classes" tests/JavaOracle.java tests/JavaExtensionFixture.java tests/BobbaOracle.java
+          javac -cp "$api_jar:$bcprov:/tmp/original-classes" tests/JavaOracle.java tests/JavaExtensionFixture.java tests/JavaOriginsExtensionFixture.java tests/BobbaOracle.java
           java -cp "$api_jar:tests" JavaOracle > /tmp/java-oracle.txt
           java -cp "$bcprov:/tmp/original-classes:tests" BobbaOracle >> /tmp/java-oracle.txt
           cat /tmp/java-oracle.txt
@@ -204,6 +204,8 @@ jobs:
           GEARTH_HEXDUMP_CLASSPATH: /tmp/hexdump-classes
       - name: Exercise an actual beta-29 Java extension against Rust
         run: cargo test --locked --features web --test java_extension -- --ignored
+      - name: Exercise an actual beta-29 Java extension through encrypted Origins relay
+        run: cargo test --locked --features web --lib origins_relay_interoperates_with_actual_java_extension -- --ignored
       - name: Exercise the original Java extension through Unity
         run: cargo test --locked --features web --test java_unity_extension -- --ignored
       - name: Validate store launch and original catalogue

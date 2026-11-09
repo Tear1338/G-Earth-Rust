@@ -1185,6 +1185,16 @@ mod tests {
 
     #[test]
     fn origins_relay_encrypts_and_intercepts_after_metadata_and_reconnect() {
+        exercise_origins_encrypted_extension(false);
+    }
+
+    #[test]
+    #[ignore = "requires the beta-29 Java API and compiled JavaOriginsExtensionFixture"]
+    fn origins_relay_interoperates_with_actual_java_extension() {
+        exercise_origins_encrypted_extension(true);
+    }
+
+    fn exercise_origins_encrypted_extension(real_java: bool) {
         use crate::{
             encoding::{decode_b64, encode_b64},
             extension::{self, ExtensionInfo},
@@ -1204,6 +1214,10 @@ mod tests {
             if header == 77 {
                 let mut replacement = Packet::new_with_format(format, header).unwrap();
                 replacement.put_i32(43).unwrap();
+                message.packet = replacement;
+            } else if header == 78 {
+                let mut replacement = Packet::new_with_format(format, header).unwrap();
+                replacement.put_string("Hello").unwrap();
                 message.packet = replacement;
             }
             write_frame(peer, &extension::manipulated(&message).unwrap()).unwrap();
@@ -1227,27 +1241,68 @@ mod tests {
         let _test_lock = LOOKUP_TEST_LOCK.lock().unwrap();
         let (host, host_events) =
             ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
-        let mut peer = TcpStream::connect(host.address).unwrap();
-        peer.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-        assert_eq!(read_frame(&mut peer).unwrap().header(), 2);
-        let info = ExtensionInfo {
-            title: "fixture".into(),
-            author: "test".into(),
-            version: "1".into(),
-            description: String::new(),
-            on_click: false,
-            file: None,
-            cookie: String::new(),
-            can_leave: true,
-            can_delete: true,
+        struct Process(std::process::Child);
+        impl Drop for Process {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+        let (_process, mut peer) = if real_java {
+            let classpath = std::env::var("GEARTH_EXTENSION_CLASSPATH")
+                .expect("Java fixture classpath required");
+            let token = host.register_launch("origins-fixture.jar").unwrap();
+            let child = Process(
+                std::process::Command::new("java")
+                    .args([
+                        "-cp",
+                        &classpath,
+                        "JavaOriginsExtensionFixture",
+                        "-p",
+                        &host.address.port().to_string(),
+                        "-f",
+                        "origins-fixture.jar",
+                        "-c",
+                        &token,
+                    ])
+                    .spawn()
+                    .unwrap(),
+            );
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !matches!(
+                host_events.recv_timeout(Duration::from_millis(100)),
+                Ok(HostEvent::Connected { .. })
+            ) {
+                assert!(
+                    Instant::now() < deadline,
+                    "Java extension did not authenticate"
+                );
+            }
+            (Some(child), None)
+        } else {
+            let mut peer = TcpStream::connect(host.address).unwrap();
+            peer.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            assert_eq!(read_frame(&mut peer).unwrap().header(), 2);
+            let info = ExtensionInfo {
+                title: "fixture".into(),
+                author: "test".into(),
+                version: "1".into(),
+                description: String::new(),
+                on_click: false,
+                file: None,
+                cookie: String::new(),
+                can_leave: true,
+                can_delete: true,
+            };
+            write_frame(&mut peer, &extension::info_response(&info).unwrap()).unwrap();
+            let id = match host_events.recv_timeout(Duration::from_secs(3)).unwrap() {
+                HostEvent::Pending { id, .. } => id,
+                event => panic!("{event:?}"),
+            };
+            host.approve(id).unwrap();
+            assert_eq!(read_frame(&mut peer).unwrap().header(), 7);
+            (None, Some(peer))
         };
-        write_frame(&mut peer, &extension::info_response(&info).unwrap()).unwrap();
-        let id = match host_events.recv_timeout(Duration::from_secs(3)).unwrap() {
-            HostEvent::Pending { id, .. } => id,
-            event => panic!("{event:?}"),
-        };
-        host.approve(id).unwrap();
-        assert_eq!(read_frame(&mut peer).unwrap().header(), 7);
         let remote = TcpListener::bind("127.0.0.1:0").unwrap();
         let (called_tx, called_rx) = mpsc::channel();
         let lookup = Arc::new(move |version: String| {
@@ -1290,21 +1345,23 @@ mod tests {
                 called_rx.recv_timeout(Duration::from_secs(3)).unwrap(),
                 "latest"
             );
-            let mut start = read_frame(&mut peer).unwrap();
-            assert_eq!(start.header(), 5);
-            start.read_string().unwrap();
-            start.read_i32().unwrap();
-            let version = start.read_string().unwrap();
-            assert_eq!(version, "ORIGINS-2");
-            start.read_string().unwrap();
-            start.read_string().unwrap();
-            assert_eq!(
-                PacketInfoManager::read_from(version, &mut start)
-                    .unwrap()
-                    .entries()[0]
-                    .header,
-                77
-            );
+            if let Some(peer) = &mut peer {
+                let mut start = read_frame(peer).unwrap();
+                assert_eq!(start.header(), 5);
+                start.read_string().unwrap();
+                start.read_i32().unwrap();
+                let version = start.read_string().unwrap();
+                assert_eq!(version, "ORIGINS-2");
+                start.read_string().unwrap();
+                start.read_string().unwrap();
+                assert_eq!(
+                    PacketInfoManager::read_from(version, &mut start)
+                        .unwrap()
+                        .entries()[0]
+                        .header,
+                    77
+                );
+            }
             let mut client_crypto = BobbaCrypto::with_private(12345).unwrap();
             let mut server_crypto = BobbaCrypto::with_private(67890).unwrap();
             let mut hello = Packet::new_with_format(PacketFormat::WedgieOutgoing, 202).unwrap();
@@ -1312,7 +1369,9 @@ mod tests {
             let mut wire = encode_b64(hello.bytes().len() as u32, 3).unwrap();
             wire.extend_from_slice(hello.bytes());
             client.write_all(&wire).unwrap();
-            intercept(&mut peer, Direction::ToServer, 202);
+            if let Some(peer) = &mut peer {
+                intercept(peer, Direction::ToServer, 202);
+            }
             let mut length = [0; 3];
             server.read_exact(&mut length).unwrap();
             let mut payload = vec![0; decode_b64(&length).unwrap() as usize];
@@ -1327,7 +1386,9 @@ mod tests {
             let mut wire = reply.bytes().to_vec();
             wire.push(1);
             server.write_all(&wire).unwrap();
-            intercept(&mut peer, Direction::ToClient, 1);
+            if let Some(peer) = &mut peer {
+                intercept(peer, Direction::ToClient, 1);
+            }
             let mut response = Vec::new();
             loop {
                 let mut byte = [0];
@@ -1351,7 +1412,9 @@ mod tests {
                         .unwrap(),
                 )
                 .unwrap();
-            intercept(&mut peer, Direction::ToServer, 77);
+            if let Some(peer) = &mut peer {
+                intercept(peer, Direction::ToServer, 77);
+            }
             let keys = server_crypto.keys_mut().unwrap();
             let mut replaced = Packet::new_with_format(PacketFormat::WedgieOutgoing, 77).unwrap();
             replaced.put_i32(43).unwrap();
@@ -1367,15 +1430,24 @@ mod tests {
             server
                 .write_all(&test_encrypt(&plain, &mut keys.s2c_header, &mut keys.s2c_data).unwrap())
                 .unwrap();
-            intercept(&mut peer, Direction::ToClient, 78);
+            if let Some(peer) = &mut peer {
+                intercept(peer, Direction::ToClient, 78);
+            }
             let keys = client_crypto.keys_mut().unwrap();
+            let mut replaced_incoming =
+                Packet::new_with_format(PacketFormat::WedgieIncoming, 78).unwrap();
+            replaced_incoming.put_string("Hello").unwrap();
+            let mut expected = replaced_incoming.bytes().to_vec();
+            expected.push(1);
             assert_eq!(
                 read_encrypted(&mut client, &mut keys.s2c_header, &mut keys.s2c_data),
-                plain
+                expected
             );
             drop(client);
             wait_for(&events, |event| matches!(event, Event::Disconnected));
-            assert_eq!(read_frame(&mut peer).unwrap().header(), 6);
+            if let Some(peer) = &mut peer {
+                assert_eq!(read_frame(peer).unwrap().header(), 6);
+            }
         }
         relay.stop();
         host.stop();

@@ -107,3 +107,5 @@ A local HTTPS fixture verifies Origins latest-release discovery, 503 fallback, m
 The Origins relay now loads missing metadata before starting extensions, including without an extension host. Matching preloaded data is kept, mismatched data discarded, and the API supports offline lookup bypass. Controlled tests cover success, failure, extension initialization, stop and visible peer EOF; in-flight HTTP workers can continue and unread data can hide EOF. Full encrypted relay and real clients remain unverified.
 
 A controlled full Origins relay fixture now covers metadata initialization, Bobba handshake, encrypted traffic in both directions, extension packet modification and reconnect. It uses simulated peers, not an official client or a real extension.
+
+An extension compiled against the beta-29 Java API resolves a name and modifies WEDGIE packets in both directions over two controlled encrypted Origins relay sessions. The endpoints are fixtures; third-party extension workflows and a real client remain unverified.

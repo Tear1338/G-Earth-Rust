@@ -156,6 +156,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - A full local Origins relay fixture now loads controlled metadata, establishes the Bobba handshake, forwards encrypted packets in both directions and reconnects. A controlled extension-protocol peer intercepts handshake and data and changes an outgoing integer from 42 to 43; the server receives the modified packet after encryption. Fourteen relay tests, the separate fragmented handshake test, desktop/web build and Clippy pass locally. The client, server and extension are fixtures, not real game or extension sessions. Actions run 42547447637 passed all eight jobs for automatic Origins initialization.
 
+- An extension compiled against the released beta-29 Java API now resolves a packet by name and modifies encrypted Origins packets in both directions through the Rust relay, across two connections. Client and server are controlled fixtures; this is not a real hotel or third-party extension session. The Java fixture passed twice locally, 14 relay tests and desktop/web Clippy pass; CI now runs this ignored Java-dependent test. Actions run 42634682053 passed all eight jobs for the preceding controlled relay fixture. A Windows GNU desktop/web release build is in progress.
+
 ## Exact next step
 
-Exercise the actual beta-29 Java extension API through an Origins relay with an encrypted handshake and packet interception, compare the original Java packet format handling, and inspect CI for the latest pushed changes. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Verify Java beta-29 extension injection of named WEDGIE packets through the Origins relay, including reconnect; inspect the release build and CI for the latest pushed changes. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
