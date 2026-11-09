@@ -69,6 +69,8 @@
 
 ## Unreleased
 
+- Restore deeply nested Java regex captures inside repeated groups under explicit state limits.
+
 - Support optional atoms in direct nested captures within repeated Java regex groups.
 
 - Support optional atoms inside bounded repeated Java regex groups with capture retention.

@@ -1128,6 +1128,88 @@ fn compile_nested_repeat(
     program
 }
 
+struct DeepCapturePlan<'a> {
+    ranges: &'a [(usize, usize)],
+    children: &'a [Vec<usize>],
+    group_optional: &'a [Option<bool>],
+    repeated: &'a [Option<(usize, Option<usize>, bool)>],
+    atom_optional: &'a [Option<bool>],
+}
+
+fn emit_deep_capture(
+    program: &mut Vec<NestedInstruction>,
+    group: usize,
+    plan: &DeepCapturePlan<'_>,
+) {
+    let (start, end) = plan.ranges[group];
+    let mut cursor = start;
+    for &child in &plan.children[group] {
+        let (child_start, child_end) = plan.ranges[child];
+        emit_nested_atoms(
+            program,
+            cursor..child_start,
+            plan.repeated,
+            plan.atom_optional,
+        );
+        let split = plan.group_optional[child].map(|_| {
+            let pc = program.len();
+            program.push(NestedInstruction::Split(0, 0));
+            pc
+        });
+        let child_body = program.len();
+        program.push(NestedInstruction::Start(child));
+        emit_deep_capture(program, child, plan);
+        program.push(NestedInstruction::End(child));
+        if let Some(pc) = split {
+            let after = program.len();
+            program[pc] = if plan.group_optional[child].unwrap() {
+                NestedInstruction::Split(child_body, after)
+            } else {
+                NestedInstruction::Split(after, child_body)
+            };
+        }
+        cursor = child_end;
+    }
+    emit_nested_atoms(program, cursor..end, plan.repeated, plan.atom_optional);
+}
+
+fn compile_deep_nested_repeat(
+    atoms: usize,
+    outer: (usize, usize, usize, Option<usize>, bool),
+    owner: usize,
+    plan: &DeepCapturePlan<'_>,
+) -> Vec<NestedInstruction> {
+    let (start, end, min, limit, greedy) = outer;
+    let mut program = Vec::new();
+    emit_nested_atoms(&mut program, 0..start, plan.repeated, plan.atom_optional);
+    let initial = program.len();
+    program.push(NestedInstruction::Split(0, 0));
+    let body = program.len();
+    program.push(NestedInstruction::Start(owner));
+    emit_deep_capture(&mut program, owner, plan);
+    program.push(NestedInstruction::End(owner));
+    let loop_pc = program.len();
+    program.push(NestedInstruction::Split(0, 0));
+    let after = program.len();
+    program[loop_pc] = NestedInstruction::Loop {
+        body,
+        exit: after,
+        min,
+        limit,
+        greedy,
+        group: owner,
+    };
+    program[initial] = NestedInstruction::Initial {
+        body,
+        exit: after,
+        min,
+        limit,
+        greedy,
+    };
+    emit_nested_atoms(&mut program, end..atoms, plan.repeated, plan.atom_optional);
+    program
+}
+
 fn match_nested_repeat(
     input: &[u8],
     offset: usize,
@@ -2702,7 +2784,7 @@ impl Packet {
                 return Err(error("unsupported repeated capture structure"));
             }
             if !optional.is_empty() || !repeated.is_empty() {
-                if owner != 0 || (1..groups.len()).any(|group| parents[group] != Some(owner)) {
+                if owner != 0 {
                     return Err(error("unsupported nested repeated capture"));
                 }
                 let mut group_optional = vec![None; groups.len()];
@@ -2716,7 +2798,6 @@ impl Packet {
                     if let Some(group) = group {
                         if group == owner
                             || group_optional[group].is_some()
-                            || parents[group] != Some(owner)
                             || (inner_start, inner_end) != ranges[group]
                         {
                             return Err(error("unsupported nested repeated capture"));
@@ -2729,28 +2810,61 @@ impl Packet {
                         atom_optional[inner_start] = Some(inner_greedy);
                     }
                 }
-                let mut inner_specs = (1..groups.len())
-                    .map(|group| {
-                        let (inner_start, inner_end) = ranges[group];
-                        (inner_start, inner_end, group_optional[group], group)
-                    })
-                    .collect::<Vec<_>>();
-                inner_specs.sort_by_key(|spec| (spec.0, spec.1));
-                let mut cursor = start;
-                for &(inner_start, inner_end, _, _) in &inner_specs {
-                    if inner_start < cursor || inner_end > end {
-                        return Err(error("overlapping nested captures are not supported"));
+                let deeper = (1..groups.len()).any(|group| parents[group] != Some(owner));
+                if deeper {
+                    let mut children = vec![Vec::new(); groups.len()];
+                    for (group, parent) in parents.iter().enumerate().skip(1) {
+                        let parent = parent.ok_or_else(|| error("invalid capture hierarchy"))?;
+                        children[parent].push(group);
                     }
-                    cursor = inner_end;
+                    for (parent, siblings) in children.iter_mut().enumerate() {
+                        siblings.sort_by_key(|group| (ranges[*group].0, *group));
+                        let mut cursor = ranges[parent].0;
+                        for &child in siblings.iter() {
+                            let (child_start, child_end) = ranges[child];
+                            if child_start < cursor || child_end > ranges[parent].1 {
+                                return Err(error("overlapping nested captures are not supported"));
+                            }
+                            cursor = child_end;
+                        }
+                    }
+                    let plan = DeepCapturePlan {
+                        ranges: &ranges,
+                        children: &children,
+                        group_optional: &group_optional,
+                        repeated: &repeated_atoms,
+                        atom_optional: &atom_optional,
+                    };
+                    nested_program = Some(compile_deep_nested_repeat(
+                        atoms.len(),
+                        (start, end, min, limit, greedy),
+                        owner,
+                        &plan,
+                    ));
+                } else {
+                    let mut inner_specs = (1..groups.len())
+                        .map(|group| {
+                            let (inner_start, inner_end) = ranges[group];
+                            (inner_start, inner_end, group_optional[group], group)
+                        })
+                        .collect::<Vec<_>>();
+                    inner_specs.sort_by_key(|spec| (spec.0, spec.1));
+                    let mut cursor = start;
+                    for &(inner_start, inner_end, _, _) in &inner_specs {
+                        if inner_start < cursor || inner_end > end {
+                            return Err(error("overlapping nested captures are not supported"));
+                        }
+                        cursor = inner_end;
+                    }
+                    nested_program = Some(compile_nested_repeat(
+                        atoms.len(),
+                        (start, end, min, limit, greedy),
+                        &inner_specs,
+                        owner,
+                        &repeated_atoms,
+                        &atom_optional,
+                    ));
                 }
-                nested_program = Some(compile_nested_repeat(
-                    atoms.len(),
-                    (start, end, min, limit, greedy),
-                    &inner_specs,
-                    owner,
-                    &repeated_atoms,
-                    &atom_optional,
-                ));
             }
         }
         let program = if nested_program.is_some() {

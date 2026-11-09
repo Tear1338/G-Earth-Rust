@@ -936,6 +936,32 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_required_inner_" + i, sample);
         }
+        String[] deepPatterns = {"(((a)?)b)*", "((((a)?)?)b)*", "x(((a)?)b)+c", "(((a)?)b){2,3}?", "(((a*)?)b)*", "(((a)?)(b)?c)*"};
+        char[] deepAlphabet = {'a', 'b', 'c', 'x', 'é', ' ', '\n', '\r', '\u0085'};
+        for (int i = 0; i < 180; i++) {
+            String pattern = deepPatterns[i % deepPatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(" abb abbb xabbc bb ");
+            for (int j = 0; j < 16; j++) value.append(deepAlphabet[(i * 7 + j * 3) % deepAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, "$1/$2/$3/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_deep_capture_" + i, sample);
+        }
+        String maximumDepthPattern = "(".repeat(99) + "a?" + ")".repeat(99) + "*";
+        HPacket maximumDepth = new HPacket(9);
+        maximumDepth.appendString(maximumDepthPattern + " a");
+        maximumDepth.setReadIndex(7);
+        java.io.PrintStream beforeDepth = System.out;
+        try {
+            System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+            maximumDepth.replaceXSubstrings(maximumDepthPattern, "$99", 1);
+        } finally { System.setOut(beforeDepth); }
+        emit("substring_maximum_depth", maximumDepth);
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);

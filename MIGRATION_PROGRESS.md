@@ -236,6 +236,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Repeated Java regex groups now support optional atoms inside direct nonoptional or optional nested captures, such as `((a?)b)*`. A 210-packet corpus matches the released beta-29 API; a focused test distinguishes a capture overwritten with empty from a skipped capture retaining its previous value. Seven budget/state tests, 29 mutation tests, both Clippy configurations and desktop/web build pass. More deeply nested captures and general Java regex remain open. Actions runs 42720317780 and 42720635074 passed all eight jobs for repeated and optional inner atoms.
 
+- Repeated Java regex groups now support deeper nested capture events with optional descendants and bounded capture restoration. A 180-packet corpus and a 99-group depth case match the released beta-29 API. Seven budget/state tests, 29 mutation tests, both Clippy configurations and desktop/web build pass. Multiple repeated group quantifiers and general Java regex remain open. Actions run 42721123873 passed all eight jobs for optional atoms in nested captures.
+
 ## Exact next step
 
-Compare more deeply nested captures inside repeated Java regex groups, including optional descendants and retained captures, against the released beta-29 API; extend bounded capture events and differential fixtures. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Compare Java regex start/end anchors (`^`, `$`, `\A`, `\z`) and line-terminator edge cases with the released beta-29 API; add differential fixtures and preserve bounded zero-width matching. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

@@ -1420,6 +1420,39 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_required_inner_{i}"), &packet);
     }
+    let deep_patterns = [
+        "(((a)?)b)*",
+        "((((a)?)?)b)*",
+        "x(((a)?)b)+c",
+        "(((a)?)b){2,3}?",
+        "(((a*)?)b)*",
+        "(((a)?)(b)?c)*",
+    ];
+    let deep_alphabet = ['a', 'b', 'c', 'x', 'é', ' ', '\n', '\r', '\u{85}'];
+    for i in 0..180 {
+        let pattern = deep_patterns[i % deep_patterns.len()];
+        let mut value = format!("{pattern} abb abbb xabbc bb ");
+        for j in 0..16 {
+            value.push(deep_alphabet[(i * 7 + j * 3) % deep_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java_groups(pattern, "$1/$2/$3/$0", Some(1))
+            .unwrap();
+        check(&format!("substring_deep_capture_{i}"), &packet);
+    }
+    let maximum_depth_pattern = format!("{}a?{}*", "(".repeat(99), ")".repeat(99));
+    let mut maximum_depth = Packet::new(9);
+    maximum_depth
+        .put_string(&format!("{maximum_depth_pattern} a"))
+        .unwrap();
+    maximum_depth.set_cursor(7).unwrap();
+    maximum_depth
+        .replace_substrings_java_groups(&maximum_depth_pattern, "$99", Some(1))
+        .unwrap();
+    check("substring_maximum_depth", &maximum_depth);
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")
