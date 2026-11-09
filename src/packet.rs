@@ -83,6 +83,8 @@ pub enum PacketField<'a> {
     Double(f64),
     Boolean(bool),
     String(&'a str),
+    /// Encode unmappable characters as `?`, as Java's default Latin-1 encoder does.
+    StringJava(&'a str),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -601,6 +603,9 @@ impl Packet {
                 PacketField::String(value) => {
                     self.put_string(value)?;
                 }
+                PacketField::StringJava(value) => {
+                    self.put_string_java(value)?;
+                }
             }
         }
         Ok(self)
@@ -689,6 +694,23 @@ impl Packet {
             field.push(2);
         }
         self.append(&field)
+    }
+    /// Append an EVA short string using Java's ISO-8859-1 replacement encoding.
+    /// Rust strings cannot contain the unpaired UTF-16 surrogates Java permits.
+    pub fn put_string_java(&mut self, s: &str) -> Result<&mut Self> {
+        self.ensure_eva()?;
+        if s.chars().count() > usize::from(u16::MAX) {
+            return Err(error("short string too long"));
+        }
+        self.put_short_bytes(&latin1_encode_java(s))
+    }
+    /// Append an EVA long string using Java's ISO-8859-1 replacement encoding.
+    pub fn put_long_string_java(&mut self, s: &str) -> Result<&mut Self> {
+        self.ensure_eva()?;
+        if s.chars().count() > MAX_FRAME {
+            return Err(error("packet too large"));
+        }
+        self.put_long_bytes(&latin1_encode_java(s))
     }
     pub fn put_long_string(&mut self, s: &str) -> Result<&mut Self> {
         self.put_long_bytes(&latin1_encode(s)?)
@@ -813,6 +835,14 @@ impl Packet {
             return Err(error("short string too long"));
         }
         self.replace_short_bytes(offset, &latin1_encode(value)?)
+    }
+    /// Replace an EVA short string using Java's ISO-8859-1 replacement encoding.
+    pub fn replace_string_java(&mut self, offset: usize, value: &str) -> Result<&mut Self> {
+        self.ensure_eva()?;
+        if value.chars().count() > usize::from(u16::MAX) {
+            return Err(error("short string too long"));
+        }
+        self.replace_short_bytes(offset, &latin1_encode_java(value))
     }
     /// Replace a two-byte-length-prefixed UTF-8 string at an absolute offset.
     pub fn replace_utf8(&mut self, offset: usize, value: &str) -> Result<&mut Self> {
@@ -1130,6 +1160,12 @@ impl Message {
 }
 pub fn latin1_decode(bytes: &[u8]) -> String {
     bytes.iter().map(|b| char::from(*b)).collect()
+}
+/// Java ISO-8859-1 encoder replacement for valid Rust Unicode scalar values.
+pub fn latin1_encode_java(s: &str) -> Vec<u8> {
+    s.chars()
+        .map(|c| u8::try_from(c as u32).unwrap_or(b'?'))
+        .collect()
 }
 pub fn latin1_encode(s: &str) -> Result<Vec<u8>> {
     s.chars()

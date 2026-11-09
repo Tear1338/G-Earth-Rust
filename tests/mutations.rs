@@ -347,3 +347,19 @@ fn append_typed_fields_preserves_prior_fields_on_error() {
     assert!(wedgie.append_fields(&[PacketField::Integer(1)]).is_err());
     assert_eq!(wedgie, original);
 }
+
+#[test]
+fn java_latin1_replacement_is_explicit_and_short_length_counts_scalars() {
+    use gearth_rust::packet::{PacketField, PacketFormat};
+    let mut packet = Packet::new(1);
+    assert!(packet.put_string("雪").is_err());
+    packet
+        .append_fields(&[PacketField::StringJava("é雪🐱")])
+        .unwrap();
+    assert_eq!(packet.read_string().unwrap(), "é??");
+    let mut limit = Packet::new(1);
+    limit.put_string_java(&"🐱".repeat(65535)).unwrap();
+    assert!(limit.put_string_java(&"🐱".repeat(65536)).is_err());
+    let mut wedgie = Packet::new_with_format(PacketFormat::WedgieOutgoing, 1).unwrap();
+    assert!(wedgie.put_string_java("雪").is_err());
+}

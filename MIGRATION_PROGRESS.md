@@ -84,6 +84,9 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - A local regex-engine experiment showed `fancy-regex` 0.20.0 differs from Java on zero-width matches after nonempty matches and default `\w` Unicode handling. It was not added to the project. Full Java regex replacement remains open and requires a compatibility layer or a closer engine.
 - GitHub Actions run 42540787725 passed all eight validation jobs for the height packet oracle.
 
+- Added explicit Java-style ISO-8859-1 replacement encoding for EVA short/long strings, replacement and typed field appends. Selected BMP and non-BMP characters match Java packet bytes and cursor; 17 mutation tests and desktop/web Clippy pass locally. Strict methods remain available. Rust `str` cannot represent Java unpaired UTF-16 surrogates; replacement of an empty existing field retains Rust’s corruption fix, and WEDGIE and real extensions remain unverified.
+- GitHub Actions run 42541080750 passed all eight validation jobs for literal-pattern replacement templates.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -103,4 +106,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect CI for typed packet field appends and literal-pattern replacements. Investigate Java ISO-8859-1 replacement encoding for unrepresentable strings and compare with Rust packet-string APIs; add an explicit Java-compatible option with differential tests while preserving strict methods. Full Java regex replacement remains open; validate the no-byte-view logger interaction visually when a safe desktop test session is available.
+Inspect CI for Java-style Latin-1 encoding and typed packet fields. Expand the Java encoding oracle across all Unicode scalar boundary classes and short-field length limits, then test integration through a real extension if available. Full Java regex replacement remains open; validate the no-byte-view logger interaction visually when a safe desktop test session is available.

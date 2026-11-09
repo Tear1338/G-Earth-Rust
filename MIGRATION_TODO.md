@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: inspect CI for typed packet fields and literal replacement, then compare Java ISO-8859-1 replacement encoding with Rust string APIs. Full Java regex replacement remains open; validate logger interaction visually when possible.
+Next: inspect CI for Java-style Latin-1 encoding and typed packet fields, then expand Java encoding boundary comparisons. Full Java regex replacement remains open; validate logger interaction visually when possible.

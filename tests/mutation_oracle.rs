@@ -203,6 +203,18 @@ fn mutations_match_original_java_packets_and_cursor() {
         .unwrap();
     objects.set_cursor(7).unwrap();
     check("append_objects", &objects);
+    let mut latin1_java = Packet::new(20);
+    latin1_java
+        .put_string_java("Aé雪🐱B")
+        .unwrap()
+        .put_long_string_java("水🪶é")
+        .unwrap()
+        .put_i32(42)
+        .unwrap();
+    latin1_java.set_cursor(7).unwrap();
+    check("latin1_java", &latin1_java);
+    latin1_java.replace_string_java(6, "🐱雪é").unwrap();
+    check("latin1_java_replaced", &latin1_java);
     let mut fixed = Packet::new(1);
     fixed
         .put_i32(123)

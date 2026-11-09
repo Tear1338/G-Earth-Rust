@@ -83,6 +83,12 @@ public class JavaMutationOracle {
         objects.appendObjects((byte)-42, (short)-1234, -123456, -9000000000L, -3.25f, 0.125d, true, "Café");
         objects.setReadIndex(7);
         emit("append_objects", objects);
+        HPacket latin1Java = new HPacket(20);
+        latin1Java.appendString("Aé雪🐱B").appendLongString("水🪶é").appendInt(42);
+        latin1Java.setReadIndex(7);
+        emit("latin1_java", latin1Java);
+        latin1Java.replaceString(6, "🐱雪é");
+        emit("latin1_java_replaced", latin1Java);
         HPacket fixed = new HPacket(1);
         fixed.appendInt(123).appendBoolean(false).appendShort((short) 7).appendLong(8).appendFloat(1.5f).appendDouble(2.5);
         fixed.setReadIndex(10);
