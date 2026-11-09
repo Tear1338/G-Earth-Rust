@@ -1,5 +1,6 @@
 # Changelog
 
+- Align selected Java 21 scientific height formatting, including smallest subnormal values.
 - Parse Java-style decimal and hexadecimal floating-point height strings for entities and floor items.
 - Align selected entity-update action delimiters and integer sign parsing with the Java API.
 - Added a Flash oracle case demonstrating the shared false-identification risk on ordinary two-string packets.

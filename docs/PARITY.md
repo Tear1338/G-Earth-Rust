@@ -57,3 +57,5 @@ A controlled non-handshake packet with header 999 and two ordinary strings is ac
 Entity-update parsing now matches 11 selected beta-29 Java cases for trailing action separators, movement coordinates and malformed integer signs. The shared Java-style integer parser is also used by furniture IDs. Floating-point parsing now covers selected Java syntax and hexadecimal rounding; complete parser equivalence remains unverified.
 
 Entity, movement and floor-item heights accept Java-style floating-point text, including hexadecimal literals. Eighteen selected vectors and 3,000 deterministic hexadecimal strings were compared against the beta-29 Java API. Decimal edge cases, serialization and real room traffic require broader validation.
+
+Height formatting now matches Java 21 for the first 10,000 positive subnormal bit patterns, selected boundaries and approximately 5,000 deterministic random finite values. The previous output differed for the two smallest subnormals. This is finite coverage and does not prove equivalence for all doubles or Java versions.

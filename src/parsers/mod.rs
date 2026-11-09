@@ -188,6 +188,14 @@ pub(crate) fn java_double(value: f64) -> String {
     debug_assert!(!digits.is_empty());
 
     let scientific = value.abs() >= 10_000_000.0 || value.abs() < 0.001;
+    // Java uses at least two significant decimal digits when selecting the
+    // closest scientific representation, including for subnormal values.
+    if scientific && digits.len() == 1 {
+        let rounded = format!("{:.1e}", value.abs());
+        let (mantissa, exponent) = rounded.split_once('e').expect("scientific formatting");
+        let exponent: i32 = exponent.parse().expect("scientific exponent");
+        return format!("{}{mantissa}E{exponent}", if negative { "-" } else { "" });
+    }
     let mut output = String::new();
     if negative {
         output.push('-');
@@ -222,6 +230,13 @@ pub(crate) fn java_double(value: f64) -> String {
 #[cfg(test)]
 mod java_double_tests {
     use super::parse_java_double;
+
+    #[test]
+    fn java_scientific_format_uses_closest_two_digit_subnormals() {
+        assert_eq!(super::java_double(f64::from_bits(1)), "4.9E-324");
+        assert_eq!(super::java_double(f64::from_bits(2)), "9.9E-324");
+        assert_eq!(super::java_double(-f64::from_bits(1)), "-4.9E-324");
+    }
 
     #[test]
     fn java_height_syntax_and_hex_rounding_boundaries() {

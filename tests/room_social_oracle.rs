@@ -240,3 +240,21 @@ fn entity_update_heights_match_java() {
         );
     }
 }
+
+#[test]
+#[ignore = "requires Double.toString output from Java"]
+fn entity_height_format_matches_java_samples() {
+    let output =
+        std::fs::read_to_string(std::env::var("GEARTH_DOUBLE_FORMAT_ORACLE").unwrap()).unwrap();
+    for line in output.lines() {
+        let (bits, expected) = line.split_once('=').unwrap();
+        let value = f64::from_bits(u64::from_str_radix(bits, 16).unwrap());
+        let displayed = HPoint::with_height(0, 0, value).to_string();
+        let actual = displayed
+            .strip_prefix("(0,0,")
+            .unwrap()
+            .strip_suffix(')')
+            .unwrap();
+        assert_eq!(actual, expected, "bits {bits}");
+    }
+}

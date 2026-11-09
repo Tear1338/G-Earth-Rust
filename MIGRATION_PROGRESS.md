@@ -72,6 +72,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Entity, movement and floor-item height parsing now supports Java-style whitespace, numeric suffixes, special values and hexadecimal floating-point literals with round-to-nearest-even. The beta-29 Java oracle passes 18 selected strings plus 3,000 deterministic hexadecimal samples; four room/social Java comparisons, 15 local parser tests and desktop/web Clippy pass. This finite corpus does not prove complete `Double.parseDouble` equivalence; live room traffic remains untested.
 - GitHub Actions run 42539723724 passed all eight validation jobs for entity-update action parsing.
 
+- Java 21 `Double.toString` formats the smallest subnormals as `4.9E-324` and `9.9E-324`; Rust previously produced different equivalent decimals. Scientific formatting now selects the closest two-digit representation for single-digit shortest values. Comparisons pass for the first 10,000 positive subnormal bit patterns, boundary values and approximately 5,000 deterministic random finite values. The same formatter is used in entity and furniture output; full equivalence, other Java versions and live traffic remain unverified.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -91,4 +93,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect CI for the Java-compatible height parser. Compare Java `Double.toString` in entity/furniture serialization against Rust for boundary and randomized floating-point bit patterns, then fix any reproducible wire differences; validate the no-byte-view logger interaction visually when a safe desktop test session is available.
+Inspect CI for height parsing and formatting. Expand Java-versus-Rust serialization comparisons around powers of ten, negative subnormals and rounding ties, and add entity/furniture packet-byte oracles for difficult heights; validate the no-byte-view logger interaction visually when a safe desktop test session is available.
