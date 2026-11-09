@@ -27,6 +27,7 @@ static ACTIVE_FLASH_LOOKUPS: AtomicUsize = AtomicUsize::new(0);
 fn cancellable_flash_lookup<T: Send + 'static>(
     stop: &AtomicBool,
     closed: &AtomicBool,
+    mut peer_closed: impl FnMut() -> bool,
     lookup: impl FnOnce() -> io::Result<T> + Send + 'static,
 ) -> io::Result<T> {
     if stop.load(Ordering::Acquire) || closed.load(Ordering::Acquire) {
@@ -67,19 +68,40 @@ fn cancellable_flash_lookup<T: Send + 'static>(
             let _ = tx.send(lookup());
         })?;
     loop {
-        if stop.load(Ordering::Acquire) || closed.load(Ordering::Acquire) {
+        if stop.load(Ordering::Acquire) || closed.load(Ordering::Acquire) || peer_closed() {
             return Err(io::Error::new(
                 io::ErrorKind::Interrupted,
                 "Flash lookup cancelled",
             ));
         }
         match rx.recv_timeout(Duration::from_millis(25)) {
-            Ok(result) => return result,
+            Ok(result) => {
+                if stop.load(Ordering::Acquire) || closed.load(Ordering::Acquire) || peer_closed() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Interrupted,
+                        "Flash lookup cancelled",
+                    ));
+                }
+                return result;
+            }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => {
                 return Err(io::Error::other("Flash metadata lookup worker failed"))
             }
         }
+    }
+}
+
+fn peer_has_closed(stream: &TcpStream) -> bool {
+    match stream.peek(&mut [0u8; 1]) {
+        Ok(0) => true,
+        Ok(_) => false,
+        Err(error) => matches!(
+            error.kind(),
+            io::ErrorKind::ConnectionReset
+                | io::ErrorKind::ConnectionAborted
+                | io::ErrorKind::NotConnected
+        ),
     }
 }
 
@@ -697,18 +719,26 @@ fn run_session(
                             let version = details.version.clone();
                             #[cfg(test)]
                             let lookup = options.flash_lookup.clone();
-                            match cancellable_flash_lookup(stop, closed, move || {
-                                #[cfg(test)]
-                                if let Some(lookup) = lookup {
-                                    return lookup(version);
-                                }
-                                crate::packet_info::PacketInfoManager::fetch_sulek(&version, false)
-                            }) {
+                            match cancellable_flash_lookup(
+                                stop,
+                                closed,
+                                || peer_has_closed(&client) || peer_has_closed(&server),
+                                move || {
+                                    #[cfg(test)]
+                                    if let Some(lookup) = lookup {
+                                        return lookup(version);
+                                    }
+                                    crate::packet_info::PacketInfoManager::fetch_sulek(
+                                        &version, false,
+                                    )
+                                },
+                            ) {
                                 Ok(database) => {
                                     let _ =
                                         events.try_send(Event::PacketIdentifiers(database.clone()));
                                     details.packets = database;
                                 }
+                                Err(e) if e.kind() == io::ErrorKind::Interrupted => return Ok(()),
                                 Err(e) => {
                                     let _ = events.try_send(Event::Status(format!(
                                         "Connected without packet names: {e}"
@@ -811,13 +841,18 @@ mod tests {
         let stop = AtomicBool::new(false);
         let closed = AtomicBool::new(false);
         assert_eq!(
-            cancellable_flash_lookup(&stop, &closed, || Ok(42)).unwrap(),
+            cancellable_flash_lookup(&stop, &closed, || false, || Ok(42)).unwrap(),
             42
         );
         assert_eq!(
-            cancellable_flash_lookup::<()>(&stop, &closed, || Err(io::Error::other("offline")))
-                .unwrap_err()
-                .to_string(),
+            cancellable_flash_lookup::<()>(
+                &stop,
+                &closed,
+                || false,
+                || Err(io::Error::other("offline"))
+            )
+            .unwrap_err()
+            .to_string(),
             "offline"
         );
         for cancel_stop in [true, false] {
@@ -828,11 +863,16 @@ mod tests {
             let stop_worker = stop.clone();
             let closed_worker = closed.clone();
             let waiter = thread::spawn(move || {
-                cancellable_flash_lookup(&stop_worker, &closed_worker, move || {
-                    started_tx.send(()).unwrap();
-                    release_rx.recv().unwrap();
-                    Ok(99)
-                })
+                cancellable_flash_lookup(
+                    &stop_worker,
+                    &closed_worker,
+                    || false,
+                    move || {
+                        started_tx.send(()).unwrap();
+                        release_rx.recv().unwrap();
+                        Ok(99)
+                    },
+                )
             });
             started_rx.recv_timeout(Duration::from_secs(3)).unwrap();
             let now = Instant::now();
@@ -901,6 +941,73 @@ mod tests {
         assert!(!relay.connected());
         release_tx.send(()).unwrap();
         host.stop();
+    }
+
+    #[test]
+    fn disconnected_flash_peer_does_not_start_stale_extension_session_during_lookup() {
+        use crate::packet_info::PacketInfoManager;
+        for close_client in [true, false] {
+            let (host, _) =
+                ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+            let details = ConnectionDetails {
+                host: "fixture".into(),
+                port: 1,
+                version: "old".into(),
+                identifier: String::new(),
+                client_type: "FLASH".into(),
+                packets: PacketInfoManager::default(),
+            };
+            let old_epoch = host.start_owned_connection(details.clone()).unwrap();
+            let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+            let (started_tx, started_rx) = mpsc::channel();
+            let (release_tx, release_rx) = mpsc::channel();
+            let (finished_tx, finished_rx) = mpsc::channel();
+            let release_rx = Mutex::new(release_rx);
+            let lookup = Arc::new(move |_: String| {
+                started_tx.send(()).unwrap();
+                release_rx.lock().unwrap().recv().unwrap();
+                finished_tx.send(()).unwrap();
+                Ok(PacketInfoManager::default())
+            });
+            let (mut relay, events) = Relay::start_with_options(
+                Config {
+                    listen: "127.0.0.1:0".parse().unwrap(),
+                    remote: remote.local_addr().unwrap().to_string(),
+                },
+                RelayOptions {
+                    flash_process: Some(1),
+                    extensions: Some(host.clone()),
+                    flash_lookup: Some(lookup),
+                    connection: Some(details),
+                    ..RelayOptions::default()
+                },
+            )
+            .unwrap();
+            let mut client = TcpStream::connect(relay.address).unwrap();
+            let (server, _) = remote.accept().unwrap();
+            let mut hello = Packet::new(1);
+            hello
+                .put_string("TEST-2026")
+                .unwrap()
+                .put_string("FLASH")
+                .unwrap();
+            write_frame(&mut client, &hello).unwrap();
+            started_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+            if close_client {
+                client.shutdown(Shutdown::Both).unwrap();
+            } else {
+                server.shutdown(Shutdown::Both).unwrap();
+            }
+            wait_for(&events, |event| matches!(event, Event::Disconnected));
+            release_tx.send(()).unwrap();
+            finished_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+            assert!(
+                host.end_owned_connection(old_epoch),
+                "stale Flash session replaced the existing extension session"
+            );
+            relay.stop();
+            host.stop();
+        }
     }
 
     #[test]

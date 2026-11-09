@@ -62,6 +62,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - A loopback relay test injects a controllable stalled Flash metadata provider, waits until it starts, then verifies explicit `stop` returns within two seconds without waiting for that worker. The full local library suite passes 45 tests with one Python test ignored; desktop/web all-target Clippy passes. This is not a stalled real HTTP server or peer-EOF test.
 
+- While Flash metadata is loading, the relay now checks nonblocking sockets for visible EOF or reset and abandons initialization when a peer closes. Controlled stalled-provider fixtures close client and server separately and check that an existing extension session is not replaced. A final check also runs when the lookup returns. If unread socket data hides EOF, closure can still be noticed only after lookup; disconnect races, real HTTP and clients remain unverified. Local library, relay and extension suites and desktop/web Clippy pass.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -81,4 +83,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect CI for the cancellable Flash metadata lookup and its relay test. Investigate detection of peer EOF during a stalled Flash metadata lookup and test cleanup without starting a stale extension session; then assess false Flash identification with representative non-handshake traffic. Validate the no-byte-view logger interaction visually when a safe desktop test session is available.
+Inspect CI for Flash metadata lookup cancellation and peer-EOF handling. Assess false Flash identification with representative non-handshake traffic and compare with the pinned Java handler, including short packets with two strings; validate the no-byte-view logger interaction visually when a safe desktop test session is available.

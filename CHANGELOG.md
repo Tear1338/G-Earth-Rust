@@ -1,5 +1,6 @@
 # Changelog
 
+- Stop Flash metadata initialization on visible peer EOF during lookup and preserve any prior extension session.
 - Make Flash metadata waits cancellable on explicit stop, with bounded in-flight worker lookups; test empty-revision failure and a stalled provider through the relay.
 - Register metadata packet identifiers as safe by revision and direction for TCP, Flash, Nitro and Unity, matching the Java connection.
 - Added a controlled Flash relay and extension lifecycle fixture for identity variants.
