@@ -69,6 +69,8 @@
 
 ## Unreleased
 
+- Support Java 21 global ASCII case-insensitive regex matching with case-preserving captures.
+
 - Support Java 21 word-boundary regex assertions over Latin-1 packet strings.
 
 - Run G-Python integration tests serially in CI to reduce concurrent Jupyter startup contention.

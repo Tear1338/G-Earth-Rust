@@ -1016,6 +1016,22 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_word_boundary_" + i, sample);
         }
+        String[] insensitivePatterns = {"(?i)(cat)", "(?i)([a-c]+)", "(?i)([^a])", "(?i)(é)", "(?i)(\\x41)", "(?i)(\\QAb\\E)", "(?i)((a)?b)*"};
+        char[] insensitiveAlphabet = {'a', 'A', 'b', 'B', 'C', 'é', 'É', '_', ' ', '\n', '\u0085'};
+        for (int i = 0; i < 175; i++) {
+            String pattern = insensitivePatterns[i % insensitivePatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(" CAT cat ABC abc É é AB ab ");
+            for (int j = 0; j < 16; j++) value.append(insensitiveAlphabet[(i * 7 + j * 3) % insensitiveAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, "$1/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_insensitive_" + i, sample);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);

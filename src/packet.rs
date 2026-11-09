@@ -353,6 +353,7 @@ fn expand_literal_groups(
 
 enum FixedRegexAtom {
     Literal(u8),
+    CaseInsensitive(u8),
     Dot,
     Start,
     End,
@@ -420,6 +421,7 @@ enum CharacterClassElement {
 
 fn parse_character_class(
     chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+    case_insensitive: bool,
 ) -> Result<Box<[bool; 256]>> {
     let negated = if chars.peek() == Some(&'^') {
         chars.next();
@@ -493,6 +495,14 @@ fn parse_character_class(
                 }
             }
             i += 1;
+        }
+    }
+    if case_insensitive {
+        for lower in b'a'..=b'z' {
+            let upper = lower.to_ascii_uppercase();
+            let included = class[usize::from(lower)] || class[usize::from(upper)];
+            class[usize::from(lower)] = included;
+            class[usize::from(upper)] = included;
         }
     }
     if negated {
@@ -621,9 +631,19 @@ fn compile_optional_program(
     program
 }
 
+fn literal_regex_atom(c: char, case_insensitive: bool) -> FixedRegexAtom {
+    let byte = c as u8;
+    if case_insensitive && byte.is_ascii_alphabetic() {
+        FixedRegexAtom::CaseInsensitive(byte)
+    } else {
+        FixedRegexAtom::Literal(byte)
+    }
+}
+
 fn atom_accepts(atom: &FixedRegexAtom, byte: u8) -> bool {
     match atom {
         FixedRegexAtom::Literal(expected) => *expected == byte,
+        FixedRegexAtom::CaseInsensitive(expected) => expected.eq_ignore_ascii_case(&byte),
         FixedRegexAtom::Dot => !matches!(byte, b'\n' | b'\r' | 0x85),
         FixedRegexAtom::Start
         | FixedRegexAtom::End
@@ -2595,13 +2615,16 @@ impl Packet {
             return Err(error("short string too long"));
         }
         let pattern_bytes = latin1_encode(pattern)?;
+        let (pattern_source, case_insensitive) = pattern
+            .strip_prefix("(?i)")
+            .map_or((pattern, false), |source| (source, true));
         let mut literal = String::new();
         let mut groups: Vec<String> = Vec::new();
         let mut parents: Vec<Option<usize>> = Vec::new();
         let mut names: Vec<Option<String>> = Vec::new();
         let mut atoms: Vec<FixedRegexAtom> = Vec::new();
         let mut ranges: Vec<(usize, usize)> = Vec::new();
-        let mut dynamic = false;
+        let mut dynamic = case_insensitive;
         let mut optional = Vec::new();
         let mut optional_group_owners = Vec::new();
         let mut repeated = Vec::new();
@@ -2610,7 +2633,7 @@ impl Packet {
         let mut quantifiable = false;
         let mut last_closed_group = None;
         let mut open: Vec<usize> = Vec::new();
-        let mut chars = pattern.chars().peekable();
+        let mut chars = pattern_source.chars().peekable();
         let mut quoted = false;
         while let Some(mut c) = chars.next() {
             if quoted {
@@ -2620,7 +2643,7 @@ impl Packet {
                     continue;
                 }
                 literal.push(c);
-                atoms.push(FixedRegexAtom::Literal(c as u8));
+                atoms.push(literal_regex_atom(c, case_insensitive));
                 quantifiable = true;
                 last_closed_group = None;
                 for &index in &open {
@@ -2728,7 +2751,10 @@ impl Packet {
                     continue;
                 }
                 '[' => {
-                    atoms.push(FixedRegexAtom::Class(parse_character_class(&mut chars)?));
+                    atoms.push(FixedRegexAtom::Class(parse_character_class(
+                        &mut chars,
+                        case_insensitive,
+                    )?));
                     dynamic = true;
                     quantifiable = true;
                     last_closed_group = None;
@@ -2835,7 +2861,7 @@ impl Packet {
                 _ => {}
             }
             literal.push(c);
-            atoms.push(FixedRegexAtom::Literal(c as u8));
+            atoms.push(literal_regex_atom(c, case_insensitive));
             quantifiable = true;
             last_closed_group = None;
             for &index in &open {

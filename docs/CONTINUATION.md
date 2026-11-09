@@ -1,5 +1,7 @@
 # Continuation state
 
+The Java 21 global `(?i)` regex flag is supported for ASCII case-insensitive literals, character classes and dynamic captures; non-ASCII Latin-1 is unchanged, as in Java without Unicode flags. A 175-packet corpus matches the released beta-29 API, including negated classes and quoted/escaped literals. Nine budget/state tests, 29 mutation tests, both Clippy configurations and desktop/web build pass. Embedded/Unicode flags and general Java regex remain open. Next compare no-capture replacement with Java. Serialized G-Python jobs passed in Actions run 42723118432.
+
 Java 21 regex word boundaries `\b` and `\B` are supported as bounded zero-width matches over Latin-1, using the Java 21 ASCII word definition. A 175-packet corpus and empty/accented-character tests match the released beta-29 API. Nine budget/state tests, 29 mutation tests, both Clippy configurations and desktop/web build pass; Unicode regex flags and general Java regex remain open. Next compare Java global case-insensitive matching.
 
 Actions run 42721796496 failed its Windows G-Python job when two concurrent Jupyter kernels timed out after 20 seconds; the next run 42722422100 passed all eight jobs. The G-Python CI tests now run serially to reduce competition with isolated environment installs. All five serial G-Python tests pass locally on Windows, including real G-Python kernel injection and offscreen QtConsole. The exact runner cause remains unproven; the next Actions run must verify the mitigation.

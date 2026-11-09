@@ -27,6 +27,6 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: compare Java 21 global case-insensitive regex flag, capture values and class negation with the released API. Full Java regex and live extension validation remain open.
+Next: compare no-capture Java regex replacement, including empty patterns and replacement references. Full Java regex and live extension validation remain open.
 
-CI: verify the next Actions run after serializing G-Python integration tests; the earlier Windows kernel timeouts were intermittent.
+CI: serialized G-Python jobs passed on Windows and Linux in run 42723118432; continue monitoring intermittent kernel startup timeouts.
