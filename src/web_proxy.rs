@@ -1325,6 +1325,106 @@ mod lifecycle_tests {
     }
 
     #[test]
+    fn nitro_metadata_https_success_failure_and_cancel_use_local_trusted_server() {
+        use crate::{packet_info::download_json, packet_safety::PacketSafety};
+        use hudsucker::{
+            certificate_authority::CertificateAuthority,
+            rustls::{self, crypto::aws_lc_rs, pki_types::CertificateDer},
+        };
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let _test_lock = NITRO_LOOKUP_TEST_LOCK.lock().unwrap();
+        struct Directory(PathBuf);
+        impl Drop for Directory {
+            fn drop(&mut self) {
+                for file in ["ca/gearth-proxy-cert.pem", "ca/gearth-proxy-key.pem"] {
+                    let _ = std::fs::remove_file(self.0.join(file));
+                }
+                let _ = std::fs::remove_dir(self.0.join("ca"));
+                let _ = std::fs::remove_dir(&self.0);
+            }
+        }
+        let mut random = [0u8; 16];
+        getrandom::fill(&mut random).unwrap();
+        let directory = Directory(std::env::temp_dir().join(format!(
+            "gearth-nitro-https-{:032x}",
+            u128::from_ne_bytes(random)
+        )));
+        std::fs::create_dir(&directory.0).unwrap();
+        let identity = ProxyIdentity::ensure(&directory.0.join("ca")).unwrap();
+        let authority = identity.authority().unwrap();
+        let mut roots = rustls::RootCertStore::empty();
+        roots
+            .add(CertificateDer::from(identity.certificate_der))
+            .unwrap();
+        let tls =
+            rustls::ClientConfig::builder_with_provider(Arc::new(aws_lc_rs::default_provider()))
+                .with_safe_default_protocol_versions()
+                .unwrap()
+                .with_root_certificates(roots)
+                .with_no_client_auth();
+        let agent = ureq::AgentBuilder::new()
+            .tls_config(Arc::new(tls))
+            .try_proxy_from_env(false)
+            .timeout(Duration::from_secs(5))
+            .build();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            for mode in ["success", "failure", "stall"] {
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let address = format!("localhost:{}", listener.local_addr().unwrap().port());
+                let server_config = authority.gen_server_config(&address.parse().unwrap()).await;
+                let (request_tx, request_rx) = mpsc::channel();
+                let (release_tx, release_rx) = tokio::sync::oneshot::channel::<()>();
+                let server = tokio::spawn(async move {
+                    let (stream, _) = listener.accept().await.unwrap();
+                    let mut tls = tokio_rustls::TlsAcceptor::from(server_config).accept(stream).await.unwrap();
+                    let mut request = Vec::new();
+                    while !request.ends_with(b"\r\n\r\n") {
+                        let mut byte = [0]; tls.read_exact(&mut byte).await.unwrap(); request.push(byte[0]); assert!(request.len() < 8192);
+                    }
+                    assert!(request.starts_with(b"GET /fixture HTTP/1.1\r\n"));
+                    request_tx.send(()).unwrap();
+                    if mode == "stall" { release_rx.await.unwrap(); }
+                    let body = if mode == "failure" { "offline" } else { r#"{"messages":{"incoming":[],"outgoing":[{"id":900,"name":"KnownComposer"}]}}"# };
+                    let status = if mode == "failure" { "503 Service Unavailable" } else { "200 OK" };
+                    let response = format!("HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len());
+                    let _ = tls.write_all(response.as_bytes()).await;
+                });
+                let url = format!("https://{address}/fixture");
+                let agent = agent.clone();
+                let (done_tx, done_rx) = mpsc::channel();
+                let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), PathBuf::new());
+                let safety = Arc::new(Mutex::new(PacketSafety::default()));
+                options.packet_safety = Some(safety.clone());
+                options.nitro_lookup = Some(Arc::new(move || {
+                    let result = download_json(&agent, &url).and_then(|bytes| PacketInfoManager::from_json(NITRO_REVISION, &bytes).map_err(io::Error::other));
+                    let _ = done_tx.send(());
+                    result
+                }));
+                let (events, receiver) = mpsc::sync_channel(16);
+                let state = Arc::new(Shared { options, hartico_key: Mutex::new(None), city_keys: Mutex::new(None), peers: Mutex::new(HashMap::new()), active: Mutex::new(None), rules: Mutex::new(Rules::default()), pipeline: Mutex::new(()), events, index: AtomicI32::new(0), stop: AtomicBool::new(false) });
+                let peer = Arc::new(Peer::new(PeerKey { client: "127.0.0.1:1234".parse().unwrap(), uri: "ws://fixture".into() }, Modifier::new(&crate::nitro::HotelKind::Plain).unwrap()));
+                let worker_state = state.clone(); let worker_peer = peer.clone();
+                let task = tokio::spawn(async move { worker_state.activate(&worker_peer, &"ws://fixture".parse().unwrap()).await });
+                request_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+                if mode == "stall" {
+                    state.close(&peer);
+                    assert_eq!(tokio::time::timeout(Duration::from_secs(2), task).await.unwrap().unwrap().unwrap_err().kind(), io::ErrorKind::Interrupted);
+                    release_tx.send(()).unwrap();
+                } else {
+                    tokio::time::timeout(Duration::from_secs(3), task).await.unwrap().unwrap().unwrap();
+                    assert!(peer.ready.load(Ordering::Acquire));
+                    assert_eq!(safety.lock().unwrap().is_safe(Some(NITRO_REVISION), Direction::ToServer, 900), mode == "success");
+                }
+                done_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+                tokio::time::timeout(Duration::from_secs(3), server).await.unwrap().unwrap();
+                if mode == "stall" { assert!(!receiver.try_iter().any(|event| matches!(event, Event::PacketIdentifiers(_) | Event::Connected(_)))); }
+                state.close(&peer);
+            }
+        });
+    }
+
+    #[test]
     fn nitro_discards_metadata_from_another_revision_without_extension_host() {
         use crate::{packet_info::PacketInfo, packet_safety::PacketSafety};
         for original in ["OLD", ""] {

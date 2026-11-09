@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: inspect complete CI and Java extension fixtures for Nitro lookup and cancellation, then exercise actual HTTP failure/cancellation with a controllable endpoint. Full Java regex and live extension validation remain open.
+Next: inspect CI for the local HTTPS Nitro fixture, then test malformed, oversized and truncated metadata responses and compare Java behavior. Full Java regex and live extension validation remain open.

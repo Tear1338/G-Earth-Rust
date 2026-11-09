@@ -116,6 +116,9 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - A controlled Nitro lifecycle test starts a second connection while the first metadata worker remains blocked, then releases the old worker. An extension protocol peer receives only the new metadata, no stale database event is emitted, and the new session disconnects normally. Six lifecycle tests and desktop/web Clippy pass locally. This does not establish real hotel or extension behavior.
 
+- A local HTTPS metadata fixture now exercises the real bounded JSON download path with a temporary, explicitly trusted CA: successful JSON, HTTP 503 and cancellation during a stalled response. It does not alter system trust. Seven Nitro lifecycle tests and desktop/web Clippy pass locally. This is not the production Sulek service or a live hotel session.
+- GitHub Actions run 42544578854 passed all eight validation jobs, including Java compatibility and G-Presets, for Nitro metadata lookup without an extension host.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -135,4 +138,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect complete CI for Nitro metadata lookup and the cancellation/replacement fixture, including the real Java extension and G-Presets jobs. Investigate Nitro metadata failure and cancellation with a controllable HTTP endpoint rather than a simulated provider, while preserving TLS verification. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Inspect CI for the local HTTPS Nitro metadata fixture and cancellation/replacement test. Compare handling of malformed, oversized and truncated metadata responses with the beta-29 provider, then add bounded HTTP fixtures and verify forwarding and extension initialization on failure. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

@@ -87,3 +87,5 @@ Nitro rejects preloaded metadata labeled for another revision, including unversi
 Nitro metadata lookup is cancellable on peer close and limited to four in-flight workers. A controlled provider covers success and failure, while a full local proxy fixture checks stopping with a stalled provider. Workers already in flight can continue after cancellation; real metadata-service behavior and live clients remain unverified.
 
 A controlled Nitro test cancels one blocked metadata lookup, starts a replacement connection and verifies that an extension protocol peer receives only the new database. This does not prove live hotel or real extension behavior.
+
+A local HTTPS metadata fixture now exercises the actual JSON downloader for successful data, HTTP 503 and cancellation during a stalled response, with a temporary CA trusted only by the test client. It does not validate the production metadata service or a live hotel.

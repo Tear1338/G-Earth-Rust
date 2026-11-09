@@ -290,7 +290,7 @@ impl PacketInfoManager {
         Ok(Self::new(version, entries))
     }
 }
-fn download_json(agent: &ureq::Agent, url: &str) -> std::io::Result<Vec<u8>> {
+pub(crate) fn download_json(agent: &ureq::Agent, url: &str) -> std::io::Result<Vec<u8>> {
     use std::io::Read;
     let response = agent
         .get(url)
