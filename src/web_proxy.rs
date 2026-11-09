@@ -1255,27 +1255,44 @@ mod lifecycle_tests {
         let (finished_tx, finished_rx) = mpsc::channel();
         let release_rx = Mutex::new(release_rx);
         let calls = AtomicUsize::new(0);
+        let mut random = [0u8; 16];
+        getrandom::fill(&mut random).unwrap();
+        let cache = std::env::temp_dir().join(format!(
+            "gearth-nitro-race-{:032x}.bin",
+            u128::from_ne_bytes(random)
+        ));
+        let worker_cache = cache.clone();
         let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), PathBuf::new());
         options.extensions = Some(host.clone());
         options.nitro_lookup = Some(Arc::new(move || {
             let index = calls.fetch_add(1, Ordering::AcqRel);
+            let result = PacketInfoManager::load_or_refresh(
+                &worker_cache,
+                NITRO_REVISION,
+                std::time::SystemTime::now() + Duration::from_secs(301),
+                || {
+                    if index == 0 {
+                        started_tx.send(()).unwrap();
+                        release_rx.lock().unwrap().recv().unwrap();
+                    }
+                    let header = if index == 0 { 901 } else { 902 };
+                    Ok(PacketInfoManager::new(
+                        NITRO_REVISION,
+                        vec![PacketInfo {
+                            header,
+                            name: Some("Known".into()),
+                            hash: None,
+                            structure: None,
+                            direction: Direction::ToServer,
+                            source: "fixture".into(),
+                        }],
+                    ))
+                },
+            );
             if index == 0 {
-                started_tx.send(()).unwrap();
-                release_rx.lock().unwrap().recv().unwrap();
                 finished_tx.send(()).unwrap();
             }
-            let header = if index == 0 { 901 } else { 902 };
-            Ok(PacketInfoManager::new(
-                NITRO_REVISION,
-                vec![PacketInfo {
-                    header,
-                    name: Some("Known".into()),
-                    hash: None,
-                    structure: None,
-                    direction: Direction::ToServer,
-                    source: "fixture".into(),
-                }],
-            ))
+            result
         }));
         let (events, receiver) = mpsc::sync_channel(32);
         let state = Arc::new(Shared {
@@ -1317,6 +1334,7 @@ mod lifecycle_tests {
             assert_eq!(metadata.entries()[0].header, 902);
             release_tx.send(()).unwrap();
             finished_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+            assert_eq!(PacketInfoManager::load_cache(&cache, NITRO_REVISION).unwrap().entries()[0].header, 902);
             write_frame(&mut extension_peer, &Packet::new(3)).unwrap();
             assert_eq!(read_frame(&mut extension_peer).unwrap().header(), 4);
             let events: Vec<_> = receiver.try_iter().collect();
@@ -1328,6 +1346,7 @@ mod lifecycle_tests {
         });
         drop(extension_peer);
         host.stop();
+        std::fs::remove_file(cache).unwrap();
     }
 
     #[test]

@@ -144,6 +144,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Concurrent refreshes of the same cache in one process now allow only the latest started refresh to write. Deterministic tests release an older worker after a newer success or failure; the older result cannot overwrite the cache. The caller of the older worker can still receive its result, and separate processes are not coordinated. Both cache tests, local HTTPS lifecycle, desktop/web build and Clippy pass.
 
+- The controlled Nitro replacement fixture now shares an actual cache file: after cancelling the old lookup, a newer extension session and cache are initialized, then the old worker is released. The extension and cache retain the newer metadata. The controlled provider is not HTTPS. The fixture and desktop/web Clippy pass; Actions run 42545741804 passed all eight jobs for the local HTTPS cache fixture.
+
 ## Exact next step
 
 Add a full local HTTPS lifecycle fixture with a cancelled old Nitro lookup and a newer lookup sharing one cache, proving both extension session and cache retain the newer data; inspect CI for the latest pushed changes. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

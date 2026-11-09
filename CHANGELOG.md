@@ -1,5 +1,7 @@
 # Changelog
 
+- Test cancelled Nitro session replacement and concurrent metadata cache persistence together.
+
 - Prevent older concurrent Sulek refreshes within one process from overwriting a newer cache result.
 
 - Exercise Sulek cache refresh, offline fallback and cancelled workers over a locally trusted HTTPS server.

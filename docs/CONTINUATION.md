@@ -227,3 +227,5 @@ Sulek metadata cache freshness now follows the Java five-minute threshold, with 
 The HTTPS fixture now combines expired cache data with successful refresh, HTTP 503 fallback and cancellation. A cancelled worker can still update the cache after the session ends. Test and address out-of-order concurrent refreshes next; no production service was contacted.
 
 A per-path in-process refresh guard stops older concurrent workers from overwriting cache data after a newer lookup starts, even if the newer lookup fails. The older worker still returns its own result; cross-process writes are not coordinated. Deterministic unit tests cover ordering. Next combine two HTTPS lookups, cancellation, extension session replacement and cache persistence in one fixture.
+
+The cancelled Nitro lookup and replacement extension-session fixture now verifies the shared on-disk cache after releasing the old worker. The provider remains simulated; combine this ordering with two local HTTPS requests next.
