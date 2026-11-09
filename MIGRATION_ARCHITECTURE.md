@@ -23,3 +23,5 @@ The pinned Hudsucker 0.25.0 source is vendored under `crates/hudsucker` with its
 `WebOptions::upstream_socks` now routes HTTP, HTTPS, WebSockets and raw CONNECT through the async SOCKS transport. Startup refuses this option when metadata fetching or the City helper is enabled until those auxiliary requests also support SOCKS.
 
 When SOCKS is configured, Nitro metadata HTTPS now uses the same SOCKS transport and revision cache; redirects are HTTPS-only and bounded. The City helper still cannot be enabled with SOCKS.
+
+With SOCKS configured, the session-opted-in Nitro City helper also uses authenticated SOCKS and bounded HTTPS; it does not follow upload redirects.

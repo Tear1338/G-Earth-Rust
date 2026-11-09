@@ -259,3 +259,5 @@ Hudsucker 0.25.0 is vendored with its licenses and a TCP dialer hook for WebSock
 The web backend now uses async SOCKS for HTTP/TLS plus the vendored WebSocket/raw CONNECT hook. Loopback tests cover authentication, remote DNS, certificate checks and rejected connections without direct fallback. Until metadata and the City helper route via SOCKS, startup rejects configurations enabling either, and desktop still refuses Nitro SOCKS. Implement the auxiliary paths next.
 
 Nitro metadata now fetches through authenticated SOCKS with its revision cache and bounded HTTPS-only redirects. Local tests cover cache fallback, malformed/truncated/oversized data and unsafe redirects. The optional City helper is still prohibited with SOCKS, and desktop still rejects Nitro SOCKS. Implement the helper route next.
+
+The City helper now uses authenticated SOCKS when configured, without following redirects, and retains the explicit session opt-in. A local SOCKS/TLS fixture checks the multipart request and bounded responses; a no-opt-in fixture checks no upload occurs. Wire the desktop settings next and review interaction behavior.

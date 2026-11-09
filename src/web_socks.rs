@@ -204,6 +204,73 @@ fn fetch_nitro_using(
     })
 }
 
+async fn upload_city(
+    socks: SocksConfig,
+    tls: rustls::ClientConfig,
+    endpoint: &str,
+    content_type: &str,
+    body: Vec<u8>,
+) -> io::Result<crate::nitro_city::CityKeys> {
+    let url = url::Url::parse(endpoint).map_err(io::Error::other)?;
+    if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
+        return Err(io::Error::other(
+            "Nitro helper URL must use HTTPS without credentials",
+        ));
+    }
+    let connector = hyper_rustls::HttpsConnectorBuilder::new()
+        .with_tls_config(tls)
+        .https_only()
+        .enable_http1()
+        .wrap_connector(OutboundConnector::new(Some(socks)));
+    let client: Client<_, Body> = Client::builder(TokioExecutor::new()).build(connector);
+    tokio::time::timeout(Duration::from_secs(20), async {
+        let request = Request::post(url.as_str())
+            .header("content-type", content_type)
+            .body(Body::from(body))
+            .map_err(io::Error::other)?;
+        let response = client.request(request).await.map_err(io::Error::other)?;
+        // Never follow a redirect with the uploaded module.
+        if !response.status().is_success() {
+            return Err(io::Error::other(format!(
+                "Nitro helper HTTP status {}",
+                response.status()
+            )));
+        }
+        let mut body = response.into_body();
+        let mut bytes = Vec::new();
+        while let Some(frame) = body.frame().await {
+            if let Ok(data) = frame.map_err(io::Error::other)?.into_data() {
+                if data.len() > 65536usize.saturating_sub(bytes.len()) {
+                    return Err(io::Error::other("Nitro helper response exceeds 64 KiB"));
+                }
+                bytes.extend_from_slice(&data);
+            }
+        }
+        crate::nitro_city::CityKeys::from_json(&bytes)
+    })
+    .await
+    .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "Nitro helper request timed out"))?
+}
+
+/// Call only after the user's session-specific Nitro Helper opt-in.
+pub(crate) fn fetch_city(
+    socks: SocksConfig,
+    wasm: &[u8],
+) -> io::Result<crate::nitro_city::CityKeys> {
+    let (content_type, body) = crate::nitro_city::helper_multipart(wasm)?;
+    let tls = default_tls()?;
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    runtime.block_on(upload_city(
+        socks,
+        tls,
+        "https://nitro.sulek.dev/habbocity",
+        &content_type,
+        body,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -231,7 +298,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn nitro_metadata_uses_socks_redirects_and_validated_cache_fallback() {
+    async fn nitro_metadata_and_city_helper_use_socks_with_bounded_https() {
         use crate::web_ca::ProxyIdentity;
         use hudsucker::{
             certificate_authority::CertificateAuthority, rustls::pki_types::CertificateDer,
@@ -281,7 +348,7 @@ mod tests {
             )
             .await;
         let server = tokio::spawn(async move {
-            for index in 0..8 {
+            for index in 0..11 {
                 let (stream, _) = upstream.accept().await.unwrap();
                 let mut stream = tokio_rustls::TlsAcceptor::from(server_config.clone())
                     .accept(stream)
@@ -294,7 +361,22 @@ mod tests {
                     request.push(b[0]);
                     assert!(request.len() < 8192);
                 }
-                if index == 1 {
+                if index >= 8 {
+                    assert!(request.starts_with(b"POST /habbocity HTTP/1.1\r\n"));
+                    let headers = String::from_utf8(request.clone())
+                        .unwrap()
+                        .to_ascii_lowercase();
+                    assert!(headers.contains("content-type: multipart/form-data; boundary=gearth-"));
+                    let length: usize = headers
+                        .lines()
+                        .find_map(|line| line.strip_prefix("content-length: "))
+                        .unwrap()
+                        .parse()
+                        .unwrap();
+                    let mut body = vec![0; length];
+                    stream.read_exact(&mut body).await.unwrap();
+                    assert!(body.windows(8).any(|chunk| chunk == b"\0asm\x01\0\0\0"));
+                } else if index == 1 {
                     assert!(request.starts_with(b"GET /redirect HTTP/1.1\r\n"));
                 } else {
                     assert!(request.starts_with(
@@ -309,7 +391,10 @@ mod tests {
                     4 => "HTTP/1.1 302 Found\r\nLocation: https://user:pass@fixture.invalid/\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_owned(),
                     5 => { let body = "x".repeat(8 * 1024 * 1024 + 1); format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()) },
                     6 => "HTTP/1.1 200 OK\r\nContent-Length: 100\r\nConnection: close\r\n\r\n{".to_owned(),
-                    _ => "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}".to_owned(),
+                    7 => "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}".to_owned(),
+                    8 => { let body = r#"{"status":"ok","result":{"aes_key":"000102030405060708090a0b0c0d0e0f","aes_iv":"000102030405060708090a0b","salt_key":["11","22"],"salt_iv":["33"]}}"#; format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()) },
+                    9 => "HTTP/1.1 307 Temporary Redirect\r\nLocation: https://leak.invalid/\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_owned(),
+                    _ => { let body = "x".repeat(65537); format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()) },
                 };
                 let _ = stream.write_all(response.as_bytes()).await;
                 let _ = stream.shutdown().await;
@@ -319,7 +404,7 @@ mod tests {
         let proxy_address = proxy.local_addr().unwrap();
         let socks_server = tokio::spawn(async move {
             let mut tasks = Vec::new();
-            for _ in 0..8 {
+            for _ in 0..11 {
                 let (mut client, _) = proxy.accept().await.unwrap();
                 tasks.push(tokio::spawn(async move {
                     let mut greeting = [0; 3];
@@ -403,12 +488,43 @@ mod tests {
         );
         let bad_cache = directory.0.join("bad.bin");
         let bad_endpoint = endpoint.clone();
+        let bad_config = config.clone();
+        let bad_tls = tls.clone();
         let result = tokio::task::spawn_blocking(move || {
-            fetch_nitro_using(config, tls, &bad_endpoint, &bad_cache, now)
+            fetch_nitro_using(bad_config, bad_tls, &bad_endpoint, &bad_cache, now)
         })
         .await
         .unwrap();
         assert!(result.is_err(), "malformed metadata accepted");
+        assert!(crate::nitro_city::helper_multipart(b"invalid").is_err());
+        let wasm = b"\0asm\x01\0\0\0";
+        let city_endpoint = format!("{endpoint}/habbocity");
+        for index in 0..3 {
+            let (content_type, body) = crate::nitro_city::helper_multipart(wasm).unwrap();
+            let result = upload_city(
+                config.clone(),
+                tls.clone(),
+                &city_endpoint,
+                &content_type,
+                body,
+            )
+            .await;
+            if index == 0 {
+                assert!(result.is_ok());
+            } else {
+                assert!(result.is_err(), "unsafe helper response accepted");
+            }
+        }
+        let (content_type, body) = crate::nitro_city::helper_multipart(wasm).unwrap();
+        let result = upload_city(
+            config,
+            tls,
+            "http://fixture.invalid/habbocity",
+            &content_type,
+            body,
+        )
+        .await;
+        assert!(result.is_err(), "non-HTTPS helper upload accepted");
         tokio::time::timeout(Duration::from_secs(5), server)
             .await
             .unwrap()

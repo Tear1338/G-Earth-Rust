@@ -12,7 +12,7 @@ use hudsucker::{
         accept_async, client_async, client_async_tls_with_config, tungstenite::Message, Connector,
     },
 };
-use std::{io, path::PathBuf, sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
 struct Directory(PathBuf);
@@ -414,7 +414,7 @@ async fn rejected_socks_never_falls_back_to_direct_http_websocket_or_raw() {
 }
 
 #[test]
-fn socks_rejects_city_helper_until_it_is_routed() {
+fn socks_allows_city_helper_configuration() {
     let directory = Directory::new();
     let mut opts = WebOptions::new("127.0.0.1:0".parse().unwrap(), directory.0.join("proxy"));
     opts.upstream_socks = Some(SocksConfig {
@@ -422,8 +422,6 @@ fn socks_rejects_city_helper_until_it_is_routed() {
         credentials: None,
     });
     opts.allow_city_helper = true;
-    assert_eq!(
-        WebProxy::start(opts).err().unwrap().kind(),
-        io::ErrorKind::InvalidInput
-    );
+    let (mut proxy, _) = WebProxy::start(opts).unwrap();
+    proxy.stop();
 }

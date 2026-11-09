@@ -71,8 +71,7 @@ pub struct WebOptions {
     pub listen: SocketAddr,
     pub identity_directory: PathBuf,
     pub packet_info: PacketInfoManager,
-    /// Route upstream traffic and packet-info fetching through SOCKS5. The City
-    /// helper must remain disabled until it also supports SOCKS.
+    /// Route upstream traffic, packet-info fetching and the opted-in City helper through SOCKS5.
     pub upstream_socks: Option<crate::socks::SocksConfig>,
     /// Fetch missing Nitro identifiers from the upstream provider.
     pub fetch_packet_info: bool,
@@ -641,8 +640,15 @@ impl Handler {
         if self.1 == 2 {
             if self.0.options.allow_city_helper {
                 let wasm = bytes.clone();
-                match tokio::task::spawn_blocking(move || crate::nitro_city::fetch_keys(&wasm))
-                    .await
+                let socks = self.0.options.upstream_socks.clone();
+                match tokio::task::spawn_blocking(move || {
+                    if let Some(socks) = socks {
+                        crate::web_socks::fetch_city(socks, &wasm)
+                    } else {
+                        crate::nitro_city::fetch_keys(&wasm)
+                    }
+                })
+                .await
                 {
                     Ok(Ok(keys)) => {
                         if let Ok(mut target) = self.0.city_keys.lock() {
@@ -787,12 +793,6 @@ impl WebProxy {
     pub fn start(options: WebOptions) -> io::Result<(Self, Receiver<Event>)> {
         if !options.listen.ip().is_loopback() {
             return Err(io::Error::other("HTTP proxy must bind loopback"));
-        }
-        if options.upstream_socks.is_some() && options.allow_city_helper {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "SOCKS requires the City helper to be disabled until it supports SOCKS",
-            ));
         }
         let identity = ProxyIdentity::ensure(&options.identity_directory)?;
         let ca = identity.authority()?;
@@ -993,6 +993,48 @@ mod lifecycle_tests {
     use std::net::TcpStream;
 
     static NITRO_LOOKUP_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    #[test]
+    fn city_helper_never_uploads_without_session_opt_in_with_socks() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), PathBuf::new());
+        options.upstream_socks = Some(crate::socks::SocksConfig {
+            proxy: listener.local_addr().unwrap().to_string(),
+            credentials: None,
+        });
+        assert!(!options.allow_city_helper);
+        let (events, receiver) = mpsc::sync_channel(16);
+        let state = Arc::new(Shared {
+            options,
+            hartico_key: Mutex::new(None),
+            city_keys: Mutex::new(None),
+            peers: Mutex::new(HashMap::new()),
+            active: Mutex::new(None),
+            rules: Mutex::new(Rules::default()),
+            pipeline: Mutex::new(()),
+            events,
+            index: AtomicI32::new(0),
+            stop: AtomicBool::new(false),
+        });
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let mut handler = Handler(state, 2, None);
+            let response = Response::builder()
+                .status(200)
+                .body(Body::from(b"\0asm\x01\0\0\0".to_vec()))
+                .unwrap();
+            assert_eq!(
+                handler.handle_asset_response(response).await.status(),
+                StatusCode::OK
+            );
+        });
+        assert!(receiver.try_iter().any(|event| matches!(event, Event::Status(text) if text.contains("explicit Nitro Helper opt-in"))));
+        assert_eq!(
+            listener.accept().err().unwrap().kind(),
+            io::ErrorKind::WouldBlock
+        );
+    }
 
     #[test]
     fn nitro_fetches_metadata_without_extension_host_and_handles_failure() {

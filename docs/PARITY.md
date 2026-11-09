@@ -127,3 +127,5 @@ Vendored Hudsucker now has an optional WebSocket/raw CONNECT dialer. Local tests
 The web backend routes HTTP, HTTPS, WebSocket, WSS and raw CONNECT through optional SOCKS5, with local authenticated proxy and TLS fixtures. It refuses SOCKS when automatic metadata or the City helper is enabled; the desktop option and real SOCKS/hotel validation remain open.
 
 Nitro metadata retrieval and its cache now use SOCKS when configured. Local authenticated HTTPS tests cover redirects, malformed and oversized responses and stale cache fallback. The City helper and desktop SOCKS option remain unavailable; real services remain unverified.
+
+The opt-in City helper now uploads via configured SOCKS and rejects redirects and oversized responses; a local test confirms the upload is not attempted without opt-in. Desktop enablement and live hotel/service testing remain open.

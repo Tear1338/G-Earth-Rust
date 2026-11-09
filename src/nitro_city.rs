@@ -174,9 +174,7 @@ impl HabboCity {
         }
     }
 }
-/// This function must only be called after an explicit opt-in for the current session.
-pub fn fetch_keys(wasm: &[u8]) -> io::Result<CityKeys> {
-    use io::Read;
+pub(crate) fn helper_multipart(wasm: &[u8]) -> io::Result<(String, Vec<u8>)> {
     if wasm.len() > 16 * 1024 * 1024 || !wasm.starts_with(b"\0asm\x01\0\0\0") {
         return Err(io::Error::other(
             "Nitro helper accepts only a bounded WebAssembly module",
@@ -194,16 +192,19 @@ pub fn fetch_keys(wasm: &[u8]) -> io::Result<CityKeys> {
     let mut body=format!("--{boundary}\r\nContent-Disposition: form-data; name=\"wasm\"; filename=\"data.wasm\"\r\nContent-Type: application/octet-stream\r\n\r\n").into_bytes();
     body.extend(wasm);
     body.extend(format!("\r\n--{boundary}--\r\n").as_bytes());
+    Ok((format!("multipart/form-data; boundary={boundary}"), body))
+}
+/// This function must only be called after an explicit opt-in for the current session.
+pub fn fetch_keys(wasm: &[u8]) -> io::Result<CityKeys> {
+    use io::Read;
+    let (content_type, body) = helper_multipart(wasm)?;
     let agent = ureq::AgentBuilder::new()
         .timeout(std::time::Duration::from_secs(20))
         .redirects(0)
         .build();
     let response = agent
         .post("https://nitro.sulek.dev/habbocity")
-        .set(
-            "Content-Type",
-            &format!("multipart/form-data; boundary={boundary}"),
-        )
+        .set("Content-Type", &content_type)
         .send_bytes(&body)
         .map_err(io::Error::other)?;
     let mut response_bytes = Vec::new();

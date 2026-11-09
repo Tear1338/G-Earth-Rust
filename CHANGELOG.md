@@ -1,5 +1,7 @@
 # Changelog
 
+- Route opt-in Nitro City helper uploads through SOCKS5 without forwarding uploads across redirects.
+
 - Route Nitro packet metadata HTTPS and its cache refresh through SOCKS5; City helper and desktop enablement remain unfinished.
 
 - Route web proxy HTTP, HTTPS, WebSocket and raw CONNECT upstreams through optional SOCKS5; auxiliary lookups and desktop enablement remain unfinished.

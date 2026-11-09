@@ -176,6 +176,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Nitro metadata retrieval now uses the configured SOCKS proxy, including the existing revision-specific cache and bounded stale fallback. Controlled HTTPS/SOCKS tests cover authentication, remote DNS, HTTPS redirects, cache reuse, HTTP failure, invalid/truncated/oversized responses and rejection of HTTP or credential-bearing redirects. Five web/SOCKS tests, seven existing web-proxy tests, desktop/web build and Clippy pass locally. The opt-in City helper is still rejected with SOCKS, and the desktop option remains disabled; no real metadata service or hotel was tested. Actions run 42639947094 passed all eight validation jobs for the Hudsucker dialer.
 
+- The opt-in Nitro City helper now uploads through SOCKS when configured. Its bounded multipart payload and HTTPS response are tested through an authenticated loopback SOCKS/TLS fixture; redirects and responses above 64 KiB are rejected, and a separate test confirms no upload occurs without the session opt-in. No real module was uploaded. Local web/SOCKS and proxy tests, City unit tests, desktop/web build and Clippy pass. The desktop SOCKS option remains disabled pending integration and review.
+
 ## Exact next step
 
-Route the opt-in City helper upload through configured SOCKS with bounded authenticated HTTPS and no direct fallback, test it locally, then enable and review the desktop Nitro option. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Wire the existing desktop SOCKS settings into Nitro WebOptions, preserve explicit City Helper opt-in and safe validation, run desktop and web tests, and review the interaction with the required Better Design tools. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
