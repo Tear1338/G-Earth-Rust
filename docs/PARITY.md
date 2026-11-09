@@ -97,3 +97,5 @@ A local HTTPS fixture now covers cache refresh, HTTP 503 fallback and a cancelle
 Within one process, an older concurrent cache refresh cannot overwrite a later-started refresh, including when the latter fails. The older caller can still receive its own result. Separate processes are not coordinated; the combined cancelled-session and concurrent HTTPS case remains to be tested.
 
 A controlled Nitro session-replacement test now also checks that the shared cache retains the newer metadata after the cancelled older worker completes. It uses a simulated provider, not two HTTPS requests.
+
+A local HTTPS race fixture combines cancellation, extension-session replacement and shared cache persistence; the newer metadata survives an older response. The fixture checks cleanup and does not establish live service or extension compatibility.

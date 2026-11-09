@@ -146,6 +146,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - The controlled Nitro replacement fixture now shares an actual cache file: after cancelling the old lookup, a newer extension session and cache are initialized, then the old worker is released. The extension and cache retain the newer metadata. The controlled provider is not HTTPS. The fixture and desktop/web Clippy pass; Actions run 42545741804 passed all eight jobs for the local HTTPS cache fixture.
 
+- A local HTTPS fixture now holds an old Nitro metadata response until a replacement session has loaded a newer response into the shared cache. After cancellation, the extension and cache retain the newer metadata; the older worker still returns its own response. The temporary CA is trusted only by the fixture and its temporary files are now verified removed. The HTTPS fixture, desktop/web build and Clippy pass locally. This is not a live hotel or real extension test.
+
 ## Exact next step
 
-Add a full local HTTPS lifecycle fixture with a cancelled old Nitro lookup and a newer lookup sharing one cache, proving both extension session and cache retain the newer data; inspect CI for the latest pushed changes. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Compare Origins Sulek release discovery and explicit-version fallback with beta-29 Java, including unavailable or malformed release data, then implement and test the appropriate behavior. Inspect CI for the latest pushed changes. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

@@ -881,13 +881,7 @@ mod unity_http_tests {
     struct Directory(PathBuf);
     impl Drop for Directory {
         fn drop(&mut self) {
-            for file in [
-                "ca/gearth-proxy-cert.pem",
-                "ca/gearth-proxy-key.pem",
-                "cache_success.bin",
-                "cache_failure.bin",
-                "cache_stall.bin",
-            ] {
+            for file in ["ca/gearth-proxy-cert.pem", "ca/gearth-proxy-key.pem"] {
                 let _ = std::fs::remove_file(self.0.join(file));
             }
             let _ = std::fs::remove_dir(self.0.join("ca"));
@@ -1361,7 +1355,14 @@ mod lifecycle_tests {
         struct Directory(PathBuf);
         impl Drop for Directory {
             fn drop(&mut self) {
-                for file in ["ca/gearth-proxy-cert.pem", "ca/gearth-proxy-key.pem"] {
+                for file in [
+                    "ca/gearth-proxy-cert.pem",
+                    "ca/gearth-proxy-key.pem",
+                    "cache_success.bin",
+                    "cache_failure.bin",
+                    "cache_stall.bin",
+                    "race.bin",
+                ] {
                     let _ = std::fs::remove_file(self.0.join(file));
                 }
                 let _ = std::fs::remove_dir(self.0.join("ca"));
@@ -1505,7 +1506,96 @@ mod lifecycle_tests {
                 }
                 state.close(&peer);
             }
+            // Keep the first HTTPS response pending while a replacement session
+            // receives a second response and writes the same cache file.
+            let cache = directory.0.join("race.bin");
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let address = format!("localhost:{}", listener.local_addr().unwrap().port());
+            let server_config = authority.gen_server_config(&address.parse().unwrap()).await;
+            let (started_tx, started_rx) = mpsc::channel();
+            let (release_tx, release_rx) = tokio::sync::oneshot::channel();
+            let server = tokio::spawn(async move {
+                let mut release_rx = Some(release_rx);
+                let mut tasks = Vec::new();
+                for index in 0..2 {
+                    let (stream, _) = listener.accept().await.unwrap();
+                    let config = server_config.clone();
+                    let started = started_tx.clone();
+                    let release = if index == 0 { release_rx.take() } else { None };
+                    tasks.push(tokio::spawn(async move {
+                        let mut tls = tokio_rustls::TlsAcceptor::from(config).accept(stream).await.unwrap();
+                        let mut request = Vec::new();
+                        while !request.ends_with(b"\r\n\r\n") {
+                            let mut byte = [0];
+                            tls.read_exact(&mut byte).await.unwrap();
+                            request.push(byte[0]);
+                            assert!(request.len() < 8192);
+                        }
+                        started.send(index).unwrap();
+                        if let Some(release) = release { release.await.unwrap(); }
+                        let id = if index == 0 { 901 } else { 902 };
+                        let body = format!(r#"{{"messages":{{"incoming":[],"outgoing":[{{"id":{id},"name":"KnownComposer"}}]}}}}"#);
+                        let headers = format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+                        tls.write_all(headers.as_bytes()).await.unwrap();
+                        tls.write_all(body.as_bytes()).await.unwrap();
+                        tls.shutdown().await.unwrap();
+                    }));
+                }
+                for task in tasks { task.await.unwrap(); }
+            });
+            let (host, host_events) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+            let mut extension_peer = TcpStream::connect(host.address).unwrap();
+            extension_peer.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+            assert_eq!(read_frame(&mut extension_peer).unwrap().header(), 2);
+            let info = ExtensionInfo { title: "fixture".into(), author: "test".into(), version: "1".into(), description: String::new(), on_click: false, file: None, cookie: String::new(), can_leave: true, can_delete: true };
+            write_frame(&mut extension_peer, &extension::info_response(&info).unwrap()).unwrap();
+            let id = match host_events.recv_timeout(Duration::from_secs(3)).unwrap() { HostEvent::Pending { id, .. } => id, event => panic!("{event:?}") };
+            host.approve(id).unwrap();
+            assert_eq!(read_frame(&mut extension_peer).unwrap().header(), 7);
+            let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), PathBuf::new());
+            options.extensions = Some(host.clone());
+            let url = format!("https://{address}/fixture");
+            let worker_cache = cache.clone();
+            let (finished_tx, finished_rx) = mpsc::channel();
+            options.nitro_lookup = Some(Arc::new(move || {
+                let result = PacketInfoManager::load_or_refresh(&worker_cache, NITRO_REVISION, std::time::SystemTime::now() + Duration::from_secs(301), || {
+                    download_json(&agent, &url).and_then(|bytes| PacketInfoManager::from_json(NITRO_REVISION, &bytes).map_err(io::Error::other))
+                });
+                finished_tx.send(result.as_ref().map(|db| db.entries()[0].header).unwrap_or(0)).unwrap();
+                result
+            }));
+            let (events, receiver) = mpsc::sync_channel(32);
+            let state = Arc::new(Shared { options, hartico_key: Mutex::new(None), city_keys: Mutex::new(None), peers: Mutex::new(HashMap::new()), active: Mutex::new(None), rules: Mutex::new(Rules::default()), pipeline: Mutex::new(()), events, index: AtomicI32::new(0), stop: AtomicBool::new(false) });
+            let peer = |port| Arc::new(Peer::new(PeerKey { client: format!("127.0.0.1:{port}").parse().unwrap(), uri: "ws://fixture".into() }, Modifier::new(&crate::nitro::HotelKind::Plain).unwrap()));
+            let old = peer(1234); let new = peer(1235);
+            let old_state = state.clone(); let old_peer = old.clone();
+            let old_task = tokio::spawn(async move { old_state.activate(&old_peer, &"ws://fixture".parse().unwrap()).await });
+            assert_eq!(started_rx.recv_timeout(Duration::from_secs(3)).unwrap(), 0);
+            state.close(&old);
+            assert_eq!(tokio::time::timeout(Duration::from_secs(2), old_task).await.unwrap().unwrap().unwrap_err().kind(), io::ErrorKind::Interrupted);
+            state.activate(&new, &"ws://fixture".parse().unwrap()).await.unwrap();
+            assert_eq!(started_rx.recv_timeout(Duration::from_secs(3)).unwrap(), 1);
+            assert_eq!(finished_rx.recv_timeout(Duration::from_secs(3)).unwrap(), 902);
+            let mut start = read_frame(&mut extension_peer).unwrap();
+            assert_eq!(start.header(), 5);
+            start.read_string().unwrap(); start.read_i32().unwrap();
+            let version = start.read_string().unwrap(); start.read_string().unwrap(); start.read_string().unwrap();
+            assert_eq!(PacketInfoManager::read_from(version, &mut start).unwrap().entries()[0].header, 902);
+            release_tx.send(()).unwrap();
+            assert_eq!(finished_rx.recv_timeout(Duration::from_secs(3)).unwrap(), 901);
+            assert_eq!(PacketInfoManager::load_cache(&cache, NITRO_REVISION).unwrap().entries()[0].header, 902);
+            assert!(!receiver.try_iter().any(|event| matches!(event, Event::PacketIdentifiers(db) if db.entries().first().is_some_and(|entry| entry.header == 901))));
+            state.close(&new);
+            assert_eq!(read_frame(&mut extension_peer).unwrap().header(), 6);
+            host.stop();
+            tokio::time::timeout(Duration::from_secs(5), server).await.unwrap().unwrap();
         });
+        let test_directory = directory.0.clone();
+        drop(directory);
+        assert!(
+            !test_directory.exists(),
+            "HTTPS fixture left temporary files"
+        );
     }
 
     #[test]

@@ -229,3 +229,5 @@ The HTTPS fixture now combines expired cache data with successful refresh, HTTP 
 A per-path in-process refresh guard stops older concurrent workers from overwriting cache data after a newer lookup starts, even if the newer lookup fails. The older worker still returns its own result; cross-process writes are not coordinated. Deterministic unit tests cover ordering. Next combine two HTTPS lookups, cancellation, extension session replacement and cache persistence in one fixture.
 
 The cancelled Nitro lookup and replacement extension-session fixture now verifies the shared on-disk cache after releasing the old worker. The provider remains simulated; combine this ordering with two local HTTPS requests next.
+
+Two local HTTPS responses now exercise the cancelled Nitro session and cache race end to end. The extension session and cache retain the newer data; temporary fixture cleanup is checked. Compare Origins release discovery and fallback against the Java provider next.
