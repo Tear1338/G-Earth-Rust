@@ -194,6 +194,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Empty capture-group patterns now support zero-width matches at each Latin-1 character boundary. Six cases were compared with the released beta-29 Java API, including nested empty groups, invalid references and no eligible field; a separate large-packet test verifies transactional size limits. Twenty mutation tests, both Clippy configurations and desktop/web build pass locally. Full Java regex semantics remain incomplete. Actions runs 42708922824 and 42709463230 passed all eight jobs for Unity SOCKS and single literal capture respectively.
 
+- Fixed-pattern substring replacement now recognizes Java `\Q...\E` quoting and named capture groups/references. Eleven cases were compared with the released beta-29 API, including empty or unterminated quoting, nested named captures and invalid names; focused tests cover transactional failures. Mutation tests, both Clippy configurations and desktop/web build pass. Dynamic regex constructs and real extension use remain unverified. Actions runs 42709870503 and 42710181296 passed all eight jobs for multiple and nested groups.
+
 ## Exact next step
 
-Compare Java `\Q...\E` quoted literal patterns and named captures with the released API, including the raw-pattern containment gate; add differential cases and extend bounded replacement only for demonstrated semantics. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Compare Java regex dynamic single-character matching (`.`), line terminators and group references with the released beta-29 API; design a bounded matcher and add differential tests before implementation. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

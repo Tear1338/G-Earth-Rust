@@ -281,7 +281,12 @@ pub struct Packet {
     cursor: usize,
     pub edited: bool,
 }
-fn expand_literal_groups(replacement: &str, whole: &str, groups: &[String]) -> Result<String> {
+fn expand_literal_groups(
+    replacement: &str,
+    whole: &str,
+    groups: &[String],
+    names: &[Option<String>],
+) -> Result<String> {
     let mut expanded = String::new();
     let mut chars = replacement.chars().peekable();
     while let Some(c) = chars.next() {
@@ -292,6 +297,31 @@ fn expand_literal_groups(replacement: &str, whole: &str, groups: &[String]) -> R
                     .ok_or_else(|| error("invalid replacement escape"))?,
             ),
             '$' => {
+                if chars.peek() == Some(&'{') {
+                    chars.next();
+                    let mut name = String::new();
+                    loop {
+                        match chars.next() {
+                            Some('}') => break,
+                            Some(c) if c.is_ascii_alphanumeric() => {
+                                if name.len() == usize::from(u16::MAX) {
+                                    return Err(error("replacement group name too long"));
+                                }
+                                name.push(c);
+                            }
+                            _ => return Err(error("invalid named replacement group")),
+                        }
+                    }
+                    let index = names
+                        .iter()
+                        .position(|candidate| candidate.as_deref() == Some(name.as_str()))
+                        .ok_or_else(|| error("unknown named replacement group"))?;
+                    expanded.push_str(&groups[index]);
+                    if expanded.len() > usize::from(u16::MAX) * 2 {
+                        return Err(error("short string too long"));
+                    }
+                    continue;
+                }
                 let mut group = chars
                     .next()
                     .and_then(|c| c.to_digit(10))
@@ -1386,8 +1416,8 @@ impl Packet {
     }
 
     /// Java replacement for fixed literal patterns with capture groups, including
-    /// nested and empty groups and escaped regex metacharacters. Other regex
-    /// constructs remain unsupported.
+    /// named, nested and empty groups, escaped metacharacters and quoted literals.
+    /// Other regex constructs remain unsupported.
     pub fn replace_substrings_java_groups(
         &mut self,
         pattern: &str,
@@ -1404,16 +1434,55 @@ impl Packet {
         let pattern_bytes = latin1_encode(pattern)?;
         let mut literal = String::new();
         let mut groups: Vec<String> = Vec::new();
-        let mut open = Vec::new();
-        let mut chars = pattern.chars();
+        let mut names: Vec<Option<String>> = Vec::new();
+        let mut open: Vec<usize> = Vec::new();
+        let mut chars = pattern.chars().peekable();
+        let mut quoted = false;
         while let Some(mut c) = chars.next() {
+            if quoted {
+                if c == '\\' && chars.peek() == Some(&'E') {
+                    chars.next();
+                    quoted = false;
+                    continue;
+                }
+                literal.push(c);
+                for &index in &open {
+                    groups[index].push(c);
+                }
+                continue;
+            }
             match c {
                 '(' => {
                     if groups.len() == 99 {
                         return Err(error("too many capture groups"));
                     }
+                    let name = if chars.peek() == Some(&'?') {
+                        chars.next();
+                        if chars.next() != Some('<') {
+                            return Err(error("unsupported regex group"));
+                        }
+                        let mut name = String::new();
+                        loop {
+                            match chars.next() {
+                                Some('>') => break,
+                                Some(c) if c.is_ascii_alphanumeric() => name.push(c),
+                                _ => return Err(error("invalid capture group name")),
+                            }
+                        }
+                        if !name.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+                            || names
+                                .iter()
+                                .any(|candidate| candidate.as_deref() == Some(name.as_str()))
+                        {
+                            return Err(error("invalid capture group name"));
+                        }
+                        Some(name)
+                    } else {
+                        None
+                    };
                     open.push(groups.len());
                     groups.push(String::new());
+                    names.push(name);
                     continue;
                 }
                 ')' => {
@@ -1424,8 +1493,14 @@ impl Packet {
                 '\\' => {
                     c = chars
                         .next()
-                        .filter(|c| ".^$|?*+()[]{}\\".contains(*c))
                         .ok_or_else(|| error("unsupported regex escape"))?;
+                    if c == 'Q' {
+                        quoted = true;
+                        continue;
+                    }
+                    if !".^$|?*+()[]{}\\".contains(c) {
+                        return Err(error("unsupported regex escape"));
+                    }
                 }
                 '.' | '^' | '$' | '|' | '?' | '*' | '+' | '[' | ']' | '{' | '}' => {
                     return Err(error("unsupported regex construct"));
@@ -1463,7 +1538,8 @@ impl Packet {
                         let result = if occurrences == 0 {
                             text
                         } else {
-                            let expanded = expand_literal_groups(replacement, &literal, &groups)?;
+                            let expanded =
+                                expand_literal_groups(replacement, &literal, &groups, &names)?;
                             let expanded_bytes = latin1_encode(&expanded)?;
                             let result_len = length
                                 .checked_sub(occurrences * needle.len())

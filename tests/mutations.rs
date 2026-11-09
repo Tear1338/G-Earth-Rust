@@ -421,6 +421,33 @@ fn java_zero_width_group_respects_size_bounds_and_preserves_packet_on_error() {
 }
 
 #[test]
+fn java_named_group_rejects_invalid_names_and_references_transactionally() {
+    let mut packet = Packet::new(9);
+    packet.put_string("(?<pet>cat) cat").unwrap();
+    let before = packet.clone();
+    for pattern in ["(?<1pet>cat)", "(?<x>a)(?<x>b)", "(?<=cat)"] {
+        assert!(packet
+            .replace_substrings_java_groups(pattern, "x", None)
+            .is_err());
+        assert_eq!(packet, before);
+    }
+    for replacement in ["${missing}", "${pet", "${}"] {
+        assert!(packet
+            .replace_substrings_java_groups("(?<pet>cat)", replacement, None)
+            .is_err());
+        assert_eq!(packet, before);
+    }
+    assert_eq!(
+        packet
+            .replace_substrings_java_groups("(?<pet>cat)", "${pet}!", None)
+            .unwrap(),
+        1
+    );
+    packet.reset();
+    assert_eq!(packet.read_string().unwrap(), "(?<pet>cat!) cat!");
+}
+
+#[test]
 fn append_typed_fields_preserves_prior_fields_on_error() {
     use gearth_rust::packet::{PacketField, PacketFormat};
     let mut packet = Packet::new(7);

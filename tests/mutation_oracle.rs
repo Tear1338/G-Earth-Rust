@@ -708,6 +708,54 @@ fn mutations_match_original_java_packets_and_cursor() {
             }
         }
     }
+    let quoted_groups = [
+        ("(\\Q(a+b)\\E) (a+b)", "(\\Q(a+b)\\E)", "[$1]", Some(1)),
+        ("(\\Qx.y\\E) x.y", "(\\Qx.y\\E)", "$0:$1", Some(1)),
+        ("(cat)\\Qx catx", "(cat)\\Qx", "<$1>", Some(1)),
+        ("(\\Q\\E) x", "(\\Q\\E)", "-", Some(1)),
+        ("(\\Q(a+b)\\E)", "(\\Q(a+b)\\E)", "$2", Some(1)),
+    ];
+    for (i, (value, pattern, replacement, limit)) in quoted_groups.iter().enumerate() {
+        let mut packet = Packet::new(9);
+        packet.put_string(value).unwrap();
+        packet.set_cursor(7).unwrap();
+        let before = packet.clone();
+        let key = format!("substring_quoted_{i}");
+        match packet.replace_substrings_java_groups(pattern, replacement, *limit) {
+            Ok(_) => check(&key, &packet),
+            Err(_) => {
+                assert_eq!(expected[key.as_str()], "error");
+                assert_eq!(packet, before);
+            }
+        }
+    }
+    let named_groups = [
+        ("(?<pet>cat) cat", "(?<pet>cat)", "${pet}-$1-$0", Some(1)),
+        (
+            "(?<all>x(?<inner>y)) xy",
+            "(?<all>x(?<inner>y))",
+            "${inner}/${all}/$2",
+            Some(1),
+        ),
+        ("(?<empty>)", "(?<empty>)", "[${empty}]", Some(1)),
+        ("(?<pet>cat) cat", "(?<pet>cat)", "${missing}", Some(1)),
+        ("(?<pet>cat)", "(?<pet>cat)", "${missing}", Some(1)),
+        ("(?<pet>cat) cat", "(?<pet>cat)", "${pet}0", Some(1)),
+    ];
+    for (i, (value, pattern, replacement, limit)) in named_groups.iter().enumerate() {
+        let mut packet = Packet::new(9);
+        packet.put_string(value).unwrap();
+        packet.set_cursor(7).unwrap();
+        let before = packet.clone();
+        let key = format!("substring_named_{i}");
+        match packet.replace_substrings_java_groups(pattern, replacement, *limit) {
+            Ok(_) => check(&key, &packet),
+            Err(_) => {
+                assert_eq!(expected[key.as_str()], "error");
+                assert_eq!(packet, before);
+            }
+        }
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

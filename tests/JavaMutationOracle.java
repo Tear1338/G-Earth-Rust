@@ -367,6 +367,49 @@ public class JavaMutationOracle {
             if (failed) System.out.println("substring_zero_" + i + "=error");
             else emit("substring_zero_" + i, sample);
         }
+        String[][] quotedGroups = {
+            {"(\\Q(a+b)\\E) (a+b)", "(\\Q(a+b)\\E)", "[$1]", "1"},
+            {"(\\Qx.y\\E) x.y", "(\\Qx.y\\E)", "$0:$1", "1"},
+            {"(cat)\\Qx catx", "(cat)\\Qx", "<$1>", "1"},
+            {"(\\Q\\E) x", "(\\Q\\E)", "-", "1"},
+            {"(\\Q(a+b)\\E)", "(\\Q(a+b)\\E)", "$2", "1"},
+        };
+        for (int i = 0; i < quotedGroups.length; i++) {
+            HPacket sample = new HPacket(9);
+            sample.appendString(quotedGroups[i][0]);
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            boolean failed = false;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(quotedGroups[i][1], quotedGroups[i][2], Integer.parseInt(quotedGroups[i][3]));
+            } catch (RuntimeException expected) { failed = true; }
+            finally { System.setOut(original); }
+            if (failed) System.out.println("substring_quoted_" + i + "=error");
+            else emit("substring_quoted_" + i, sample);
+        }
+        String[][] namedGroups = {
+            {"(?<pet>cat) cat", "(?<pet>cat)", "${pet}-$1-$0", "1"},
+            {"(?<all>x(?<inner>y)) xy", "(?<all>x(?<inner>y))", "${inner}/${all}/$2", "1"},
+            {"(?<empty>)", "(?<empty>)", "[${empty}]", "1"},
+            {"(?<pet>cat) cat", "(?<pet>cat)", "${missing}", "1"},
+            {"(?<pet>cat)", "(?<pet>cat)", "${missing}", "1"},
+            {"(?<pet>cat) cat", "(?<pet>cat)", "${pet}0", "1"},
+        };
+        for (int i = 0; i < namedGroups.length; i++) {
+            HPacket sample = new HPacket(9);
+            sample.appendString(namedGroups[i][0]);
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            boolean failed = false;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(namedGroups[i][1], namedGroups[i][2], Integer.parseInt(namedGroups[i][3]));
+            } catch (RuntimeException expected) { failed = true; }
+            finally { System.setOut(original); }
+            if (failed) System.out.println("substring_named_" + i + "=error");
+            else emit("substring_named_" + i, sample);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);
