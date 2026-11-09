@@ -1277,6 +1277,29 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_multi_retention_{i}"), &packet);
     }
+    let nullable_patterns = [
+        "((a)?(b)?)*",
+        "((a)?(b)?)*?",
+        "((a)??(b)?)+",
+        "x((a)?(b)?)*b",
+        "((?<left>a)?(?<right>b)?)+?",
+        "x((a)?(b)??)+b",
+    ];
+    let nullable_alphabet = ['a', 'b', 'x', 'é', ' ', '\n', '\r', '\u{85}'];
+    for i in 0..180 {
+        let pattern = nullable_patterns[i % nullable_patterns.len()];
+        let mut value = format!("{pattern} ab aa bb xab xb ");
+        for j in 0..16 {
+            value.push(nullable_alphabet[(i * 7 + j * 3) % nullable_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java_groups(pattern, "$1/$2/$3/$0", Some(1))
+            .unwrap();
+        check(&format!("substring_nullable_repeat_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

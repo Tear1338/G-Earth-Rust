@@ -872,6 +872,20 @@ mod regex_budget_tests {
     }
 
     #[test]
+    fn nullable_nested_repeat_stops_and_retains_captures() {
+        let atoms = [FixedRegexAtom::Literal(b'a'), FixedRegexAtom::Literal(b'b')];
+        let program =
+            compile_nested_repeat(2, (0, 2, 0, true), &[(0, 1, true, 1), (1, 2, true, 2)], 0);
+        let mut comparisons = 0;
+        let (end, captures) = match_nested_repeat(b"ab", 0, &atoms, &program, 3, &mut comparisons)
+            .unwrap()
+            .unwrap();
+        assert_eq!(end, 2);
+        assert_eq!(captures, ["", "a", "b"]);
+        assert!(comparisons < 100);
+    }
+
+    #[test]
     fn nested_repeat_retains_multiple_independent_captures() {
         let atoms = [
             FixedRegexAtom::Literal(b'a'),
@@ -919,6 +933,12 @@ enum NestedInstruction {
     Start(usize),
     End(usize),
     Split(usize, usize),
+    Loop {
+        body: usize,
+        exit: usize,
+        greedy: bool,
+        group: usize,
+    },
 }
 
 fn compile_nested_repeat(
@@ -969,10 +989,11 @@ fn compile_nested_repeat(
     let loop_split = program.len();
     program.push(NestedInstruction::Split(0, 0));
     let after_loop = program.len();
-    program[loop_split] = if greedy {
-        NestedInstruction::Split(body, after_loop)
-    } else {
-        NestedInstruction::Split(after_loop, body)
+    program[loop_split] = NestedInstruction::Loop {
+        body,
+        exit: after_loop,
+        greedy,
+        group: outer_group,
     };
     if let Some(pc) = initial_split {
         program[pc] = if greedy {
@@ -1012,10 +1033,14 @@ fn match_nested_repeat(
                 .collect();
             return Ok(Some((*position, groups)));
         }
-        let choices = if matches!(program[*pc], NestedInstruction::Split(..)) {
-            2
-        } else {
-            1
+        let choices = match program[*pc] {
+            NestedInstruction::Split(..) => 2,
+            NestedInstruction::Loop { group, .. }
+                if captures[group].is_some_and(|(start, end)| start != end) =>
+            {
+                2
+            }
+            _ => 1,
         };
         if *choice == choices {
             let checkpoint = *checkpoint;
@@ -1054,6 +1079,16 @@ fn match_nested_repeat(
             }
             NestedInstruction::Split(first, second) => {
                 (if branch == 0 { first } else { second }, position)
+            }
+            NestedInstruction::Loop {
+                body,
+                exit,
+                greedy,
+                group,
+            } => {
+                let progressed = captures[group].is_some_and(|(start, end)| start != end);
+                let repeat = progressed && ((branch == 0) == greedy);
+                (if repeat { body } else { exit }, position)
             }
         };
         if frames.len() >= MAX_STATES || trail.len() >= MAX_STATES {
@@ -2460,18 +2495,13 @@ impl Packet {
                 }
                 inner_specs.sort_by_key(|spec| spec.0);
                 let mut cursor = start;
-                let mut optional_width = 0;
                 for &(inner_start, inner_end, _, _) in &inner_specs {
                     if inner_start < cursor {
                         return Err(error(
                             "overlapping nested optional captures are not supported",
                         ));
                     }
-                    optional_width += inner_end - inner_start;
                     cursor = inner_end;
-                }
-                if end - start == optional_width {
-                    return Err(error("nullable nested repeated capture is not supported"));
                 }
                 nested_program = Some(compile_nested_repeat(
                     atoms.len(),
