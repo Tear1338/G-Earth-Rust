@@ -498,11 +498,43 @@ fn parse_character_class(
     Ok(class)
 }
 
+fn repetition_bounds(
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+) -> Result<(usize, Option<usize>)> {
+    fn number(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Result<Option<usize>> {
+        let mut value = None;
+        while chars.peek().is_some_and(|c| c.is_ascii_digit()) {
+            let digit = chars.next().unwrap().to_digit(10).unwrap() as usize;
+            value = Some(
+                value
+                    .unwrap_or(0usize)
+                    .checked_mul(10)
+                    .and_then(|n| n.checked_add(digit))
+                    .filter(|n| *n <= i32::MAX as usize)
+                    .ok_or_else(|| error("regex repetition limit too large"))?,
+            );
+        }
+        Ok(value)
+    }
+    let min = number(chars)?.ok_or_else(|| error("invalid regex repetition"))?;
+    let max = if chars.peek() == Some(&',') {
+        chars.next();
+        number(chars)?
+    } else {
+        Some(min)
+    };
+    if chars.next() != Some('}') || max.is_some_and(|max| min > max) {
+        return Err(error("invalid regex repetition"));
+    }
+    Ok((min, max))
+}
+
 enum RegexInstruction {
     Atom(usize),
     Repeat {
         index: usize,
         min: usize,
+        limit: Option<usize>,
         greedy: bool,
     },
     Split {
@@ -516,7 +548,7 @@ enum RegexInstruction {
 fn compile_optional_program(
     atom_count: usize,
     optional: &[(usize, usize, bool)],
-    repeated: &[Option<(usize, bool)>],
+    repeated: &[Option<(usize, Option<usize>, bool)>],
 ) -> Vec<RegexInstruction> {
     let mut starts = vec![Vec::new(); atom_count];
     let mut ends = vec![Vec::new(); atom_count + 1];
@@ -543,10 +575,11 @@ fn compile_optional_program(
                 greedy,
             });
         }
-        if let Some((min, greedy)) = repeated[atom] {
+        if let Some((min, limit, greedy)) = repeated[atom] {
             program.push(RegexInstruction::Repeat {
                 index: atom,
                 min,
+                limit,
                 greedy,
             });
         } else {
@@ -594,11 +627,20 @@ fn match_fixed_at(
         if *pc == program.len() {
             return Ok(Some(positions));
         }
-        if let RegexInstruction::Repeat { index, min, greedy } = &program[*pc] {
+        if let RegexInstruction::Repeat {
+            index,
+            min,
+            limit,
+            greedy,
+        } = &program[*pc]
+        {
             if *greedy {
                 if maximum.is_none() {
                     let mut length = 0;
-                    while let Some(&byte) = input.get(*position + length) {
+                    while limit.is_none_or(|limit| length < limit) {
+                        let Some(&byte) = input.get(*position + length) else {
+                            break;
+                        };
                         consume_regex_budget(comparisons)?;
                         if !atom_accepts(&atoms[*index], byte) {
                             break;
@@ -613,15 +655,25 @@ fn match_fixed_at(
                 }
             } else {
                 let length = min + *choice;
-                if length > 0 {
+                if limit.is_some_and(|limit| length > limit) {
+                    frames.pop();
+                    continue;
+                }
+                let first = if *choice == 0 { 0 } else { length - 1 };
+                let mut matched = true;
+                for step in first..length {
                     consume_regex_budget(comparisons)?;
                     if !input
-                        .get(*position + length - 1)
+                        .get(*position + step)
                         .is_some_and(|byte| atom_accepts(&atoms[*index], *byte))
                     {
-                        frames.pop();
-                        continue;
+                        matched = false;
+                        break;
                     }
+                }
+                if !matched {
+                    frames.pop();
+                    continue;
                 }
             }
         } else {
@@ -666,7 +718,9 @@ fn match_fixed_at(
                     frames.push((pc + 1, position + 1, 0, None));
                 }
             }
-            RegexInstruction::Repeat { index, min, greedy } => {
+            RegexInstruction::Repeat {
+                index, min, greedy, ..
+            } => {
                 let length = if *greedy {
                     maximum.unwrap() - branch
                 } else {
@@ -1978,13 +2032,33 @@ impl Packet {
                     if chars.peek() == Some(&'+') {
                         return Err(error("unsupported possessive quantifier"));
                     }
-                    repeated.push((atoms.len() - 1, min, greedy));
+                    repeated.push((atoms.len() - 1, min, None, greedy));
                     dynamic = true;
                     quantifiable = false;
                     last_closed_group = None;
                     continue;
                 }
-                '^' | '$' | '|' | ']' | '{' | '}' => {
+                '{' => {
+                    if !quantifiable {
+                        return Err(error("unsupported repetition quantifier"));
+                    }
+                    let (min, limit) = repetition_bounds(&mut chars)?;
+                    let greedy = if chars.peek() == Some(&'?') {
+                        chars.next();
+                        false
+                    } else {
+                        true
+                    };
+                    if chars.peek() == Some(&'+') {
+                        return Err(error("unsupported possessive quantifier"));
+                    }
+                    repeated.push((atoms.len() - 1, min, limit, greedy));
+                    dynamic = true;
+                    quantifiable = false;
+                    last_closed_group = None;
+                    continue;
+                }
+                '^' | '$' | '|' | ']' | '}' => {
                     return Err(error("unsupported regex construct"));
                 }
                 _ => {}
@@ -2002,8 +2076,8 @@ impl Packet {
         }
         let needle = latin1_encode(&literal)?;
         let mut repeated_atoms = vec![None; atoms.len()];
-        for (index, min, greedy) in repeated {
-            repeated_atoms[index] = Some((min, greedy));
+        for (index, min, limit, greedy) in repeated {
+            repeated_atoms[index] = Some((min, limit, greedy));
         }
         let program = compile_optional_program(atoms.len(), &optional, &repeated_atoms);
         let mut candidate = self.clone();

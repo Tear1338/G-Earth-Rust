@@ -387,7 +387,7 @@ fn java_literal_groups_keep_no_match_and_reject_unsupported_patterns_transaction
     let mut packet = Packet::new(9);
     packet.put_string("(a)(b) ab").unwrap();
     let before = packet.clone();
-    for pattern in ["(a.{2})", "(\\p)", "(a", "a)", "abc"] {
+    for pattern in ["(a.{2,1})", "(\\p)", "(a", "a)", "abc"] {
         assert!(packet
             .replace_substrings_java_groups(pattern, "$1", None)
             .is_err());
@@ -565,6 +565,25 @@ fn java_reluctant_repetition_does_not_rescan_the_remaining_field() {
     );
     packet.reset();
     assert_eq!(packet.read_string().unwrap(), value);
+}
+
+#[test]
+fn java_bounded_regex_repetition_rejects_invalid_bounds_transactionally() {
+    let mut packet = Packet::new(9);
+    packet.put_string("(a{2}) aaa").unwrap();
+    let before = packet.clone();
+    for pattern in ["(a{2,1})", "(a{2147483648})", "(a{,2})", "(a{2,3}+)"] {
+        assert!(packet
+            .replace_substrings_java_groups(pattern, "x", None)
+            .is_err());
+        assert_eq!(packet, before);
+    }
+    assert_eq!(
+        packet
+            .replace_substrings_java_groups("(a{2})", "[$1]", Some(1))
+            .unwrap(),
+        1
+    );
 }
 
 #[test]

@@ -69,6 +69,8 @@
 
 ## Unreleased
 
+- Support bounded greedy and reluctant Java regex `{m}`, `{m,n}` and `{m,}` atom repetitions.
+
 - Support bounded Java greedy and reluctant `*`/`+` repetition on individual regex atoms.
 
 - Support bounded nested optional Java regex quantifiers with capture restoration.

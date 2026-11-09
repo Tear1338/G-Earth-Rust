@@ -1106,6 +1106,55 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_repeat_corpus_{i}"), &packet);
     }
+    let bounded_groups = [
+        ("(a{2}) a aaa", "(a{2})", "[$1]", Some(1)),
+        ("(a{0}) a", "(a{0})", "[$1]", Some(1)),
+        ("(a{1,3}) a aaaa", "(a{1,3})", "[$1]", Some(1)),
+        ("(a{1,3}?) a aaaa", "(a{1,3}?)", "[$1]", Some(1)),
+        ("x(a{2,}?)b xaab xaaab", "x(a{2,}?)b", "$1/$0", Some(1)),
+        ("([a-c]{2,3}) abcd", "([a-c]{2,3})", "[$1]", Some(1)),
+        ("(a{2,1}) aa", "(a{2,1})", "x", Some(1)),
+        ("(a{2147483648}) aa", "(a{2147483648})", "x", Some(1)),
+    ];
+    for (i, (value, pattern, replacement, limit)) in bounded_groups.iter().enumerate() {
+        let mut packet = Packet::new(9);
+        packet.put_string(value).unwrap();
+        packet.set_cursor(7).unwrap();
+        let before = packet.clone();
+        let key = format!("substring_bounded_{i}");
+        match packet.replace_substrings_java_groups(pattern, replacement, *limit) {
+            Ok(_) => check(&key, &packet),
+            Err(_) => {
+                assert_eq!(expected[key.as_str()], "error");
+                assert_eq!(packet, before);
+            }
+        }
+    }
+    let bounded_patterns = [
+        "(a{0})",
+        "(a{2})",
+        "(a{1,3})",
+        "(a{1,3}?)",
+        "x(a{2,}?)b",
+        "([a-c]{2,3})",
+        "((a{1,2})b)?",
+        "x(\\d{1,2})b",
+    ];
+    let bounded_alphabet = ['a', 'b', 'c', 'x', '0', '1', 'é', ' ', '\n', '\u{85}'];
+    for i in 0..160 {
+        let pattern = bounded_patterns[i % bounded_patterns.len()];
+        let mut value = format!("{pattern} aaaa ab aaab xab xaab x123b ");
+        for j in 0..24 {
+            value.push(bounded_alphabet[(i * 7 + j * 3) % bounded_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java_groups(pattern, "$1/$0", Some(1))
+            .unwrap();
+        check(&format!("substring_bounded_corpus_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

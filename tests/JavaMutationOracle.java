@@ -706,6 +706,46 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_repeat_corpus_" + i, sample);
         }
+        String[][] boundedGroups = {
+            {"(a{2}) a aaa", "(a{2})", "[$1]", "1"},
+            {"(a{0}) a", "(a{0})", "[$1]", "1"},
+            {"(a{1,3}) a aaaa", "(a{1,3})", "[$1]", "1"},
+            {"(a{1,3}?) a aaaa", "(a{1,3}?)", "[$1]", "1"},
+            {"x(a{2,}?)b xaab xaaab", "x(a{2,}?)b", "$1/$0", "1"},
+            {"([a-c]{2,3}) abcd", "([a-c]{2,3})", "[$1]", "1"},
+            {"(a{2,1}) aa", "(a{2,1})", "x", "1"},
+            {"(a{2147483648}) aa", "(a{2147483648})", "x", "1"},
+        };
+        for (int i = 0; i < boundedGroups.length; i++) {
+            HPacket sample = new HPacket(9);
+            sample.appendString(boundedGroups[i][0]);
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            boolean failed = false;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(boundedGroups[i][1], boundedGroups[i][2], Integer.parseInt(boundedGroups[i][3]));
+            } catch (RuntimeException expected) { failed = true; }
+            finally { System.setOut(original); }
+            if (failed) System.out.println("substring_bounded_" + i + "=error");
+            else emit("substring_bounded_" + i, sample);
+        }
+        String[] boundedPatterns = {"(a{0})", "(a{2})", "(a{1,3})", "(a{1,3}?)", "x(a{2,}?)b", "([a-c]{2,3})", "((a{1,2})b)?", "x(\\d{1,2})b"};
+        char[] boundedAlphabet = {'a', 'b', 'c', 'x', '0', '1', 'é', ' ', '\n', '\u0085'};
+        for (int i = 0; i < 160; i++) {
+            String pattern = boundedPatterns[i % boundedPatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(" aaaa ab aaab xab xaab x123b ");
+            for (int j = 0; j < 24; j++) value.append(boundedAlphabet[(i * 7 + j * 3) % boundedAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, "$1/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_bounded_corpus_" + i, sample);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);

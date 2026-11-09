@@ -1,5 +1,7 @@
 # Continuation state
 
+Java bounded repetition `{m}`, `{m,n}` and `{m,}` on individual regex atoms now supports greedy and reluctant matching under the shared work budget. Eight targeted cases and 160 generated packets match the released beta-29 Java API, including zero-width cases and invalid bounds. Twenty-eight mutation tests, the budget test, both Clippy configurations and desktop/web build pass. Repetition of groups, possessive quantifiers and full Java regex remain open. Next compare repeated capture groups against Java.
+
 Greedy and reluctant `*`/`+` on individual regex atoms now use bounded iterative execution and per-match captures. Eight targeted cases and 160 generated packets match the released beta-29 Java API; tests cover growth limits and a 40,000-byte reluctant match. Twenty-seven mutation tests, the work-budget test, both Clippy configurations and desktop/web build pass. Quantified groups, bounded repetitions, possessive quantifiers and full Java regex remain open. Next compare bounded atom repetitions against Java.
 
 Nested and overlapping optional regex quantifiers now compile to an iterative bounded instruction program that restores capture positions on backtracking. A 160-packet corpus matches the released beta-29 Java API, including nested empty and unmatched captures. The shared work-budget test, 25 mutation tests, both Clippy configurations and desktop/web build pass. Repetition, possessive quantifiers and full Java regex remain unsupported. Next compare greedy and reluctant atom repetition against Java.
