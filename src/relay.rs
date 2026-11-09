@@ -706,60 +706,76 @@ fn run_session(
                         version: identity.version.clone(),
                         identifier: identity.identifier.clone(),
                     });
-                    if let (Some(host), Some(details)) = (&options.extensions, &options.connection)
-                    {
+                    if let Some(details) = &options.connection {
                         let mut details = details.clone();
                         details.version = identity.version;
                         details.identifier = identity.identifier;
-                        if details.packets.entries().is_empty() {
-                            let _ = events.try_send(Event::Status(
-                                "Loading packet identifiers for the detected Flash revision..."
-                                    .into(),
-                            ));
-                            let version = details.version.clone();
-                            #[cfg(test)]
-                            let lookup = options.flash_lookup.clone();
-                            match cancellable_flash_lookup(
-                                stop,
-                                closed,
-                                || peer_has_closed(&client) || peer_has_closed(&server),
-                                move || {
-                                    #[cfg(test)]
-                                    if let Some(lookup) = lookup {
-                                        return lookup(version);
-                                    }
-                                    crate::packet_info::PacketInfoManager::fetch_sulek(
-                                        &version, false,
-                                    )
-                                },
-                            ) {
-                                Ok(database) => {
-                                    let _ =
-                                        events.try_send(Event::PacketIdentifiers(database.clone()));
-                                    details.packets = database;
-                                }
-                                Err(e) if e.kind() == io::ErrorKind::Interrupted => return Ok(()),
-                                Err(e) => {
-                                    let _ = events.try_send(Event::Status(format!(
-                                        "Connected without packet names: {e}"
-                                    )));
-                                }
-                            }
-                            if stop.load(Ordering::Acquire) || closed.load(Ordering::Acquire) {
-                                return Ok(());
-                            }
+                        if !details.packets.entries().is_empty()
+                            && (details.version.is_empty()
+                                || details.packets.version != details.version)
+                        {
+                            let _ = events.try_send(Event::Status(format!(
+                                "Ignoring Flash packet identifiers for revision {:?}; detected {:?}",
+                                details.packets.version, details.version
+                            )));
+                            details.packets = crate::packet_info::PacketInfoManager::new(
+                                &details.version,
+                                Vec::new(),
+                            );
+                            let _ =
+                                events.try_send(Event::PacketIdentifiers(details.packets.clone()));
                         }
-                        if let Some(safety) = &options.packet_safety {
+                        if let Some(host) = &options.extensions {
+                            if details.packets.entries().is_empty() {
+                                let _ = events.try_send(Event::Status(
+                                    "Loading packet identifiers for the detected Flash revision..."
+                                        .into(),
+                                ));
+                                let version = details.version.clone();
+                                #[cfg(test)]
+                                let lookup = options.flash_lookup.clone();
+                                match cancellable_flash_lookup(
+                                    stop,
+                                    closed,
+                                    || peer_has_closed(&client) || peer_has_closed(&server),
+                                    move || {
+                                        #[cfg(test)]
+                                        if let Some(lookup) = lookup {
+                                            return lookup(version);
+                                        }
+                                        crate::packet_info::PacketInfoManager::fetch_sulek(
+                                            &version, false,
+                                        )
+                                    },
+                                ) {
+                                    Ok(database) => {
+                                        let _ = events
+                                            .try_send(Event::PacketIdentifiers(database.clone()));
+                                        details.packets = database;
+                                    }
+                                    Err(e) if e.kind() == io::ErrorKind::Interrupted => {
+                                        return Ok(())
+                                    }
+                                    Err(e) => {
+                                        let _ = events.try_send(Event::Status(format!(
+                                            "Connected without packet names: {e}"
+                                        )));
+                                    }
+                                }
+                                if stop.load(Ordering::Acquire) || closed.load(Ordering::Acquire) {
+                                    return Ok(());
+                                }
+                            }
+                            if let Some(safety) = &options.packet_safety {
+                                if let Ok(mut safety) = safety.lock() {
+                                    safety.register_metadata(&details.version, &details.packets);
+                                }
+                            }
+                            *extension_session = Some(host.start_owned_connection(details)?);
+                        } else if let Some(safety) = &options.packet_safety {
                             if let Ok(mut safety) = safety.lock() {
                                 safety.register_metadata(&details.version, &details.packets);
                             }
-                        }
-                        *extension_session = Some(host.start_owned_connection(details)?);
-                    } else if let (Some(safety), Some(details)) =
-                        (&options.packet_safety, &options.connection)
-                    {
-                        if let Ok(mut safety) = safety.lock() {
-                            safety.register_metadata(&safety_revision, &details.packets);
                         }
                     }
                 }
@@ -825,6 +841,9 @@ mod tests {
     use crate::packet::{read_frame, write_frame};
     use std::net::Shutdown;
 
+    // These tests intentionally occupy the process-wide bounded lookup slots.
+    static LOOKUP_TEST_LOCK: Mutex<()> = Mutex::new(());
+
     fn wait_for(events: &Receiver<Event>, predicate: impl Fn(&Event) -> bool) {
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while std::time::Instant::now() < deadline {
@@ -838,6 +857,7 @@ mod tests {
     }
     #[test]
     fn flash_metadata_lookup_returns_results_and_can_be_cancelled() {
+        let _test_lock = LOOKUP_TEST_LOCK.lock().unwrap();
         let stop = AtomicBool::new(false);
         let closed = AtomicBool::new(false);
         assert_eq!(
@@ -890,6 +910,7 @@ mod tests {
 
     #[test]
     fn relay_stop_does_not_wait_for_stalled_flash_metadata_lookup() {
+        let _test_lock = LOOKUP_TEST_LOCK.lock().unwrap();
         use crate::packet_info::PacketInfoManager;
         let (host, _) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
         let remote = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -945,6 +966,7 @@ mod tests {
 
     #[test]
     fn disconnected_flash_peer_does_not_start_stale_extension_session_during_lookup() {
+        let _test_lock = LOOKUP_TEST_LOCK.lock().unwrap();
         use crate::packet_info::PacketInfoManager;
         for close_client in [true, false] {
             let (host, _) =
@@ -1006,6 +1028,149 @@ mod tests {
                 "stale Flash session replaced the existing extension session"
             );
             relay.stop();
+            host.stop();
+        }
+    }
+
+    #[test]
+    fn flash_reconnect_does_not_reuse_stale_or_unversioned_metadata() {
+        let _test_lock = LOOKUP_TEST_LOCK.lock().unwrap();
+        use crate::{
+            extension::{self, ExtensionInfo},
+            extension_host::HostEvent,
+            packet_info::{PacketInfo, PacketInfoManager},
+            packet_safety::PacketSafety,
+        };
+        for original_version in ["OLD", ""] {
+            let (host, host_events) =
+                ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+            let mut extension_peer = TcpStream::connect(host.address).unwrap();
+            extension_peer
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            assert_eq!(read_frame(&mut extension_peer).unwrap().header(), 2);
+            let info = ExtensionInfo {
+                title: "fixture".into(),
+                author: "test".into(),
+                version: "1".into(),
+                description: String::new(),
+                on_click: false,
+                file: None,
+                cookie: String::new(),
+                can_leave: true,
+                can_delete: true,
+            };
+            write_frame(
+                &mut extension_peer,
+                &extension::info_response(&info).unwrap(),
+            )
+            .unwrap();
+            let id = match host_events.recv_timeout(Duration::from_secs(3)).unwrap() {
+                HostEvent::Pending { id, .. } => id,
+                event => panic!("{event:?}"),
+            };
+            host.approve(id).unwrap();
+            assert_eq!(read_frame(&mut extension_peer).unwrap().header(), 7);
+            let entry = |header| PacketInfo {
+                header,
+                name: Some(format!("Packet{header}")),
+                hash: None,
+                structure: None,
+                direction: Direction::ToServer,
+                source: "fixture".into(),
+            };
+            let stale = PacketInfoManager::new(original_version, vec![entry(777)]);
+            let safety = Arc::new(Mutex::new(PacketSafety::default()));
+            let lookup = Arc::new(move |version: String| {
+                let header = if version == "REV-1" {
+                    801
+                } else if version == "REV-2" {
+                    802
+                } else {
+                    panic!("unexpected revision {version}")
+                };
+                Ok(PacketInfoManager::new(
+                    version,
+                    vec![PacketInfo {
+                        header,
+                        name: Some(format!("Packet{header}")),
+                        hash: None,
+                        structure: None,
+                        direction: Direction::ToServer,
+                        source: "fixture".into(),
+                    }],
+                ))
+            });
+            let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+            let details = ConnectionDetails {
+                host: "fixture".into(),
+                port: 1,
+                version: original_version.into(),
+                identifier: String::new(),
+                client_type: "FLASH".into(),
+                packets: stale,
+            };
+            let (mut relay, events) = Relay::start_with_options(
+                Config {
+                    listen: "127.0.0.1:0".parse().unwrap(),
+                    remote: remote.local_addr().unwrap().to_string(),
+                },
+                RelayOptions {
+                    flash_process: Some(1),
+                    extensions: Some(host.clone()),
+                    packet_safety: Some(safety.clone()),
+                    flash_lookup: Some(lookup),
+                    connection: Some(details),
+                    ..RelayOptions::default()
+                },
+            )
+            .unwrap();
+            for (version, expected_header, other_header) in
+                [("REV-1", 801, 802), ("REV-2", 802, 801)]
+            {
+                let mut client = TcpStream::connect(relay.address).unwrap();
+                let (mut server, _) = remote.accept().unwrap();
+                server
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                let mut hello = Packet::new(1);
+                hello
+                    .put_string(version)
+                    .unwrap()
+                    .put_string("FLASH")
+                    .unwrap();
+                write_frame(&mut client, &hello).unwrap();
+                let mut start = read_frame(&mut extension_peer).unwrap();
+                assert_eq!(start.header(), 5);
+                start.read_string().unwrap();
+                start.read_i32().unwrap();
+                let actual_version = start.read_string().unwrap();
+                assert_eq!(actual_version, version);
+                start.read_string().unwrap();
+                start.read_string().unwrap();
+                let metadata = PacketInfoManager::read_from(actual_version, &mut start).unwrap();
+                assert_eq!(metadata.entries().len(), 1);
+                assert_eq!(metadata.entries()[0].header, expected_header);
+                let mut intercepted = read_frame(&mut extension_peer).unwrap();
+                assert_eq!(intercepted.header(), 3);
+                let message = Message::parse(&intercepted.read_long_string().unwrap()).unwrap();
+                write_frame(
+                    &mut extension_peer,
+                    &extension::manipulated(&message).unwrap(),
+                )
+                .unwrap();
+                assert_eq!(read_frame(&mut server).unwrap().bytes(), hello.bytes());
+                let guard = safety.lock().unwrap();
+                assert!(guard.is_safe(Some(version), Direction::ToServer, expected_header));
+                assert!(!guard.is_safe(Some(version), Direction::ToServer, other_header));
+                assert!(!guard.is_safe(Some(version), Direction::ToServer, 777));
+                drop(guard);
+                drop(client);
+                assert_eq!(read_frame(&mut extension_peer).unwrap().header(), 6);
+                wait_for(&events, |event| matches!(event, Event::Disconnected));
+            }
+            relay.stop();
+            drop(extension_peer);
             host.stop();
         }
     }

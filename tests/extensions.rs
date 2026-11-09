@@ -178,12 +178,14 @@ fn flash_relay_identifies_fragmented_hello_and_starts_extension_session() {
         sync::{Arc, Mutex},
     };
 
-    for version in ["TEST-2026", ""] {
+    for version in ["TEST-2026", "TEST-OTHER"] {
         let (host, host_events) =
             ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
         let (mut extension, _) = connect(&host, &host_events);
         let safety = Arc::new(Mutex::new(PacketSafety::default()));
         host.set_packet_safety(safety.clone()).unwrap();
+        let mut connection = details();
+        connection.packets.version = version.into();
         let remote = TcpListener::bind("127.0.0.1:0").unwrap();
         let (mut relay, events) = Relay::start_with_options(
             Config {
@@ -194,7 +196,7 @@ fn flash_relay_identifies_fragmented_hello_and_starts_extension_session() {
                 flash_process: Some(1),
                 extensions: Some(host.clone()),
                 packet_safety: Some(safety.clone()),
-                connection: Some(details()),
+                connection: Some(connection),
                 ..RelayOptions::default()
             },
         )

@@ -248,6 +248,72 @@ fn tracks_only_original_traffic_before_rules_not_injections() {
 }
 
 #[test]
+fn flash_relay_ignores_stale_metadata_without_extension_host() {
+    use gearth_rust::{
+        extension_host::ConnectionDetails,
+        packet_info::{PacketInfo, PacketInfoManager},
+        packet_safety::PacketSafety,
+        relay::RelayOptions,
+    };
+    use std::sync::{Arc, Mutex};
+    let safety = Arc::new(Mutex::new(PacketSafety::default()));
+    let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+    let stale = PacketInfoManager::new(
+        "OLD",
+        vec![PacketInfo {
+            header: 777,
+            name: Some("OldPacket".into()),
+            hash: None,
+            structure: None,
+            direction: Direction::ToServer,
+            source: "fixture".into(),
+        }],
+    );
+    let (mut relay, events) = Relay::start_with_options(
+        Config {
+            listen: "127.0.0.1:0".parse().unwrap(),
+            remote: remote.local_addr().unwrap().to_string(),
+        },
+        RelayOptions {
+            flash_process: Some(1),
+            packet_safety: Some(safety.clone()),
+            connection: Some(ConnectionDetails {
+                host: "fixture".into(),
+                port: 1,
+                version: "OLD".into(),
+                identifier: String::new(),
+                client_type: "FLASH".into(),
+                packets: stale,
+            }),
+            ..RelayOptions::default()
+        },
+    )
+    .unwrap();
+    let mut client = TcpStream::connect(relay.address).unwrap();
+    let (mut server, _) = remote.accept().unwrap();
+    server
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    let mut hello = Packet::new(1);
+    hello
+        .put_string("NEW")
+        .unwrap()
+        .put_string("FLASH")
+        .unwrap();
+    write_frame(&mut client, &hello).unwrap();
+    assert_eq!(read_frame(&mut server).unwrap().bytes(), hello.bytes());
+    wait_for(
+        &events,
+        |event| matches!(event, Event::PacketIdentifiers(db) if db.version == "NEW" && db.entries().is_empty()),
+    );
+    assert!(!safety
+        .lock()
+        .unwrap()
+        .is_safe(Some("NEW"), Direction::ToServer, 777));
+    relay.stop();
+}
+
+#[test]
 fn scheduled_send_waits_until_packet_id_is_observed() {
     use gearth_rust::{
         extension_host::ConnectionDetails, packet_info::PacketInfoManager,

@@ -103,6 +103,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - GitHub Actions run 42542771246 failed only the Windows G-Python fixture: the kernel could exit after its callback updated shared state but before the interception response was sent. The fixture now waits for a host click sent only after Rust receives the response. Three local Windows GNU runs of the real G-Python kernel fixture and desktop/web Clippy pass; the corrected GitHub run remains to be verified.
 
+- Automatic Flash identification now discards preloaded packet metadata if its revision is absent or differs from the detected revision, clears the advertised database, and fetches matching metadata when an extension host exists. Controlled two-revision reconnect tests verify extension metadata and packet-safety IDs; a separate no-host test verifies stale IDs are not trusted. This changes behavior for manually loaded unversioned metadata: it is ignored in automatic Flash mode. When there is no extension host, a missing database is not fetched yet. Real clients and extensions remain unverified. Local library (50 passed, one Python fixture ignored), 13 relay, 17 extension tests, desktop/web Clippy and debug build pass.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -122,4 +124,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect CI for the G-Python fixture race fix. Finish validating and publish the in-progress Flash metadata revision mismatch/reconnect fix; then verify its CI. Real extensions in game sessions, full Java regex replacement and visual logger interaction remain open.
+Inspect CI for the G-Python fixture race fix and Flash metadata revision validation. Compare Java Flash metadata loading when no extension host is present; implement a cancellable lookup for that path and test success/failure without external network. Real extensions in game sessions, full Java regex replacement and visual logger interaction remain open.

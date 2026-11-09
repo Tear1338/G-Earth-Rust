@@ -1,5 +1,6 @@
 # Changelog
 
+- Reject stale or unversioned preloaded metadata after automatic Flash revision detection.
 - Synchronize the G-Python fixture shutdown after the host receives the final interception response.
 - Compare UTF-16 replacement and long/short-field boundaries against Java.
 - Encode Java UTF-16 code units, including unpaired surrogates, in five packet charsets.
