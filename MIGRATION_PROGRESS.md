@@ -166,6 +166,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Diagnostics from G-Presets CI run 42636827173 identify the first disconnect: the extension rejects the unsupported fixture host `fixture.invalid`. Its pinned source resolves recognized hotel hosts and starts a background HTTPS furnidata request. The fixture now supplies `game-us.habbo.com` as connection metadata and points Java HTTPS at an unserved loopback proxy; the TCP relay endpoints remain loopback. Local test compilation and Clippy pass; the real G-Presets run is pending. The release build at commit 3eeb474 also passed on Windows GNU desktop/web.
 
+- G-Presets 1.6.5 passed the extended loopback relay lifecycle fixture in GitHub Actions run 42637109627: two connections, bidirectional packets and reconnect with the released extension. Its furnidata HTTPS is directed to an unserved loopback proxy; no live hotel or room workflow was exercised. The prior failure was caused by invalid fixture host metadata, not established as a relay defect. Other jobs in that run were still in progress when checked.
+
 ## Exact next step
 
-Inspect the next G-Presets CI run with a recognized metadata host and loopback HTTPS proxy, fix any remaining failure, and verify both sessions and bidirectional interception. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Compare Java Nitro upstream SOCKS routing with Hudsucker's HTTP and WebSocket connection paths, design an authenticated SOCKS implementation without direct-connection fallback, and verify the remaining CI jobs. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

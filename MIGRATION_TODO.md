@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: validate the G-Presets reconnect fixture with a recognized metadata host and isolated HTTPS proxy in CI. Full Java regex and live extension validation remain open.
+Next: implement and verify Nitro upstream SOCKS routing for HTTP, TLS and WebSocket traffic. Full Java regex and live extension validation remain open.
