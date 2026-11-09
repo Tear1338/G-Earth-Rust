@@ -92,6 +92,9 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Added EVA UTF-16BE short/long reads, offset reads, appends and replacement, with strict or Java-like replacement decoding. Java consumes a malformed high surrogate and a following non-low unit as one replacement; selected cases, all 65,536 single code units and 10,000 deterministic byte strings match the beta-29 Java API. Three UTF-16 tests, 23 mutation/UTF-8 tests, desktop/web Clippy and debug compilation pass locally. Full malformed-sequence equivalence, unpaired surrogate inputs, WEDGIE and real extensions remain unverified.
 - GitHub Actions run 42541439488 passed all eight validation jobs for typed packet appends.
 
+- Added `Utf16Encoding` helpers for explicit little/big endian and BOM-sensitive UTF-16, including short/long fields, offset reads, replacement and strict or Java-style lossy decoding. Empty BOM-mode strings encode without a BOM; both BOM orders are recognized. Selected byte/encoding vectors and 10,000 deterministic byte strings per new decoding mode match Java. Four UTF-16 tests, 23 UTF-8/mutation tests, desktop/web Clippy and debug compilation pass locally. Arbitrary malformed sequences, Java unpaired-surrogate input and real extensions remain unverified.
+- GitHub Actions runs 42541595786 and 42541724040 passed all eight validation jobs for Java Latin-1 replacement and its exhaustive scalar oracle.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -111,4 +114,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect CI for the exhaustive Latin-1 oracle and UTF-16BE helpers. Compare Java UTF-16LE and BOM-sensitive UTF-16 decoding/encoding with the new helpers, including malformed input; extend explicit charset support with Java differential tests. Real extensions, full Java regex replacement and visual logger interaction remain open.
+Inspect CI for UTF-16BE and the UTF-16 variant helpers. Compare Java UTF-8 encoding behavior at short-field boundaries, and investigate how to represent unpaired Java UTF-16 surrogate input safely without weakening Rust `str` APIs. Real extensions, full Java regex replacement and visual logger interaction remain open.

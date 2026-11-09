@@ -42,27 +42,45 @@ fn java_utf8_lossy(bytes: &[u8]) -> Cow<'_, str> {
 // Java UTF-16BE replacement decoding consumes a high surrogate together with
 // the following non-low code unit (or incomplete final byte) as one error.
 fn decode_utf16be(bytes: &[u8], lossy: bool) -> Result<String> {
+    decode_utf16(bytes, Utf16Encoding::BigEndian, lossy)
+}
+
+fn decode_utf16(bytes: &[u8], encoding: Utf16Encoding, lossy: bool) -> Result<String> {
     let mut output = String::new();
-    let mut offset = 0;
+    let (little, mut offset) = match encoding {
+        Utf16Encoding::BigEndian => (false, 0),
+        Utf16Encoding::LittleEndian => (true, 0),
+        Utf16Encoding::WithBom if bytes.starts_with(&[0xfe, 0xff]) => (false, 2),
+        Utf16Encoding::WithBom if bytes.starts_with(&[0xff, 0xfe]) => (true, 2),
+        Utf16Encoding::WithBom => (false, 0),
+    };
+    let read_unit = |offset: usize| {
+        let bytes = [bytes[offset], bytes[offset + 1]];
+        if little {
+            u16::from_le_bytes(bytes)
+        } else {
+            u16::from_be_bytes(bytes)
+        }
+    };
     while offset < bytes.len() {
         if bytes.len() - offset < 2 {
             if !lossy {
-                return Err(error("invalid UTF-16BE"));
+                return Err(error("invalid UTF-16"));
             }
             output.push('\u{fffd}');
             break;
         }
-        let unit = u16::from_be_bytes([bytes[offset], bytes[offset + 1]]);
+        let unit = read_unit(offset);
         offset += 2;
         if (0xd800..=0xdbff).contains(&unit) {
             if bytes.len() - offset < 2 {
                 if !lossy {
-                    return Err(error("invalid UTF-16BE"));
+                    return Err(error("invalid UTF-16"));
                 }
                 output.push('\u{fffd}');
                 break;
             }
-            let next = u16::from_be_bytes([bytes[offset], bytes[offset + 1]]);
+            let next = read_unit(offset);
             offset += 2;
             if (0xdc00..=0xdfff).contains(&next) {
                 let value =
@@ -71,11 +89,11 @@ fn decode_utf16be(bytes: &[u8], lossy: bool) -> Result<String> {
             } else if lossy {
                 output.push('\u{fffd}');
             } else {
-                return Err(error("invalid UTF-16BE"));
+                return Err(error("invalid UTF-16"));
             }
         } else if (0xdc00..=0xdfff).contains(&unit) {
             if !lossy {
-                return Err(error("invalid UTF-16BE"));
+                return Err(error("invalid UTF-16"));
             }
             output.push('\u{fffd}');
         } else {
@@ -87,6 +105,37 @@ fn decode_utf16be(bytes: &[u8], lossy: bool) -> Result<String> {
 
 fn encode_utf16be(value: &str) -> Vec<u8> {
     value.encode_utf16().flat_map(u16::to_be_bytes).collect()
+}
+
+/// Java UTF-16 variants: explicit byte order or BOM-sensitive UTF-16.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Utf16Encoding {
+    BigEndian,
+    LittleEndian,
+    WithBom,
+}
+
+fn encode_utf16(value: &str, encoding: Utf16Encoding) -> Vec<u8> {
+    let mut bytes = Vec::new();
+    if encoding == Utf16Encoding::WithBom && !value.is_empty() {
+        bytes.extend_from_slice(&[0xfe, 0xff]);
+    }
+    for unit in value.encode_utf16() {
+        bytes.extend_from_slice(&if encoding == Utf16Encoding::LittleEndian {
+            unit.to_le_bytes()
+        } else {
+            unit.to_be_bytes()
+        });
+    }
+    bytes
+}
+
+fn utf16_byte_len(value: &str, encoding: Utf16Encoding) -> Option<usize> {
+    value
+        .encode_utf16()
+        .count()
+        .checked_mul(2)?
+        .checked_add(usize::from(encoding == Utf16Encoding::WithBom && !value.is_empty()) * 2)
 }
 
 pub const MAX_FRAME: usize = 16 * 1024 * 1024;
@@ -469,6 +518,43 @@ impl Packet {
         }
         result
     }
+    /// Read a Java UTF-16 variant from short/long EVA fields, optionally replacing malformed input.
+    pub fn read_utf16_at(
+        &self,
+        offset: usize,
+        encoding: Utf16Encoding,
+        lossy: bool,
+    ) -> Result<String> {
+        decode_utf16(self.read_short_bytes_at(offset)?, encoding, lossy)
+    }
+    pub fn read_utf16_long_at(
+        &self,
+        offset: usize,
+        encoding: Utf16Encoding,
+        lossy: bool,
+    ) -> Result<String> {
+        decode_utf16(self.read_long_bytes_at(offset)?, encoding, lossy)
+    }
+    pub fn read_utf16(&mut self, encoding: Utf16Encoding, lossy: bool) -> Result<String> {
+        let start = self.cursor;
+        let result = self
+            .read_short_bytes()
+            .and_then(|bytes| decode_utf16(bytes, encoding, lossy));
+        if result.is_err() {
+            self.cursor = start;
+        }
+        result
+    }
+    pub fn read_utf16_long(&mut self, encoding: Utf16Encoding, lossy: bool) -> Result<String> {
+        let start = self.cursor;
+        let result = self
+            .read_long_bytes()
+            .and_then(|bytes| decode_utf16(bytes, encoding, lossy));
+        if result.is_err() {
+            self.cursor = start;
+        }
+        result
+    }
     pub fn read_u8(&mut self) -> Result<u8> {
         Ok(self.read_bytes(1)?[0])
     }
@@ -836,6 +922,21 @@ impl Packet {
         }
         self.put_long_bytes(&encode_utf16be(value))
     }
+    /// Append a Java UTF-16 variant as a short/long EVA field.
+    pub fn put_utf16(&mut self, value: &str, encoding: Utf16Encoding) -> Result<&mut Self> {
+        self.ensure_eva()?;
+        if utf16_byte_len(value, encoding).is_none_or(|length| length > usize::from(u16::MAX)) {
+            return Err(error("short string too long"));
+        }
+        self.put_short_bytes(&encode_utf16(value, encoding))
+    }
+    pub fn put_utf16_long(&mut self, value: &str, encoding: Utf16Encoding) -> Result<&mut Self> {
+        self.ensure_eva()?;
+        if utf16_byte_len(value, encoding).is_none_or(|length| length > MAX_FRAME) {
+            return Err(error("packet too large"));
+        }
+        self.put_long_bytes(&encode_utf16(value, encoding))
+    }
     pub fn put_long_bytes(&mut self, bytes: &[u8]) -> Result<&mut Self> {
         self.ensure_eva()?;
         let n = i32::try_from(bytes.len()).map_err(|_| error("string too long"))?;
@@ -943,6 +1044,18 @@ impl Packet {
             return Err(error("short string too long"));
         }
         self.replace_short_bytes(offset, &encode_utf16be(value))
+    }
+    pub fn replace_utf16(
+        &mut self,
+        offset: usize,
+        value: &str,
+        encoding: Utf16Encoding,
+    ) -> Result<&mut Self> {
+        self.ensure_eva()?;
+        if utf16_byte_len(value, encoding).is_none_or(|length| length > usize::from(u16::MAX)) {
+            return Err(error("short string too long"));
+        }
+        self.replace_short_bytes(offset, &encode_utf16(value, encoding))
     }
     /// Replace a two-byte-length-prefixed UTF-8 string at an absolute offset.
     pub fn replace_utf8(&mut self, offset: usize, value: &str) -> Result<&mut Self> {

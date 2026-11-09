@@ -296,6 +296,43 @@ fn mutations_match_original_java_packets_and_cursor() {
             "random {i} {hex}"
         );
     }
+    use gearth_rust::packet::Utf16Encoding;
+    for (i, value) in ["", "A", "🐱", "\u{feff}A"].iter().enumerate() {
+        for (encoding, key) in [
+            (Utf16Encoding::LittleEndian, "utf16le_encoded"),
+            (Utf16Encoding::WithBom, "utf16bom_encoded"),
+        ] {
+            let mut sample = Packet::new(24);
+            sample
+                .put_utf16(value, encoding)
+                .unwrap()
+                .put_utf16_long(value, encoding)
+                .unwrap();
+            check(&format!("{key}_{i}"), &sample);
+            assert_eq!(sample.read_utf16(encoding, false).unwrap(), *value);
+            assert_eq!(sample.read_utf16_long(encoding, false).unwrap(), *value);
+        }
+    }
+    for i in 0..10009 {
+        let parts: Vec<_> = expected[format!("utf16variant_{i}").as_str()]
+            .split(',')
+            .collect();
+        let mut sample = Packet::new(24);
+        sample
+            .put_short_bytes(&expression::parse_hex(parts[0]).unwrap())
+            .unwrap();
+        for (encoding, expected_hex) in [
+            (Utf16Encoding::LittleEndian, parts[1]),
+            (Utf16Encoding::WithBom, parts[2]),
+        ] {
+            assert_eq!(
+                sample.read_utf16_at(6, encoding, true).unwrap().as_bytes(),
+                expression::parse_hex(expected_hex).unwrap(),
+                "variant {i} {:?}",
+                encoding
+            );
+        }
+    }
     let mut fixed = Packet::new(1);
     fixed
         .put_i32(123)

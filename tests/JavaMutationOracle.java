@@ -131,6 +131,24 @@ public class JavaMutationOracle {
             sample.appendUShort(bytes.length).appendBytes(bytes);
             System.out.println("utf16_random_" + i + "=" + HexFormat.of().formatHex(bytes) + "," + HexFormat.of().formatHex(sample.readString(6, StandardCharsets.UTF_16BE).getBytes(StandardCharsets.UTF_8)));
         }
+        String[] utf16Variants = {"", "A", "🐱", "\ufeffA"};
+        for (int i = 0; i < utf16Variants.length; i++) {
+            HPacket le = new HPacket(24);
+            le.appendString(utf16Variants[i], StandardCharsets.UTF_16LE).appendLongString(utf16Variants[i], StandardCharsets.UTF_16LE);
+            emit("utf16le_encoded_" + i, le);
+            HPacket bom = new HPacket(24);
+            bom.appendString(utf16Variants[i], StandardCharsets.UTF_16).appendLongString(utf16Variants[i], StandardCharsets.UTF_16);
+            emit("utf16bom_encoded_" + i, bom);
+        }
+        String[] utf16Special = {"", "feff0041", "fffe4100", "0041", "4100", "fffe410000", "d8000041", "00d84100", "fefefffe0041"};
+        for (int i = 0; i < utf16Special.length + 10000; i++) {
+            byte[] bytes;
+            if (i < utf16Special.length) bytes = HexFormat.of().parseHex(utf16Special[i]);
+            else { bytes = new byte[1 + i % 9]; utf16Random.nextBytes(bytes); }
+            HPacket sample = new HPacket(24);
+            sample.appendUShort(bytes.length).appendBytes(bytes);
+            System.out.println("utf16variant_" + i + "=" + HexFormat.of().formatHex(bytes) + "," + HexFormat.of().formatHex(sample.readString(6, StandardCharsets.UTF_16LE).getBytes(StandardCharsets.UTF_8)) + "," + HexFormat.of().formatHex(sample.readString(6, StandardCharsets.UTF_16).getBytes(StandardCharsets.UTF_8)));
+        }
         HPacket fixed = new HPacket(1);
         fixed.appendInt(123).appendBoolean(false).appendShort((short) 7).appendLong(8).appendFloat(1.5f).appendDouble(2.5);
         fixed.setReadIndex(10);

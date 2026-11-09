@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: inspect CI for Latin-1 and UTF-16BE, then compare UTF-16LE and BOM-sensitive UTF-16 against Java. Full Java regex and live extension validation remain open.
+Next: inspect CI for UTF-16 variants, compare Java UTF-8 short-field boundaries and investigate unpaired Java surrogate input. Full Java regex and live extension validation remain open.

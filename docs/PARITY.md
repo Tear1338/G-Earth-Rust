@@ -71,3 +71,5 @@ EVA packets now offer explicit Java-style Latin-1 replacement encoding for short
 Java Latin-1 replacement encoding matches Rust for all 1,112,064 Unicode scalar values in chunked EVA short strings and at 65,535 bytes. At 65,536 bytes Java wraps the short length prefix; Rust rejects the malformed field. Unpaired Java UTF-16 surrogates and real extensions remain untested.
 
 EVA UTF-16BE short and long strings now have typed append, read and offset-read operations, with strict or Java-like replacement decoding; short fields also support replacement. Selected malformed sequences, every single UTF-16 code unit and 10,000 deterministic byte strings match Java decoding. Arbitrary longer malformed sequences, unpaired-surrogate input, WEDGIE and real extensions remain unverified.
+
+EVA string helpers also support UTF-16LE and BOM-sensitive UTF-16; an empty string in BOM mode has no BOM, and both byte orders are recognized on read. Selected vectors and 10,000 deterministic byte strings for each new mode match Java. This remains finite coverage; unpaired Java string inputs and real extensions remain unverified.

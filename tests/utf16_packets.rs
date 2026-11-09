@@ -1,4 +1,4 @@
-use gearth_rust::packet::{Packet, PacketFormat};
+use gearth_rust::packet::{Packet, PacketFormat, Utf16Encoding};
 
 #[test]
 fn utf16be_short_and_long_roundtrip_and_offset_reads_preserve_cursor() {
@@ -57,4 +57,53 @@ fn utf16be_replacement_and_short_length_limits_are_transactional() {
     let mut wedgie = Packet::new_with_format(PacketFormat::WedgieOutgoing, 1).unwrap();
     assert!(wedgie.put_utf16be("a").is_err());
     assert!(wedgie.read_utf16be(true).is_err());
+}
+
+#[test]
+fn utf16_bom_selects_byte_order_and_empty_encoding_has_no_bom() {
+    let mut packet = Packet::new(24);
+    packet
+        .put_utf16("", Utf16Encoding::WithBom)
+        .unwrap()
+        .put_utf16("🐱", Utf16Encoding::WithBom)
+        .unwrap();
+    assert_eq!(&packet.bytes()[6..8], &[0, 0]);
+    assert_eq!(
+        packet.read_utf16(Utf16Encoding::WithBom, false).unwrap(),
+        ""
+    );
+    assert_eq!(
+        packet.read_utf16(Utf16Encoding::WithBom, false).unwrap(),
+        "🐱"
+    );
+    let mut input = Packet::new(24);
+    input.put_short_bytes(&[0xff, 0xfe, 0x41, 0x00]).unwrap();
+    assert_eq!(
+        input
+            .read_utf16_at(6, Utf16Encoding::WithBom, false)
+            .unwrap(),
+        "A"
+    );
+    assert_eq!(
+        input
+            .read_utf16_at(6, Utf16Encoding::LittleEndian, false)
+            .unwrap(),
+        "\u{feff}A"
+    );
+    input
+        .replace_utf16(6, "雪", Utf16Encoding::LittleEndian)
+        .unwrap();
+    assert_eq!(
+        input
+            .read_utf16(Utf16Encoding::LittleEndian, false)
+            .unwrap(),
+        "雪"
+    );
+    let mut limit = Packet::new(24);
+    limit
+        .put_utf16(&"a".repeat(32766), Utf16Encoding::WithBom)
+        .unwrap();
+    assert!(Packet::new(24)
+        .put_utf16(&"a".repeat(32767), Utf16Encoding::WithBom)
+        .is_err());
 }
