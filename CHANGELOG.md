@@ -1,5 +1,7 @@
 # Changelog
 
+- Test Java extension WEDGIE injection before and after encryption, blocking and reconnect.
+
 - Exercise beta-29 Java extension packet modification through encrypted Origins relay sessions and reconnect.
 
 - Test encrypted Origins relay traffic, extension modification and reconnect after metadata initialization.

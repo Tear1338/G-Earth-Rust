@@ -109,3 +109,5 @@ The Origins relay now loads missing metadata before starting extensions, includi
 A controlled full Origins relay fixture now covers metadata initialization, Bobba handshake, encrypted traffic in both directions, extension packet modification and reconnect. It uses simulated peers, not an official client or a real extension.
 
 An extension compiled against the beta-29 Java API resolves a name and modifies WEDGIE packets in both directions over two controlled encrypted Origins relay sessions. The endpoints are fixtures; third-party extension workflows and a real client remain unverified.
+
+The beta-29 Java extension fixture additionally injects named WEDGIE packets before encryption and in both directions after handshake, and blocks outgoing traffic across reconnects. Windows GNU desktop/web release compiled locally on equivalent production code. Real hotels and third-party game workflows remain unverified.

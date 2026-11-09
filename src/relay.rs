@@ -1212,9 +1212,13 @@ mod tests {
             assert_eq!(message.direction, direction);
             assert_eq!(message.packet.header(), header);
             if header == 77 {
-                let mut replacement = Packet::new_with_format(format, header).unwrap();
-                replacement.put_i32(43).unwrap();
-                message.packet = replacement;
+                if message.packet.read_i32().unwrap() == 13 {
+                    message.blocked = true;
+                } else {
+                    let mut replacement = Packet::new_with_format(format, header).unwrap();
+                    replacement.put_i32(43).unwrap();
+                    message.packet = replacement;
+                }
             } else if header == 78 {
                 let mut replacement = Packet::new_with_format(format, header).unwrap();
                 replacement.put_string("Hello").unwrap();
@@ -1309,14 +1313,24 @@ mod tests {
             called_tx.send(version).unwrap();
             Ok(PacketInfoManager::new(
                 "ORIGINS-2",
-                vec![PacketInfo {
-                    header: 77,
-                    hash: None,
-                    name: Some("Known".into()),
-                    structure: None,
-                    direction: Direction::ToServer,
-                    source: "fixture".into(),
-                }],
+                vec![
+                    PacketInfo {
+                        header: 77,
+                        hash: None,
+                        name: Some("Known".into()),
+                        structure: None,
+                        direction: Direction::ToServer,
+                        source: "fixture".into(),
+                    },
+                    PacketInfo {
+                        header: 78,
+                        hash: None,
+                        name: Some("Incoming".into()),
+                        structure: None,
+                        direction: Direction::ToClient,
+                        source: "fixture".into(),
+                    },
+                ],
             ))
         });
         let (mut relay, events) = Relay::start_with_options(
@@ -1362,6 +1376,16 @@ mod tests {
                     77
                 );
             }
+            if real_java {
+                let mut length = [0; 3];
+                server.read_exact(&mut length).unwrap();
+                let mut payload = vec![0; decode_b64(&length).unwrap() as usize];
+                server.read_exact(&mut payload).unwrap();
+                let mut injected =
+                    Packet::from_bytes_with_format(PacketFormat::WedgieOutgoing, payload).unwrap();
+                assert_eq!(injected.header(), 77);
+                assert_eq!(injected.read_i32().unwrap(), 17);
+            }
             let mut client_crypto = BobbaCrypto::with_private(12345).unwrap();
             let mut server_crypto = BobbaCrypto::with_private(67890).unwrap();
             let mut hello = Packet::new_with_format(PacketFormat::WedgieOutgoing, 202).unwrap();
@@ -1403,6 +1427,18 @@ mod tests {
             client_crypto
                 .set_peer(&packet.read_string().unwrap())
                 .unwrap();
+            let mut blocked = Packet::new_with_format(PacketFormat::WedgieOutgoing, 77).unwrap();
+            blocked.put_i32(13).unwrap();
+            let keys = client_crypto.keys_mut().unwrap();
+            client
+                .write_all(
+                    &test_encrypt(blocked.bytes(), &mut keys.c2s_header, &mut keys.c2s_data)
+                        .unwrap(),
+                )
+                .unwrap();
+            if let Some(peer) = &mut peer {
+                intercept(peer, Direction::ToServer, 77);
+            }
             let mut outgoing = Packet::new_with_format(PacketFormat::WedgieOutgoing, 77).unwrap();
             outgoing.put_i32(42).unwrap();
             let keys = client_crypto.keys_mut().unwrap();
@@ -1422,6 +1458,14 @@ mod tests {
                 read_encrypted(&mut server, &mut keys.c2s_header, &mut keys.c2s_data),
                 replaced.bytes()
             );
+            if real_java {
+                let injected =
+                    read_encrypted(&mut server, &mut keys.c2s_header, &mut keys.c2s_data);
+                let mut packet =
+                    Packet::from_bytes_with_format(PacketFormat::WedgieOutgoing, injected).unwrap();
+                assert_eq!(packet.header(), 77);
+                assert_eq!(packet.read_i32().unwrap(), 18);
+            }
             let mut incoming = Packet::new_with_format(PacketFormat::WedgieIncoming, 78).unwrap();
             incoming.put_string("hello").unwrap();
             let mut plain = incoming.bytes().to_vec();
@@ -1443,6 +1487,15 @@ mod tests {
                 read_encrypted(&mut client, &mut keys.s2c_header, &mut keys.s2c_data),
                 expected
             );
+            if real_java {
+                let mut injected =
+                    read_encrypted(&mut client, &mut keys.s2c_header, &mut keys.s2c_data);
+                assert_eq!(injected.pop(), Some(1));
+                let mut packet =
+                    Packet::from_bytes_with_format(PacketFormat::WedgieIncoming, injected).unwrap();
+                assert_eq!(packet.header(), 78);
+                assert_eq!(packet.read_string().unwrap(), "extra");
+            }
             drop(client);
             wait_for(&events, |event| matches!(event, Event::Disconnected));
             if let Some(peer) = &mut peer {

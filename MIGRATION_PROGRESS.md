@@ -158,6 +158,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - An extension compiled against the released beta-29 Java API now resolves a packet by name and modifies encrypted Origins packets in both directions through the Rust relay, across two connections. Client and server are controlled fixtures; this is not a real hotel or third-party extension session. The Java fixture passed twice locally, 14 relay tests and desktop/web Clippy pass; CI now runs this ignored Java-dependent test. Actions run 42634682053 passed all eight jobs for the preceding controlled relay fixture. A Windows GNU desktop/web release build is in progress.
 
+- The beta-29 Java extension fixture now injects named outgoing WEDGIE packets before and after the handshake, injects an incoming packet during encrypted traffic, blocks a packet and modifies both directions; all checks pass across two controlled connections. Fourteen relay tests and desktop/web Clippy pass locally. The Windows GNU `cargo build --release --locked --features desktop,web` succeeded on production code equivalent to commit 1689e65; later edits affect test code only. Actions run 42635400025 passed all eight jobs for the previous Java-extension fixture. Real hotels and third-party game workflows remain unverified.
+
 ## Exact next step
 
-Verify Java beta-29 extension injection of named WEDGIE packets through the Origins relay, including reconnect; inspect the release build and CI for the latest pushed changes. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Extend the pinned G-Presets compatibility fixture to exercise actual connection and disconnection events and packet interception across reconnects; run its isolated CI job and inspect results. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
