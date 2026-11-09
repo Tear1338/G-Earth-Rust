@@ -1549,9 +1549,12 @@ impl Desktop {
         Ok(())
     }
     fn start_unity(&mut self) -> std::io::Result<()> {
-        if self.socks_enabled {
-            return Err(std::io::Error::other("Unity upstream SOCKS5 routing is not ported yet; disable the SOCKS proxy before using a direct connection"));
-        }
+        let socks = configured_socks(
+            self.socks_enabled,
+            &self.socks_proxy,
+            &self.socks_user,
+            &self.socks_password,
+        )?;
         self.prepare_certificate()?;
         if self.system_proxy
             && !gearth_platform::certificate_trusted(&self.public_certificate.as_ref().unwrap().1)?
@@ -1572,10 +1575,11 @@ impl Desktop {
             invalidate_log_expressions(&mut self.logs);
             self.logger_search_cache = None;
         }
-        let http = WebOptions::new(
+        let mut http = WebOptions::new(
             self.listen.parse().map_err(std::io::Error::other)?,
             self.identity_directory(),
         );
+        http.upstream_socks = socks;
         let mut communicator = gearth_rust::unity_server::UnityOptions::new(
             "127.0.0.1:0".parse().unwrap(),
             self.identity_directory(),
@@ -1672,6 +1676,29 @@ impl Desktop {
         self.update_rules();
         Ok(())
     }
+    fn browser_socks_options(&mut self, ui: &mut egui::Ui, grid_id: &'static str) {
+        ui.add_enabled_ui(self.relay.is_none(), |ui| {
+            ui.checkbox(
+                &mut self.socks_enabled,
+                self.i18n.text("tab.extra.options.advanced.socks"),
+            );
+            egui::Grid::new(grid_id).show(ui, |ui| {
+                for (key, value) in [
+                    ("rust.connection.socks_proxy", &mut self.socks_proxy),
+                    ("rust.connection.socks_user", &mut self.socks_user),
+                ] {
+                    let label = ui.label(self.i18n.text(key));
+                    ui.text_edit_singleline(value).labelled_by(label.id);
+                    ui.end_row();
+                }
+                let label = ui.label(self.i18n.text("rust.connection.socks_password"));
+                ui.add(egui::TextEdit::singleline(&mut self.socks_password).password(true))
+                    .labelled_by(label.id);
+                ui.end_row();
+            });
+        });
+    }
+
     fn nitro_connection(&mut self, ui: &mut egui::Ui) {
         ui.label(self.i18n.text(if self.unity {
             "rust.browser.unity_connection"
@@ -1774,6 +1801,7 @@ impl Desktop {
                 egui::TextEdit::singleline(&mut self.packet_database),
             );
             ui.label(self.i18n.text("rust.browser.unity_hint"));
+            self.browser_socks_options(ui, "unity-socks-options");
             ui.label(self.i18n.text("rust.browser.manual_proxy_hint"));
         } else {
             egui::CollapsingHeader::new(self.i18n.text("rust.browser.nitro_options")).show(
@@ -1792,28 +1820,7 @@ impl Desktop {
                             self.i18n.text("rust.browser.city_helper"),
                         ),
                     );
-                    ui.add_enabled_ui(self.relay.is_none(), |ui| {
-                        ui.checkbox(
-                            &mut self.socks_enabled,
-                            self.i18n.text("tab.extra.options.advanced.socks"),
-                        );
-                        egui::Grid::new("nitro-socks-options").show(ui, |ui| {
-                            for (key, value) in [
-                                ("rust.connection.socks_proxy", &mut self.socks_proxy),
-                                ("rust.connection.socks_user", &mut self.socks_user),
-                            ] {
-                                let label = ui.label(self.i18n.text(key));
-                                ui.text_edit_singleline(value).labelled_by(label.id);
-                                ui.end_row();
-                            }
-                            let label = ui.label(self.i18n.text("rust.connection.socks_password"));
-                            ui.add(
-                                egui::TextEdit::singleline(&mut self.socks_password).password(true),
-                            )
-                            .labelled_by(label.id);
-                            ui.end_row();
-                        });
-                    });
+                    self.browser_socks_options(ui, "nitro-socks-options");
                     ui.label(self.i18n.text("rust.browser.manual_proxy_hint"));
                 },
             );

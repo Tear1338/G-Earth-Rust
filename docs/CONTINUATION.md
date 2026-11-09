@@ -1,5 +1,7 @@
 # Continuation state
 
+Unity desktop now reuses the Nitro SOCKS settings and passes them to the asset proxy, following the pinned Java HttpProxyManager. A local authenticated SOCKS/TLS fixture modifies a Unity version asset and forwards a game WebSocket; a second fixture verifies proxy refusal does not fall back directly. The shared settings validation, seven SOCKS/web integration tests, desktop build and Clippy pass. Better Design guidance was applied, but the desktop UI has not been visually or interactively checked; real Unity clients, hotels and SOCKS servers remain unverified. Next compare packet regex replacement against the pinned Java API and extend differential coverage.
+
 SOCKS metadata transport is shared with minimal builds: Flash and Origins retain authenticated SOCKS, proxy-side DNS, bounded HTTPS redirects/responses and no direct fallback. Loopback tests cover successful Origins discovery and metadata over authenticated SOCKS/TLS, rejected proxy connections and relay continuation. The minimal build now includes Tokio, Hyper and rustls dependencies; no real service, SOCKS server or game client was used. The next task is to audit Unity external network paths against pinned Java and test SOCKS routing, including no direct fallback, before desktop enablement.
 
 The requested goal is a complete Rust replacement for G-Earth 1.5.4-beta-29, with original functionality and a GitHub project. The repository is Tear1338/G-Earth-Rust. It remains a development port; do not describe a passing component test as whole-application parity.

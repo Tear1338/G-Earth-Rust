@@ -184,6 +184,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - SOCKS metadata transport is shared with minimal builds: Flash and Origins retain authenticated SOCKS, proxy-side DNS, bounded HTTPS redirects/responses and no direct fallback. Loopback tests cover successful Origins discovery and metadata over authenticated SOCKS/TLS, rejected proxy connections and relay continuation. The minimal build now includes Tokio, Hyper and rustls dependencies; no real service, SOCKS server or game client was used.
 
+- Unity desktop now reuses the Nitro SOCKS settings and passes them to the asset proxy, following the pinned Java HttpProxyManager. A local authenticated SOCKS/TLS fixture modifies a Unity version asset and forwards a game WebSocket; a second fixture verifies proxy refusal does not fall back directly. The shared settings validation, seven SOCKS/web integration tests, desktop build and Clippy pass. Better Design guidance was applied, but the desktop UI has not been visually or interactively checked; real Unity clients, hotels and SOCKS servers remain unverified.
+
 ## Exact next step
 
-Audit Unity upstream network paths against the pinned Java implementation and connect its existing asset proxy to configured SOCKS only after verifying every external path and no-direct-fallback behavior. Add loopback HTTP/TLS/WebSocket tests before exposing desktop controls. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Compare `HPacket.replaceAllStrings` / `replaceAllSubstrings` in pinned beta-29 with the Rust bounded literal implementation; design and run Java-oracle tests for the next supported regex and capture-group cases before extending it. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

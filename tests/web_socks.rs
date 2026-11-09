@@ -425,3 +425,136 @@ fn socks_allows_city_helper_configuration() {
     let (mut proxy, _) = WebProxy::start(opts).unwrap();
     proxy.stop();
 }
+
+#[tokio::test]
+async fn unity_asset_and_game_websocket_use_authenticated_socks() {
+    use gearth_rust::{unity_connection::UnityConnection, unity_server::UnityOptions};
+    let directory = Directory::new();
+    let identity = ProxyIdentity::ensure(&directory.0.join("upstream")).unwrap();
+    let authority = identity.authority().unwrap();
+    let upstream = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let target_addr = upstream.local_addr().unwrap();
+    let target = format!("images.habbo.com:{}", target_addr.port());
+    let server_tls = authority.gen_server_config(&target.parse().unwrap()).await;
+    let (proxy_addr, socks) = socks_proxy(target_addr, "images.habbo.com", 2, false).await;
+    let mut opts = options(&directory, proxy_addr);
+    opts.extra_roots.push(identity.certificate_der);
+    let communicator = UnityOptions::new("127.0.0.1:0".parse().unwrap(), directory.0.join("proxy"));
+    let (mut connection, _) =
+        UnityConnection::start(opts, communicator, directory.0.join("unused")).unwrap();
+    let server = tokio::spawn(async move {
+        let (stream, _) = upstream.accept().await.unwrap();
+        let mut tls = tokio_rustls::TlsAcceptor::from(server_tls.clone())
+            .accept(stream)
+            .await
+            .unwrap();
+        let mut request = Vec::new();
+        while !request.ends_with(b"\r\n\r\n") {
+            let mut byte = [0];
+            tls.read_exact(&mut byte).await.unwrap();
+            request.push(byte[0]);
+            assert!(request.len() < 8192);
+        }
+        assert!(request.starts_with(b"GET /habbo-webgl-clients/TEST-1/WebGL/habbo2020-global-prod/StreamingAssets/Version.txt HTTP/1.1\r\n"));
+        tls.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 7\r\nConnection: close\r\n\r\nfixture")
+            .await
+            .unwrap();
+        tls.shutdown().await.unwrap();
+        let (stream, _) = upstream.accept().await.unwrap();
+        let tls = tokio_rustls::TlsAcceptor::from(server_tls)
+            .accept(stream)
+            .await
+            .unwrap();
+        let mut ws = accept_async(tls).await.unwrap();
+        assert_eq!(
+            ws.next().await.unwrap().unwrap().into_text().unwrap(),
+            "hello"
+        );
+        ws.send(Message::Text("unity-reply".into())).await.unwrap();
+    });
+    let proxy_identity = ProxyIdentity::ensure(&directory.0.join("proxy")).unwrap();
+    let mut roots = rustls::RootCertStore::empty();
+    roots
+        .add(CertificateDer::from(proxy_identity.certificate_der))
+        .unwrap();
+    let tls = rustls::ClientConfig::builder_with_provider(Arc::new(aws_lc_rs::default_provider()))
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_root_certificates(roots)
+        .with_no_client_auth();
+    let stream = tunnel(connection.address, &target).await;
+    let mut https = tokio_rustls::TlsConnector::from(Arc::new(tls.clone()))
+        .connect(
+            rustls::pki_types::ServerName::try_from("images.habbo.com")
+                .unwrap()
+                .to_owned(),
+            stream,
+        )
+        .await
+        .unwrap();
+    https.write_all(format!("GET /habbo-webgl-clients/TEST-1/WebGL/habbo2020-global-prod/StreamingAssets/Version.txt HTTP/1.1\r\nHost: {target}\r\nConnection: close\r\n\r\n").as_bytes()).await.unwrap();
+    let mut response = Vec::new();
+    tokio::time::timeout(Duration::from_secs(5), https.read_to_end(&mut response))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(response
+        .windows(b"fixture - G-Earth Rust".len())
+        .any(|bytes| bytes == b"fixture - G-Earth Rust"));
+    let stream = tunnel(connection.address, &target).await;
+    let (mut ws, _) = client_async_tls_with_config(
+        format!("wss://{target}/game"),
+        stream,
+        None,
+        Some(Connector::Rustls(Arc::new(tls))),
+    )
+    .await
+    .unwrap();
+    ws.send(Message::Text("hello".into())).await.unwrap();
+    assert_eq!(
+        ws.next().await.unwrap().unwrap().into_text().unwrap(),
+        "unity-reply"
+    );
+    drop(ws);
+    server.await.unwrap();
+    connection.stop();
+    tokio::time::timeout(Duration::from_secs(5), socks)
+        .await
+        .unwrap()
+        .unwrap();
+}
+
+#[tokio::test]
+async fn unity_does_not_fall_back_to_direct_connection_when_socks_rejects() {
+    use gearth_rust::{unity_connection::UnityConnection, unity_server::UnityOptions};
+    let directory = Directory::new();
+    let upstream = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let target = upstream.local_addr().unwrap();
+    let (proxy_addr, socks) = socks_proxy(target, "127.0.0.1", 1, true).await;
+    let opts = options(&directory, proxy_addr);
+    let communicator = UnityOptions::new("127.0.0.1:0".parse().unwrap(), directory.0.join("proxy"));
+    let (mut connection, _) =
+        UnityConnection::start(opts, communicator, directory.0.join("unused")).unwrap();
+    let mut http = tokio::net::TcpStream::connect(connection.address)
+        .await
+        .unwrap();
+    http.write_all(
+        format!(
+            "GET http://{target}/fixture HTTP/1.1\r\nHost: {target}\r\nConnection: close\r\n\r\n"
+        )
+        .as_bytes(),
+    )
+    .await
+    .unwrap();
+    let mut response = Vec::new();
+    let _ = tokio::time::timeout(Duration::from_secs(5), http.read_to_end(&mut response))
+        .await
+        .unwrap();
+    socks.await.unwrap();
+    assert!(
+        tokio::time::timeout(Duration::from_millis(300), upstream.accept())
+            .await
+            .is_err()
+    );
+    connection.stop();
+}

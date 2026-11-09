@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: audit Unity external network paths and add verified SOCKS routing without direct fallback, then desktop controls. Full Java regex and live extension validation remain open.
+Next: compare Java packet regex replacement semantics and expand differential tests before extending Rust replacement. Full Java regex and live extension validation remain open.

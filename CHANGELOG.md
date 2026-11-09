@@ -69,6 +69,8 @@
 
 ## Unreleased
 
+- Route Unity asset and game WebSocket proxy traffic through configured SOCKS, expose shared desktop controls, and test local TLS and refusal behavior.
+
 - Share authenticated SOCKS HTTPS metadata transport with minimal builds, including Origins discovery and Flash metadata; verify loopback TLS and proxy refusal without direct fallback.
 
 - EVA UTF-8 replacement decoding now treats malformed surrogate encodings like Java for the tested cases, instead of replacing each byte separately.
