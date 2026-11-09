@@ -924,6 +924,47 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_control_corpus_{i}"), &packet);
     }
+    let optional_groups = [
+        ("(a?) a ab", "(a?)", "[$1]", Some(1)),
+        ("(a??) a ab", "(a??)", "[$1]", Some(1)),
+        ("x(a?)b xb xab", "x(a?)b", "$1/$0", Some(1)),
+        ("x(a??)b xb xab", "x(a??)b", "$1/$0", Some(1)),
+        ("x(.?)b xéb x\nb", "x(.?)b", "[$1]", Some(1)),
+        ("(\\d?) 1 2", "(\\d?)", "<$1>", Some(1)),
+        ("(a?)", "(a?)", "$2", Some(1)),
+    ];
+    for (i, (value, pattern, replacement, limit)) in optional_groups.iter().enumerate() {
+        let mut packet = Packet::new(9);
+        packet.put_string(value).unwrap();
+        packet.set_cursor(7).unwrap();
+        let before = packet.clone();
+        let key = format!("substring_optional_{i}");
+        match packet.replace_substrings_java_groups(pattern, replacement, *limit) {
+            Ok(_) => check(&key, &packet),
+            Err(_) => {
+                assert_eq!(expected[key.as_str()], "error");
+                assert_eq!(packet, before);
+            }
+        }
+    }
+    let optional_patterns = [
+        "(a?)", "(a??)", "x(a?)b", "x(a??)b", "x(.?)b", "(\\d?)", "([a-c]?)",
+    ];
+    let optional_alphabet = ['a', 'b', 'c', 'x', '1', 'é', '-', ' ', '\n', '\r', '\u{85}'];
+    for i in 0..140 {
+        let pattern = optional_patterns[i % optional_patterns.len()];
+        let mut value = format!("{pattern} ");
+        for j in 0..24 {
+            value.push(optional_alphabet[(i * 7 + j * 5) % optional_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java_groups(pattern, "$1/$0", Some(1))
+            .unwrap();
+        check(&format!("substring_optional_corpus_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

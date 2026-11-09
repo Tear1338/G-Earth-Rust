@@ -206,6 +206,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Java regex control escapes and two-digit hexadecimal/four-digit Unicode escapes within Latin-1 are supported inside and outside bracket classes. A 140-packet corpus matches the released beta-29 Java API, and invalid or outside-Latin-1 escapes fail transactionally. Twenty-four mutation tests, both Clippy configurations and desktop/web build pass locally. Other escape forms, quantifiers and full Java regex remain incomplete. Actions run 42712267951 passed all eight jobs for predefined classes.
 
+- The bounded matcher supports one greedy or reluctant `?` quantifier on a single atom, including dynamic captures and zero-width progress. Seven targeted cases and 140 generated packets match the released beta-29 Java API. Twenty-five mutation tests, both Clippy configurations and desktop/web build pass. Multiple quantifiers, quantified groups, possessive quantifiers and general Java regex remain unsupported. Actions run 42712775286 passed all eight jobs for predefined classes in unions.
+
 ## Exact next step
 
-Compare Java regex optional quantifiers (`?`, greedy and reluctant), capture results and zero-width progress against the released beta-29 API; design bounded matching and differential fixtures before implementing. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Compare multiple greedy/reluctant optional regex quantifiers and backtracking against the released beta-29 API; design an iterative matcher with explicit work and memory bounds, then add differential fixtures before implementation. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

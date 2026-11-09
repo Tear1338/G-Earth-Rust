@@ -556,6 +556,45 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_control_corpus_" + i, sample);
         }
+        String[][] optionalGroups = {
+            {"(a?) a ab", "(a?)", "[$1]", "1"},
+            {"(a??) a ab", "(a??)", "[$1]", "1"},
+            {"x(a?)b xb xab", "x(a?)b", "$1/$0", "1"},
+            {"x(a??)b xb xab", "x(a??)b", "$1/$0", "1"},
+            {"x(.?)b xéb x\nb", "x(.?)b", "[$1]", "1"},
+            {"(\\d?) 1 2", "(\\d?)", "<$1>", "1"},
+            {"(a?)", "(a?)", "$2", "1"},
+        };
+        for (int i = 0; i < optionalGroups.length; i++) {
+            HPacket sample = new HPacket(9);
+            sample.appendString(optionalGroups[i][0]);
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            boolean failed = false;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(optionalGroups[i][1], optionalGroups[i][2], Integer.parseInt(optionalGroups[i][3]));
+            } catch (RuntimeException expected) { failed = true; }
+            finally { System.setOut(original); }
+            if (failed) System.out.println("substring_optional_" + i + "=error");
+            else emit("substring_optional_" + i, sample);
+        }
+        String[] optionalPatterns = {"(a?)", "(a??)", "x(a?)b", "x(a??)b", "x(.?)b", "(\\d?)", "([a-c]?)"};
+        char[] optionalAlphabet = {'a', 'b', 'c', 'x', '1', 'é', '-', ' ', '\n', '\r', '\u0085'};
+        for (int i = 0; i < 140; i++) {
+            String pattern = optionalPatterns[i % optionalPatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(' ');
+            for (int j = 0; j < 24; j++) value.append(optionalAlphabet[(i * 7 + j * 5) % optionalAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, "$1/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_optional_corpus_" + i, sample);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);

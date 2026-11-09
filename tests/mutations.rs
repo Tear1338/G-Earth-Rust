@@ -513,6 +513,28 @@ fn java_control_escapes_reject_invalid_values_without_mutation() {
 }
 
 #[test]
+fn java_optional_regex_quantifier_is_bounded_and_rejects_unsupported_forms() {
+    let mut packet = Packet::new(9);
+    packet.put_string("(a?) a").unwrap();
+    let before = packet.clone();
+    for pattern in ["(a?b?)", "(a)?", "(a?+)"] {
+        assert!(packet
+            .replace_substrings_java_groups(pattern, "x", None)
+            .is_err());
+        assert_eq!(packet, before);
+    }
+    let mut large = Packet::new(9);
+    large
+        .put_string(&format!("(a?){}", "a".repeat(40_000)))
+        .unwrap();
+    let original = large.clone();
+    assert!(large
+        .replace_substrings_java_groups("(a?)", "[$1]", None)
+        .is_err());
+    assert_eq!(large, original);
+}
+
+#[test]
 fn append_typed_fields_preserves_prior_fields_on_error() {
     use gearth_rust::packet::{PacketField, PacketFormat};
     let mut packet = Packet::new(7);

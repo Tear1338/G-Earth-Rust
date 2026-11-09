@@ -498,6 +498,41 @@ fn parse_character_class(
     Ok(class)
 }
 
+fn match_fixed_at(
+    input: &[u8],
+    offset: usize,
+    atoms: &[FixedRegexAtom],
+    omit: Option<usize>,
+    comparisons: &mut usize,
+) -> Result<Option<Vec<usize>>> {
+    let mut position = offset;
+    let mut positions = vec![position];
+    for (index, atom) in atoms.iter().enumerate() {
+        if omit == Some(index) {
+            positions.push(position);
+            continue;
+        }
+        let Some(&byte) = input.get(position) else {
+            return Ok(None);
+        };
+        *comparisons = comparisons
+            .checked_add(1)
+            .filter(|n| *n <= MAX_FRAME * 4)
+            .ok_or_else(|| error("regex comparison limit exceeded"))?;
+        let accepted = match atom {
+            FixedRegexAtom::Literal(expected) => *expected == byte,
+            FixedRegexAtom::Dot => !matches!(byte, b'\n' | b'\r' | 0x85),
+            FixedRegexAtom::Class(class) => class[usize::from(byte)],
+        };
+        if !accepted {
+            return Ok(None);
+        }
+        position += 1;
+        positions.push(position);
+    }
+    Ok(Some(positions))
+}
+
 fn replace_fixed_pattern(
     text: &str,
     atoms: &[FixedRegexAtom],
@@ -505,35 +540,30 @@ fn replace_fixed_pattern(
     names: &[Option<String>],
     replacement: &str,
     comparisons: &mut usize,
+    optional: Option<(usize, bool)>,
 ) -> Result<String> {
     let input = latin1_encode(text)?;
     let mut output = Vec::new();
     let mut copied = 0;
     let mut offset = 0;
-    while offset + atoms.len() <= input.len() {
-        let mut matches = true;
-        for (index, atom) in atoms.iter().enumerate() {
-            *comparisons = comparisons
-                .checked_add(1)
-                .filter(|n| *n <= MAX_FRAME * 4)
-                .ok_or_else(|| error("regex comparison limit exceeded"))?;
-            let byte = input[offset + index];
-            let accepted = match atom {
-                FixedRegexAtom::Literal(expected) => *expected == byte,
-                FixedRegexAtom::Dot => !matches!(byte, b'\n' | b'\r' | 0x85),
-                FixedRegexAtom::Class(class) => class[usize::from(byte)],
-            };
-            if !accepted {
-                matches = false;
-                break;
+    while offset <= input.len() {
+        let positions = if let Some((index, greedy)) = optional {
+            let first = if greedy { None } else { Some(index) };
+            let second = if greedy { Some(index) } else { None };
+            match match_fixed_at(&input, offset, atoms, first, comparisons)? {
+                Some(positions) => Some(positions),
+                None => match_fixed_at(&input, offset, atoms, second, comparisons)?,
             }
-        }
-        if matches {
+        } else {
+            match_fixed_at(&input, offset, atoms, None, comparisons)?
+        };
+        if let Some(positions) = positions {
+            let end = *positions.last().unwrap();
             let groups = ranges
                 .iter()
-                .map(|&(start, end)| latin1_decode(&input[offset + start..offset + end]))
+                .map(|&(start, end)| latin1_decode(&input[positions[start]..positions[end]]))
                 .collect::<Vec<_>>();
-            let whole = latin1_decode(&input[offset..offset + atoms.len()]);
+            let whole = latin1_decode(&input[offset..end]);
             let expanded =
                 latin1_encode(&expand_literal_groups(replacement, &whole, &groups, names)?)?;
             let prefix = offset - copied;
@@ -547,8 +577,8 @@ fn replace_fixed_pattern(
             }
             output.extend_from_slice(&input[copied..offset]);
             output.extend_from_slice(&expanded);
-            offset += atoms.len();
-            copied = offset;
+            copied = end;
+            offset = if end == offset { offset + 1 } else { end };
         } else {
             offset += 1;
         }
@@ -1652,6 +1682,8 @@ impl Packet {
         let mut atoms: Vec<FixedRegexAtom> = Vec::new();
         let mut ranges: Vec<(usize, usize)> = Vec::new();
         let mut dynamic = false;
+        let mut optional = None;
+        let mut quantifiable = false;
         let mut open: Vec<usize> = Vec::new();
         let mut chars = pattern.chars().peekable();
         let mut quoted = false;
@@ -1664,6 +1696,7 @@ impl Packet {
                 }
                 literal.push(c);
                 atoms.push(FixedRegexAtom::Literal(c as u8));
+                quantifiable = true;
                 for &index in &open {
                     groups[index].push(c);
                 }
@@ -1698,6 +1731,7 @@ impl Packet {
                     } else {
                         None
                     };
+                    quantifiable = false;
                     open.push(groups.len());
                     groups.push(String::new());
                     names.push(name);
@@ -1709,6 +1743,7 @@ impl Packet {
                         .pop()
                         .ok_or_else(|| error("unbalanced capture group"))?;
                     ranges[group].1 = atoms.len();
+                    quantifiable = false;
                     continue;
                 }
                 '\\' => {
@@ -1722,6 +1757,7 @@ impl Packet {
                     if let Some(class) = predefined_class(c) {
                         atoms.push(FixedRegexAtom::Class(class));
                         dynamic = true;
+                        quantifiable = true;
                         continue;
                     }
                     if let Some(byte) = control_escape(c, &mut chars)? {
@@ -1733,20 +1769,41 @@ impl Packet {
                 '.' => {
                     atoms.push(FixedRegexAtom::Dot);
                     dynamic = true;
+                    quantifiable = true;
                     continue;
                 }
                 '[' => {
                     atoms.push(FixedRegexAtom::Class(parse_character_class(&mut chars)?));
                     dynamic = true;
+                    quantifiable = true;
                     continue;
                 }
-                '^' | '$' | '|' | '?' | '*' | '+' | ']' | '{' | '}' => {
+                '?' => {
+                    if !quantifiable || optional.is_some() {
+                        return Err(error("unsupported optional quantifier"));
+                    }
+                    let greedy = if chars.peek() == Some(&'?') {
+                        chars.next();
+                        false
+                    } else {
+                        true
+                    };
+                    if chars.peek() == Some(&'+') {
+                        return Err(error("unsupported possessive quantifier"));
+                    }
+                    optional = Some((atoms.len() - 1, greedy));
+                    dynamic = true;
+                    quantifiable = false;
+                    continue;
+                }
+                '^' | '$' | '|' | '*' | '+' | ']' | '{' | '}' => {
                     return Err(error("unsupported regex construct"));
                 }
                 _ => {}
             }
             literal.push(c);
             atoms.push(FixedRegexAtom::Literal(c as u8));
+            quantifiable = true;
             for &index in &open {
                 groups[index].push(c);
             }
@@ -1782,6 +1839,7 @@ impl Packet {
                                 &names,
                                 replacement,
                                 &mut comparisons,
+                                optional,
                             )?
                         } else if !text.contains(&literal) {
                             text

@@ -1,5 +1,7 @@
 # Continuation state
 
+The bounded matcher supports one greedy or reluctant `?` quantifier on a single atom, including dynamic captures and zero-width progress. Seven targeted cases and 140 generated packets match the released beta-29 Java API. Twenty-five mutation tests, both Clippy configurations and desktop/web build pass. Multiple quantifiers, quantified groups, possessive quantifiers and general Java regex remain unsupported. Next compare multiple optional quantifiers and backtracking against Java.
+
 Java regex control escapes and two-digit hexadecimal/four-digit Unicode escapes within Latin-1 are supported inside and outside bracket classes. A 140-packet corpus matches the released beta-29 Java API, and invalid or outside-Latin-1 escapes fail transactionally. Twenty-four mutation tests, both Clippy configurations and desktop/web build pass locally. Other escape forms, quantifiers and full Java regex remain incomplete. Next compare optional quantifiers and zero-width matching against Java.
 
 Predefined Java regex classes and complements now work inside supported bracket unions and negations. Six targeted cases plus 120 generated packets were compared with the released beta-29 Java API. Java accepts a predefined class followed by a literal hyphen where the reverse range is invalid; the parser follows the tested behavior. Twenty-three mutation tests, both Clippy configurations and desktop/web build pass; class intersection and general regex remain incomplete. Next compare control and hexadecimal regex escapes against the released API.

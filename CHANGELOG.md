@@ -69,6 +69,8 @@
 
 ## Unreleased
 
+- Support one bounded greedy or reluctant Java regex optional atom, including zero-width matches and captures.
+
 - Support bounded Java regex control and Latin-1 hexadecimal escapes inside and outside character classes.
 
 - Support unions of Java predefined regex classes within bounded bracket expressions.
