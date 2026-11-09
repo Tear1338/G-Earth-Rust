@@ -69,6 +69,8 @@
 
 ## Unreleased
 
+- Support optional atoms in direct nested captures within repeated Java regex groups.
+
 - Support optional atoms inside bounded repeated Java regex groups with capture retention.
 
 - Support bounded repeated atoms within supported repeated Java regex capture groups.

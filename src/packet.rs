@@ -877,8 +877,9 @@ mod regex_budget_tests {
         let program = compile_nested_repeat(
             1,
             (0, 1, i32::MAX as usize, None, true),
-            &[(0, 1, true, Some(1))],
+            &[(0, 1, Some(true), 1)],
             0,
+            &[None],
             &[None],
         );
         let mut comparisons = 0;
@@ -892,8 +893,9 @@ mod regex_budget_tests {
         let program = compile_nested_repeat(
             2,
             (0, 2, 0, None, true),
-            &[(0, 1, true, Some(1)), (1, 2, true, Some(2))],
+            &[(0, 1, Some(true), 1), (1, 2, Some(true), 2)],
             0,
+            &[None, None],
             &[None, None],
         );
         let mut comparisons = 0;
@@ -906,14 +908,34 @@ mod regex_budget_tests {
     }
 
     #[test]
+    fn required_nested_capture_overwrites_previous_value_with_empty() {
+        let atoms = [FixedRegexAtom::Literal(b'a'), FixedRegexAtom::Literal(b'b')];
+        let program = compile_nested_repeat(
+            2,
+            (0, 2, 0, None, true),
+            &[(0, 1, None, 1)],
+            0,
+            &[None, None],
+            &[Some(true), None],
+        );
+        let mut comparisons = 0;
+        let (end, captures) = match_nested_repeat(b"abb", 0, &atoms, &program, 2, &mut comparisons)
+            .unwrap()
+            .unwrap();
+        assert_eq!(end, 3);
+        assert_eq!(captures, ["b", ""]);
+    }
+
+    #[test]
     fn repeated_optional_atom_retains_prior_nested_capture() {
         let atoms = [FixedRegexAtom::Literal(b'a'), FixedRegexAtom::Literal(b'b')];
         let program = compile_nested_repeat(
             2,
             (0, 2, 0, None, true),
-            &[(0, 1, true, Some(1)), (1, 2, true, None)],
+            &[(0, 1, Some(true), 1)],
             0,
             &[None, None],
+            &[None, Some(true)],
         );
         let mut comparisons = 0;
         let (end, captures) = match_nested_repeat(b"abb", 0, &atoms, &program, 2, &mut comparisons)
@@ -933,8 +955,9 @@ mod regex_budget_tests {
         let program = compile_nested_repeat(
             3,
             (0, 3, 0, None, true),
-            &[(0, 1, true, Some(1)), (1, 2, true, Some(2))],
+            &[(0, 1, Some(true), 1), (1, 2, Some(true), 2)],
             0,
+            &[None, None, None],
             &[None, None, None],
         );
         let mut comparisons = 0;
@@ -952,8 +975,9 @@ mod regex_budget_tests {
         let program = compile_nested_repeat(
             2,
             (0, 2, 0, None, true),
-            &[(0, 1, true, Some(1))],
+            &[(0, 1, Some(true), 1)],
             0,
+            &[None, None],
             &[None, None],
         );
         let mut comparisons = 0;
@@ -1005,59 +1029,82 @@ enum NestedInstruction {
     },
 }
 
+fn emit_nested_atoms(
+    program: &mut Vec<NestedInstruction>,
+    range: std::ops::Range<usize>,
+    repeated: &[Option<(usize, Option<usize>, bool)>],
+    optional: &[Option<bool>],
+) {
+    for index in range {
+        let split = optional[index].map(|_| {
+            let pc = program.len();
+            program.push(NestedInstruction::Split(0, 0));
+            pc
+        });
+        let body = program.len();
+        program.push(match repeated[index] {
+            Some((min, limit, greedy)) => NestedInstruction::Repeat {
+                index,
+                min,
+                limit,
+                greedy,
+            },
+            None => NestedInstruction::Atom(index),
+        });
+        if let Some(pc) = split {
+            let after = program.len();
+            program[pc] = if optional[index].unwrap() {
+                NestedInstruction::Split(body, after)
+            } else {
+                NestedInstruction::Split(after, body)
+            };
+        }
+    }
+}
+
 fn compile_nested_repeat(
     atoms: usize,
     outer: (usize, usize, usize, Option<usize>, bool),
-    inners: &[(usize, usize, bool, Option<usize>)],
+    inners: &[(usize, usize, Option<bool>, usize)],
     outer_group: usize,
     repeated: &[Option<(usize, Option<usize>, bool)>],
+    optional_atoms: &[Option<bool>],
 ) -> Vec<NestedInstruction> {
     let (start, end, min, limit, greedy) = outer;
-    let instruction = |index| match repeated[index] {
-        Some((min, limit, greedy)) => NestedInstruction::Repeat {
-            index,
-            min,
-            limit,
-            greedy,
-        },
-        None => NestedInstruction::Atom(index),
-    };
     let mut program = Vec::new();
-    for atom in 0..start {
-        program.push(instruction(atom));
-    }
+    emit_nested_atoms(&mut program, 0..start, repeated, optional_atoms);
     let initial = program.len();
     program.push(NestedInstruction::Split(0, 0));
     let body = program.len();
     program.push(NestedInstruction::Start(outer_group));
     let mut cursor = start;
     for &(inner_start, inner_end, inner_greedy, inner_group) in inners {
-        for atom in cursor..inner_start {
-            program.push(instruction(atom));
-        }
-        let inner_split = program.len();
-        program.push(NestedInstruction::Split(0, 0));
+        emit_nested_atoms(&mut program, cursor..inner_start, repeated, optional_atoms);
+        let split = inner_greedy.map(|_| {
+            let pc = program.len();
+            program.push(NestedInstruction::Split(0, 0));
+            pc
+        });
         let inner_body = program.len();
-        if let Some(group) = inner_group {
-            program.push(NestedInstruction::Start(group));
+        program.push(NestedInstruction::Start(inner_group));
+        emit_nested_atoms(
+            &mut program,
+            inner_start..inner_end,
+            repeated,
+            optional_atoms,
+        );
+        program.push(NestedInstruction::End(inner_group));
+        if let Some(pc) = split {
+            let after = program.len();
+            program[pc] = if inner_greedy.unwrap() {
+                NestedInstruction::Split(inner_body, after)
+            } else {
+                NestedInstruction::Split(after, inner_body)
+            };
         }
-        for atom in inner_start..inner_end {
-            program.push(instruction(atom));
-        }
-        if let Some(group) = inner_group {
-            program.push(NestedInstruction::End(group));
-        }
-        let after_inner = program.len();
-        program[inner_split] = if inner_greedy {
-            NestedInstruction::Split(inner_body, after_inner)
-        } else {
-            NestedInstruction::Split(after_inner, inner_body)
-        };
         cursor = inner_end;
     }
-    for atom in cursor..end {
-        program.push(instruction(atom));
-    }
+    emit_nested_atoms(&mut program, cursor..end, repeated, optional_atoms);
     program.push(NestedInstruction::End(outer_group));
     let loop_split = program.len();
     program.push(NestedInstruction::Split(0, 0));
@@ -1077,9 +1124,7 @@ fn compile_nested_repeat(
         limit,
         greedy,
     };
-    for atom in end..atoms {
-        program.push(instruction(atom));
-    }
+    emit_nested_atoms(&mut program, end..atoms, repeated, optional_atoms);
     program
 }
 
@@ -2657,15 +2702,11 @@ impl Packet {
                 return Err(error("unsupported repeated capture structure"));
             }
             if !optional.is_empty() || !repeated.is_empty() {
-                let optional_capture_count = optional_group_owners
-                    .iter()
-                    .filter(|group| group.is_some())
-                    .count();
-                if owner != 0 || optional_capture_count + 1 != groups.len() {
+                if owner != 0 || (1..groups.len()).any(|group| parents[group] != Some(owner)) {
                     return Err(error("unsupported nested repeated capture"));
                 }
-                let mut inner_specs = Vec::new();
-                let mut seen = vec![false; groups.len()];
+                let mut group_optional = vec![None; groups.len()];
+                let mut atom_optional = vec![None; atoms.len()];
                 for (&(inner_start, inner_end, inner_greedy), &group) in
                     optional.iter().zip(&optional_group_owners)
                 {
@@ -2674,25 +2715,31 @@ impl Packet {
                     }
                     if let Some(group) = group {
                         if group == owner
-                            || seen[group]
+                            || group_optional[group].is_some()
                             || parents[group] != Some(owner)
                             || (inner_start, inner_end) != ranges[group]
                         {
                             return Err(error("unsupported nested repeated capture"));
                         }
-                        seen[group] = true;
-                    } else if inner_end - inner_start != 1 {
-                        return Err(error("unsupported nested optional atom"));
+                        group_optional[group] = Some(inner_greedy);
+                    } else {
+                        if inner_end - inner_start != 1 || atom_optional[inner_start].is_some() {
+                            return Err(error("unsupported nested optional atom"));
+                        }
+                        atom_optional[inner_start] = Some(inner_greedy);
                     }
-                    inner_specs.push((inner_start, inner_end, inner_greedy, group));
                 }
-                inner_specs.sort_by_key(|spec| spec.0);
+                let mut inner_specs = (1..groups.len())
+                    .map(|group| {
+                        let (inner_start, inner_end) = ranges[group];
+                        (inner_start, inner_end, group_optional[group], group)
+                    })
+                    .collect::<Vec<_>>();
+                inner_specs.sort_by_key(|spec| (spec.0, spec.1));
                 let mut cursor = start;
                 for &(inner_start, inner_end, _, _) in &inner_specs {
-                    if inner_start < cursor {
-                        return Err(error(
-                            "overlapping nested optional captures are not supported",
-                        ));
+                    if inner_start < cursor || inner_end > end {
+                        return Err(error("overlapping nested captures are not supported"));
                     }
                     cursor = inner_end;
                 }
@@ -2702,6 +2749,7 @@ impl Packet {
                     &inner_specs,
                     owner,
                     &repeated_atoms,
+                    &atom_optional,
                 ));
             }
         }

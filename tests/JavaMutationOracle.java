@@ -920,6 +920,22 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_optional_atom_repeat_" + i, sample);
         }
+        String[] requiredInnerPatterns = {"((a?)b)*", "((a??)b)*", "((a?)?b)*", "((a?)(b?)c)*", "(x(a?)y(b?)z)+", "((a*)b)*", "((a+?)b){1,3}"};
+        char[] requiredInnerAlphabet = {'a', 'b', 'c', 'x', 'y', 'z', 'é', ' ', '\n', '\u0085'};
+        for (int i = 0; i < 210; i++) {
+            String pattern = requiredInnerPatterns[i % requiredInnerPatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(" ab bb abc xyz ");
+            for (int j = 0; j < 16; j++) value.append(requiredInnerAlphabet[(i * 7 + j * 3) % requiredInnerAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, "$1/$2/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_required_inner_" + i, sample);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);

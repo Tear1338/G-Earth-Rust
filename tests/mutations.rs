@@ -591,14 +591,7 @@ fn java_repeated_capture_group_rejects_unsupported_nesting_transactionally() {
     let mut packet = Packet::new(9);
     packet.put_string("(ab)* abab").unwrap();
     let before = packet.clone();
-    for pattern in [
-        "((a?)b)*",
-        "(((a)?)b)*",
-        "((ab)*)",
-        "()*",
-        "(ab)*(c)",
-        "a?(ab)*",
-    ] {
+    for pattern in ["(((a)?)b)*", "((ab)*)", "()*", "(ab)*(c)", "a?(ab)*"] {
         assert!(packet
             .replace_substrings_java_groups(pattern, "x", None)
             .is_err());
