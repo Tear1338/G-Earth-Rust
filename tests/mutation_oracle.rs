@@ -834,6 +834,24 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_class_corpus_{i}"), &packet);
     }
+    let predefined_patterns = ["(\\d)", "(\\D)", "(\\w)", "(\\W)", "(\\s)", "(\\S)"];
+    let predefined_alphabet = [
+        'a', 'Z', '0', '9', '_', 'é', 'ÿ', ' ', '\t', '\n', '\r', '\u{b}', '\u{c}', '\u{85}',
+    ];
+    for i in 0..120 {
+        let pattern = predefined_patterns[i % predefined_patterns.len()];
+        let mut value = format!("{pattern} ");
+        for j in 0..28 {
+            value.push(predefined_alphabet[(i * 7 + j * 5) % predefined_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java_groups(pattern, "$1/$0", Some(1))
+            .unwrap();
+        check(&format!("substring_predefined_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

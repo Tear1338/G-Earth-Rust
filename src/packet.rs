@@ -357,6 +357,29 @@ enum FixedRegexAtom {
     Class(Box<[bool; 256]>),
 }
 
+fn predefined_class(kind: char) -> Option<Box<[bool; 256]>> {
+    let (base, negated) = match kind {
+        'd' => ('d', false),
+        'D' => ('d', true),
+        'w' => ('w', false),
+        'W' => ('w', true),
+        's' => ('s', false),
+        'S' => ('s', true),
+        _ => return None,
+    };
+    let mut class = Box::new([false; 256]);
+    for byte in 0u8..=u8::MAX {
+        let included = match base {
+            'd' => byte.is_ascii_digit(),
+            'w' => byte.is_ascii_alphanumeric() || byte == b'_',
+            's' => matches!(byte, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r'),
+            _ => unreachable!(),
+        };
+        class[usize::from(byte)] = included != negated;
+    }
+    Some(class)
+}
+
 fn parse_character_class(
     chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
 ) -> Result<Box<[bool; 256]>> {
@@ -1638,6 +1661,11 @@ impl Packet {
                         .ok_or_else(|| error("unsupported regex escape"))?;
                     if c == 'Q' {
                         quoted = true;
+                        continue;
+                    }
+                    if let Some(class) = predefined_class(c) {
+                        atoms.push(FixedRegexAtom::Class(class));
+                        dynamic = true;
                         continue;
                     }
                     if !".^$|?*+()[]{}\\".contains(c) {

@@ -387,7 +387,7 @@ fn java_literal_groups_keep_no_match_and_reject_unsupported_patterns_transaction
     let mut packet = Packet::new(9);
     packet.put_string("(a)(b) ab").unwrap();
     let before = packet.clone();
-    for pattern in ["(a.*)", "(\\d)", "(a", "a)", "abc"] {
+    for pattern in ["(a.*)", "(\\p)", "(a", "a)", "abc"] {
         assert!(packet
             .replace_substrings_java_groups(pattern, "$1", None)
             .is_err());

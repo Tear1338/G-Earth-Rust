@@ -69,6 +69,8 @@
 
 ## Unreleased
 
+- Support Java predefined ASCII regex classes and complements outside bracket expressions.
+
 - Support bounded Java regex character classes, ranges, negation and selected escapes with Java differential coverage.
 
 - Support bounded Java dot-wildcard matching and dynamic capture replacement, with Java differential corpus.

@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: compare Java predefined character classes and complements with the released API before extending bounded matching. Full Java regex and live extension validation remain open.
+Next: compare predefined Java classes inside bracket expressions, unions and invalid ranges with the released API. Full Java regex and live extension validation remain open.

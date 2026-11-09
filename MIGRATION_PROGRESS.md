@@ -200,6 +200,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - The bounded fixed-length matcher now supports selected Java character classes, Latin-1 ranges, negation and selected escaped metacharacters. Seven targeted cases and 120 generated packets match the released beta-29 Java API. Unsupported class intersections and ambiguous constructs are rejected; quantifiers, predefined classes and full regex remain open. Twenty-three mutation tests, both Clippy configurations and desktop/web build pass locally. Windows GNU desktop/web release build succeeded at `c48006d`. Actions run 42710998274 passed all eight jobs for quoted literals and named groups.
 
+- Java predefined regex classes `\d`, `\w`, `\s` and their complements now work outside bracket expressions with fixed-length captures. A 120-packet differential corpus against the beta-29 Java API covers ASCII, Latin-1 and control characters. Twenty-three mutation tests, both Clippy configurations and desktop/web build pass; predefined classes inside brackets, Unicode flags and full regex semantics remain open. Actions run 42711534302 passed all eight jobs for dot matching.
+
 ## Exact next step
 
-Compare Java predefined regex classes `\d`, `\w`, `\s` and their complements in Latin-1 fields against the released API; extend bounded matching only for verified cases and keep class intersections explicitly unsupported. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Compare predefined Java regex classes inside bracket expressions, including unions, negation and invalid ranges, against the released beta-29 API; extend the bounded parser only after differential tests. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
