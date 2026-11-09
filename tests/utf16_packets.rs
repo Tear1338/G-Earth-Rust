@@ -1,4 +1,4 @@
-use gearth_rust::packet::{Packet, PacketFormat, Utf16Encoding};
+use gearth_rust::packet::{JavaStringEncoding, Packet, PacketField, PacketFormat, Utf16Encoding};
 
 #[test]
 fn utf16be_short_and_long_roundtrip_and_offset_reads_preserve_cursor() {
@@ -105,5 +105,45 @@ fn utf16_bom_selects_byte_order_and_empty_encoding_has_no_bom() {
         .unwrap();
     assert!(Packet::new(24)
         .put_utf16(&"a".repeat(32767), Utf16Encoding::WithBom)
+        .is_err());
+}
+
+#[test]
+fn java_unpaired_surrogate_units_encode_with_charset_specific_replacement() {
+    let units = [0xd800, 0xd800, 0xdc00, b'A' as u16];
+    let mut packet = Packet::new(25);
+    packet
+        .append_fields(&[PacketField::StringUnits(&units, JavaStringEncoding::Utf8)])
+        .unwrap();
+    assert_eq!(
+        packet.read_short_bytes_at(6).unwrap(),
+        &[b'?', 0xf0, 0x90, 0x80, 0x80, b'A']
+    );
+    packet.reset();
+    assert_eq!(packet.read_utf8().unwrap(), "?𐀀A");
+    let mut packet = Packet::new(25);
+    packet
+        .put_java_units_long(&units, JavaStringEncoding::Utf16(Utf16Encoding::WithBom))
+        .unwrap();
+    assert_eq!(
+        packet
+            .read_utf16_long(Utf16Encoding::WithBom, false)
+            .unwrap(),
+        "�𐀀A"
+    );
+    let mut packet = Packet::new(25);
+    packet.put_string("cat").unwrap();
+    packet
+        .replace_java_units(6, &units, JavaStringEncoding::Latin1)
+        .unwrap();
+    assert_eq!(packet.read_string().unwrap(), "??A");
+    let before = packet.clone();
+    assert!(packet
+        .put_java_units(&vec![b'a' as u16; 65536], JavaStringEncoding::Utf8)
+        .is_err());
+    assert_eq!(packet, before);
+    let mut wedgie = Packet::new_with_format(PacketFormat::WedgieOutgoing, 1).unwrap();
+    assert!(wedgie
+        .put_java_units(&units, JavaStringEncoding::Utf8)
         .is_err());
 }

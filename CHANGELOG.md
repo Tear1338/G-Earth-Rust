@@ -1,5 +1,6 @@
 # Changelog
 
+- Encode Java UTF-16 code units, including unpaired surrogates, in five packet charsets.
 - Add explicit UTF-16LE and BOM-sensitive UTF-16 packet string variants.
 - Add strict and Java-style replacement UTF-16BE packet string operations.
 - Compare Java Latin-1 replacement encoding across all Unicode scalar values and short-field boundaries.

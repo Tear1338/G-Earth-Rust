@@ -210,4 +210,6 @@ Explicit Java-style Latin-1 replacement encoding is available for EVA short/long
 
 The Java Latin-1 replacement oracle now covers all Unicode scalar values in chunks and the 65,535/65,536-byte short-field boundary. Java wraps the latter length and Rust rejects it deliberately. Java unpaired surrogates cannot be represented by Rust strings.
 
-UTF-16BE EVA helpers now support short/long fields, cursor-preserving offset reads, replacement and strict or Java-style lossy decoding. Java oracle coverage includes every single code unit and 10,000 deterministic byte strings. UTF-16LE and BOM-sensitive UTF-16 helpers are now present, with selected and 10,000 deterministic malformed-byte comparisons for each. Unpaired Java string inputs and real extensions remain open.
+UTF-16BE EVA helpers now support short/long fields, cursor-preserving offset reads, replacement and strict or Java-style lossy decoding. Java oracle coverage includes every single code unit and 10,000 deterministic byte strings. UTF-16LE and BOM-sensitive UTF-16 helpers are now present, with selected and 10,000 deterministic malformed-byte comparisons for each. Explicit UTF-16-unit input now supports unpaired Java surrogates for five encodings; real extensions remain untested.
+
+`put_java_units`, `put_java_units_long`, `replace_java_units` and `PacketField::StringUnits` encode Java-style UTF-16 units, including isolated surrogates, in Latin-1, UTF-8 and the three UTF-16 variants. Selected and 4,096 deterministic strings match Java; further replacement and long-field boundaries remain.

@@ -149,6 +149,27 @@ public class JavaMutationOracle {
             sample.appendUShort(bytes.length).appendBytes(bytes);
             System.out.println("utf16variant_" + i + "=" + HexFormat.of().formatHex(bytes) + "," + HexFormat.of().formatHex(sample.readString(6, StandardCharsets.UTF_16LE).getBytes(StandardCharsets.UTF_8)) + "," + HexFormat.of().formatHex(sample.readString(6, StandardCharsets.UTF_16).getBytes(StandardCharsets.UTF_8)));
         }
+        char[][] selectedSurrogates = {{'\ud800'}, {'\udc00'}, {'\ud800','A'}, {'\ud800','\ud800','\udc00'}, {'\ud800','\udc00'}, {'A','\ud800','B'}, {}};
+        java.util.Random unitRandom = new java.util.Random(9881);
+        for (int i = 0; i < selectedSurrogates.length + 4096; i++) {
+            char[] units;
+            if (i < selectedSurrogates.length) units = selectedSurrogates[i];
+            else { units = new char[1 + i % 8]; for (int j = 0; j < units.length; j++) units[j] = (char) unitRandom.nextInt(65536); }
+            String text = new String(units);
+            StringBuilder input = new StringBuilder();
+            for (char unit : units) input.append(HexFormat.of().toHexDigits(unit));
+            StringBuilder line = new StringBuilder("java_units_" + i + "=" + input);
+            for (java.nio.charset.Charset charset : new java.nio.charset.Charset[]{StandardCharsets.ISO_8859_1, StandardCharsets.UTF_8, StandardCharsets.UTF_16BE, StandardCharsets.UTF_16LE, StandardCharsets.UTF_16}) line.append(',').append(HexFormat.of().formatHex(text.getBytes(charset)));
+            System.out.println(line);
+        }
+        for (int length : new int[]{65535, 65536}) {
+            HPacket sample = new HPacket(25);
+            sample.appendString("a".repeat(length), StandardCharsets.UTF_8);
+            emit("utf8_limit_" + length, sample);
+        }
+        HPacket utf8Multibyte = new HPacket(25);
+        utf8Multibyte.appendString("€".repeat(21845), StandardCharsets.UTF_8);
+        emit("utf8_limit_multibyte", utf8Multibyte);
         HPacket fixed = new HPacket(1);
         fixed.appendInt(123).appendBoolean(false).appendShort((short) 7).appendLong(8).appendFloat(1.5f).appendDouble(2.5);
         fixed.setReadIndex(10);

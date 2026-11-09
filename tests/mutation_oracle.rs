@@ -333,6 +333,46 @@ fn mutations_match_original_java_packets_and_cursor() {
             );
         }
     }
+    use gearth_rust::packet::JavaStringEncoding;
+    for i in 0..4103 {
+        let fields: Vec<_> = expected[format!("java_units_{i}").as_str()]
+            .split(',')
+            .collect();
+        let input = expression::parse_hex(fields[0]).unwrap();
+        let units: Vec<_> = input
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|b| u16::from_be_bytes(*b))
+            .collect();
+        let encodings = [
+            JavaStringEncoding::Latin1,
+            JavaStringEncoding::Utf8,
+            JavaStringEncoding::Utf16(Utf16Encoding::BigEndian),
+            JavaStringEncoding::Utf16(Utf16Encoding::LittleEndian),
+            JavaStringEncoding::Utf16(Utf16Encoding::WithBom),
+        ];
+        for (index, encoding) in encodings.iter().enumerate() {
+            let mut sample = Packet::new(25);
+            sample.put_java_units(&units, *encoding).unwrap();
+            assert_eq!(
+                sample.read_short_bytes_at(6).unwrap(),
+                expression::parse_hex(fields[index + 1]).unwrap(),
+                "units {i}, {encoding:?}"
+            );
+        }
+    }
+    let mut utf8_boundary = Packet::new(25);
+    utf8_boundary.put_utf8(&"a".repeat(65535)).unwrap();
+    check("utf8_limit_65535", &utf8_boundary);
+    assert!(Packet::new(25).put_utf8(&"a".repeat(65536)).is_err());
+    let java_overflow =
+        expression::parse_hex(expected["utf8_limit_65536"].split_once(',').unwrap().0).unwrap();
+    assert_eq!(&java_overflow[6..8], &[0, 0]);
+    let mut multi = Packet::new(25);
+    multi.put_utf8(&"€".repeat(21845)).unwrap();
+    check("utf8_limit_multibyte", &multi);
+    assert!(Packet::new(25).put_utf8(&"€".repeat(21846)).is_err());
     let mut fixed = Packet::new(1);
     fixed
         .put_i32(123)

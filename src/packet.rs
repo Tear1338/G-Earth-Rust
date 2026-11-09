@@ -115,6 +115,61 @@ pub enum Utf16Encoding {
     WithBom,
 }
 
+/// Encodings supported for Java strings supplied as UTF-16 code units.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JavaStringEncoding {
+    Latin1,
+    Utf8,
+    Utf16(Utf16Encoding),
+}
+
+// Java String may contain unpaired UTF-16 surrogates. Its encoders replace
+// them with '?' for Latin-1/UTF-8 and U+FFFD for UTF-16 variants.
+fn encode_java_units(units: &[u16], encoding: JavaStringEncoding, max: usize) -> Result<Vec<u8>> {
+    let mut bytes = Vec::new();
+    if encoding == JavaStringEncoding::Utf16(Utf16Encoding::WithBom) && !units.is_empty() {
+        bytes.extend_from_slice(&[0xfe, 0xff]);
+    }
+    for item in char::decode_utf16(units.iter().copied()) {
+        let character = match item {
+            Ok(value) => value,
+            Err(_) if matches!(encoding, JavaStringEncoding::Utf16(_)) => '\u{fffd}',
+            Err(_) => '?',
+        };
+        let mut buffer = [0u8; 4];
+        let encoded: &[u8] = match encoding {
+            JavaStringEncoding::Latin1 => {
+                buffer[0] = u8::try_from(character as u32).unwrap_or(b'?');
+                &buffer[..1]
+            }
+            JavaStringEncoding::Utf8 => character.encode_utf8(&mut buffer).as_bytes(),
+            JavaStringEncoding::Utf16(order) => {
+                let mut words = [0u16; 2];
+                let words = character.encode_utf16(&mut words);
+                let len = words.len() * 2;
+                for (index, unit) in words.iter().enumerate() {
+                    let pair = if order == Utf16Encoding::LittleEndian {
+                        unit.to_le_bytes()
+                    } else {
+                        unit.to_be_bytes()
+                    };
+                    buffer[index * 2..index * 2 + 2].copy_from_slice(&pair);
+                }
+                &buffer[..len]
+            }
+        };
+        if bytes
+            .len()
+            .checked_add(encoded.len())
+            .is_none_or(|len| len > max)
+        {
+            return Err(error("encoded string too long"));
+        }
+        bytes.extend_from_slice(encoded);
+    }
+    Ok(bytes)
+}
+
 fn encode_utf16(value: &str, encoding: Utf16Encoding) -> Vec<u8> {
     let mut bytes = Vec::new();
     if encoding == Utf16Encoding::WithBom && !value.is_empty() {
@@ -184,6 +239,8 @@ pub enum PacketField<'a> {
     String(&'a str),
     /// Encode unmappable characters as `?`, as Java's default Latin-1 encoder does.
     StringJava(&'a str),
+    /// Java String represented as UTF-16 units, including unpaired surrogates.
+    StringUnits(&'a [u16], JavaStringEncoding),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -770,6 +827,9 @@ impl Packet {
                 PacketField::StringJava(value) => {
                     self.put_string_java(value)?;
                 }
+                PacketField::StringUnits(value, encoding) => {
+                    self.put_java_units(value, encoding)?;
+                }
             }
         }
         Ok(self)
@@ -922,6 +982,36 @@ impl Packet {
         }
         self.put_long_bytes(&encode_utf16be(value))
     }
+    /// Encode Java UTF-16 code units into an EVA short/long field using replacement semantics.
+    pub fn put_java_units(
+        &mut self,
+        units: &[u16],
+        encoding: JavaStringEncoding,
+    ) -> Result<&mut Self> {
+        self.ensure_eva()?;
+        self.put_short_bytes(&encode_java_units(units, encoding, usize::from(u16::MAX))?)
+    }
+    pub fn put_java_units_long(
+        &mut self,
+        units: &[u16],
+        encoding: JavaStringEncoding,
+    ) -> Result<&mut Self> {
+        self.ensure_eva()?;
+        self.put_long_bytes(&encode_java_units(units, encoding, MAX_FRAME)?)
+    }
+    pub fn replace_java_units(
+        &mut self,
+        offset: usize,
+        units: &[u16],
+        encoding: JavaStringEncoding,
+    ) -> Result<&mut Self> {
+        self.ensure_eva()?;
+        self.replace_short_bytes(
+            offset,
+            &encode_java_units(units, encoding, usize::from(u16::MAX))?,
+        )
+    }
+
     /// Append a Java UTF-16 variant as a short/long EVA field.
     pub fn put_utf16(&mut self, value: &str, encoding: Utf16Encoding) -> Result<&mut Self> {
         self.ensure_eva()?;
