@@ -180,20 +180,7 @@ impl PacketInfoManager {
     ) -> std::io::Result<Self> {
         match socks {
             None => Self::fetch_sulek(version, origins),
-            Some(socks) => {
-                #[cfg(feature = "web")]
-                {
-                    crate::web_socks::fetch_sulek(socks, version, origins)
-                }
-                #[cfg(not(feature = "web"))]
-                {
-                    let _ = socks;
-                    Err(std::io::Error::new(
-                        std::io::ErrorKind::Unsupported,
-                        "SOCKS metadata lookup requires the web feature",
-                    ))
-                }
-            }
+            Some(socks) => crate::socks_http::fetch_sulek(socks, version, origins),
         }
     }
     pub(crate) fn fetch_sulek_using(
@@ -448,17 +435,42 @@ mod cache_refresh_tests {
 
     #[cfg(not(feature = "web"))]
     #[test]
-    fn socks_metadata_without_web_feature_fails_without_direct_fallback() {
+    fn socks_metadata_without_web_uses_proxy_and_never_falls_back() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = std::thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let mut greeting = [0; 3];
+            stream.read_exact(&mut greeting).unwrap();
+            assert_eq!(greeting, [5, 1, 0]);
+            stream.write_all(&[5, 0]).unwrap();
+            let mut header = [0; 5];
+            stream.read_exact(&mut header).unwrap();
+            assert_eq!(&header[..4], &[5, 1, 0, 3]);
+            let mut target = vec![0; usize::from(header[4]) + 2];
+            stream.read_exact(&mut target).unwrap();
+            assert_eq!(&target[..target.len() - 2], b"api.sulek.dev");
+            assert_eq!(&target[target.len() - 2..], &443u16.to_be_bytes());
+            stream.write_all(&[5, 5, 0, 1]).unwrap();
+        });
         let proxy = crate::socks::SocksConfig {
-            proxy: "127.0.0.1:0".into(),
+            proxy: address.to_string(),
             credentials: None,
         };
-        for origins in [false, true] {
-            let error =
-                PacketInfoManager::fetch_sulek_for_proxy("TEST", origins, Some(proxy.clone()))
-                    .unwrap_err();
-            assert_eq!(error.kind(), std::io::ErrorKind::Unsupported);
-        }
+        let revision = format!(
+            "TEST-{}",
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        );
+        assert!(PacketInfoManager::fetch_sulek_for_proxy(&revision, false, Some(proxy)).is_err());
+        server.join().unwrap();
     }
 
     #[test]

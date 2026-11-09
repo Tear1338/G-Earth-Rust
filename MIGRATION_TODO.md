@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: support Flash/Origins metadata over SOCKS in builds without the web feature and validate locally. Full Java regex and live extension validation remain open.
+Next: audit Unity external network paths and add verified SOCKS routing without direct fallback, then desktop controls. Full Java regex and live extension validation remain open.

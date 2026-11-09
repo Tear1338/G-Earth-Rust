@@ -5,7 +5,6 @@ use std::{
     thread,
 };
 
-#[cfg(feature = "web")]
 #[tokio::test]
 async fn async_socks_authenticates_and_sends_hostname_to_proxy() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -49,7 +48,6 @@ async fn async_socks_authenticates_and_sends_hostname_to_proxy() {
     server.await.unwrap();
 }
 
-#[cfg(feature = "web")]
 #[tokio::test]
 async fn async_socks_cancellation_closes_stalled_handshake() {
     use tokio::io::AsyncReadExt;
@@ -75,7 +73,6 @@ async fn async_socks_cancellation_closes_stalled_handshake() {
     );
 }
 
-#[cfg(feature = "web")]
 #[tokio::test]
 async fn async_socks_encodes_ip_targets_and_propagates_proxy_rejection() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -129,7 +126,6 @@ async fn async_socks_encodes_ip_targets_and_propagates_proxy_rejection() {
     }
 }
 
-#[cfg(feature = "web")]
 #[tokio::test]
 async fn async_socks_rejects_authentication_downgrade_and_bad_credentials() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};

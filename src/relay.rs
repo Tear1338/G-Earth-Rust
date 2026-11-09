@@ -1049,7 +1049,7 @@ mod tests {
 
     #[cfg(not(feature = "web"))]
     #[test]
-    fn origins_socks_without_web_continues_without_direct_metadata_lookup() {
+    fn origins_socks_without_web_uses_proxy_for_metadata() {
         let _test_lock = LOOKUP_TEST_LOCK.lock().unwrap();
         let remote = TcpListener::bind("127.0.0.1:0").unwrap();
         let remote_address = remote.local_addr().unwrap();
@@ -1069,6 +1069,24 @@ mod tests {
             assert_eq!(&request[8..], &remote_address.port().to_be_bytes());
             let upstream = TcpStream::connect(remote_address).unwrap();
             client.write_all(&[5, 0, 0, 1, 127, 0, 0, 1, 0, 1]).unwrap();
+            for _ in 0..2 {
+                let (mut metadata, _) = proxy_worker.accept().unwrap();
+                metadata
+                    .set_read_timeout(Some(Duration::from_secs(3)))
+                    .unwrap();
+                let mut greeting = [0; 3];
+                metadata.read_exact(&mut greeting).unwrap();
+                assert_eq!(greeting, [5, 1, 0]);
+                metadata.write_all(&[5, 0]).unwrap();
+                let mut header = [0; 5];
+                metadata.read_exact(&mut header).unwrap();
+                assert_eq!(&header[..4], &[5, 1, 0, 3]);
+                let mut target = vec![0; usize::from(header[4]) + 2];
+                metadata.read_exact(&mut target).unwrap();
+                assert_eq!(&target[..target.len() - 2], b"api.sulek.dev");
+                assert_eq!(&target[target.len() - 2..], &443u16.to_be_bytes());
+                metadata.write_all(&[5, 5, 0, 1]).unwrap();
+            }
             release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
             drop((client, upstream));
         });
@@ -1079,6 +1097,20 @@ mod tests {
             },
             RelayOptions {
                 shockwave: true,
+                connection: Some(ConnectionDetails {
+                    host: "fixture".into(),
+                    port: 1,
+                    version: format!(
+                        "TEST-{}",
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_nanos()
+                    ),
+                    identifier: "SHOCKWAVE".into(),
+                    client_type: "SHOCKWAVE".into(),
+                    packets: crate::packet_info::PacketInfoManager::default(),
+                }),
                 socks: Some(SocksConfig {
                     proxy: proxy_address.to_string(),
                     credentials: None,
@@ -1091,7 +1123,7 @@ mod tests {
         let (_remote, _) = remote.accept().unwrap();
         wait_for(
             &events,
-            |event| matches!(event, Event::Status(text) if text.contains("requires the web feature")),
+            |event| matches!(event, Event::Status(text) if text.contains("Connected without packet names")),
         );
         wait_for(&events, |event| matches!(event, Event::Connected(_)));
         proxy.set_nonblocking(true).unwrap();

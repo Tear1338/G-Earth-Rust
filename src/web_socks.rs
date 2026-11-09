@@ -1,94 +1,25 @@
-//! Upstream transport selection for the HTTP proxy.
-use crate::{packet_info::PacketInfoManager, socks::SocksConfig, web_proxy::NITRO_REVISION};
+//! Web proxy SOCKS dialer and optional City helper transport.
+#[cfg(test)]
+use crate::socks_http::{download_json, fetch_sulek_using};
+use crate::{
+    packet_info::PacketInfoManager,
+    socks::SocksConfig,
+    socks_http::{default_tls, target, OutboundConnector},
+    web_proxy::NITRO_REVISION,
+};
 use http_body_util::BodyExt;
+#[cfg(test)]
+use hudsucker::rustls::crypto::aws_lc_rs;
 use hudsucker::{
-    hyper::{Request, Uri},
-    hyper_util::{
-        client::legacy::{connect::HttpConnector, Client},
-        rt::{TokioExecutor, TokioIo},
-    },
-    rustls::{self, crypto::aws_lc_rs},
-    Body, UpstreamDialer,
+    hyper::Request,
+    hyper_util::{client::legacy::Client, rt::TokioExecutor},
+    rustls, Body, UpstreamDialer,
 };
-use std::{
-    future::Future,
-    io,
-    pin::Pin,
-    sync::Arc,
-    task::{Context, Poll},
-    time::{Duration, SystemTime},
-};
+#[cfg(test)]
+use std::time::SystemTime;
+use std::{io, sync::Arc, time::Duration};
+#[cfg(test)]
 use tokio::net::TcpStream;
-use tower_service::Service;
-
-fn target(uri: &Uri) -> io::Result<String> {
-    let host = uri
-        .host()
-        .filter(|host| !host.is_empty())
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "upstream URI has no host"))?;
-    let default_port = match uri.scheme_str() {
-        Some("http" | "ws") => 80,
-        Some("https" | "wss") => 443,
-        _ => {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "upstream URI has no supported scheme",
-            ))
-        }
-    };
-    let authority = uri.authority().ok_or_else(|| {
-        io::Error::new(io::ErrorKind::InvalidInput, "upstream URI has no authority")
-    })?;
-    let host_port = authority.as_str().rsplit('@').next().unwrap_or_default();
-    let suffix = host_port
-        .strip_prefix(host)
-        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "invalid upstream authority"))?;
-    if !suffix.is_empty() && uri.port_u16().is_none() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "invalid upstream port",
-        ));
-    }
-    let port = match uri.port_u16() {
-        Some(port) => port,
-        None => default_port,
-    };
-    Ok(format!("{host}:{port}"))
-}
-
-#[derive(Clone)]
-pub(crate) struct OutboundConnector {
-    direct: HttpConnector,
-    socks: Option<SocksConfig>,
-}
-impl OutboundConnector {
-    pub(crate) fn new(socks: Option<SocksConfig>) -> Self {
-        let mut direct = HttpConnector::new();
-        direct.enforce_http(false);
-        Self { direct, socks }
-    }
-}
-impl Service<Uri> for OutboundConnector {
-    type Response = TokioIo<TcpStream>;
-    type Error = io::Error;
-    type Future = Pin<Box<dyn Future<Output = io::Result<Self::Response>> + Send>>;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
-        if self.socks.is_some() {
-            Poll::Ready(Ok(()))
-        } else {
-            self.direct.poll_ready(cx).map_err(io::Error::other)
-        }
-    }
-    fn call(&mut self, uri: Uri) -> Self::Future {
-        if let Some(socks) = self.socks.clone() {
-            Box::pin(async move { socks.connect_async(&target(&uri)?).await.map(TokioIo::new) })
-        } else {
-            let connecting = self.direct.call(uri);
-            Box::pin(async move { connecting.await.map_err(io::Error::other) })
-        }
-    }
-}
 
 pub(crate) fn dialer(socks: SocksConfig) -> UpstreamDialer {
     Arc::new(move |uri| {
@@ -97,141 +28,8 @@ pub(crate) fn dialer(socks: SocksConfig) -> UpstreamDialer {
     })
 }
 
-fn default_tls() -> io::Result<rustls::ClientConfig> {
-    let mut roots = rustls::RootCertStore::empty();
-    roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
-    Ok(
-        rustls::ClientConfig::builder_with_provider(Arc::new(aws_lc_rs::default_provider()))
-            .with_safe_default_protocol_versions()
-            .map_err(io::Error::other)?
-            .with_root_certificates(roots)
-            .with_no_client_auth(),
-    )
-}
-
-async fn download_json(
-    socks: SocksConfig,
-    tls: rustls::ClientConfig,
-    endpoint: &str,
-) -> io::Result<Vec<u8>> {
-    const MAX_BYTES: usize = 8 * 1024 * 1024;
-    let connector = hyper_rustls::HttpsConnectorBuilder::new()
-        .with_tls_config(tls)
-        .https_only()
-        .enable_http1()
-        .wrap_connector(OutboundConnector::new(Some(socks)));
-    let client: Client<_, Body> = Client::builder(TokioExecutor::new()).build(connector);
-    let mut url = url::Url::parse(endpoint).map_err(io::Error::other)?;
-    tokio::time::timeout(Duration::from_secs(10), async {
-        for redirects in 0..=5 {
-            if url.scheme() != "https" || !url.username().is_empty() || url.password().is_some() {
-                return Err(io::Error::other(
-                    "metadata redirect must use HTTPS without URL credentials",
-                ));
-            }
-            let request = Request::builder()
-                .uri(url.as_str())
-                .header("accept", "application/json")
-                .body(Body::empty())
-                .map_err(io::Error::other)?;
-            let response = client.request(request).await.map_err(io::Error::other)?;
-            if response.status().is_redirection() {
-                if redirects == 5 {
-                    return Err(io::Error::other("too many metadata redirects"));
-                }
-                let location = response
-                    .headers()
-                    .get("location")
-                    .ok_or_else(|| io::Error::other("metadata redirect has no location"))?
-                    .to_str()
-                    .map_err(io::Error::other)?;
-                url = url.join(location).map_err(io::Error::other)?;
-                continue;
-            }
-            if !response.status().is_success() {
-                return Err(io::Error::other(format!(
-                    "metadata HTTP status {}",
-                    response.status()
-                )));
-            }
-            let mut body = response.into_body();
-            let mut bytes = Vec::new();
-            while let Some(frame) = body.frame().await {
-                if let Ok(data) = frame.map_err(io::Error::other)?.into_data() {
-                    if data.len() > MAX_BYTES.saturating_sub(bytes.len()) {
-                        return Err(io::Error::other("metadata exceeds 8 MiB"));
-                    }
-                    bytes.extend_from_slice(&data);
-                }
-            }
-            return Ok(bytes);
-        }
-        Err(io::Error::other("too many metadata redirects"))
-    })
-    .await
-    .map_err(|_| io::Error::new(io::ErrorKind::TimedOut, "metadata request timed out"))?
-}
-
 pub(crate) fn fetch_nitro(socks: SocksConfig) -> io::Result<PacketInfoManager> {
-    fetch_sulek(socks, NITRO_REVISION, false)
-}
-
-pub(crate) fn fetch_sulek(
-    socks: SocksConfig,
-    requested: &str,
-    origins: bool,
-) -> io::Result<PacketInfoManager> {
-    let cache_dir = crate::settings::Settings::default_path()
-        .parent()
-        .unwrap_or_else(|| std::path::Path::new("."))
-        .join("packet-identifiers");
-    fetch_sulek_using(
-        socks,
-        default_tls()?,
-        "https://api.sulek.dev",
-        &cache_dir,
-        requested,
-        origins,
-        SystemTime::now(),
-    )
-}
-
-fn fetch_sulek_using(
-    socks: SocksConfig,
-    tls: rustls::ClientConfig,
-    base: &str,
-    cache_dir: &std::path::Path,
-    requested: &str,
-    origins: bool,
-    now: SystemTime,
-) -> io::Result<PacketInfoManager> {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()?;
-    let version = crate::packet_info::resolve_sulek_version(requested, origins, || {
-        runtime.block_on(download_json(
-            socks.clone(),
-            tls.clone(),
-            &format!("{base}/releases?variant=shockwave-windows"),
-        ))
-    })?;
-    let cache = cache_dir.join(format!(
-        "{}-{version}.bin",
-        if origins { "SHOCKWAVE" } else { "FLASH" }
-    ));
-    let endpoint = if origins {
-        format!("{base}/releases/shockwave-windows/{version}/messages")
-    } else {
-        format!("{base}/releases/{version}/messages")
-    };
-    let mut database = PacketInfoManager::load_or_refresh(&cache, &version, now, || {
-        let bytes = runtime.block_on(download_json(socks, tls, &endpoint))?;
-        PacketInfoManager::from_json(&version, &bytes).map_err(io::Error::other)
-    })?;
-    if origins && database.entries().is_empty() {
-        database.version = requested.to_owned();
-    }
-    Ok(database)
+    crate::socks_http::fetch_sulek(socks, NITRO_REVISION, false)
 }
 
 #[cfg(test)]

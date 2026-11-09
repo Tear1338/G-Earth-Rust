@@ -12,7 +12,6 @@ pub struct SocksConfig {
 impl SocksConfig {
     /// Connect without blocking the async runtime. The destination hostname is
     /// sent to the proxy, so it is never resolved locally.
-    #[cfg(feature = "web")]
     pub async fn connect_async(&self, target: &str) -> io::Result<tokio::net::TcpStream> {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let (host, port) = target.rsplit_once(':').ok_or_else(|| {

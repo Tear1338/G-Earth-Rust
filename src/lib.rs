@@ -29,6 +29,7 @@ pub mod scheduler;
 pub mod settings;
 pub mod shockwave;
 pub mod socks;
+mod socks_http;
 pub mod structure_prediction;
 #[cfg(feature = "web")]
 pub mod web_ca;

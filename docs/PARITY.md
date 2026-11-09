@@ -38,13 +38,13 @@ A complete port requires the remaining functionality above, tested through real 
 
 The Java UTF-8 replacement-decoding oracle covers all 65,536 two-byte inputs and mixed valid and malformed data at six short-field lengths through 65535. Offset and sequential reads are checked on those length cases. This is finite coverage; real extensions and all longer combinations remain unverified.
 
-A deterministic sample of 20,000 byte strings of lengths 3–12 also matches Java replacement decoding locally. This does not exhaust longer inputs.
+A deterministic sample of 20,000 byte strings of lengths 3â€“12 also matches Java replacement decoding locally. This does not exhaust longer inputs.
 
 An additional 36,864 combinations target E0, ED, F0 and F4 boundary sequences; the local Java comparison passes. These tests do not establish exhaustive UTF-8 or real extension compatibility.
 
 The CLI relay is generic plaintext EVA and cannot reliably infer a Flash revision from arbitrary traffic; `--revision` enables observed-ID checks. Java and Rust Flash extract two strings from a short outgoing packet and accept an empty revision or trailing bytes. The broader heuristic can misidentify other packets; real client handshakes remain unverified.
 
-A focused oracle executes the pinned Java identification method with a stub superclass: normal input, trailing payload and an empty revision agree. Rust reassembles every two-part split of one hello; Java identification called with the two chunks does not, and throws for splits 7–23. The superclass is stubbed, so this is not a full Java transport or real-client test.
+A focused oracle executes the pinned Java identification method with a stub superclass: normal input, trailing payload and an empty revision agree. Rust reassembles every two-part split of one hello; Java identification called with the two chunks does not, and throws for splits 7â€“23. The superclass is stubbed, so this is not a full Java transport or real-client test.
 
 A controlled loopback Flash relay and extension protocol fixture covers normal and empty revisions with a trailing byte, interception, forwarding and disconnect using preloaded metadata. TCP may coalesce the two writes; deterministic frame fragmentation is covered separately. Real client and extension behavior and metadata lookup failures remain unverified.
 
@@ -133,3 +133,5 @@ The opt-in City helper now uploads via configured SOCKS and rejects redirects an
 Nitro desktop SOCKS settings now feed HTTP/TLS, WebSocket, raw CONNECT, metadata and the session-opted-in City helper. Local authenticated proxy fixtures and settings tests pass; actual SOCKS servers, hotels and interactive desktop controls remain unverified. Unity SOCKS remains unavailable.
 
 Flash and Origins automatic and manual metadata requests now use configured SOCKS with the web feature. Minimal builds refuse those requests instead of falling back directly. Local authenticated fixtures cover discovery and metadata; real SOCKS/client sessions and desktop interaction remain unverified.
+
+SOCKS metadata transport is shared with minimal builds: Flash and Origins retain authenticated SOCKS, proxy-side DNS, bounded HTTPS redirects/responses and no direct fallback. Loopback tests cover successful Origins discovery and metadata over authenticated SOCKS/TLS, rejected proxy connections and relay continuation. The minimal build now includes Tokio, Hyper and rustls dependencies; no real service, SOCKS server or game client was used. Unity SOCKS routing and live interoperability remain open.
