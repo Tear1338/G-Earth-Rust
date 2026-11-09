@@ -1032,6 +1032,32 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_insensitive_" + i, sample);
         }
+        String[][] noCapture = {
+            {"cat cat", "cat", "[$0]", "1"},
+            {"cat cat", "cat", "$1", "1"},
+            {"cat cat", "dog", "$1", "1"},
+            {"abc", "", "x", "1"},
+            {"éa", "", "-", "1"},
+            {"abc", "", "$0", "1"},
+            {"abc", "", "$1", "1"},
+            {"(?i)cat CAT cat", "(?i)cat", "[$0]", "1"},
+            {".abc.", ".", "[$0]", "1"},
+            {"abc", "", "$", "0"},
+        };
+        for (int i = 0; i < noCapture.length; i++) {
+            HPacket sample = new HPacket(9);
+            sample.appendString(noCapture[i][0]);
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            boolean failed = false;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(noCapture[i][1], noCapture[i][2], Integer.parseInt(noCapture[i][3]));
+            } catch (RuntimeException expected) { failed = true; }
+            finally { System.setOut(original); }
+            if (failed) System.out.println("substring_no_capture_" + i + "=error");
+            else emit("substring_no_capture_" + i, sample);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);

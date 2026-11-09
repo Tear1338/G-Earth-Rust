@@ -246,6 +246,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - The Java 21 global `(?i)` regex flag is supported for ASCII case-insensitive literals, character classes and dynamic captures; non-ASCII Latin-1 is unchanged, as in Java without Unicode flags. A 175-packet corpus matches the released beta-29 API, including negated classes and quoted/escaped literals. Nine budget/state tests, 29 mutation tests, both Clippy configurations and desktop/web build pass. Embedded/Unicode flags and general Java regex remain open. Actions run 42723118432 passed the serialized G-Python jobs on Windows and Linux; the original timeout cause remains unproven.
 
+- Java regex replacement now accepts patterns without capture groups, including empty patterns and `$0`; invalid references and size overflow remain transactional. Ten cases match the released beta-29 Java API, and a focused large-field test covers zero-width growth. Nine budget/state tests, 30 mutation tests, both Clippy configurations and desktop/web build pass. General regex syntax and live-extension compatibility remain open. Actions run 42723118432 passed all eight jobs with serialized G-Python tests.
+
 ## Exact next step
 
-Compare Java regex replacement with no capturing groups, including empty patterns, `$0`, invalid references and zero-width progress, against the released beta-29 API; extend bounded matching after differential fixtures. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Compare Java global dotall regex flag `(?s)` and combinations with `(?i)` across line terminators, captures and bounded repetitions using the released beta-29 API; extend bounded matching after differential fixtures. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

@@ -69,6 +69,8 @@
 
 ## Unreleased
 
+- Support Java regex replacement without captures, including empty patterns and bounded zero-width expansion.
+
 - Support Java 21 global ASCII case-insensitive regex matching with case-preserving captures.
 
 - Support Java 21 word-boundary regex assertions over Latin-1 packet strings.

@@ -387,7 +387,7 @@ fn java_literal_groups_keep_no_match_and_reject_unsupported_patterns_transaction
     let mut packet = Packet::new(9);
     packet.put_string("(a)(b) ab").unwrap();
     let before = packet.clone();
-    for pattern in ["(a.{2,1})", "(\\p)", "(a", "a)", "abc"] {
+    for pattern in ["(a.{2,1})", "(\\p)", "(a", "a)"] {
         assert!(packet
             .replace_substrings_java_groups(pattern, "$1", None)
             .is_err());
@@ -607,6 +607,23 @@ fn java_repeated_capture_group_rejects_unsupported_nesting_transactionally() {
             .unwrap(),
         1
     );
+}
+
+#[test]
+fn java_regex_without_captures_handles_empty_pattern_and_bounds() {
+    let mut packet = Packet::new(9);
+    packet.put_string("abc").unwrap();
+    assert_eq!(packet.replace_substrings_java("", "-", Some(1)).unwrap(), 1);
+    packet.reset();
+    assert_eq!(packet.read_string().unwrap(), "-a-b-c-");
+    let before = packet.clone();
+    assert!(packet.replace_substrings_java("a", "$1", Some(1)).is_err());
+    assert_eq!(packet, before);
+    let mut large = Packet::new(9);
+    large.put_string(&"ÿ".repeat(40_100)).unwrap();
+    let original = large.clone();
+    assert!(large.replace_substrings_java("", "-", Some(1)).is_err());
+    assert_eq!(large, original);
 }
 
 #[test]

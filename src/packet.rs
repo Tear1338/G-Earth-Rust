@@ -2598,6 +2598,16 @@ impl Packet {
         self.replace_substrings_java_groups(pattern, replacement, limit)
     }
 
+    /// Bounded Java regex replacement, including patterns without capture groups.
+    pub fn replace_substrings_java(
+        &mut self,
+        pattern: &str,
+        replacement: &str,
+        limit: Option<usize>,
+    ) -> Result<usize> {
+        self.replace_substrings_java_groups(pattern, replacement, limit)
+    }
+
     /// Bounded Java regex replacement with capture groups, optional and repeated
     /// atoms, the dot wildcard, and a subset of classes and escapes. Other regex
     /// constructs remain unsupported.
@@ -2868,7 +2878,7 @@ impl Packet {
                 groups[index].push(c);
             }
         }
-        if !open.is_empty() || groups.is_empty() {
+        if !open.is_empty() {
             return Err(error("invalid capture pattern"));
         }
         let needle = latin1_encode(&literal)?;
