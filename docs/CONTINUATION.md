@@ -209,3 +209,5 @@ Typed `PacketField` appends cover Java `appendObject` types for EVA with a mixed
 Explicit Java-style Latin-1 replacement encoding is available for EVA short/long string appends, replacements and `PacketField::StringJava`, with selected Java vectors. Rust strings cannot represent unpaired UTF-16 surrogates; bounds and the deliberate empty-field corruption fix remain. Expand boundary coverage and test real extensions.
 
 The Java Latin-1 replacement oracle now covers all Unicode scalar values in chunks and the 65,535/65,536-byte short-field boundary. Java wraps the latter length and Rust rejects it deliberately. Java unpaired surrogates cannot be represented by Rust strings.
+
+UTF-16BE EVA helpers now support short/long fields, cursor-preserving offset reads, replacement and strict or Java-style lossy decoding. Java oracle coverage includes every single code unit and 10,000 deterministic byte strings. UTF-16LE and BOM-sensitive UTF-16, unpaired Java string inputs and real extensions remain open.

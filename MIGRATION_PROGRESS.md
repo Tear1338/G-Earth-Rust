@@ -89,6 +89,9 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Java Latin-1 replacement encoding was compared with Rust for all 1,112,064 Unicode scalar values in chunks and at short-field lengths 65,535 and 65,536. All scalar vectors and the valid boundary match; Java truncates the 65,536-byte prefix whereas Rust deliberately rejects the malformed field. Java unpaired UTF-16 surrogates cannot be represented in Rust `str`, and real extensions remain untested. The expanded oracle and desktop/web Clippy pass locally.
 
+- Added EVA UTF-16BE short/long reads, offset reads, appends and replacement, with strict or Java-like replacement decoding. Java consumes a malformed high surrogate and a following non-low unit as one replacement; selected cases, all 65,536 single code units and 10,000 deterministic byte strings match the beta-29 Java API. Three UTF-16 tests, 23 mutation/UTF-8 tests, desktop/web Clippy and debug compilation pass locally. Full malformed-sequence equivalence, unpaired surrogate inputs, WEDGIE and real extensions remain unverified.
+- GitHub Actions run 42541439488 passed all eight validation jobs for typed packet appends.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -108,4 +111,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect CI for the exhaustive Java Latin-1 encoding oracle. Compare Java UTF-16BE short and long string APIs, including malformed sequences and surrogate pairs, with existing raw-field operations; add explicit typed helpers and differential tests where feasible. Real extensions, full Java regex replacement and visual logger interaction remain open.
+Inspect CI for the exhaustive Latin-1 oracle and UTF-16BE helpers. Compare Java UTF-16LE and BOM-sensitive UTF-16 decoding/encoding with the new helpers, including malformed input; extend explicit charset support with Java differential tests. Real extensions, full Java regex replacement and visual logger interaction remain open.

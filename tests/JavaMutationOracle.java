@@ -111,6 +111,26 @@ public class JavaMutationOracle {
             sample.appendString("🐱".repeat(length));
             emit("latin1_limit_" + length, sample);
         }
+        String[] utf16Malformed = {"d8000041", "d800d800dc00", "dc00", "d800", "d80000", "004100", "dc00dc00", "d800dc00", "feff0041", "fffe0041"};
+        for (int i = 0; i < utf16Malformed.length; i++) {
+            byte[] bytes = HexFormat.of().parseHex(utf16Malformed[i]);
+            HPacket sample = new HPacket(23);
+            sample.appendUShort(bytes.length).appendBytes(bytes);
+            System.out.println("utf16_case_" + i + "=" + HexFormat.of().formatHex(sample.readString(6, StandardCharsets.UTF_16BE).getBytes(StandardCharsets.UTF_8)));
+        }
+        for (int unit = 0; unit <= 0xffff; unit++) {
+            HPacket sample = new HPacket(23);
+            sample.appendUShort(2).appendShort((short)unit);
+            System.out.println("utf16_unit_" + unit + "=" + HexFormat.of().formatHex(sample.readString(6, StandardCharsets.UTF_16BE).getBytes(StandardCharsets.UTF_8)));
+        }
+        java.util.Random utf16Random = new java.util.Random(1234);
+        for (int i = 0; i < 10000; i++) {
+            byte[] bytes = new byte[1 + i % 9];
+            utf16Random.nextBytes(bytes);
+            HPacket sample = new HPacket(23);
+            sample.appendUShort(bytes.length).appendBytes(bytes);
+            System.out.println("utf16_random_" + i + "=" + HexFormat.of().formatHex(bytes) + "," + HexFormat.of().formatHex(sample.readString(6, StandardCharsets.UTF_16BE).getBytes(StandardCharsets.UTF_8)));
+        }
         HPacket fixed = new HPacket(1);
         fixed.appendInt(123).appendBoolean(false).appendShort((short) 7).appendLong(8).appendFloat(1.5f).appendDouble(2.5);
         fixed.setReadIndex(10);

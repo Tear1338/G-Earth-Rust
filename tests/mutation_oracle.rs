@@ -246,6 +246,56 @@ fn mutations_match_original_java_packets_and_cursor() {
         expression::parse_hex(expected["latin1_limit_65536"].split_once(',').unwrap().0).unwrap();
     assert_eq!(java_overflow.len(), 65544);
     assert_eq!(&java_overflow[6..8], &[0, 0]);
+    let malformed = [
+        "d8000041",
+        "d800d800dc00",
+        "dc00",
+        "d800",
+        "d80000",
+        "004100",
+        "dc00dc00",
+        "d800dc00",
+        "feff0041",
+        "fffe0041",
+    ];
+    for (i, hex) in malformed.iter().enumerate() {
+        let mut sample = Packet::new(23);
+        sample
+            .put_short_bytes(&expression::parse_hex(hex).unwrap())
+            .unwrap();
+        let java = expression::parse_hex(expected[format!("utf16_case_{i}").as_str()]).unwrap();
+        assert_eq!(
+            sample.read_utf16be_at(6, true).unwrap().as_bytes(),
+            java,
+            "{hex}"
+        );
+        assert_eq!(sample.cursor(), 6);
+        assert_eq!(sample.read_utf16be(true).unwrap().as_bytes(), java, "{hex}");
+    }
+    for unit in 0u16..=u16::MAX {
+        let mut sample = Packet::new(23);
+        sample.put_short_bytes(&unit.to_be_bytes()).unwrap();
+        let java = expression::parse_hex(expected[format!("utf16_unit_{unit}").as_str()]).unwrap();
+        assert_eq!(
+            sample.read_utf16be(true).unwrap().as_bytes(),
+            java,
+            "unit {unit:04x}"
+        );
+    }
+    for i in 0..10000 {
+        let (hex, java) = expected[format!("utf16_random_{i}").as_str()]
+            .split_once(',')
+            .unwrap();
+        let mut sample = Packet::new(23);
+        sample
+            .put_short_bytes(&expression::parse_hex(hex).unwrap())
+            .unwrap();
+        assert_eq!(
+            sample.read_utf16be(true).unwrap().as_bytes(),
+            expression::parse_hex(java).unwrap(),
+            "random {i} {hex}"
+        );
+    }
     let mut fixed = Packet::new(1);
     fixed
         .put_i32(123)
@@ -470,6 +520,24 @@ fn mutations_match_original_java_packets_and_cursor() {
     utf8_replacement.set_cursor(7).unwrap();
     utf8_replacement.replace_utf8(6, "雪🐱").unwrap();
     check("utf8_replacement", &utf8_replacement);
+    let mut utf16_typed = Packet::new(8);
+    utf16_typed
+        .put_utf16be("Aé水")
+        .unwrap()
+        .put_i32(42)
+        .unwrap();
+    check("utf16", &utf16_typed);
+    utf16_typed.set_cursor(7).unwrap();
+    utf16_typed.replace_utf16be(6, "Z猫").unwrap();
+    check("utf16_replacement", &utf16_typed);
+    let mut utf16_typed_long = Packet::new(9);
+    utf16_typed_long
+        .put_utf16be_long("水🐱")
+        .unwrap()
+        .put_i32(123)
+        .unwrap();
+    check("utf16_long", &utf16_typed_long);
+    assert_eq!(utf16_typed_long.read_utf16be_long(false).unwrap(), "水🐱");
     let mut utf16 = Packet::new(8);
     let encode_utf16 =
         |text: &str| -> Vec<u8> { text.encode_utf16().flat_map(u16::to_be_bytes).collect() };

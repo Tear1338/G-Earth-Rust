@@ -39,6 +39,56 @@ fn java_utf8_lossy(bytes: &[u8]) -> Cow<'_, str> {
     }
     Cow::Owned(output)
 }
+// Java UTF-16BE replacement decoding consumes a high surrogate together with
+// the following non-low code unit (or incomplete final byte) as one error.
+fn decode_utf16be(bytes: &[u8], lossy: bool) -> Result<String> {
+    let mut output = String::new();
+    let mut offset = 0;
+    while offset < bytes.len() {
+        if bytes.len() - offset < 2 {
+            if !lossy {
+                return Err(error("invalid UTF-16BE"));
+            }
+            output.push('\u{fffd}');
+            break;
+        }
+        let unit = u16::from_be_bytes([bytes[offset], bytes[offset + 1]]);
+        offset += 2;
+        if (0xd800..=0xdbff).contains(&unit) {
+            if bytes.len() - offset < 2 {
+                if !lossy {
+                    return Err(error("invalid UTF-16BE"));
+                }
+                output.push('\u{fffd}');
+                break;
+            }
+            let next = u16::from_be_bytes([bytes[offset], bytes[offset + 1]]);
+            offset += 2;
+            if (0xdc00..=0xdfff).contains(&next) {
+                let value =
+                    0x10000 + ((u32::from(unit) - 0xd800) << 10) + (u32::from(next) - 0xdc00);
+                output.push(char::from_u32(value).expect("valid surrogate pair"));
+            } else if lossy {
+                output.push('\u{fffd}');
+            } else {
+                return Err(error("invalid UTF-16BE"));
+            }
+        } else if (0xdc00..=0xdfff).contains(&unit) {
+            if !lossy {
+                return Err(error("invalid UTF-16BE"));
+            }
+            output.push('\u{fffd}');
+        } else {
+            output.push(char::from_u32(u32::from(unit)).expect("non-surrogate code unit"));
+        }
+    }
+    Ok(output)
+}
+
+fn encode_utf16be(value: &str) -> Vec<u8> {
+    value.encode_utf16().flat_map(u16::to_be_bytes).collect()
+}
+
 pub const MAX_FRAME: usize = 16 * 1024 * 1024;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PacketError(pub String);
@@ -390,6 +440,34 @@ impl Packet {
     /// Read a long UTF-8 EVA field at an offset, replacing malformed sequences.
     pub fn read_utf8_long_lossy_at(&self, offset: usize) -> Result<std::borrow::Cow<'_, str>> {
         Ok(java_utf8_lossy(self.read_long_bytes_at(offset)?))
+    }
+    /// Read an EVA UTF-16BE field at an offset without changing the cursor.
+    pub fn read_utf16be_at(&self, offset: usize, lossy: bool) -> Result<String> {
+        decode_utf16be(self.read_short_bytes_at(offset)?, lossy)
+    }
+    pub fn read_utf16be_long_at(&self, offset: usize, lossy: bool) -> Result<String> {
+        decode_utf16be(self.read_long_bytes_at(offset)?, lossy)
+    }
+    /// Read an EVA UTF-16BE field; strict decoding restores the cursor on error.
+    pub fn read_utf16be(&mut self, lossy: bool) -> Result<String> {
+        let start = self.cursor;
+        let result = self
+            .read_short_bytes()
+            .and_then(|bytes| decode_utf16be(bytes, lossy));
+        if result.is_err() {
+            self.cursor = start;
+        }
+        result
+    }
+    pub fn read_utf16be_long(&mut self, lossy: bool) -> Result<String> {
+        let start = self.cursor;
+        let result = self
+            .read_long_bytes()
+            .and_then(|bytes| decode_utf16be(bytes, lossy));
+        if result.is_err() {
+            self.cursor = start;
+        }
+        result
     }
     pub fn read_u8(&mut self) -> Result<u8> {
         Ok(self.read_bytes(1)?[0])
@@ -743,6 +821,21 @@ impl Packet {
     pub fn put_utf8_long(&mut self, s: &str) -> Result<&mut Self> {
         self.put_long_bytes(s.as_bytes())
     }
+    /// Append UTF-16BE in an EVA short or long byte-length-prefixed field.
+    pub fn put_utf16be(&mut self, value: &str) -> Result<&mut Self> {
+        self.ensure_eva()?;
+        if value.encode_utf16().count() > usize::from(u16::MAX) / 2 {
+            return Err(error("short string too long"));
+        }
+        self.put_short_bytes(&encode_utf16be(value))
+    }
+    pub fn put_utf16be_long(&mut self, value: &str) -> Result<&mut Self> {
+        self.ensure_eva()?;
+        if value.encode_utf16().count() > MAX_FRAME / 2 {
+            return Err(error("packet too large"));
+        }
+        self.put_long_bytes(&encode_utf16be(value))
+    }
     pub fn put_long_bytes(&mut self, bytes: &[u8]) -> Result<&mut Self> {
         self.ensure_eva()?;
         let n = i32::try_from(bytes.len()).map_err(|_| error("string too long"))?;
@@ -843,6 +936,13 @@ impl Packet {
             return Err(error("short string too long"));
         }
         self.replace_short_bytes(offset, &latin1_encode_java(value))
+    }
+    pub fn replace_utf16be(&mut self, offset: usize, value: &str) -> Result<&mut Self> {
+        self.ensure_eva()?;
+        if value.encode_utf16().count() > usize::from(u16::MAX) / 2 {
+            return Err(error("short string too long"));
+        }
+        self.replace_short_bytes(offset, &encode_utf16be(value))
     }
     /// Replace a two-byte-length-prefixed UTF-8 string at an absolute offset.
     pub fn replace_utf8(&mut self, offset: usize, value: &str) -> Result<&mut Self> {
