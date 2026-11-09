@@ -295,21 +295,17 @@ fn flash_relay_ignores_stale_metadata_without_extension_host() {
         .set_read_timeout(Some(Duration::from_secs(3)))
         .unwrap();
     let mut hello = Packet::new(1);
-    hello
-        .put_string("NEW")
-        .unwrap()
-        .put_string("FLASH")
-        .unwrap();
+    hello.put_string("").unwrap().put_string("FLASH").unwrap();
     write_frame(&mut client, &hello).unwrap();
     assert_eq!(read_frame(&mut server).unwrap().bytes(), hello.bytes());
     wait_for(
         &events,
-        |event| matches!(event, Event::PacketIdentifiers(db) if db.version == "NEW" && db.entries().is_empty()),
+        |event| matches!(event, Event::PacketIdentifiers(db) if db.version.is_empty() && db.entries().is_empty()),
     );
     assert!(!safety
         .lock()
         .unwrap()
-        .is_safe(Some("NEW"), Direction::ToServer, 777));
+        .is_safe(Some(""), Direction::ToServer, 777));
     relay.stop();
 }
 

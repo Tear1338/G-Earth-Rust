@@ -78,4 +78,6 @@ Java strings containing unpaired surrogates can now be supplied as UTF-16 units 
 
 Selected Java UTF-16 replacement packets containing unpaired surrogates and long fields match for BE, LE and BOM-sensitive modes. Short-field overflow remains deliberately rejected where Java wraps the prefix. These are finite comparisons, not live extension validation.
 
-Automatic Flash identification no longer trusts or passes preloaded metadata whose revision is absent or differs from the detected version. With an extension host, Rust attempts to fetch matching identifiers; without one, it currently keeps an empty database. Unversioned manually loaded metadata is therefore ignored in this mode. Controlled reconnect and extension-protocol tests cover the mismatch; real clients, network failures and UI behavior remain unverified.
+Automatic Flash identification no longer trusts or passes preloaded metadata whose revision is absent or differs from the detected version. Rust attempts to fetch matching identifiers whether or not an extension host is active. Unversioned manually loaded metadata is therefore ignored in this mode. Controlled reconnect and extension-protocol tests cover the mismatch; real clients, network failures and UI behavior remain unverified.
+
+The no-extension-host Flash metadata lookup is covered with a controlled provider for success, failure and forwarding. Real metadata-service failures and client sessions remain unverified.

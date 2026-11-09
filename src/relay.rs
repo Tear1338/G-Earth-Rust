@@ -725,57 +725,51 @@ fn run_session(
                             let _ =
                                 events.try_send(Event::PacketIdentifiers(details.packets.clone()));
                         }
-                        if let Some(host) = &options.extensions {
-                            if details.packets.entries().is_empty() {
-                                let _ = events.try_send(Event::Status(
-                                    "Loading packet identifiers for the detected Flash revision..."
-                                        .into(),
-                                ));
-                                let version = details.version.clone();
-                                #[cfg(test)]
-                                let lookup = options.flash_lookup.clone();
-                                match cancellable_flash_lookup(
-                                    stop,
-                                    closed,
-                                    || peer_has_closed(&client) || peer_has_closed(&server),
-                                    move || {
-                                        #[cfg(test)]
-                                        if let Some(lookup) = lookup {
-                                            return lookup(version);
-                                        }
-                                        crate::packet_info::PacketInfoManager::fetch_sulek(
-                                            &version, false,
-                                        )
-                                    },
-                                ) {
-                                    Ok(database) => {
-                                        let _ = events
-                                            .try_send(Event::PacketIdentifiers(database.clone()));
-                                        details.packets = database;
+                        if details.packets.entries().is_empty() {
+                            let _ = events.try_send(Event::Status(
+                                "Loading packet identifiers for the detected Flash revision..."
+                                    .into(),
+                            ));
+                            let version = details.version.clone();
+                            #[cfg(test)]
+                            let lookup = options.flash_lookup.clone();
+                            match cancellable_flash_lookup(
+                                stop,
+                                closed,
+                                || peer_has_closed(&client) || peer_has_closed(&server),
+                                move || {
+                                    #[cfg(test)]
+                                    if let Some(lookup) = lookup {
+                                        return lookup(version);
                                     }
-                                    Err(e) if e.kind() == io::ErrorKind::Interrupted => {
-                                        return Ok(())
-                                    }
-                                    Err(e) => {
-                                        let _ = events.try_send(Event::Status(format!(
-                                            "Connected without packet names: {e}"
-                                        )));
-                                    }
+                                    crate::packet_info::PacketInfoManager::fetch_sulek(
+                                        &version, false,
+                                    )
+                                },
+                            ) {
+                                Ok(database) => {
+                                    let _ =
+                                        events.try_send(Event::PacketIdentifiers(database.clone()));
+                                    details.packets = database;
                                 }
-                                if stop.load(Ordering::Acquire) || closed.load(Ordering::Acquire) {
-                                    return Ok(());
+                                Err(e) if e.kind() == io::ErrorKind::Interrupted => return Ok(()),
+                                Err(e) => {
+                                    let _ = events.try_send(Event::Status(format!(
+                                        "Connected without packet names: {e}"
+                                    )));
                                 }
                             }
-                            if let Some(safety) = &options.packet_safety {
-                                if let Ok(mut safety) = safety.lock() {
-                                    safety.register_metadata(&details.version, &details.packets);
-                                }
+                            if stop.load(Ordering::Acquire) || closed.load(Ordering::Acquire) {
+                                return Ok(());
                             }
-                            *extension_session = Some(host.start_owned_connection(details)?);
-                        } else if let Some(safety) = &options.packet_safety {
+                        }
+                        if let Some(safety) = &options.packet_safety {
                             if let Ok(mut safety) = safety.lock() {
                                 safety.register_metadata(&details.version, &details.packets);
                             }
+                        }
+                        if let Some(host) = &options.extensions {
+                            *extension_session = Some(host.start_owned_connection(details)?);
                         }
                     }
                 }
@@ -1173,6 +1167,98 @@ mod tests {
             drop(extension_peer);
             host.stop();
         }
+    }
+
+    #[test]
+    fn flash_loads_packet_metadata_without_extension_host_and_handles_failure() {
+        use crate::{
+            packet_info::{PacketInfo, PacketInfoManager},
+            packet_safety::PacketSafety,
+        };
+        let _test_lock = LOOKUP_TEST_LOCK.lock().unwrap();
+        let safety = Arc::new(Mutex::new(PacketSafety::default()));
+        let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+        let (requested_tx, requested_rx) = mpsc::channel();
+        let lookup = Arc::new(move |version: String| {
+            requested_tx.send(version.clone()).unwrap();
+            if version == "FAIL" {
+                return Err(io::Error::other("fixture offline"));
+            }
+            Ok(PacketInfoManager::new(
+                version,
+                vec![PacketInfo {
+                    header: 900,
+                    name: Some("Known".into()),
+                    hash: None,
+                    structure: None,
+                    direction: Direction::ToServer,
+                    source: "fixture".into(),
+                }],
+            ))
+        });
+        let details = ConnectionDetails {
+            host: "fixture".into(),
+            port: 1,
+            version: String::new(),
+            identifier: String::new(),
+            client_type: "FLASH".into(),
+            packets: PacketInfoManager::default(),
+        };
+        let (mut relay, events) = Relay::start_with_options(
+            Config {
+                listen: "127.0.0.1:0".parse().unwrap(),
+                remote: remote.local_addr().unwrap().to_string(),
+            },
+            RelayOptions {
+                flash_process: Some(1),
+                packet_safety: Some(safety.clone()),
+                flash_lookup: Some(lookup),
+                connection: Some(details),
+                ..RelayOptions::default()
+            },
+        )
+        .unwrap();
+        for version in ["SUCCESS", "FAIL"] {
+            let mut client = TcpStream::connect(relay.address).unwrap();
+            let (mut server, _) = remote.accept().unwrap();
+            server
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            let mut hello = Packet::new(1);
+            hello
+                .put_string(version)
+                .unwrap()
+                .put_string("FLASH")
+                .unwrap();
+            write_frame(&mut client, &hello).unwrap();
+            assert_eq!(
+                requested_rx.recv_timeout(Duration::from_secs(3)).unwrap(),
+                version
+            );
+            assert_eq!(read_frame(&mut server).unwrap().bytes(), hello.bytes());
+            if version == "SUCCESS" {
+                wait_for(
+                    &events,
+                    |event| matches!(event, Event::PacketIdentifiers(db) if db.version == "SUCCESS" && db.entries().len() == 1),
+                );
+                assert!(safety
+                    .lock()
+                    .unwrap()
+                    .is_safe(Some(version), Direction::ToServer, 900));
+            } else {
+                wait_for(
+                    &events,
+                    |event| matches!(event, Event::Status(text) if text.contains("fixture offline")),
+                );
+                assert!(!safety
+                    .lock()
+                    .unwrap()
+                    .is_safe(Some(version), Direction::ToServer, 900));
+            }
+            drop(client);
+            wait_for(&events, |event| matches!(event, Event::Disconnected));
+        }
+        relay.stop();
     }
 
     #[test]

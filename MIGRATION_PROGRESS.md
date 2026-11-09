@@ -103,7 +103,10 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - GitHub Actions run 42542771246 failed only the Windows G-Python fixture: the kernel could exit after its callback updated shared state but before the interception response was sent. The fixture now waits for a host click sent only after Rust receives the response. Three local Windows GNU runs of the real G-Python kernel fixture and desktop/web Clippy pass; the corrected GitHub run remains to be verified.
 
-- Automatic Flash identification now discards preloaded packet metadata if its revision is absent or differs from the detected revision, clears the advertised database, and fetches matching metadata when an extension host exists. Controlled two-revision reconnect tests verify extension metadata and packet-safety IDs; a separate no-host test verifies stale IDs are not trusted. This changes behavior for manually loaded unversioned metadata: it is ignored in automatic Flash mode. When there is no extension host, a missing database is not fetched yet. Real clients and extensions remain unverified. Local library (50 passed, one Python fixture ignored), 13 relay, 17 extension tests, desktop/web Clippy and debug build pass.
+- Automatic Flash identification now discards preloaded packet metadata if its revision is absent or differs from the detected revision, clears the advertised database, and fetches matching metadata when an extension host exists. Controlled two-revision reconnect tests verify extension metadata and packet-safety IDs; a separate no-host test verifies stale IDs are not trusted. This changes behavior for manually loaded unversioned metadata: it is ignored in automatic Flash mode. A missing database is now fetched even without an extension host, as noted below. Real clients and extensions remain unverified. Local library (50 passed, one Python fixture ignored), 13 relay, 17 extension tests, desktop/web Clippy and debug build pass.
+
+- Flash now looks up a missing metadata database even without an extension host, matching the unconditional lookup in Java `HProxy.verifyProxy`. A controlled provider test covers success, failure, packet forwarding and safety registration without external network. Seven relay unit tests, 13 relay and 17 extension integration tests, desktop/web Clippy and debug build pass locally. Real network failures and clients remain unverified.
+- The Windows G-Python job passed in Actions run 42543325326 after the fixture synchronization fix; the complete workflow result remains to be checked.
 
 ## Remaining work
 
@@ -124,4 +127,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect CI for the G-Python fixture race fix and Flash metadata revision validation. Compare Java Flash metadata loading when no extension host is present; implement a cancellable lookup for that path and test success/failure without external network. Real extensions in game sessions, full Java regex replacement and visual logger interaction remain open.
+Inspect complete CI results for the G-Python fixture and Flash metadata fixes. Investigate equivalent stale metadata and lookup behavior in Nitro and Unity, comparing beta-29 Java connection initialization and adding controlled revision-isolation tests. Real extensions in game sessions, full Java regex replacement and visual logger interaction remain open.

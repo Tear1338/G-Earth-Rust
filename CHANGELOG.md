@@ -1,5 +1,6 @@
 # Changelog
 
+- Load Flash packet metadata even when no extension host is active.
 - Reject stale or unversioned preloaded metadata after automatic Flash revision detection.
 - Synchronize the G-Python fixture shutdown after the host receives the final interception response.
 - Compare UTF-16 replacement and long/short-field boundaries against Java.

@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: inspect CI for the G-Python fixture and Flash metadata revision fix, then compare and test metadata loading when no extension host is present. Full Java regex and live extension validation remain open.
+Next: inspect complete CI for G-Python and Flash metadata fixes, then investigate Nitro and Unity metadata revision isolation against Java. Full Java regex and live extension validation remain open.
