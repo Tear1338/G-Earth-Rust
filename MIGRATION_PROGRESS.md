@@ -108,6 +108,9 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Flash now looks up a missing metadata database even without an extension host, matching the unconditional lookup in Java `HProxy.verifyProxy`. A controlled provider test covers success, failure, packet forwarding and safety registration without external network. Seven relay unit tests, 13 relay and 17 extension integration tests, desktop/web Clippy and debug build pass locally. Real network failures and clients remain unverified.
 - The Windows G-Python job passed in Actions run 42543325326 after the fixture synchronization fix; the complete workflow result remains to be checked.
 
+- Nitro now rejects preloaded metadata whose revision differs from its fixed beta-29 revision, including unversioned data; a controlled no-host test verifies stale IDs are not trusted. Unity differs: Java reads a static `messages.json` independent of revision, and a two-revision Rust fixture confirms that data is registered separately under each revision, as Java does. A stale Unity file can consequently authorize incorrect IDs. Seven Nitro, four Unity fixtures, desktop/web Clippy and debug build pass locally; real clients remain unverified.
+- GitHub Actions runs 42543325326 and 42543374181 passed all eight validation jobs for the G-Python synchronization and Flash metadata revision fixes.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -127,4 +130,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect complete CI results for the G-Python fixture and Flash metadata fixes. Investigate equivalent stale metadata and lookup behavior in Nitro and Unity, comparing beta-29 Java connection initialization and adding controlled revision-isolation tests. Real extensions in game sessions, full Java regex replacement and visual logger interaction remain open.
+Inspect CI for Nitro metadata revision validation. Compare and implement Nitro metadata lookup without an extension host, preserving deterministic offline tests and safe shutdown while a provider is stalled. Unity static metadata can still be stale by design; real clients, full Java regex replacement and visual logger interaction remain open.

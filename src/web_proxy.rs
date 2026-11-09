@@ -275,6 +275,16 @@ impl Shared {
             peer.active.store(true, Ordering::Release);
         }
         let mut database = self.options.packet_info.clone();
+        if !database.entries().is_empty() && database.version != NITRO_REVISION {
+            let _ = self.events.try_send(Event::Status(format!(
+                "Ignoring Nitro packet identifiers for revision {:?}; expected {:?}",
+                database.version, NITRO_REVISION
+            )));
+            database = PacketInfoManager::new(NITRO_REVISION, Vec::new());
+            let _ = self
+                .events
+                .try_send(Event::PacketIdentifiers(database.clone()));
+        }
         if database.entries().is_empty() && self.options.extensions.is_some() {
             let _ = self
                 .events
@@ -903,6 +913,59 @@ mod lifecycle_tests {
         packet::{read_frame, write_frame},
     };
     use std::net::TcpStream;
+
+    #[test]
+    fn nitro_discards_metadata_from_another_revision_without_extension_host() {
+        use crate::{packet_info::PacketInfo, packet_safety::PacketSafety};
+        for original in ["OLD", ""] {
+            let safety = Arc::new(Mutex::new(PacketSafety::default()));
+            let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), PathBuf::new());
+            options.packet_safety = Some(safety.clone());
+            options.packet_info = PacketInfoManager::new(
+                original,
+                vec![PacketInfo {
+                    header: 777,
+                    name: Some("OldPacket".into()),
+                    hash: None,
+                    structure: None,
+                    direction: Direction::ToServer,
+                    source: "fixture".into(),
+                }],
+            );
+            let (events, receiver) = mpsc::sync_channel(16);
+            let state = Arc::new(Shared {
+                options,
+                hartico_key: Mutex::new(None),
+                city_keys: Mutex::new(None),
+                peers: Mutex::new(HashMap::new()),
+                active: Mutex::new(None),
+                rules: Mutex::new(Rules::default()),
+                pipeline: Mutex::new(()),
+                events,
+                index: AtomicI32::new(0),
+                stop: AtomicBool::new(false),
+            });
+            let peer = Arc::new(Peer::new(
+                PeerKey {
+                    client: "127.0.0.1:1234".parse().unwrap(),
+                    uri: "ws://fixture".into(),
+                },
+                Modifier::new(&crate::nitro::HotelKind::Plain).unwrap(),
+            ));
+            tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(state.activate(&peer, &"ws://fixture".parse().unwrap()))
+                .unwrap();
+            assert!(peer.ready.load(Ordering::Acquire));
+            assert!(!safety.lock().unwrap().is_safe(
+                Some(NITRO_REVISION),
+                Direction::ToServer,
+                777
+            ));
+            assert!(receiver.try_iter().any(|event| matches!(event, Event::PacketIdentifiers(db) if db.version == NITRO_REVISION && db.entries().is_empty())));
+            state.close(&peer);
+        }
+    }
 
     #[test]
     fn closing_an_uninitialized_peer_does_not_disconnect_extensions() {

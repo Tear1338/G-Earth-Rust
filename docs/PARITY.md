@@ -81,3 +81,5 @@ Selected Java UTF-16 replacement packets containing unpaired surrogates and long
 Automatic Flash identification no longer trusts or passes preloaded metadata whose revision is absent or differs from the detected version. Rust attempts to fetch matching identifiers whether or not an extension host is active. Unversioned manually loaded metadata is therefore ignored in this mode. Controlled reconnect and extension-protocol tests cover the mismatch; real clients, network failures and UI behavior remain unverified.
 
 The no-extension-host Flash metadata lookup is covered with a controlled provider for success, failure and forwarding. Real metadata-service failures and client sessions remain unverified.
+
+Nitro rejects preloaded metadata labeled for another revision, including unversioned metadata, before registering safe IDs. Unity intentionally uses static metadata across revisions as Java does; incorrect Unity metadata can authorize incorrect IDs. Controlled Nitro and two-revision Unity fixtures cover these paths; real clients remain unverified. Nitro still skips automatic metadata lookup without an extension host.

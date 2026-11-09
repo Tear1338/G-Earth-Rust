@@ -84,8 +84,11 @@ async fn receive(socket: &mut Socket) -> (u8, Packet) {
     (bytes[0], Packet::from_bytes(bytes[1..].to_vec()).unwrap())
 }
 async fn hello(socket: &mut Socket) {
+    hello_revision(socket, "TEST-UNITY-1").await;
+}
+async fn hello_revision(socket: &mut Socket, revision: &str) {
     socket
-        .send(Message::Binary(b"TEST-UNITY-1".to_vec().into()))
+        .send(Message::Binary(revision.as_bytes().to_vec().into()))
         .await
         .unwrap();
     let mut hello = Packet::new(4000);
@@ -224,6 +227,58 @@ fn tls_communicator_authenticates_and_routes_mutations_injections_and_fragmented
     assert!(!observed.is_safe(revision, Direction::ToServer, 79));
     assert!(!observed.is_safe(revision, Direction::ToClient, 89));
 }
+#[test]
+fn unity_static_metadata_is_registered_separately_for_each_revision() {
+    use gearth_rust::{
+        packet_info::{PacketInfo, PacketInfoManager},
+        packet_safety::PacketSafety,
+    };
+    use std::sync::{Arc, Mutex};
+    let directory = Directory::new();
+    let safety = Arc::new(Mutex::new(PacketSafety::default()));
+    let mut options = UnityOptions::new("127.0.0.1:0".parse().unwrap(), directory.0.join("ca"));
+    options.packet_safety = Some(safety.clone());
+    options.packet_info = PacketInfoManager::new(
+        "",
+        vec![PacketInfo {
+            header: 444,
+            name: Some("Known".into()),
+            hash: None,
+            structure: None,
+            direction: Direction::ToServer,
+            source: "fixture".into(),
+        }],
+    );
+    let (mut server, _) = UnityServer::start(options).unwrap();
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        for revision in ["REV-A", "REV-B"] {
+            let mut client = connect(&server, None).await.unwrap();
+            hello_revision(&mut client, revision).await;
+            assert!(safety
+                .lock()
+                .unwrap()
+                .is_safe(Some(revision), Direction::ToServer, 444));
+            assert!(!safety
+                .lock()
+                .unwrap()
+                .is_safe(Some(revision), Direction::ToClient, 444));
+            client.close(None).await.unwrap();
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while server.connected() {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .unwrap();
+        }
+    });
+    assert!(!safety
+        .lock()
+        .unwrap()
+        .is_safe(Some("OTHER"), Direction::ToServer, 444));
+    server.stop();
+}
+
 #[test]
 fn refuses_missing_token_and_a_second_concurrent_browser() {
     let directory = Directory::new();

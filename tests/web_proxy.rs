@@ -427,7 +427,7 @@ fn nitro_websocket_supports_block_replace_and_bidirectional_injection() {
     let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), dir.0.join("ca"));
     options.packet_safety = Some(safety.clone());
     options.packet_info = gearth_rust::packet_info::PacketInfoManager::new(
-        "fixture",
+        gearth_rust::web_proxy::NITRO_REVISION,
         vec![gearth_rust::packet_info::PacketInfo {
             header: 444,
             name: Some("Known".into()),

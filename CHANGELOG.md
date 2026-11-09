@@ -1,5 +1,6 @@
 # Changelog
 
+- Reject Nitro metadata labeled for a different revision and test Unity static metadata across revisions.
 - Load Flash packet metadata even when no extension host is active.
 - Reject stale or unversioned preloaded metadata after automatic Flash revision detection.
 - Synchronize the G-Python fixture shutdown after the host receives the final interception response.
