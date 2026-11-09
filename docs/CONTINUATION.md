@@ -207,3 +207,5 @@ Java 21 formatting of small subnormal heights is now matched for the tested corp
 Typed `PacketField` appends cover Java `appendObject` types for EVA with a mixed Java vector. Strict Latin-1 and partial failure differ from Java for unrepresentable text. A standalone `fancy-regex` 0.20.0 experiment differed from Java on zero-width iteration and Unicode `\w`; it is not a project dependency. Full regex replacement needs a compatibility layer or closer engine.
 
 Explicit Java-style Latin-1 replacement encoding is available for EVA short/long string appends, replacements and `PacketField::StringJava`, with selected Java vectors. Rust strings cannot represent unpaired UTF-16 surrogates; bounds and the deliberate empty-field corruption fix remain. Expand boundary coverage and test real extensions.
+
+The Java Latin-1 replacement oracle now covers all Unicode scalar values in chunks and the 65,535/65,536-byte short-field boundary. Java wraps the latter length and Rust rejects it deliberately. Java unpaired surrogates cannot be represented by Rust strings.

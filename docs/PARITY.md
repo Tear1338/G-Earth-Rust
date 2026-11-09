@@ -67,3 +67,5 @@ The packet API offers Java-style replacement templates for nonempty literal subs
 `PacketField` and `append_fields` cover the eight Java `appendObject` types for EVA; a mixed vector matches Java bytes and cursor. Rust rejects non-Latin-1 strings and WEDGIE in this helper, and keeps earlier fields if a later append fails. A `fancy-regex` experiment differed from Java on zero-width iteration and default Unicode word classes; full regex replacement remains open.
 
 EVA packets now offer explicit Java-style Latin-1 replacement encoding for short/long strings, replacement and `PacketField::StringJava`; strict APIs remain available. Selected Java vectors cover BMP and supplementary characters. Rust cannot represent unpaired UTF-16 surrogates; WEDGIE, all Unicode cases and real extensions remain unverified.
+
+Java Latin-1 replacement encoding matches Rust for all 1,112,064 Unicode scalar values in chunked EVA short strings and at 65,535 bytes. At 65,536 bytes Java wraps the short length prefix; Rust rejects the malformed field. Unpaired Java UTF-16 surrogates and real extensions remain untested.

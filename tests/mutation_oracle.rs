@@ -215,6 +215,37 @@ fn mutations_match_original_java_packets_and_cursor() {
     check("latin1_java", &latin1_java);
     latin1_java.replace_string_java(6, "🐱雪é").unwrap();
     check("latin1_java_replaced", &latin1_java);
+    let mut chunk = String::new();
+    let mut chunk_index = 0;
+    let mut count = 0;
+    for codepoint in 0..=0x10ffff {
+        if let Some(character) = char::from_u32(codepoint) {
+            chunk.push(character);
+            count += 1;
+            if count % 4096 == 0 {
+                let mut sample = Packet::new(21);
+                sample.put_string_java(&chunk).unwrap();
+                check(&format!("latin1_scalar_{chunk_index}"), &sample);
+                chunk.clear();
+                chunk_index += 1;
+            }
+        }
+    }
+    if !chunk.is_empty() {
+        let mut sample = Packet::new(21);
+        sample.put_string_java(&chunk).unwrap();
+        check(&format!("latin1_scalar_{chunk_index}"), &sample);
+    }
+    let mut limit = Packet::new(22);
+    limit.put_string_java(&"🐱".repeat(65535)).unwrap();
+    check("latin1_limit_65535", &limit);
+    assert!(Packet::new(22)
+        .put_string_java(&"🐱".repeat(65536))
+        .is_err());
+    let java_overflow =
+        expression::parse_hex(expected["latin1_limit_65536"].split_once(',').unwrap().0).unwrap();
+    assert_eq!(java_overflow.len(), 65544);
+    assert_eq!(&java_overflow[6..8], &[0, 0]);
     let mut fixed = Packet::new(1);
     fixed
         .put_i32(123)

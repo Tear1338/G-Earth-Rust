@@ -1,5 +1,6 @@
 # Changelog
 
+- Compare Java Latin-1 replacement encoding across all Unicode scalar values and short-field boundaries.
 - Add explicit Java-style ISO-8859-1 replacement encoding for EVA packet strings and typed fields.
 - Add typed EVA packet field appends for the eight Java `appendObject` categories.
 - Support Java `$0` and escaped replacement templates for nonempty literal substring patterns; full regex support remains open.

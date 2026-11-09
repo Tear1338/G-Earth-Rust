@@ -87,6 +87,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Added explicit Java-style ISO-8859-1 replacement encoding for EVA short/long strings, replacement and typed field appends. Selected BMP and non-BMP characters match Java packet bytes and cursor; 17 mutation tests and desktop/web Clippy pass locally. Strict methods remain available. Rust `str` cannot represent Java unpaired UTF-16 surrogates; replacement of an empty existing field retains Rust’s corruption fix, and WEDGIE and real extensions remain unverified.
 - GitHub Actions run 42541080750 passed all eight validation jobs for literal-pattern replacement templates.
 
+- Java Latin-1 replacement encoding was compared with Rust for all 1,112,064 Unicode scalar values in chunks and at short-field lengths 65,535 and 65,536. All scalar vectors and the valid boundary match; Java truncates the 65,536-byte prefix whereas Rust deliberately rejects the malformed field. Java unpaired UTF-16 surrogates cannot be represented in Rust `str`, and real extensions remain untested. The expanded oracle and desktop/web Clippy pass locally.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -106,4 +108,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect CI for Java-style Latin-1 encoding and typed packet fields. Expand the Java encoding oracle across all Unicode scalar boundary classes and short-field length limits, then test integration through a real extension if available. Full Java regex replacement remains open; validate the no-byte-view logger interaction visually when a safe desktop test session is available.
+Inspect CI for the exhaustive Java Latin-1 encoding oracle. Compare Java UTF-16BE short and long string APIs, including malformed sequences and surrogate pairs, with existing raw-field operations; add explicit typed helpers and differential tests where feasible. Real extensions, full Java regex replacement and visual logger interaction remain open.

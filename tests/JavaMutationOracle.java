@@ -89,6 +89,28 @@ public class JavaMutationOracle {
         emit("latin1_java", latin1Java);
         latin1Java.replaceString(6, "🐱雪é");
         emit("latin1_java_replaced", latin1Java);
+        StringBuilder scalarChunk = new StringBuilder();
+        int scalarIndex = 0;
+        for (int codepoint = 0; codepoint <= 0x10ffff; codepoint++) {
+            if (codepoint >= 0xd800 && codepoint <= 0xdfff) continue;
+            scalarChunk.appendCodePoint(codepoint);
+            if (++scalarIndex % 4096 == 0) {
+                HPacket sample = new HPacket(21);
+                sample.appendString(scalarChunk.toString());
+                emit("latin1_scalar_" + (scalarIndex / 4096 - 1), sample);
+                scalarChunk.setLength(0);
+            }
+        }
+        if (scalarChunk.length() != 0) {
+            HPacket sample = new HPacket(21);
+            sample.appendString(scalarChunk.toString());
+            emit("latin1_scalar_" + (scalarIndex / 4096), sample);
+        }
+        for (int length : new int[]{65535, 65536}) {
+            HPacket sample = new HPacket(22);
+            sample.appendString("🐱".repeat(length));
+            emit("latin1_limit_" + length, sample);
+        }
         HPacket fixed = new HPacket(1);
         fixed.appendInt(123).appendBoolean(false).appendShort((short) 7).appendLong(8).appendFloat(1.5f).appendDouble(2.5);
         fixed.setReadIndex(10);
