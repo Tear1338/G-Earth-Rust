@@ -387,7 +387,7 @@ fn java_literal_groups_keep_no_match_and_reject_unsupported_patterns_transaction
     let mut packet = Packet::new(9);
     packet.put_string("(a)(b) ab").unwrap();
     let before = packet.clone();
-    for pattern in ["(a.*)", "(\\d)", "()", "(a", "a)", "abc"] {
+    for pattern in ["(a.*)", "(\\d)", "(a", "a)", "abc"] {
         assert!(packet
             .replace_substrings_java_groups(pattern, "$1", None)
             .is_err());
@@ -405,6 +405,19 @@ fn java_literal_groups_keep_no_match_and_reject_unsupported_patterns_transaction
     );
     packet.reset();
     assert_eq!(packet.read_string().unwrap(), "(a)(b) ba");
+}
+
+#[test]
+fn java_zero_width_group_respects_size_bounds_and_preserves_packet_on_error() {
+    let mut packet = Packet::new(9);
+    packet
+        .put_string(&format!("(){}", "é".repeat(40_000)))
+        .unwrap();
+    let before = packet.clone();
+    assert!(packet
+        .replace_substrings_java_groups("()", "x", None)
+        .is_err());
+    assert_eq!(packet, before);
 }
 
 #[test]

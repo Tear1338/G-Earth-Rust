@@ -69,6 +69,8 @@
 
 ## Unreleased
 
+- Handle bounded zero-width Java empty-group replacement at Latin-1 character boundaries.
+
 - Support nested and empty capture groups and escaped metacharacters in nonempty fixed-pattern Java substring matches.
 
 - Extend bounded Java substring replacement to multiple literal groups, including no-match replacement-validation timing.

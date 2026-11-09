@@ -1386,8 +1386,8 @@ impl Packet {
     }
 
     /// Java replacement for fixed literal patterns with capture groups, including
-    /// nested and empty groups and escaped regex metacharacters. Patterns that
-    /// can match an empty string and other regex constructs are rejected.
+    /// nested and empty groups and escaped regex metacharacters. Other regex
+    /// constructs remain unsupported.
     pub fn replace_substrings_java_groups(
         &mut self,
         pattern: &str,
@@ -1437,8 +1437,8 @@ impl Packet {
                 groups[index].push(c);
             }
         }
-        if !open.is_empty() || groups.is_empty() || literal.is_empty() {
-            return Err(error("invalid or empty-matching capture pattern"));
+        if !open.is_empty() || groups.is_empty() {
+            return Err(error("invalid capture pattern"));
         }
         let needle = latin1_encode(&literal)?;
         let mut candidate = self.clone();

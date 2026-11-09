@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: compare and implement bounded empty-group zero-width matches using the released Java API as oracle. Full Java regex and live extension validation remain open.
+Next: compare quoted literal patterns and named captures with the released Java API before extending bounded substring replacement. Full Java regex and live extension validation remain open.

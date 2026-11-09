@@ -192,6 +192,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Fixed-pattern substring replacement now handles nested or empty capture groups and escaped regex metacharacters when the overall match is nonempty. Six beta-29 Java API oracle cases cover numbering, empty groups, escaped dot/parenthesis and delayed replacement validation. Nineteen mutation tests, both Clippy configurations and desktop/web build pass locally. Empty-matching patterns, character classes, quantifiers, alternation and general Java regex remain unsupported.
 
+- Empty capture-group patterns now support zero-width matches at each Latin-1 character boundary. Six cases were compared with the released beta-29 Java API, including nested empty groups, invalid references and no eligible field; a separate large-packet test verifies transactional size limits. Twenty mutation tests, both Clippy configurations and desktop/web build pass locally. Full Java regex semantics remain incomplete. Actions runs 42708922824 and 42709463230 passed all eight jobs for Unity SOCKS and single literal capture respectively.
+
 ## Exact next step
 
-Compare zero-width empty-group matches with the released Java API, including Latin-1 boundaries, replacement references and size limits; implement only after differential tests confirm exact behavior. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Compare Java `\Q...\E` quoted literal patterns and named captures with the released API, including the raw-pattern containment gate; add differential cases and extend bounded replacement only for demonstrated semantics. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

@@ -345,6 +345,28 @@ public class JavaMutationOracle {
             if (failed) System.out.println("substring_nested_" + i + "=error");
             else emit("substring_nested_" + i, sample);
         }
+        String[][] zeroGroups = {
+            {"()", "()", "x", "1"},
+            {"é()a", "()", "-", "1"},
+            {"(())", "(())", "$1/$2", "1"},
+            {"()", "()", "$2", "1"},
+            {"abc", "()", "$2", "1"},
+            {"()", "()", "$", "0"},
+        };
+        for (int i = 0; i < zeroGroups.length; i++) {
+            HPacket sample = new HPacket(9);
+            sample.appendString(zeroGroups[i][0]);
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            boolean failed = false;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(zeroGroups[i][1], zeroGroups[i][2], Integer.parseInt(zeroGroups[i][3]));
+            } catch (RuntimeException expected) { failed = true; }
+            finally { System.setOut(original); }
+            if (failed) System.out.println("substring_zero_" + i + "=error");
+            else emit("substring_zero_" + i, sample);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);
