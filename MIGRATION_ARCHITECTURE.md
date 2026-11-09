@@ -19,3 +19,5 @@ The packet core exposes signed and unsigned 8-bit operations and signed/unsigned
 The web-feature SOCKS module includes an asynchronous, cancellable SOCKS5 CONNECT primitive. It is not wired into Nitro; Hudsucker currently opens WebSockets directly, so enabling only an HTTP connector would leak around the configured proxy.
 
 The pinned Hudsucker 0.25.0 source is vendored under `crates/hudsucker` with its licenses and an optional upstream dialer covering WebSockets and raw CONNECT. HTTP uses a separate connector. The hook is currently unused by Nitro; see its patch note and parity tracking.
+
+`WebOptions::upstream_socks` now routes HTTP, HTTPS, WebSockets and raw CONNECT through the async SOCKS transport. Startup refuses this option when metadata fetching or the City helper is enabled until those auxiliary requests also support SOCKS.

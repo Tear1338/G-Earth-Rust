@@ -123,3 +123,5 @@ G-Presets 1.6.5 passed two controlled loopback relay sessions with bidirectional
 An asynchronous SOCKS5 primitive is tested with local proxies, including authentication, remote DNS and cancellation. Nitro HTTP and WebSocket routing are not yet connected to it; the desktop still rejects Nitro SOCKS.
 
 Vendored Hudsucker now has an optional WebSocket/raw CONNECT dialer. Local tests cover success, failure without direct fallback, valid WSS and rejection of a wrong hostname. Nitro does not yet use it; HTTP connector and SOCKS integration remain open.
+
+The web backend routes HTTP, HTTPS, WebSocket, WSS and raw CONNECT through optional SOCKS5, with local authenticated proxy and TLS fixtures. It refuses SOCKS when automatic metadata or the City helper is enabled; the desktop option and real SOCKS/hotel validation remain open.

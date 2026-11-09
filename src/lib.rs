@@ -34,6 +34,8 @@ pub mod structure_prediction;
 pub mod web_ca;
 #[cfg(feature = "web")]
 pub mod web_proxy;
+#[cfg(feature = "web")]
+mod web_socks;
 
 #[cfg(feature = "web")]
 pub mod nitro;

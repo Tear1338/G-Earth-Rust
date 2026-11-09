@@ -172,6 +172,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - The pinned Hudsucker 0.25.0 dependency is now vendored with licenses and a local optional upstream TCP dialer for WebSockets and raw CONNECT tunnels. Tests exercise successful and rejected local connections, verify no direct fallback on dialer failure, and check WSS certificate hostname validation with a test CA. Existing seven Nitro web-proxy tests, eight SOCKS tests, desktop/web build, formatting and Clippy pass. The new hook is not wired into Nitro yet; HTTP connector and TLS-passthrough SOCKS behavior remain to be verified.
 
+- The web proxy can now route HTTP, HTTPS, WebSocket, WSS and raw CONNECT upstream traffic through authenticated SOCKS5 using `WebOptions::upstream_socks`. Loopback fixtures verify remote DNS, TLS validation and no direct fallback on proxy refusal. To prevent auxiliary network leakage, startup currently rejects SOCKS unless automatic packet metadata and the City helper are disabled; the desktop option remains unavailable. Five SOCKS/web integration tests, seven existing web-proxy tests, eight SOCKS tests, desktop/web build and Clippy pass locally. Real hotels and real SOCKS servers remain unverified.
+
 ## Exact next step
 
-Connect the asynchronous SOCKS primitive to both Hudsucker HTTP/TLS and the new WebSocket/raw CONNECT dialer, then test authenticated routing and refusal without direct fallback before enabling the desktop option. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Route Nitro packet-metadata retrieval and the opt-in City helper through the configured SOCKS proxy, with bounded authenticated HTTPS tests and no direct fallback; only then enable and review the desktop option. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

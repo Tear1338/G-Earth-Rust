@@ -71,6 +71,9 @@ pub struct WebOptions {
     pub listen: SocketAddr,
     pub identity_directory: PathBuf,
     pub packet_info: PacketInfoManager,
+    /// Route upstream traffic through SOCKS5. Until auxiliary HTTP lookups
+    /// support SOCKS, packet-info fetching and the City helper must be disabled.
+    pub upstream_socks: Option<crate::socks::SocksConfig>,
     /// Fetch missing Nitro identifiers from the upstream provider.
     pub fetch_packet_info: bool,
     #[cfg(test)]
@@ -92,6 +95,7 @@ impl WebOptions {
             unity: None,
             detect_nitro: true,
             packet_info: PacketInfoManager::default(),
+            upstream_socks: None,
             fetch_packet_info: true,
             #[cfg(test)]
             nitro_lookup: None,
@@ -780,6 +784,11 @@ impl WebProxy {
         if !options.listen.ip().is_loopback() {
             return Err(io::Error::other("HTTP proxy must bind loopback"));
         }
+        if options.upstream_socks.is_some()
+            && (options.fetch_packet_info || options.allow_city_helper)
+        {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "SOCKS requires packet-info fetching and the City helper to be disabled until those lookups support SOCKS"));
+        }
         let identity = ProxyIdentity::ensure(&options.identity_directory)?;
         let ca = identity.authority()?;
         let listener = TcpListener::bind(options.listen)?;
@@ -810,8 +819,10 @@ impl WebProxy {
                 let result=runtime.block_on(async{
             let provider=aws_lc_rs::default_provider();let _=provider.clone().install_default();let mut roots=rustls::RootCertStore::empty();roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());for der in &actor.options.extra_roots{roots.add(CertificateDer::from(der.clone())).map_err(io::Error::other)?;}
             let tls=rustls::ClientConfig::builder_with_provider(Arc::new(provider)).with_safe_default_protocol_versions().map_err(io::Error::other)?.with_root_certificates(roots).with_no_client_auth();
-            let connector=hyper_rustls::HttpsConnectorBuilder::new().with_tls_config(tls.clone()).https_or_http().enable_http1().build();let listener=tokio::net::TcpListener::from_std(listener)?;
-            let proxy=Proxy::builder().with_listener(listener).with_ca(ca).with_http_connector(connector).with_websocket_connector(Connector::Rustls(Arc::new(tls))).with_http_handler(Handler(actor.clone(),0,None)).with_websocket_handler(Handler(actor.clone(),0,None)).build().map_err(io::Error::other)?;
+            let connector=hyper_rustls::HttpsConnectorBuilder::new().with_tls_config(tls.clone()).https_or_http().enable_http1().wrap_connector(crate::web_socks::OutboundConnector::new(actor.options.upstream_socks.clone()));let listener=tokio::net::TcpListener::from_std(listener)?;
+            let mut builder=Proxy::builder().with_listener(listener).with_ca(ca).with_http_connector(connector).with_websocket_connector(Connector::Rustls(Arc::new(tls))).with_http_handler(Handler(actor.clone(),0,None)).with_websocket_handler(Handler(actor.clone(),0,None));
+            if let Some(socks)=actor.options.upstream_socks.clone(){builder=builder.with_upstream_dialer(crate::web_socks::dialer(socks));}
+            let proxy=builder.build().map_err(io::Error::other)?;
             let _=ready.send(());let _=actor.events.try_send(Event::Listening(address));tokio::select!{result=proxy.start()=>result.map_err(io::Error::other),_=shutdown=>Ok(())}
         });
                 runtime.shutdown_timeout(Duration::from_secs(1));

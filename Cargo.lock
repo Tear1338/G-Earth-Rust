@@ -1317,6 +1317,7 @@ dependencies = [
  "sha2",
  "tokio",
  "tokio-rustls",
+ "tower-service",
  "ureq",
  "wasm-encoder",
  "wasmparser",
