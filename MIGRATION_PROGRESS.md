@@ -138,6 +138,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - The local HTTPS Nitro fixture also covers malformed JSON, truncated responses and the 8 MiB limit. For each failure, a controlled extension protocol peer receives an empty database and can intercept and forward a packet. The test CA is isolated to the test client. The focused test and desktop/web Clippy pass locally; Actions runs 42544992296 and 42544746709 passed all eight jobs for the preceding HTTPS and replacement fixtures. Real hotels and real extension sessions remain unverified.
 
+- Sulek caches now expire after five minutes as in Java; stale revision-matched caches are used on network or parse failure. Unlike Java, invalid downloaded JSON does not replace a valid cache. Invalid, truncated, oversized or wrong-version cache files are never used as fallback. Tests cover fresh reuse, offline and malformed fallback, refresh persistence and rejected caches; packet-provider and Nitro HTTPS fixtures, desktop/web build and Clippy pass locally. The real service remains unverified.
+
 ## Exact next step
 
-Compare Sulek cache expiry and offline fallback with the beta-29 Java provider, implement and test revision-safe refresh and fallback, then run the relevant build and validation. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Exercise stale Sulek cache fallback and refresh through a local HTTPS provider, including concurrent lookup and cancellation behavior; inspect CI for the latest pushed changes. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

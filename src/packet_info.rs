@@ -118,13 +118,36 @@ impl PacketInfoManager {
                 "{}-{version}.bin",
                 if origins { "SHOCKWAVE" } else { "FLASH" }
             ));
-        if let Ok(database) = Self::load_cache(&cache, &version) {
-            return Ok(database);
+        Self::load_or_refresh(&cache, &version, std::time::SystemTime::now(), || {
+            Self::from_json(&version, &download_json(&agent, &url)?).map_err(std::io::Error::other)
+        })
+    }
+    fn load_or_refresh(
+        path: &std::path::Path,
+        version: &str,
+        now: std::time::SystemTime,
+        fetch: impl FnOnce() -> std::io::Result<Self>,
+    ) -> std::io::Result<Self> {
+        let cached = Self::load_cache(path, version).ok();
+        let fresh = std::fs::metadata(path)
+            .and_then(|metadata| metadata.modified())
+            .map(|modified| {
+                now.duration_since(modified)
+                    .map_or(true, |age| age < std::time::Duration::from_secs(300))
+            })
+            .unwrap_or(false);
+        if fresh {
+            if let Some(database) = cached.as_ref() {
+                return Ok(database.clone());
+            }
         }
-        let database = Self::from_json(version, &download_json(&agent, &url)?)
-            .map_err(std::io::Error::other)?;
-        let _ = database.save_cache(&cache);
-        Ok(database)
+        match fetch() {
+            Ok(database) => {
+                let _ = database.save_cache(path);
+                Ok(database)
+            }
+            Err(error) => cached.ok_or(error),
+        }
     }
     pub fn load_cache(path: &std::path::Path, version: &str) -> std::io::Result<Self> {
         use std::io::Read;
@@ -306,4 +329,85 @@ pub(crate) fn download_json(agent: &ureq::Agent, url: &str) -> std::io::Result<V
         return Err(std::io::Error::other("packet database exceeds 8 MiB"));
     }
     Ok(bytes)
+}
+
+#[cfg(test)]
+mod cache_refresh_tests {
+    use super::*;
+    use std::time::{Duration, SystemTime};
+
+    #[test]
+    fn refreshes_expired_cache_and_falls_back_only_to_valid_matching_data() {
+        let mut random = [0; 16];
+        getrandom::fill(&mut random).unwrap();
+        let name = random
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>();
+        let path = std::env::temp_dir().join(format!("gearth-refresh-{name}.bin"));
+        let old = PacketInfoManager::from_json(
+            "REV",
+            br#"{"messages":{"incoming":[{"id":1,"name":"OldEvent"}],"outgoing":[]}}"#,
+        )
+        .unwrap();
+        let new = PacketInfoManager::from_json(
+            "REV",
+            br#"{"messages":{"incoming":[{"id":2,"name":"NewEvent"}],"outgoing":[]}}"#,
+        )
+        .unwrap();
+        old.save_cache(&path).unwrap();
+        let now = SystemTime::now();
+        let loaded =
+            PacketInfoManager::load_or_refresh(&path, "REV", now, || panic!("fresh cache fetched"))
+                .unwrap();
+        assert_eq!(loaded.entries()[0].header, 1);
+        let future = now + Duration::from_secs(301);
+        let loaded = PacketInfoManager::load_or_refresh(&path, "REV", future, || {
+            PacketInfoManager::from_json("REV", b"not json").map_err(std::io::Error::other)
+        })
+        .unwrap();
+        assert_eq!(loaded.entries()[0].header, 1);
+        assert_eq!(
+            PacketInfoManager::load_cache(&path, "REV")
+                .unwrap()
+                .entries()[0]
+                .header,
+            1
+        );
+        let loaded = PacketInfoManager::load_or_refresh(&path, "REV", future, || {
+            Err(std::io::Error::other("offline"))
+        })
+        .unwrap();
+        assert_eq!(loaded.entries()[0].header, 1);
+        let loaded =
+            PacketInfoManager::load_or_refresh(&path, "REV", future, || Ok(new.clone())).unwrap();
+        assert_eq!(loaded.entries()[0].header, 2);
+        assert_eq!(
+            PacketInfoManager::load_cache(&path, "REV")
+                .unwrap()
+                .entries()[0]
+                .header,
+            2
+        );
+        assert!(
+            PacketInfoManager::load_or_refresh(&path, "OTHER", future, || Err(
+                std::io::Error::other("offline")
+            ))
+            .is_err()
+        );
+        std::fs::write(&path, b"invalid").unwrap();
+        assert!(
+            PacketInfoManager::load_or_refresh(&path, "REV", future, || Err(
+                std::io::Error::other("offline")
+            ))
+            .is_err()
+        );
+        std::fs::remove_file(&path).unwrap();
+        assert!(
+            PacketInfoManager::load_or_refresh(&path, "REV", future, || Err(
+                std::io::Error::other("offline")
+            ))
+            .is_err()
+        );
+    }
 }

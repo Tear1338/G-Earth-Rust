@@ -1,5 +1,7 @@
 # Changelog
 
+- Refresh Sulek metadata caches after five minutes and retain a valid matching cache on fetch or parse failure.
+
 - Test Nitro metadata success, HTTP failure, malformed and truncated responses, the size limit and cancellation over verified local HTTPS; verify extension forwarding after errors.
 - Test that cancelled Nitro metadata lookups cannot replace a newer extension session.
 - Load missing Nitro metadata without an extension host, with bounded cancellable lookup and an offline option.

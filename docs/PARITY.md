@@ -89,3 +89,5 @@ Nitro metadata lookup is cancellable on peer close and limited to four in-flight
 A controlled Nitro test cancels one blocked metadata lookup, starts a replacement connection and verifies that an extension protocol peer receives only the new database. This does not prove live hotel or real extension behavior.
 
 A local HTTPS metadata fixture now exercises the actual JSON downloader for successful data, HTTP 503, malformed JSON, truncated and oversized responses, and cancellation during a stalled response, with a temporary CA trusted only by the test client. A controlled extension peer can initialize and forward a packet after each error. It does not validate the production metadata service, a real extension session or a live hotel.
+
+Sulek caches refresh after five minutes and fall back to a valid matching cache on network or parse failure. Unlike Java, malformed downloaded JSON does not overwrite the last valid cache. Tests use controlled fetch results; production service and concurrent refresh behavior remain unverified.
