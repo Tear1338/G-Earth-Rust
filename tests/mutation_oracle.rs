@@ -898,6 +898,32 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_union_corpus_{i}"), &packet);
     }
+    let control_patterns = [
+        "(\\n)",
+        "([\\t\\x41])",
+        "([\\u00e9])",
+        "(\\a)",
+        "(\\e)",
+        "(\\f)",
+        "([\\x30-\\x39])",
+    ];
+    let control_alphabet = [
+        'a', 'A', '0', '9', 'é', 'ÿ', ' ', '\t', '\n', '\r', '\u{7}', '\u{1b}', '\u{c}',
+    ];
+    for i in 0..140 {
+        let pattern = control_patterns[i % control_patterns.len()];
+        let mut value = format!("{pattern} ");
+        for j in 0..28 {
+            value.push(control_alphabet[(i * 7 + j * 5) % control_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java_groups(pattern, "$1/$0", Some(1))
+            .unwrap();
+        check(&format!("substring_control_corpus_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

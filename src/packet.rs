@@ -380,6 +380,34 @@ fn predefined_class(kind: char) -> Option<Box<[bool; 256]>> {
     Some(class)
 }
 
+fn control_escape(
+    kind: char,
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+) -> Result<Option<u8>> {
+    let value = match kind {
+        't' => b'\t',
+        'n' => b'\n',
+        'r' => b'\r',
+        'f' => 0x0c,
+        'a' => 0x07,
+        'e' => 0x1b,
+        'x' | 'u' => {
+            let digits = if kind == 'x' { 2 } else { 4 };
+            let mut value = 0u32;
+            for _ in 0..digits {
+                let digit = chars
+                    .next()
+                    .and_then(|c| c.to_digit(16))
+                    .ok_or_else(|| error("invalid regex hex escape"))?;
+                value = value * 16 + digit;
+            }
+            u8::try_from(value).map_err(|_| error("regex escape outside Latin-1"))?
+        }
+        _ => return Ok(None),
+    };
+    Ok(Some(value))
+}
+
 enum CharacterClassElement {
     Literal(u8, bool),
     Predefined(Box<[bool; 256]>),
@@ -407,6 +435,8 @@ fn parse_character_class(
                 .ok_or_else(|| error("unsupported character class escape"))?;
             if let Some(class) = predefined_class(escaped) {
                 elements.push(CharacterClassElement::Predefined(class));
+            } else if let Some(byte) = control_escape(escaped, chars)? {
+                elements.push(CharacterClassElement::Literal(byte, true));
             } else if "[]^-\\.".contains(escaped) {
                 elements.push(CharacterClassElement::Literal(escaped as u8, true));
             } else {
@@ -1694,7 +1724,9 @@ impl Packet {
                         dynamic = true;
                         continue;
                     }
-                    if !".^$|?*+()[]{}\\".contains(c) {
+                    if let Some(byte) = control_escape(c, &mut chars)? {
+                        c = char::from(byte);
+                    } else if !".^$|?*+()[]{}\\".contains(c) {
                         return Err(error("unsupported regex escape"));
                     }
                 }

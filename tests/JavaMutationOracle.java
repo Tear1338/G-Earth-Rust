@@ -540,6 +540,22 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_union_corpus_" + i, sample);
         }
+        String[] controlPatterns = {"(\\n)", "([\\t\\x41])", "([\\u00e9])", "(\\a)", "(\\e)", "(\\f)", "([\\x30-\\x39])"};
+        char[] controlAlphabet = {'a', 'A', '0', '9', 'é', 'ÿ', ' ', '\t', '\n', '\r', '\u0007', '\u001b', '\u000c'};
+        for (int i = 0; i < 140; i++) {
+            String pattern = controlPatterns[i % controlPatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(' ');
+            for (int j = 0; j < 28; j++) value.append(controlAlphabet[(i * 7 + j * 5) % controlAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, "$1/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_control_corpus_" + i, sample);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);

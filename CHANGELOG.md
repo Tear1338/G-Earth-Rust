@@ -69,6 +69,8 @@
 
 ## Unreleased
 
+- Support bounded Java regex control and Latin-1 hexadecimal escapes inside and outside character classes.
+
 - Support unions of Java predefined regex classes within bounded bracket expressions.
 
 - Support Java predefined ASCII regex classes and complements outside bracket expressions.

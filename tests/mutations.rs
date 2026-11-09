@@ -492,6 +492,27 @@ fn java_character_classes_reject_unsupported_forms_transactionally() {
 }
 
 #[test]
+fn java_control_escapes_reject_invalid_values_without_mutation() {
+    let mut packet = Packet::new(9);
+    packet.put_string("(\\x41) A").unwrap();
+    let before = packet.clone();
+    for pattern in ["(\\x4)", "(\\u1000)", "([\\xG1])"] {
+        assert!(packet
+            .replace_substrings_java_groups(pattern, "x", None)
+            .is_err());
+        assert_eq!(packet, before);
+    }
+    assert_eq!(
+        packet
+            .replace_substrings_java_groups("(\\x41)", "[$1]", None)
+            .unwrap(),
+        1
+    );
+    packet.reset();
+    assert_eq!(packet.read_string().unwrap(), "(\\x41) [A]");
+}
+
+#[test]
 fn append_typed_fields_preserves_prior_fields_on_error() {
     use gearth_rust::packet::{PacketField, PacketFormat};
     let mut packet = Packet::new(7);

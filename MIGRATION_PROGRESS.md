@@ -204,6 +204,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Predefined Java regex classes and complements now work inside supported bracket unions and negations. Six targeted cases plus 120 generated packets were compared with the released beta-29 Java API. Java accepts a predefined class followed by a literal hyphen where the reverse range is invalid; the parser follows the tested behavior. Twenty-three mutation tests, both Clippy configurations and desktop/web build pass; class intersection and general regex remain incomplete. Actions run 42712034020 passed all eight jobs for ordinary character classes.
 
+- Java regex control escapes and two-digit hexadecimal/four-digit Unicode escapes within Latin-1 are supported inside and outside bracket classes. A 140-packet corpus matches the released beta-29 Java API, and invalid or outside-Latin-1 escapes fail transactionally. Twenty-four mutation tests, both Clippy configurations and desktop/web build pass locally. Other escape forms, quantifiers and full Java regex remain incomplete. Actions run 42712267951 passed all eight jobs for predefined classes.
+
 ## Exact next step
 
-Compare Java regex escaped control characters and hexadecimal literals with the released beta-29 API, both inside and outside bracket expressions; add bounded differential fixtures before extending the parser. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Compare Java regex optional quantifiers (`?`, greedy and reluctant), capture results and zero-width progress against the released beta-29 API; design bounded matching and differential fixtures before implementing. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
