@@ -202,6 +202,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Java predefined regex classes `\d`, `\w`, `\s` and their complements now work outside bracket expressions with fixed-length captures. A 120-packet differential corpus against the beta-29 Java API covers ASCII, Latin-1 and control characters. Twenty-three mutation tests, both Clippy configurations and desktop/web build pass; predefined classes inside brackets, Unicode flags and full regex semantics remain open. Actions run 42711534302 passed all eight jobs for dot matching.
 
+- Predefined Java regex classes and complements now work inside supported bracket unions and negations. Six targeted cases plus 120 generated packets were compared with the released beta-29 Java API. Java accepts a predefined class followed by a literal hyphen where the reverse range is invalid; the parser follows the tested behavior. Twenty-three mutation tests, both Clippy configurations and desktop/web build pass; class intersection and general regex remain incomplete. Actions run 42712034020 passed all eight jobs for ordinary character classes.
+
 ## Exact next step
 
-Compare predefined Java regex classes inside bracket expressions, including unions, negation and invalid ranges, against the released beta-29 API; extend the bounded parser only after differential tests. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Compare Java regex escaped control characters and hexadecimal literals with the released beta-29 API, both inside and outside bracket expressions; add bounded differential fixtures before extending the parser. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

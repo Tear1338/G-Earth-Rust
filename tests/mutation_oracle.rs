@@ -852,6 +852,52 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_predefined_{i}"), &packet);
     }
+    let union_groups = [
+        ("([\\dA-F]) a 2 B é", "([\\dA-F])", "<$1>", Some(1)),
+        ("([^\\w]) a é 9 _", "([^\\w])", "[$1]", Some(1)),
+        ("([\\s\\d]) a 2 \n", "([\\s\\d])", "<$1>", Some(1)),
+        ("([\\D]) a 2 é", "([\\D])", "[$1]", Some(1)),
+        ("([a-\\d]) a 2", "([a-\\d])", "x", Some(1)),
+        ("([\\d-a]) a 2", "([\\d-a])", "x", Some(1)),
+    ];
+    for (i, (value, pattern, replacement, limit)) in union_groups.iter().enumerate() {
+        let mut packet = Packet::new(9);
+        packet.put_string(value).unwrap();
+        packet.set_cursor(7).unwrap();
+        let before = packet.clone();
+        let key = format!("substring_union_{i}");
+        match packet.replace_substrings_java_groups(pattern, replacement, *limit) {
+            Ok(_) => check(&key, &packet),
+            Err(_) => {
+                assert_eq!(expected[key.as_str()], "error");
+                assert_eq!(packet, before);
+            }
+        }
+    }
+    let union_patterns = [
+        "([\\dA-F])",
+        "([^\\w])",
+        "([\\s\\d])",
+        "([\\D])",
+        "([\\d-a])",
+    ];
+    let union_alphabet = [
+        'a', 'b', 'F', '9', '0', '_', 'é', '-', ' ', '\n', '\u{b}', '\u{85}',
+    ];
+    for i in 0..120 {
+        let pattern = union_patterns[i % union_patterns.len()];
+        let mut value = format!("{pattern} ");
+        for j in 0..28 {
+            value.push(union_alphabet[(i * 7 + j * 5) % union_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java_groups(pattern, "$1/$0", Some(1))
+            .unwrap();
+        check(&format!("substring_union_corpus_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

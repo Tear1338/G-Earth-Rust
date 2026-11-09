@@ -502,6 +502,44 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_predefined_" + i, sample);
         }
+        String[][] unions = {
+            {"([\\dA-F]) a 2 B é", "([\\dA-F])", "<$1>", "1"},
+            {"([^\\w]) a é 9 _", "([^\\w])", "[$1]", "1"},
+            {"([\\s\\d]) a 2 \n", "([\\s\\d])", "<$1>", "1"},
+            {"([\\D]) a 2 é", "([\\D])", "[$1]", "1"},
+            {"([a-\\d]) a 2", "([a-\\d])", "x", "1"},
+            {"([\\d-a]) a 2", "([\\d-a])", "x", "1"},
+        };
+        for (int i = 0; i < unions.length; i++) {
+            HPacket sample = new HPacket(9);
+            sample.appendString(unions[i][0]);
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            boolean failed = false;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(unions[i][1], unions[i][2], Integer.parseInt(unions[i][3]));
+            } catch (RuntimeException expected) { failed = true; }
+            finally { System.setOut(original); }
+            if (failed) System.out.println("substring_union_" + i + "=error");
+            else emit("substring_union_" + i, sample);
+        }
+        String[] unionPatterns = {"([\\dA-F])", "([^\\w])", "([\\s\\d])", "([\\D])", "([\\d-a])"};
+        char[] unionAlphabet = {'a', 'b', 'F', '9', '0', '_', 'é', '-', ' ', '\n', '\u000b', '\u0085'};
+        for (int i = 0; i < 120; i++) {
+            String pattern = unionPatterns[i % unionPatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(' ');
+            for (int j = 0; j < 28; j++) value.append(unionAlphabet[(i * 7 + j * 5) % unionAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, "$1/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_union_corpus_" + i, sample);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);

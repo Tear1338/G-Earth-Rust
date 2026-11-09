@@ -380,6 +380,11 @@ fn predefined_class(kind: char) -> Option<Box<[bool; 256]>> {
     Some(class)
 }
 
+enum CharacterClassElement {
+    Literal(u8, bool),
+    Predefined(Box<[bool; 256]>),
+}
+
 fn parse_character_class(
     chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
 ) -> Result<Box<[bool; 256]>> {
@@ -396,19 +401,23 @@ fn parse_character_class(
             closed = true;
             break;
         }
-        let (c, escaped) = if c == '\\' {
+        if c == '\\' {
             let escaped = chars
                 .next()
-                .filter(|c| "[]^-\\.".contains(*c))
                 .ok_or_else(|| error("unsupported character class escape"))?;
-            (escaped, true)
+            if let Some(class) = predefined_class(escaped) {
+                elements.push(CharacterClassElement::Predefined(class));
+            } else if "[]^-\\.".contains(escaped) {
+                elements.push(CharacterClassElement::Literal(escaped as u8, true));
+            } else {
+                return Err(error("unsupported character class escape"));
+            }
         } else {
             if c == '[' || c == '&' {
                 return Err(error("unsupported character class construct"));
             }
-            (c, false)
-        };
-        elements.push((c as u8, escaped));
+            elements.push(CharacterClassElement::Literal(c as u8, false));
+        }
     }
     if !closed || elements.is_empty() {
         return Err(error("invalid character class"));
@@ -416,21 +425,38 @@ fn parse_character_class(
     let mut class = Box::new([false; 256]);
     let mut i = 0;
     while i < elements.len() {
-        if elements[i] == (b'-', false) && i != 0 && i + 1 != elements.len() {
+        if matches!(elements[i], CharacterClassElement::Literal(b'-', false))
+            && i != 0
+            && i + 1 != elements.len()
+            && !matches!(elements[i - 1], CharacterClassElement::Predefined(_))
+        {
             return Err(error("ambiguous character class range"));
         }
-        if i + 2 < elements.len() && elements[i + 1] == (b'-', false) {
-            let start = elements[i].0;
-            let end = elements[i + 2].0;
+        if i + 2 < elements.len()
+            && matches!(elements[i], CharacterClassElement::Literal(_, _))
+            && matches!(elements[i + 1], CharacterClassElement::Literal(b'-', false))
+        {
+            let (CharacterClassElement::Literal(start, _), CharacterClassElement::Literal(end, _)) =
+                (&elements[i], &elements[i + 2])
+            else {
+                return Err(error("invalid character class range"));
+            };
             if start > end {
                 return Err(error("invalid character class range"));
             }
-            for byte in start..=end {
+            for byte in *start..=*end {
                 class[usize::from(byte)] = true;
             }
             i += 3;
         } else {
-            class[usize::from(elements[i].0)] = true;
+            match &elements[i] {
+                CharacterClassElement::Literal(byte, _) => class[usize::from(*byte)] = true,
+                CharacterClassElement::Predefined(set) => {
+                    for (included, member) in class.iter_mut().zip(set.iter()) {
+                        *included |= *member;
+                    }
+                }
+            }
             i += 1;
         }
     }
@@ -442,7 +468,7 @@ fn parse_character_class(
     Ok(class)
 }
 
-fn replace_dot_pattern(
+fn replace_fixed_pattern(
     text: &str,
     atoms: &[FixedRegexAtom],
     ranges: &[(usize, usize)],
@@ -1717,7 +1743,7 @@ impl Packet {
                     let text = latin1_decode(&candidate.bytes[i + 2..end]);
                     if text.contains(pattern) {
                         let result = if dynamic {
-                            replace_dot_pattern(
+                            replace_fixed_pattern(
                                 &text,
                                 &atoms,
                                 &ranges,
