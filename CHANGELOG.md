@@ -69,6 +69,8 @@
 
 ## Unreleased
 
+- Support global Java dotall regex matching and combinations with case-insensitive mode.
+
 - Support Java regex replacement without captures, including empty patterns and bounded zero-width expansion.
 
 - Support Java 21 global ASCII case-insensitive regex matching with case-preserving captures.

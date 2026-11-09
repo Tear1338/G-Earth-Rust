@@ -1566,6 +1566,34 @@ fn mutations_match_original_java_packets_and_cursor() {
             }
         }
     }
+    let dotall_patterns = [
+        "(?s)(.)",
+        "(?s)(.+)",
+        "(?s).",
+        "(?is)(a.b)",
+        "(?si)([a-c].)",
+        "(?i)(?s)(a.)",
+        "(?s)((a)?.)*",
+    ];
+    let dotall_alphabet = ['a', 'A', 'b', 'B', 'é', ' ', '\n', '\r', '\u{85}'];
+    for i in 0..175 {
+        let pattern = dotall_patterns[i % dotall_patterns.len()];
+        let mut value = format!("{pattern} a\nb A\rB ");
+        for j in 0..16 {
+            value.push(dotall_alphabet[(i * 7 + j * 3) % dotall_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(
+                pattern,
+                if pattern == "(?s)." { "$0" } else { "$1/$0" },
+                Some(1),
+            )
+            .unwrap();
+        check(&format!("substring_dotall_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

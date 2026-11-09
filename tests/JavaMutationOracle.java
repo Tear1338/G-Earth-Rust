@@ -1058,6 +1058,22 @@ public class JavaMutationOracle {
             if (failed) System.out.println("substring_no_capture_" + i + "=error");
             else emit("substring_no_capture_" + i, sample);
         }
+        String[] dotallPatterns = {"(?s)(.)", "(?s)(.+)", "(?s).", "(?is)(a.b)", "(?si)([a-c].)", "(?i)(?s)(a.)", "(?s)((a)?.)*"};
+        char[] dotallAlphabet = {'a', 'A', 'b', 'B', 'é', ' ', '\n', '\r', '\u0085'};
+        for (int i = 0; i < 175; i++) {
+            String pattern = dotallPatterns[i % dotallPatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(" a\nb A\rB ");
+            for (int j = 0; j < 16; j++) value.append(dotallAlphabet[(i * 7 + j * 3) % dotallAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, pattern.equals("(?s).") ? "$0" : "$1/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_dotall_" + i, sample);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);

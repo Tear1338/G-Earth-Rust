@@ -1,5 +1,7 @@
 # Continuation state
 
+Java global dotall `(?s)` and leading combinations with `(?i)` now make dot match Latin-1 line terminators while preserving captures and bounded repetition. A 175-packet corpus matches the released beta-29 API; nine budget/state tests, 30 mutation tests, both Clippy configurations and desktop/web build pass. Other embedded flags and full Java regex remain open. Next compare Java multiline anchor semantics.
+
 Java regex replacement now accepts patterns without capture groups, including empty patterns and `$0`; invalid references and size overflow remain transactional. Ten cases match the released beta-29 Java API, and a focused large-field test covers zero-width growth. Nine budget/state tests, 30 mutation tests, both Clippy configurations and desktop/web build pass. General regex syntax and live-extension compatibility remain open. Next compare the global dotall flag with Java.
 
 The Java 21 global `(?i)` regex flag is supported for ASCII case-insensitive literals, character classes and dynamic captures; non-ASCII Latin-1 is unchanged, as in Java without Unicode flags. A 175-packet corpus matches the released beta-29 API, including negated classes and quoted/escaped literals. Nine budget/state tests, 29 mutation tests, both Clippy configurations and desktop/web build pass. Embedded/Unicode flags and general Java regex remain open. Next compare no-capture replacement with Java. Serialized G-Python jobs passed in Actions run 42723118432.

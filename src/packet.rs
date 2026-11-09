@@ -355,6 +355,7 @@ enum FixedRegexAtom {
     Literal(u8),
     CaseInsensitive(u8),
     Dot,
+    DotAll,
     Start,
     End,
     EndStrict,
@@ -645,6 +646,7 @@ fn atom_accepts(atom: &FixedRegexAtom, byte: u8) -> bool {
         FixedRegexAtom::Literal(expected) => *expected == byte,
         FixedRegexAtom::CaseInsensitive(expected) => expected.eq_ignore_ascii_case(&byte),
         FixedRegexAtom::Dot => !matches!(byte, b'\n' | b'\r' | 0x85),
+        FixedRegexAtom::DotAll => true,
         FixedRegexAtom::Start
         | FixedRegexAtom::End
         | FixedRegexAtom::EndStrict
@@ -2625,9 +2627,24 @@ impl Packet {
             return Err(error("short string too long"));
         }
         let pattern_bytes = latin1_encode(pattern)?;
-        let (pattern_source, case_insensitive) = pattern
-            .strip_prefix("(?i)")
-            .map_or((pattern, false), |source| (source, true));
+        let mut pattern_source = pattern;
+        let mut case_insensitive = false;
+        let mut dot_all = false;
+        loop {
+            let (prefix, insensitive, dotall) =
+                if pattern_source.starts_with("(?is)") || pattern_source.starts_with("(?si)") {
+                    (5, true, true)
+                } else if pattern_source.starts_with("(?i)") {
+                    (4, true, false)
+                } else if pattern_source.starts_with("(?s)") {
+                    (4, false, true)
+                } else {
+                    break;
+                };
+            pattern_source = &pattern_source[prefix..];
+            case_insensitive |= insensitive;
+            dot_all |= dotall;
+        }
         let mut literal = String::new();
         let mut groups: Vec<String> = Vec::new();
         let mut parents: Vec<Option<usize>> = Vec::new();
@@ -2754,7 +2771,11 @@ impl Packet {
                     continue;
                 }
                 '.' => {
-                    atoms.push(FixedRegexAtom::Dot);
+                    atoms.push(if dot_all {
+                        FixedRegexAtom::DotAll
+                    } else {
+                        FixedRegexAtom::Dot
+                    });
                     dynamic = true;
                     quantifiable = true;
                     last_closed_group = None;

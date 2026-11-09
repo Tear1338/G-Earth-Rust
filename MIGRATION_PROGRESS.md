@@ -248,6 +248,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Java regex replacement now accepts patterns without capture groups, including empty patterns and `$0`; invalid references and size overflow remain transactional. Ten cases match the released beta-29 Java API, and a focused large-field test covers zero-width growth. Nine budget/state tests, 30 mutation tests, both Clippy configurations and desktop/web build pass. General regex syntax and live-extension compatibility remain open. Actions run 42723118432 passed all eight jobs with serialized G-Python tests.
 
+- Java global dotall `(?s)` and leading combinations with `(?i)` now make dot match Latin-1 line terminators while preserving captures and bounded repetition. A 175-packet corpus matches the released beta-29 API; nine budget/state tests, 30 mutation tests, both Clippy configurations and desktop/web build pass. Other embedded flags and full Java regex remain open. Actions runs 42723185570 and 42723508780 passed all eight jobs for word boundaries and case-insensitive matching.
+
 ## Exact next step
 
-Compare Java global dotall regex flag `(?s)` and combinations with `(?i)` across line terminators, captures and bounded repetitions using the released beta-29 API; extend bounded matching after differential fixtures. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Compare Java global multiline flag `(?m)` and its `^`/`$` behavior on empty strings, CRLF and Latin-1 terminators against the released beta-29 API; keep `\A`/`\Z`/`\z` semantics distinct and add differential fixtures. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
