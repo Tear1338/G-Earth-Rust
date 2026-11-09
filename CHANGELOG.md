@@ -1,5 +1,7 @@
 # Changelog
 
+- Initialize Origins metadata before starting the extension session, with bounded cancellable lookup and an offline option.
+
 - Test Origins discovery and metadata caching over local HTTPS; preserve the requested version when a discovered database is empty, as Java does.
 
 - Discover the latest Origins release even with an explicit version, falling back to a valid supplied version on discovery failure.

@@ -19,12 +19,12 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 const MAX_PENDING_BYTES: usize = 64 * 1024 * 1024;
-const MAX_FLASH_LOOKUPS: usize = 4;
-static ACTIVE_FLASH_LOOKUPS: AtomicUsize = AtomicUsize::new(0);
+const MAX_METADATA_LOOKUPS: usize = 4;
+static ACTIVE_METADATA_LOOKUPS: AtomicUsize = AtomicUsize::new(0);
 
 // The HTTP client cannot interrupt a request already in flight. Bound detached
 // lookups and let the relay stop without waiting for their network timeout.
-fn cancellable_flash_lookup<T: Send + 'static>(
+fn cancellable_metadata_lookup<T: Send + 'static>(
     stop: &AtomicBool,
     closed: &AtomicBool,
     mut peer_closed: impl FnMut() -> bool,
@@ -33,17 +33,17 @@ fn cancellable_flash_lookup<T: Send + 'static>(
     if stop.load(Ordering::Acquire) || closed.load(Ordering::Acquire) {
         return Err(io::Error::new(
             io::ErrorKind::Interrupted,
-            "Flash lookup cancelled",
+            "metadata lookup cancelled",
         ));
     }
-    let mut count = ACTIVE_FLASH_LOOKUPS.load(Ordering::Acquire);
+    let mut count = ACTIVE_METADATA_LOOKUPS.load(Ordering::Acquire);
     loop {
-        if count >= MAX_FLASH_LOOKUPS {
+        if count >= MAX_METADATA_LOOKUPS {
             return Err(io::Error::other(
-                "too many Flash metadata lookups still in progress",
+                "too many metadata lookups still in progress",
             ));
         }
-        match ACTIVE_FLASH_LOOKUPS.compare_exchange_weak(
+        match ACTIVE_METADATA_LOOKUPS.compare_exchange_weak(
             count,
             count + 1,
             Ordering::AcqRel,
@@ -56,13 +56,13 @@ fn cancellable_flash_lookup<T: Send + 'static>(
     struct LookupSlot;
     impl Drop for LookupSlot {
         fn drop(&mut self) {
-            ACTIVE_FLASH_LOOKUPS.fetch_sub(1, Ordering::AcqRel);
+            ACTIVE_METADATA_LOOKUPS.fetch_sub(1, Ordering::AcqRel);
         }
     }
     let slot = LookupSlot;
     let (tx, rx) = mpsc::sync_channel(1);
     thread::Builder::new()
-        .name("flash-metadata".into())
+        .name("relay-metadata".into())
         .spawn(move || {
             let _slot = slot;
             let _ = tx.send(lookup());
@@ -71,7 +71,7 @@ fn cancellable_flash_lookup<T: Send + 'static>(
         if stop.load(Ordering::Acquire) || closed.load(Ordering::Acquire) || peer_closed() {
             return Err(io::Error::new(
                 io::ErrorKind::Interrupted,
-                "Flash lookup cancelled",
+                "metadata lookup cancelled",
             ));
         }
         match rx.recv_timeout(Duration::from_millis(25)) {
@@ -79,14 +79,14 @@ fn cancellable_flash_lookup<T: Send + 'static>(
                 if stop.load(Ordering::Acquire) || closed.load(Ordering::Acquire) || peer_closed() {
                     return Err(io::Error::new(
                         io::ErrorKind::Interrupted,
-                        "Flash lookup cancelled",
+                        "metadata lookup cancelled",
                     ));
                 }
                 return result;
             }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => {
-                return Err(io::Error::other("Flash metadata lookup worker failed"))
+                return Err(io::Error::other("metadata lookup worker failed"))
             }
         }
     }
@@ -132,8 +132,14 @@ pub struct RelayOptions {
     /// Optional session-shared registry for tracking IDs from real traffic.
     pub packet_safety: Option<Arc<Mutex<crate::packet_safety::PacketSafety>>>,
     pub admin_service: Option<Arc<Mutex<crate::admin_service::AdminService>>>,
+    /// Disable automatic Origins metadata retrieval for offline use.
+    pub disable_origins_metadata: bool,
     #[cfg(test)]
     flash_lookup: Option<
+        Arc<dyn Fn(String) -> io::Result<crate::packet_info::PacketInfoManager> + Send + Sync>,
+    >,
+    #[cfg(test)]
+    origins_lookup: Option<
         Arc<dyn Fn(String) -> io::Result<crate::packet_info::PacketInfoManager> + Send + Sync>,
     >,
 }
@@ -306,9 +312,93 @@ impl Relay {
                         } else {
                             break;
                         }
-                        if options.flash_process.is_none() {
+                        if session_options.shockwave {
+                            if session_options.connection.is_none() {
+                                let remote = server.peer_addr().ok();
+                                session_options.connection = Some(ConnectionDetails {
+                                    host: remote.map(|a| a.ip().to_string()).unwrap_or_default(),
+                                    port: remote.map(|a| a.port()).unwrap_or_default(),
+                                    version: "latest".into(),
+                                    identifier: "SHOCKWAVE".into(),
+                                    client_type: "SHOCKWAVE".into(),
+                                    packets: crate::packet_info::PacketInfoManager::default(),
+                                });
+                            }
+                            let details = session_options.connection.as_mut().unwrap();
+                            if details.version.is_empty() {
+                                details.version = "latest".into();
+                            }
+                            if details.identifier.is_empty() {
+                                details.identifier = "SHOCKWAVE".into();
+                            }
+                            if !details.packets.entries().is_empty()
+                                && details.packets.version != details.version
+                            {
+                                details.packets = crate::packet_info::PacketInfoManager::new(
+                                    &details.version,
+                                    Vec::new(),
+                                );
+                            }
+                            if !session_options.disable_origins_metadata
+                                && details.packets.entries().is_empty()
+                            {
+                                let setup = client
+                                    .set_nonblocking(true)
+                                    .and_then(|()| server.set_nonblocking(true));
+                                let version = details.version.clone();
+                                #[cfg(test)]
+                                let lookup = session_options.origins_lookup.clone();
+                                let result = setup.and_then(|()| {
+                                    cancellable_metadata_lookup(
+                                        &worker_stop,
+                                        &closed,
+                                        || peer_has_closed(&client) || peer_has_closed(&server),
+                                        move || {
+                                            #[cfg(test)]
+                                            if let Some(lookup) = lookup {
+                                                return lookup(version);
+                                            }
+                                            crate::packet_info::PacketInfoManager::fetch_sulek(
+                                                &version, true,
+                                            )
+                                        },
+                                    )
+                                });
+                                match result {
+                                    Ok(database) => {
+                                        details.version = database.version.clone();
+                                        details.packets = database.clone();
+                                        let _ = events.try_send(Event::Identified {
+                                            version: details.version.clone(),
+                                            identifier: details.identifier.clone(),
+                                        });
+                                        let _ = events.try_send(Event::PacketIdentifiers(database));
+                                    }
+                                    Err(error) if error.kind() == io::ErrorKind::Interrupted => {
+                                        closed.store(true, Ordering::Release);
+                                        if let Ok(mut slot) = worker_active.lock() {
+                                            *slot = None;
+                                        }
+                                        continue;
+                                    }
+                                    Err(error) => {
+                                        let _ = events.try_send(Event::Status(format!(
+                                            "Connected without packet names: {error}"
+                                        )));
+                                    }
+                                }
+                            }
+                        }
+                        if worker_stop.load(Ordering::Acquire) || closed.load(Ordering::Acquire) {
+                            closed.store(true, Ordering::Release);
+                            if let Ok(mut slot) = worker_active.lock() {
+                                *slot = None;
+                            }
+                            continue;
+                        }
+                        if session_options.flash_process.is_none() {
                             if let (Some(safety), Some(details)) =
-                                (&options.packet_safety, &options.connection)
+                                (&session_options.packet_safety, &session_options.connection)
                             {
                                 if let Ok(mut safety) = safety.lock() {
                                     safety.register_metadata(&details.version, &details.packets);
@@ -323,9 +413,9 @@ impl Relay {
                         ));
                         let mut extension_session = None;
                         if let (Some(host), Some(details)) =
-                            (&options.extensions, &options.connection)
+                            (&session_options.extensions, &session_options.connection)
                         {
-                            if options.flash_process.is_none() {
+                            if session_options.flash_process.is_none() {
                                 match host.start_owned_connection(details.clone()) {
                                     Ok(epoch) => extension_session = Some(epoch),
                                     Err(e) => {
@@ -733,7 +823,7 @@ fn run_session(
                             let version = details.version.clone();
                             #[cfg(test)]
                             let lookup = options.flash_lookup.clone();
-                            match cancellable_flash_lookup(
+                            match cancellable_metadata_lookup(
                                 stop,
                                 closed,
                                 || peer_has_closed(&client) || peer_has_closed(&server),
@@ -849,17 +939,393 @@ mod tests {
         }
         panic!("timed out waiting for Raw-IP relay event");
     }
+
+    #[test]
+    fn origins_metadata_initializes_without_host_and_handles_failure() {
+        use crate::{
+            packet_info::{PacketInfo, PacketInfoManager},
+            packet_safety::PacketSafety,
+        };
+        let _test_lock = LOOKUP_TEST_LOCK.lock().unwrap();
+        for succeeds in [true, false] {
+            let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+            let safety = Arc::new(Mutex::new(PacketSafety::default()));
+            let (requested_tx, requested_rx) = mpsc::channel();
+            let lookup = Arc::new(move |version: String| {
+                requested_tx.send(version).unwrap();
+                if !succeeds {
+                    return Err(io::Error::other("fixture offline"));
+                }
+                Ok(PacketInfoManager::new(
+                    "ORIGINS-2",
+                    vec![PacketInfo {
+                        header: 900,
+                        hash: None,
+                        name: Some("Known".into()),
+                        structure: None,
+                        direction: Direction::ToServer,
+                        source: "fixture".into(),
+                    }],
+                ))
+            });
+            let (mut relay, events) = Relay::start_with_options(
+                Config {
+                    listen: "127.0.0.1:0".parse().unwrap(),
+                    remote: remote.local_addr().unwrap().to_string(),
+                },
+                RelayOptions {
+                    shockwave: true,
+                    packet_safety: Some(safety.clone()),
+                    origins_lookup: Some(lookup),
+                    ..RelayOptions::default()
+                },
+            )
+            .unwrap();
+            let client = TcpStream::connect(relay.address).unwrap();
+            let (_server, _) = remote.accept().unwrap();
+            assert_eq!(
+                requested_rx.recv_timeout(Duration::from_secs(3)).unwrap(),
+                "latest"
+            );
+            if succeeds {
+                wait_for(
+                    &events,
+                    |event| matches!(event, Event::PacketIdentifiers(db) if db.version == "ORIGINS-2" && db.entries().len() == 1),
+                );
+            } else {
+                wait_for(
+                    &events,
+                    |event| matches!(event, Event::Status(text) if text.contains("fixture offline")),
+                );
+            }
+            wait_for(&events, |event| matches!(event, Event::Connected(_)));
+            assert_eq!(
+                safety
+                    .lock()
+                    .unwrap()
+                    .is_safe(Some("ORIGINS-2"), Direction::ToServer, 900),
+                succeeds
+            );
+            drop(client);
+            wait_for(&events, |event| matches!(event, Event::Disconnected));
+            relay.stop();
+        }
+    }
+
+    #[test]
+    fn origins_stop_cancels_stalled_metadata_wait() {
+        let _test_lock = LOOKUP_TEST_LOCK.lock().unwrap();
+        let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let release_rx = Mutex::new(release_rx);
+        let lookup = Arc::new(move |_: String| {
+            started_tx.send(()).unwrap();
+            release_rx.lock().unwrap().recv().unwrap();
+            Ok(crate::packet_info::PacketInfoManager::default())
+        });
+        let (mut relay, _events) = Relay::start_with_options(
+            Config {
+                listen: "127.0.0.1:0".parse().unwrap(),
+                remote: remote.local_addr().unwrap().to_string(),
+            },
+            RelayOptions {
+                shockwave: true,
+                origins_lookup: Some(lookup),
+                ..RelayOptions::default()
+            },
+        )
+        .unwrap();
+        let _client = TcpStream::connect(relay.address).unwrap();
+        let (_server, _) = remote.accept().unwrap();
+        started_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+        let started = Instant::now();
+        relay.stop();
+        assert!(started.elapsed() < Duration::from_secs(2));
+        release_tx.send(()).unwrap();
+    }
+
+    #[test]
+    fn origins_peer_close_during_lookup_preserves_previous_extension_session() {
+        let _test_lock = LOOKUP_TEST_LOCK.lock().unwrap();
+        for close_client in [true, false] {
+            let (host, _) =
+                ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+            let old_epoch = host
+                .start_owned_connection(ConnectionDetails {
+                    host: "fixture".into(),
+                    port: 1,
+                    version: "OLD".into(),
+                    identifier: "OLD".into(),
+                    client_type: "FLASH".into(),
+                    packets: crate::packet_info::PacketInfoManager::default(),
+                })
+                .unwrap();
+            let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+            let (started_tx, started_rx) = mpsc::channel();
+            let (release_tx, release_rx) = mpsc::channel();
+            let release_rx = Mutex::new(release_rx);
+            let lookup = Arc::new(move |_: String| {
+                started_tx.send(()).unwrap();
+                release_rx.lock().unwrap().recv().unwrap();
+                Ok(crate::packet_info::PacketInfoManager::default())
+            });
+            let (mut relay, events) = Relay::start_with_options(
+                Config {
+                    listen: "127.0.0.1:0".parse().unwrap(),
+                    remote: remote.local_addr().unwrap().to_string(),
+                },
+                RelayOptions {
+                    shockwave: true,
+                    extensions: Some(host.clone()),
+                    origins_lookup: Some(lookup),
+                    ..RelayOptions::default()
+                },
+            )
+            .unwrap();
+            let client = TcpStream::connect(relay.address).unwrap();
+            let (server, _) = remote.accept().unwrap();
+            started_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+            if close_client {
+                client.shutdown(Shutdown::Both).unwrap();
+            } else {
+                server.shutdown(Shutdown::Both).unwrap();
+            }
+            let deadline = Instant::now() + Duration::from_secs(3);
+            while relay.connected() && Instant::now() < deadline {
+                thread::sleep(Duration::from_millis(10));
+            }
+            assert!(!relay.connected());
+            release_tx.send(()).unwrap();
+            assert!(!events
+                .try_iter()
+                .any(|event| matches!(event, Event::Connected(_) | Event::PacketIdentifiers(_))));
+            assert!(host.end_owned_connection(old_epoch));
+            relay.stop();
+            host.stop();
+        }
+    }
+
+    #[test]
+    fn origins_extension_receives_discovered_metadata_before_connection() {
+        use crate::{
+            extension::{self, ExtensionInfo},
+            extension_host::HostEvent,
+            packet_info::{PacketInfo, PacketInfoManager},
+        };
+        let _test_lock = LOOKUP_TEST_LOCK.lock().unwrap();
+        let (host, host_events) =
+            ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+        let mut peer = TcpStream::connect(host.address).unwrap();
+        peer.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+        assert_eq!(read_frame(&mut peer).unwrap().header(), 2);
+        let info = ExtensionInfo {
+            title: "fixture".into(),
+            author: "test".into(),
+            version: "1".into(),
+            description: String::new(),
+            on_click: false,
+            file: None,
+            cookie: String::new(),
+            can_leave: true,
+            can_delete: true,
+        };
+        write_frame(&mut peer, &extension::info_response(&info).unwrap()).unwrap();
+        let id = match host_events.recv_timeout(Duration::from_secs(3)).unwrap() {
+            HostEvent::Pending { id, .. } => id,
+            event => panic!("{event:?}"),
+        };
+        host.approve(id).unwrap();
+        assert_eq!(read_frame(&mut peer).unwrap().header(), 7);
+        let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+        let lookup = Arc::new(|_: String| {
+            Ok(PacketInfoManager::new(
+                "ORIGINS-2",
+                vec![PacketInfo {
+                    header: 900,
+                    hash: None,
+                    name: Some("Known".into()),
+                    structure: None,
+                    direction: Direction::ToServer,
+                    source: "fixture".into(),
+                }],
+            ))
+        });
+        let (mut relay, events) = Relay::start_with_options(
+            Config {
+                listen: "127.0.0.1:0".parse().unwrap(),
+                remote: remote.local_addr().unwrap().to_string(),
+            },
+            RelayOptions {
+                shockwave: true,
+                extensions: Some(host.clone()),
+                origins_lookup: Some(lookup),
+                ..RelayOptions::default()
+            },
+        )
+        .unwrap();
+        let client = TcpStream::connect(relay.address).unwrap();
+        let (_server, _) = remote.accept().unwrap();
+        let mut start = read_frame(&mut peer).unwrap();
+        assert_eq!(start.header(), 5);
+        start.read_string().unwrap();
+        start.read_i32().unwrap();
+        let version = start.read_string().unwrap();
+        assert_eq!(version, "ORIGINS-2");
+        assert_eq!(start.read_string().unwrap(), "SHOCKWAVE");
+        assert_eq!(start.read_string().unwrap(), "SHOCKWAVE");
+        let database = PacketInfoManager::read_from(version, &mut start).unwrap();
+        assert_eq!(database.entries()[0].header, 900);
+        drop(client);
+        wait_for(&events, |event| matches!(event, Event::Disconnected));
+        assert_eq!(read_frame(&mut peer).unwrap().header(), 6);
+        relay.stop();
+        host.stop();
+    }
+
+    #[test]
+    fn origins_matching_metadata_and_offline_mode_skip_lookup() {
+        use crate::{
+            packet_info::{PacketInfo, PacketInfoManager},
+            packet_safety::PacketSafety,
+        };
+        let _test_lock = LOOKUP_TEST_LOCK.lock().unwrap();
+        for preloaded in [true, false] {
+            let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+            let safety = Arc::new(Mutex::new(PacketSafety::default()));
+            let packets = if preloaded {
+                PacketInfoManager::new(
+                    "REV",
+                    vec![PacketInfo {
+                        header: 900,
+                        hash: None,
+                        name: Some("Known".into()),
+                        structure: None,
+                        direction: Direction::ToServer,
+                        source: "fixture".into(),
+                    }],
+                )
+            } else {
+                PacketInfoManager::new("REV", Vec::new())
+            };
+            let details = ConnectionDetails {
+                host: "fixture".into(),
+                port: 1,
+                version: "REV".into(),
+                identifier: "SHOCKWAVE".into(),
+                client_type: "SHOCKWAVE".into(),
+                packets,
+            };
+            let called = Arc::new(AtomicBool::new(false));
+            let called_by_lookup = called.clone();
+            let lookup = Arc::new(move |_: String| -> io::Result<PacketInfoManager> {
+                called_by_lookup.store(true, Ordering::Release);
+                Err(io::Error::other("unexpected lookup"))
+            });
+            let (mut relay, events) = Relay::start_with_options(
+                Config {
+                    listen: "127.0.0.1:0".parse().unwrap(),
+                    remote: remote.local_addr().unwrap().to_string(),
+                },
+                RelayOptions {
+                    shockwave: true,
+                    disable_origins_metadata: !preloaded,
+                    connection: Some(details),
+                    origins_lookup: Some(lookup),
+                    packet_safety: Some(safety.clone()),
+                    ..RelayOptions::default()
+                },
+            )
+            .unwrap();
+            let client = TcpStream::connect(relay.address).unwrap();
+            let (_server, _) = remote.accept().unwrap();
+            wait_for(&events, |event| matches!(event, Event::Connected(_)));
+            assert!(!called.load(Ordering::Acquire));
+            assert_eq!(
+                safety
+                    .lock()
+                    .unwrap()
+                    .is_safe(Some("REV"), Direction::ToServer, 900),
+                preloaded
+            );
+            drop(client);
+            wait_for(&events, |event| matches!(event, Event::Disconnected));
+            relay.stop();
+        }
+    }
+
+    #[test]
+    fn origins_does_not_trust_metadata_from_another_version() {
+        use crate::{
+            packet_info::{PacketInfo, PacketInfoManager},
+            packet_safety::PacketSafety,
+        };
+        let _test_lock = LOOKUP_TEST_LOCK.lock().unwrap();
+        let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+        let safety = Arc::new(Mutex::new(PacketSafety::default()));
+        let stale = PacketInfoManager::new(
+            "OLD",
+            vec![PacketInfo {
+                header: 777,
+                hash: None,
+                name: Some("Stale".into()),
+                structure: None,
+                direction: Direction::ToServer,
+                source: "fixture".into(),
+            }],
+        );
+        let details = ConnectionDetails {
+            host: "fixture".into(),
+            port: 1,
+            version: "NEW".into(),
+            identifier: "SHOCKWAVE".into(),
+            client_type: "SHOCKWAVE".into(),
+            packets: stale,
+        };
+        let lookup = Arc::new(|version: String| {
+            assert_eq!(version, "NEW");
+            Err(io::Error::other("fixture offline"))
+        });
+        let (mut relay, events) = Relay::start_with_options(
+            Config {
+                listen: "127.0.0.1:0".parse().unwrap(),
+                remote: remote.local_addr().unwrap().to_string(),
+            },
+            RelayOptions {
+                shockwave: true,
+                connection: Some(details),
+                packet_safety: Some(safety.clone()),
+                origins_lookup: Some(lookup),
+                ..RelayOptions::default()
+            },
+        )
+        .unwrap();
+        let client = TcpStream::connect(relay.address).unwrap();
+        let (_server, _) = remote.accept().unwrap();
+        wait_for(
+            &events,
+            |event| matches!(event, Event::Status(text) if text.contains("fixture offline")),
+        );
+        wait_for(&events, |event| matches!(event, Event::Connected(_)));
+        assert!(!safety
+            .lock()
+            .unwrap()
+            .is_safe(Some("NEW"), Direction::ToServer, 777));
+        drop(client);
+        wait_for(&events, |event| matches!(event, Event::Disconnected));
+        relay.stop();
+    }
     #[test]
     fn flash_metadata_lookup_returns_results_and_can_be_cancelled() {
         let _test_lock = LOOKUP_TEST_LOCK.lock().unwrap();
         let stop = AtomicBool::new(false);
         let closed = AtomicBool::new(false);
         assert_eq!(
-            cancellable_flash_lookup(&stop, &closed, || false, || Ok(42)).unwrap(),
+            cancellable_metadata_lookup(&stop, &closed, || false, || Ok(42)).unwrap(),
             42
         );
         assert_eq!(
-            cancellable_flash_lookup::<()>(
+            cancellable_metadata_lookup::<()>(
                 &stop,
                 &closed,
                 || false,
@@ -877,7 +1343,7 @@ mod tests {
             let stop_worker = stop.clone();
             let closed_worker = closed.clone();
             let waiter = thread::spawn(move || {
-                cancellable_flash_lookup(
+                cancellable_metadata_lookup(
                     &stop_worker,
                     &closed_worker,
                     || false,

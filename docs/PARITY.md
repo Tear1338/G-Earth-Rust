@@ -103,3 +103,5 @@ A local HTTPS race fixture combines cancellation, extension-session replacement 
 Origins discovery now prefers the latest Sulek release over a supplied version, like beta-29, and falls back to the supplied version if discovery fails. Rust also validates release strings; unsafe values trigger fallback. Tests use controlled responses; actual Origins clients and the production service remain unverified.
 
 A local HTTPS fixture verifies Origins latest-release discovery, 503 fallback, metadata paths and cache persistence. Empty metadata now preserves the requested connection version, following Java PacketInfoManagerRemote. Actual Origins clients and the live service remain unverified.
+
+The Origins relay now loads missing metadata before starting extensions, including without an extension host. Matching preloaded data is kept, mismatched data discarded, and the API supports offline lookup bypass. Controlled tests cover success, failure, extension initialization, stop and visible peer EOF; in-flight HTTP workers can continue and unread data can hide EOF. Full encrypted relay and real clients remain unverified.

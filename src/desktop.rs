@@ -4182,6 +4182,7 @@ impl Desktop {
                 None
             },
             shockwave: self.origins,
+            disable_origins_metadata: false,
             extensions: self.extension_host.clone(),
             connection: Some(connection),
             socks: if !self.socks_enabled {
