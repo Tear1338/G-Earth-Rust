@@ -904,6 +904,22 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_inner_repeat_" + i, sample);
         }
+        String[] optionalAtomPatterns = {"(a?)*", "(a??)*", "([ab]?)+", "(a?b?)*", "x(a?b?){2,3}c", "((a)?b?)*"};
+        char[] optionalAtomAlphabet = {'a', 'b', 'c', 'x', 'é', ' ', '\n', '\r', '\u0085'};
+        for (int i = 0; i < 180; i++) {
+            String pattern = optionalAtomPatterns[i % optionalAtomPatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(" ab aa bb xabc ");
+            for (int j = 0; j < 16; j++) value.append(optionalAtomAlphabet[(i * 7 + j * 3) % optionalAtomAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, "$1/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_optional_atom_repeat_" + i, sample);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);

@@ -877,7 +877,7 @@ mod regex_budget_tests {
         let program = compile_nested_repeat(
             1,
             (0, 1, i32::MAX as usize, None, true),
-            &[(0, 1, true, 1)],
+            &[(0, 1, true, Some(1))],
             0,
             &[None],
         );
@@ -892,7 +892,7 @@ mod regex_budget_tests {
         let program = compile_nested_repeat(
             2,
             (0, 2, 0, None, true),
-            &[(0, 1, true, 1), (1, 2, true, 2)],
+            &[(0, 1, true, Some(1)), (1, 2, true, Some(2))],
             0,
             &[None, None],
         );
@@ -906,6 +906,24 @@ mod regex_budget_tests {
     }
 
     #[test]
+    fn repeated_optional_atom_retains_prior_nested_capture() {
+        let atoms = [FixedRegexAtom::Literal(b'a'), FixedRegexAtom::Literal(b'b')];
+        let program = compile_nested_repeat(
+            2,
+            (0, 2, 0, None, true),
+            &[(0, 1, true, Some(1)), (1, 2, true, None)],
+            0,
+            &[None, None],
+        );
+        let mut comparisons = 0;
+        let (end, captures) = match_nested_repeat(b"abb", 0, &atoms, &program, 2, &mut comparisons)
+            .unwrap()
+            .unwrap();
+        assert_eq!(end, 3);
+        assert_eq!(captures, ["", "a"]);
+    }
+
+    #[test]
     fn nested_repeat_retains_multiple_independent_captures() {
         let atoms = [
             FixedRegexAtom::Literal(b'a'),
@@ -915,7 +933,7 @@ mod regex_budget_tests {
         let program = compile_nested_repeat(
             3,
             (0, 3, 0, None, true),
-            &[(0, 1, true, 1), (1, 2, true, 2)],
+            &[(0, 1, true, Some(1)), (1, 2, true, Some(2))],
             0,
             &[None, None, None],
         );
@@ -934,7 +952,7 @@ mod regex_budget_tests {
         let program = compile_nested_repeat(
             2,
             (0, 2, 0, None, true),
-            &[(0, 1, true, 1)],
+            &[(0, 1, true, Some(1))],
             0,
             &[None, None],
         );
@@ -990,7 +1008,7 @@ enum NestedInstruction {
 fn compile_nested_repeat(
     atoms: usize,
     outer: (usize, usize, usize, Option<usize>, bool),
-    inners: &[(usize, usize, bool, usize)],
+    inners: &[(usize, usize, bool, Option<usize>)],
     outer_group: usize,
     repeated: &[Option<(usize, Option<usize>, bool)>],
 ) -> Vec<NestedInstruction> {
@@ -1020,11 +1038,15 @@ fn compile_nested_repeat(
         let inner_split = program.len();
         program.push(NestedInstruction::Split(0, 0));
         let inner_body = program.len();
-        program.push(NestedInstruction::Start(inner_group));
+        if let Some(group) = inner_group {
+            program.push(NestedInstruction::Start(group));
+        }
         for atom in inner_start..inner_end {
             program.push(instruction(atom));
         }
-        program.push(NestedInstruction::End(inner_group));
+        if let Some(group) = inner_group {
+            program.push(NestedInstruction::End(group));
+        }
         let after_inner = program.len();
         program[inner_split] = if inner_greedy {
             NestedInstruction::Split(inner_body, after_inner)
@@ -2635,7 +2657,11 @@ impl Packet {
                 return Err(error("unsupported repeated capture structure"));
             }
             if !optional.is_empty() || !repeated.is_empty() {
-                if owner != 0 || optional.len() + 1 != groups.len() {
+                let optional_capture_count = optional_group_owners
+                    .iter()
+                    .filter(|group| group.is_some())
+                    .count();
+                if owner != 0 || optional_capture_count + 1 != groups.len() {
                     return Err(error("unsupported nested repeated capture"));
                 }
                 let mut inner_specs = Vec::new();
@@ -2643,18 +2669,21 @@ impl Packet {
                 for (&(inner_start, inner_end, inner_greedy), &group) in
                     optional.iter().zip(&optional_group_owners)
                 {
-                    let group =
-                        group.ok_or_else(|| error("nested optional atom is not supported"))?;
-                    if group == owner
-                        || seen[group]
-                        || parents[group] != Some(owner)
-                        || (inner_start, inner_end) != ranges[group]
-                        || inner_start < start
-                        || inner_end > end
-                    {
+                    if inner_start < start || inner_end > end {
                         return Err(error("unsupported nested repeated capture"));
                     }
-                    seen[group] = true;
+                    if let Some(group) = group {
+                        if group == owner
+                            || seen[group]
+                            || parents[group] != Some(owner)
+                            || (inner_start, inner_end) != ranges[group]
+                        {
+                            return Err(error("unsupported nested repeated capture"));
+                        }
+                        seen[group] = true;
+                    } else if inner_end - inner_start != 1 {
+                        return Err(error("unsupported nested optional atom"));
+                    }
                     inner_specs.push((inner_start, inner_end, inner_greedy, group));
                 }
                 inner_specs.sort_by_key(|spec| spec.0);
