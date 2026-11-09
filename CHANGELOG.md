@@ -69,6 +69,8 @@
 
 ## Unreleased
 
+- Support bounded nested optional Java regex quantifiers with capture restoration.
+
 - Support bounded non-overlapping optional Java regex capture groups.
 
 - Support bounded iterative backtracking for multiple Java regex optional atoms.

@@ -498,65 +498,122 @@ fn parse_character_class(
     Ok(class)
 }
 
+enum RegexInstruction {
+    Atom(usize),
+    Split {
+        start: usize,
+        end: usize,
+        target: usize,
+        greedy: bool,
+    },
+}
+
+fn compile_optional_program(
+    atom_count: usize,
+    optional: &[(usize, usize, bool)],
+) -> Vec<RegexInstruction> {
+    let mut starts = vec![Vec::new(); atom_count];
+    let mut ends = vec![Vec::new(); atom_count + 1];
+    for (index, &(start, end, _)) in optional.iter().enumerate() {
+        starts[start].push(index);
+        ends[end].push(index);
+    }
+    let mut program = Vec::with_capacity(atom_count + optional.len());
+    let mut split_locations = vec![0; optional.len()];
+    for atom in 0..atom_count {
+        starts[atom].sort_by_key(|&index| {
+            (
+                std::cmp::Reverse(optional[index].1),
+                std::cmp::Reverse(index),
+            )
+        });
+        for &index in &starts[atom] {
+            let (start, end, greedy) = optional[index];
+            split_locations[index] = program.len();
+            program.push(RegexInstruction::Split {
+                start,
+                end,
+                target: 0,
+                greedy,
+            });
+        }
+        program.push(RegexInstruction::Atom(atom));
+        let target = program.len();
+        for &index in &ends[atom + 1] {
+            if let RegexInstruction::Split { target: jump, .. } =
+                &mut program[split_locations[index]]
+            {
+                *jump = target;
+            }
+        }
+    }
+    program
+}
+
 fn match_fixed_at(
     input: &[u8],
     offset: usize,
     atoms: &[FixedRegexAtom],
-    optional: &[Option<(usize, bool)>],
+    program: &[RegexInstruction],
     comparisons: &mut usize,
 ) -> Result<Option<Vec<usize>>> {
-    let mut positions = vec![offset];
-    let mut choices: Vec<u8> = Vec::new();
-    let mut index = 0;
-    loop {
-        if index == atoms.len() {
+    // Each frame stores program counter, input position and next branch.
+    let mut frames = vec![(0usize, offset, 0u8)];
+    let mut positions = vec![offset; atoms.len() + 1];
+    while let Some((pc, position, choice)) = frames.last_mut() {
+        if *pc == program.len() {
             return Ok(Some(positions));
         }
-        if choices.len() == index {
-            choices.push(0);
-        }
-        let max_choices = if optional[index].is_some() { 2 } else { 1 };
-        if choices[index] == max_choices {
-            choices.pop();
-            positions.pop();
-            if index == 0 {
-                return Ok(None);
-            }
-            index -= 1;
+        let max_choices = if matches!(program[*pc], RegexInstruction::Split { .. }) {
+            2
+        } else {
+            1
+        };
+        if *choice == max_choices {
+            frames.pop();
             continue;
         }
         *comparisons = comparisons
             .checked_add(1)
             .filter(|n| *n <= MAX_FRAME * 4)
             .ok_or_else(|| error("regex comparison limit exceeded"))?;
-        let choice = choices[index];
-        choices[index] += 1;
-        let skip = optional[index].is_some_and(|(_, greedy)| (choice == 0) != greedy);
-        let position = positions[index];
-        if skip {
-            let end = optional[index].unwrap().0;
-            for skipped in index..end {
-                positions.push(position);
-                if skipped != index {
-                    choices.push(1);
+        let branch = *choice;
+        *choice += 1;
+        let pc = *pc;
+        let position = *position;
+        match &program[pc] {
+            RegexInstruction::Split {
+                start,
+                end,
+                target,
+                greedy,
+            } => {
+                positions[*start] = position;
+                if (branch == 0) != *greedy {
+                    positions[start + 1..=*end].fill(position);
+                    frames.push((*target, position, 0));
+                } else {
+                    frames.push((pc + 1, position, 0));
                 }
             }
-            index = end;
-            continue;
-        }
-        let Some(&byte) = input.get(position) else {
-            continue;
-        };
-        let accepted = match &atoms[index] {
-            FixedRegexAtom::Literal(expected) => *expected == byte,
-            FixedRegexAtom::Dot => !matches!(byte, b'\n' | b'\r' | 0x85),
-            FixedRegexAtom::Class(class) => class[usize::from(byte)],
-        };
-        if accepted {
-            positions.push(position + 1);
-            index += 1;
+            RegexInstruction::Atom(index) => {
+                let Some(&byte) = input.get(position) else {
+                    continue;
+                };
+                let accepted = match &atoms[*index] {
+                    FixedRegexAtom::Literal(expected) => *expected == byte,
+                    FixedRegexAtom::Dot => !matches!(byte, b'\n' | b'\r' | 0x85),
+                    FixedRegexAtom::Class(class) => class[usize::from(byte)],
+                };
+                if accepted {
+                    positions[*index] = position;
+                    positions[*index + 1] = position + 1;
+                    frames.push((pc + 1, position + 1, 0));
+                }
+            }
         }
     }
+    Ok(None)
 }
 
 fn replace_fixed_pattern(
@@ -566,14 +623,14 @@ fn replace_fixed_pattern(
     names: &[Option<String>],
     replacement: &str,
     comparisons: &mut usize,
-    optional: &[Option<(usize, bool)>],
+    program: &[RegexInstruction],
 ) -> Result<String> {
     let input = latin1_encode(text)?;
     let mut output = Vec::new();
     let mut copied = 0;
     let mut offset = 0;
     while offset <= input.len() {
-        let positions = match_fixed_at(&input, offset, atoms, optional, comparisons)?;
+        let positions = match_fixed_at(&input, offset, atoms, program, comparisons)?;
         if let Some(positions) = positions {
             let end = *positions.last().unwrap();
             let groups = ranges
@@ -619,14 +676,8 @@ mod regex_budget_tests {
     fn optional_backtracking_respects_shared_comparison_budget() {
         let atoms = [FixedRegexAtom::Literal(b'a'), FixedRegexAtom::Literal(b'b')];
         let mut comparisons = MAX_FRAME * 4 - 1;
-        let error = match_fixed_at(
-            b"ac",
-            0,
-            &atoms,
-            &[Some((1, true)), Some((2, true))],
-            &mut comparisons,
-        )
-        .unwrap_err();
+        let program = compile_optional_program(2, &[(0, 1, true), (1, 2, true)]);
+        let error = match_fixed_at(b"ac", 0, &atoms, &program, &mut comparisons).unwrap_err();
         assert!(error.0.contains("comparison limit"));
     }
 }
@@ -1865,15 +1916,7 @@ impl Packet {
             return Err(error("invalid capture pattern"));
         }
         let needle = latin1_encode(&literal)?;
-        let mut optional_atoms = vec![None; atoms.len()];
-        let mut occupied = vec![false; atoms.len()];
-        for (start, end, greedy) in optional {
-            if occupied[start..end].iter().any(|value| *value) {
-                return Err(error("overlapping optional quantifiers are not supported"));
-            }
-            occupied[start..end].fill(true);
-            optional_atoms[start] = Some((end, greedy));
-        }
+        let program = compile_optional_program(atoms.len(), &optional);
         let mut candidate = self.clone();
         let mut offset = candidate.bytes.len() as isize - 2 - pattern_bytes.len() as isize;
         let mut max = candidate.bytes.len();
@@ -1901,7 +1944,7 @@ impl Packet {
                                 &names,
                                 replacement,
                                 &mut comparisons,
-                                &optional_atoms,
+                                &program,
                             )?
                         } else if !text.contains(&literal) {
                             text

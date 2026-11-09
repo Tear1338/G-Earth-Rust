@@ -517,12 +517,10 @@ fn java_optional_regex_quantifier_is_bounded_and_rejects_unsupported_forms() {
     let mut packet = Packet::new(9);
     packet.put_string("(a?) a").unwrap();
     let before = packet.clone();
-    for pattern in ["((a?)b)?", "(a?+)"] {
-        assert!(packet
-            .replace_substrings_java_groups(pattern, "x", None)
-            .is_err());
-        assert_eq!(packet, before);
-    }
+    assert!(packet
+        .replace_substrings_java_groups("(a?+)", "x", None)
+        .is_err());
+    assert_eq!(packet, before);
     let mut large = Packet::new(9);
     large
         .put_string(&format!("(a?){}", "a".repeat(40_000)))
