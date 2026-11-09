@@ -664,6 +664,28 @@ fn mutations_match_original_java_packets_and_cursor() {
             }
         }
     }
+    let nested_groups = [
+        ("(a\\.b) a.b", "(a\\.b)", "<$1>", Some(1)),
+        ("((ab)c) abc", "((ab)c)", "$1/$2/$0", None),
+        ("a()b ab", "a()b", "<$1>", Some(1)),
+        ("(a()) a", "(a())", "$1/$2", Some(1)),
+        ("a(\\()b a(b", "a(\\()b", "[$1]", Some(1)),
+        ("((ab)c)", "((ab)c)", "$3", Some(1)),
+    ];
+    for (i, (value, pattern, replacement, limit)) in nested_groups.iter().enumerate() {
+        let mut packet = Packet::new(9);
+        packet.put_string(value).unwrap();
+        packet.set_cursor(7).unwrap();
+        let before = packet.clone();
+        let key = format!("substring_nested_{i}");
+        match packet.replace_substrings_java_groups(pattern, replacement, *limit) {
+            Ok(_) => check(&key, &packet),
+            Err(_) => {
+                assert_eq!(expected[key.as_str()], "error");
+                assert_eq!(packet, before);
+            }
+        }
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

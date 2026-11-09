@@ -69,6 +69,8 @@
 
 ## Unreleased
 
+- Support nested and empty capture groups and escaped metacharacters in nonempty fixed-pattern Java substring matches.
+
 - Extend bounded Java substring replacement to multiple literal groups, including no-match replacement-validation timing.
 
 - Add bounded substring replacement for a single literal capture group with Java-compatible replacement references, checked against the beta-29 API.

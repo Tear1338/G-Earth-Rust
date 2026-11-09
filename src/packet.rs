@@ -1385,8 +1385,9 @@ impl Packet {
         self.replace_substrings_java_groups(pattern, replacement, limit)
     }
 
-    /// Java replacement for literal patterns containing nonempty literal capture
-    /// groups. General regex syntax, nested groups and empty groups are rejected.
+    /// Java replacement for fixed literal patterns with capture groups, including
+    /// nested and empty groups and escaped regex metacharacters. Patterns that
+    /// can match an empty string and other regex constructs are rejected.
     pub fn replace_substrings_java_groups(
         &mut self,
         pattern: &str,
@@ -1402,32 +1403,42 @@ impl Packet {
         }
         let pattern_bytes = latin1_encode(pattern)?;
         let mut literal = String::new();
-        let mut groups = Vec::new();
-        let mut current: Option<String> = None;
-        for c in pattern.chars() {
+        let mut groups: Vec<String> = Vec::new();
+        let mut open = Vec::new();
+        let mut chars = pattern.chars();
+        while let Some(mut c) = chars.next() {
             match c {
-                '(' if current.is_none() => current = Some(String::new()),
-                ')' if current.is_some() => {
-                    let group = current.take().unwrap();
-                    if group.is_empty() || groups.len() == 99 {
-                        return Err(error("unsupported capture group"));
+                '(' => {
+                    if groups.len() == 99 {
+                        return Err(error("too many capture groups"));
                     }
-                    groups.push(group);
+                    open.push(groups.len());
+                    groups.push(String::new());
+                    continue;
                 }
-                '(' | ')' | '.' | '^' | '$' | '|' | '?' | '*' | '+' | '[' | ']' | '{' | '}'
-                | '\\' => {
+                ')' => {
+                    open.pop()
+                        .ok_or_else(|| error("unbalanced capture group"))?;
+                    continue;
+                }
+                '\\' => {
+                    c = chars
+                        .next()
+                        .filter(|c| ".^$|?*+()[]{}\\".contains(*c))
+                        .ok_or_else(|| error("unsupported regex escape"))?;
+                }
+                '.' | '^' | '$' | '|' | '?' | '*' | '+' | '[' | ']' | '{' | '}' => {
                     return Err(error("unsupported regex construct"));
                 }
-                _ => {
-                    literal.push(c);
-                    if let Some(group) = &mut current {
-                        group.push(c);
-                    }
-                }
+                _ => {}
+            }
+            literal.push(c);
+            for &index in &open {
+                groups[index].push(c);
             }
         }
-        if current.is_some() || groups.is_empty() {
-            return Err(error("invalid capture pattern"));
+        if !open.is_empty() || groups.is_empty() || literal.is_empty() {
+            return Err(error("invalid or empty-matching capture pattern"));
         }
         let needle = latin1_encode(&literal)?;
         let mut candidate = self.clone();

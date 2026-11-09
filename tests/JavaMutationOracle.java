@@ -323,6 +323,28 @@ public class JavaMutationOracle {
             if (failed) System.out.println("substring_multi_" + i + "=error");
             else emit("substring_multi_" + i, sample);
         }
+        String[][] nestedGroups = {
+            {"(a\\.b) a.b", "(a\\.b)", "<$1>", "1"},
+            {"((ab)c) abc", "((ab)c)", "$1/$2/$0", "-1"},
+            {"a()b ab", "a()b", "<$1>", "1"},
+            {"(a()) a", "(a())", "$1/$2", "1"},
+            {"a(\\()b a(b", "a(\\()b", "[$1]", "1"},
+            {"((ab)c)", "((ab)c)", "$3", "1"},
+        };
+        for (int i = 0; i < nestedGroups.length; i++) {
+            HPacket sample = new HPacket(9);
+            sample.appendString(nestedGroups[i][0]);
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            boolean failed = false;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(nestedGroups[i][1], nestedGroups[i][2], Integer.parseInt(nestedGroups[i][3]));
+            } catch (RuntimeException expected) { failed = true; }
+            finally { System.setOut(original); }
+            if (failed) System.out.println("substring_nested_" + i + "=error");
+            else emit("substring_nested_" + i, sample);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);
