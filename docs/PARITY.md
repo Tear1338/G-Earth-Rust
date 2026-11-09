@@ -75,3 +75,5 @@ EVA UTF-16BE short and long strings now have typed append, read and offset-read 
 EVA string helpers also support UTF-16LE and BOM-sensitive UTF-16; an empty string in BOM mode has no BOM, and both byte orders are recognized on read. Selected vectors and 10,000 deterministic byte strings for each new mode match Java. This remains finite coverage; unpaired Java string inputs and real extensions remain unverified.
 
 Java strings containing unpaired surrogates can now be supplied as UTF-16 units and encoded into EVA short/long fields or short replacements in Latin-1, UTF-8, UTF-16BE/LE or BOM-sensitive UTF-16. Selected cases and 4,096 deterministic unit strings match Java across the five encoders; real extensions and arbitrary malformed inputs remain unverified. Rust continues to reject oversized short fields that Java encodes with a wrapped length.
+
+Selected Java UTF-16 replacement packets containing unpaired surrogates and long fields match for BE, LE and BOM-sensitive modes. Short-field overflow remains deliberately rejected where Java wraps the prefix. These are finite comparisons, not live extension validation.

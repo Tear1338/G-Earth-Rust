@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: inspect CI for UTF-16 variants and Java code-unit encoding, then compare UTF-16 replacement and long-field boundaries against Java. Full Java regex and live extension validation remain open.
+Next: inspect CI for UTF-16 code-unit encoding and boundaries, then investigate stale Flash metadata across detected revisions and add mismatch/reconnect tests. Full Java regex and live extension validation remain open.

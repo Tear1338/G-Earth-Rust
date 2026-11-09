@@ -170,6 +170,23 @@ public class JavaMutationOracle {
         HPacket utf8Multibyte = new HPacket(25);
         utf8Multibyte.appendString("€".repeat(21845), StandardCharsets.UTF_8);
         emit("utf8_limit_multibyte", utf8Multibyte);
+        java.nio.charset.Charset[] utf16Charsets = {StandardCharsets.UTF_16BE, StandardCharsets.UTF_16LE, StandardCharsets.UTF_16};
+        String invalidUnits = new String(new char[]{'A', '\ud800', 'B', '\udc00', '\ud800', '\udc00'});
+        for (int i = 0; i < utf16Charsets.length; i++) {
+            HPacket replacement = new HPacket(26);
+            replacement.appendString("cat", utf16Charsets[i]).appendInt(42);
+            replacement.setReadIndex(7);
+            replacement.replaceString(6, invalidUnits, utf16Charsets[i]);
+            emit("utf16_units_replace_" + i, replacement);
+            HPacket longPacket = new HPacket(26);
+            longPacket.appendLongString("a".repeat(32768), utf16Charsets[i]);
+            emit("utf16_units_long_" + i, longPacket);
+            for (int length : new int[]{32766, 32767, 32768}) {
+                HPacket shortPacket = new HPacket(26);
+                shortPacket.appendString("a".repeat(length), utf16Charsets[i]);
+                emit("utf16_short_" + i + "_" + length, shortPacket);
+            }
+        }
         HPacket fixed = new HPacket(1);
         fixed.appendInt(123).appendBoolean(false).appendShort((short) 7).appendLong(8).appendFloat(1.5f).appendDouble(2.5);
         fixed.setReadIndex(10);

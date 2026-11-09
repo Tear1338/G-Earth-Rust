@@ -373,6 +373,56 @@ fn mutations_match_original_java_packets_and_cursor() {
     multi.put_utf8(&"€".repeat(21845)).unwrap();
     check("utf8_limit_multibyte", &multi);
     assert!(Packet::new(25).put_utf8(&"€".repeat(21846)).is_err());
+    let units = [b'A' as u16, 0xd800, b'B' as u16, 0xdc00, 0xd800, 0xdc00];
+    for (i, encoding) in [
+        Utf16Encoding::BigEndian,
+        Utf16Encoding::LittleEndian,
+        Utf16Encoding::WithBom,
+    ]
+    .iter()
+    .enumerate()
+    {
+        let mut replacement = Packet::new(26);
+        replacement
+            .put_utf16("cat", *encoding)
+            .unwrap()
+            .put_i32(42)
+            .unwrap();
+        replacement.set_cursor(7).unwrap();
+        replacement
+            .replace_java_units(6, &units, JavaStringEncoding::Utf16(*encoding))
+            .unwrap();
+        check(&format!("utf16_units_replace_{i}"), &replacement);
+        let mut long = Packet::new(26);
+        long.put_java_units_long(
+            &vec![b'a' as u16; 32768],
+            JavaStringEncoding::Utf16(*encoding),
+        )
+        .unwrap();
+        check(&format!("utf16_units_long_{i}"), &long);
+        for length in [32766, 32767, 32768] {
+            let mut short = Packet::new(26);
+            let input = vec![b'a' as u16; length];
+            let java_key = format!("utf16_short_{i}_{length}");
+            if length * 2 + usize::from(*encoding == Utf16Encoding::WithBom) * 2 <= 65535 {
+                short
+                    .put_java_units(&input, JavaStringEncoding::Utf16(*encoding))
+                    .unwrap();
+                check(&java_key, &short);
+            } else {
+                assert!(short
+                    .put_java_units(&input, JavaStringEncoding::Utf16(*encoding))
+                    .is_err());
+                let java =
+                    expression::parse_hex(expected[java_key.as_str()].split_once(',').unwrap().0)
+                        .unwrap();
+                assert_eq!(
+                    u16::from_be_bytes([java[6], java[7]]) as usize,
+                    (java.len() - 8) % 65536
+                );
+            }
+        }
+    }
     let mut fixed = Packet::new(1);
     fixed
         .put_i32(123)

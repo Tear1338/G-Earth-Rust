@@ -98,6 +98,9 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Added EVA short/long append and short replacement from Java UTF-16 code units, including unpaired surrogates, for Latin-1, UTF-8, UTF-16BE/LE and BOM-sensitive UTF-16. `PacketField::StringUnits` supports the same input. Selected malformed sequences and 4,096 deterministic unit strings match Java across five encodings; UTF-8 65,535-byte and multibyte boundaries also match. Java wraps a 65,536-byte short-field prefix; Rust rejects it. Five UTF-16, 23 UTF-8/mutation tests, the Java oracle, desktop/web Clippy and debug build pass locally. Real extensions, arbitrary malformed sequences and WEDGIE remain unverified.
 - GitHub Actions run 42542016357 passed all eight validation jobs for UTF-16BE helpers.
 
+- UTF-16BE, UTF-16LE and BOM-sensitive UTF-16 replacement with malformed Java surrogate input and long fields now match selected Java packets byte-for-byte. Short-field boundaries 32,766–32,768 code units also match when representable; Rust rejects overflow cases where Java wraps the length. The expanded Java oracle and desktop/web Clippy pass locally. Real extensions and arbitrary malformed inputs remain unverified.
+- GitHub Actions run 42542315373 passed all eight validation jobs for UTF-16 variants.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -117,4 +120,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect CI for UTF-16 variants and Java code-unit encoding. Compare UTF-16 replacement and long-field boundaries against Java for all three byte-order modes, including malformed surrogate input and length overflow. Real extensions, full Java regex replacement and visual logger interaction remain open.
+Inspect CI for Java code-unit encoding and UTF-16 boundaries. Investigate whether preloaded packet metadata belongs to the detected Flash revision before registering IDs as safe or sending metadata to extensions; add a controlled mismatch/reconnect test and fix stale metadata handling. Real extensions, full Java regex replacement and visual logger interaction remain open.
