@@ -1,4 +1,5 @@
 import time
+import threading
 
 deadline = time.monotonic() + 10
 while ext.connection_info is None and time.monotonic() < deadline:
@@ -6,6 +7,8 @@ while ext.connection_info is None and time.monotonic() < deadline:
 assert ext.connection_info is not None
 assert not is_closed()
 seen = []
+release = threading.Event()
+ext.on_event("double_click", release.set)
 
 
 def modify(message):
@@ -25,9 +28,7 @@ while len(seen) < 3 and time.monotonic() < deadline:
     time.sleep(0.01)
 assert seen == [5, 13, 7], seen
 send_to_server(HPacket(93, len(seen)))
-# Keep the kernel and extension alive until the Rust host has received the
-# final injection and acknowledged it through the actual interception path.
-deadline = time.monotonic() + 10
-while len(seen) < 4 and time.monotonic() < deadline:
-    time.sleep(0.01)
+# Rust sends this event only after receiving the interception response. Merely
+# observing the callback's list update can race the response IPC write.
+assert release.wait(10), "host did not confirm receipt of interception response"
 assert seen == [5, 13, 7, 99], seen

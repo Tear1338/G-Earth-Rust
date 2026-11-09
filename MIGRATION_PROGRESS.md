@@ -101,6 +101,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - UTF-16BE, UTF-16LE and BOM-sensitive UTF-16 replacement with malformed Java surrogate input and long fields now match selected Java packets byte-for-byte. Short-field boundaries 32,766–32,768 code units also match when representable; Rust rejects overflow cases where Java wraps the length. The expanded Java oracle and desktop/web Clippy pass locally. Real extensions and arbitrary malformed inputs remain unverified.
 - GitHub Actions run 42542315373 passed all eight validation jobs for UTF-16 variants.
 
+- GitHub Actions run 42542771246 failed only the Windows G-Python fixture: the kernel could exit after its callback updated shared state but before the interception response was sent. The fixture now waits for a host click sent only after Rust receives the response. Three local Windows GNU runs of the real G-Python kernel fixture and desktop/web Clippy pass; the corrected GitHub run remains to be verified.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -120,4 +122,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect CI for Java code-unit encoding and UTF-16 boundaries. Investigate whether preloaded packet metadata belongs to the detected Flash revision before registering IDs as safe or sending metadata to extensions; add a controlled mismatch/reconnect test and fix stale metadata handling. Real extensions, full Java regex replacement and visual logger interaction remain open.
+Inspect CI for the G-Python fixture race fix. Finish validating and publish the in-progress Flash metadata revision mismatch/reconnect fix; then verify its CI. Real extensions in game sessions, full Java regex replacement and visual logger interaction remain open.

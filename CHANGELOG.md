@@ -1,5 +1,6 @@
 # Changelog
 
+- Synchronize the G-Python fixture shutdown after the host receives the final interception response.
 - Compare UTF-16 replacement and long/short-field boundaries against Java.
 - Encode Java UTF-16 code units, including unpaired surrogates, in five packet charsets.
 - Add explicit UTF-16LE and BOM-sensitive UTF-16 packet string variants.

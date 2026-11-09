@@ -86,7 +86,8 @@ fn original_gpython_kernel_authenticates_and_injects_through_the_rust_host() {
     let python = Path::new("python");
     let report = gpython::probe(python).unwrap();
     assert!(report.missing().is_empty(), "{:?}", report.missing());
-    let (host, _) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+    let (host, host_events) =
+        ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
     host.start_connection(ConnectionDetails {
         host: "fixture.invalid".into(),
         port: 1234,
@@ -121,12 +122,18 @@ fn original_gpython_kernel_authenticates_and_injects_through_the_rust_host() {
     let mut injected_client = false;
     let mut finished = false;
     let mut ready = false;
+    let mut extension_id = None;
     let mut exit_deadline = None;
     loop {
         for line in console.poll() {
             assert!(!line.starts_with("GEARTH_PYTHON_ERROR"), "{line}");
         }
         ready |= console.ready;
+        for event in host_events.try_iter() {
+            if let gearth_rust::extension_host::HostEvent::Connected { id, .. } = event {
+                extension_id = Some(id);
+            }
+        }
         for (direction, mut packet) in host.take_injections() {
             match packet.header() {
                 91 => {
@@ -172,6 +179,8 @@ fn original_gpython_kernel_authenticates_and_injects_through_the_rust_host() {
                     host.intercept(&mut message).unwrap();
                     assert!(!message.blocked);
                     assert_eq!(message.packet.read_i32().unwrap(), 199);
+                    host.click(extension_id.expect("connected G-Python extension id"))
+                        .unwrap();
                     finished = true;
                 }
                 header => panic!("Unexpected Python injection {header}"),
