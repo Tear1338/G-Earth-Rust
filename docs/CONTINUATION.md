@@ -263,3 +263,5 @@ Nitro metadata now fetches through authenticated SOCKS with its revision cache a
 The City helper now uses authenticated SOCKS when configured, without following redirects, and retains the explicit session opt-in. A local SOCKS/TLS fixture checks the multipart request and bounded responses; a no-opt-in fixture checks no upload occurs. Wire the desktop settings next and review interaction behavior.
 
 Nitro desktop now exposes and validates shared SOCKS settings, applies them to the browser proxy and manual metadata lookup, and preserves City Helper opt-in. Better Design source review and comprehension checks were performed; visual interaction has not been checked. Real SOCKS/hotel sessions remain open. Compare Flash/Origins metadata fetching with SOCKS next.
+
+The Flash/Origins relay and desktop metadata button now honor SOCKS via the shared web-feature HTTPS transport. Without `web`, they explicitly fail the metadata lookup rather than bypassing SOCKS, while the relay can continue without names. Remove that minimal-build limitation next; live clients remain unverified.

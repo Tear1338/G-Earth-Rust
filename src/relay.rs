@@ -346,6 +346,7 @@ impl Relay {
                                     .set_nonblocking(true)
                                     .and_then(|()| server.set_nonblocking(true));
                                 let version = details.version.clone();
+                                let socks = session_options.socks.clone();
                                 #[cfg(test)]
                                 let lookup = session_options.origins_lookup.clone();
                                 let result = setup.and_then(|()| {
@@ -358,8 +359,8 @@ impl Relay {
                                             if let Some(lookup) = lookup {
                                                 return lookup(version);
                                             }
-                                            crate::packet_info::PacketInfoManager::fetch_sulek(
-                                                &version, true,
+                                            crate::packet_info::PacketInfoManager::fetch_sulek_for_proxy(
+                                                &version, true, socks,
                                             )
                                         },
                                     )
@@ -821,6 +822,7 @@ fn run_session(
                                     .into(),
                             ));
                             let version = details.version.clone();
+                            let socks = options.socks.clone();
                             #[cfg(test)]
                             let lookup = options.flash_lookup.clone();
                             match cancellable_metadata_lookup(
@@ -832,8 +834,8 @@ fn run_session(
                                     if let Some(lookup) = lookup {
                                         return lookup(version);
                                     }
-                                    crate::packet_info::PacketInfoManager::fetch_sulek(
-                                        &version, false,
+                                    crate::packet_info::PacketInfoManager::fetch_sulek_for_proxy(
+                                        &version, false, socks,
                                     )
                                 },
                             ) {
@@ -1043,6 +1045,65 @@ mod tests {
         relay.stop();
         assert!(started.elapsed() < Duration::from_secs(2));
         release_tx.send(()).unwrap();
+    }
+
+    #[cfg(not(feature = "web"))]
+    #[test]
+    fn origins_socks_without_web_continues_without_direct_metadata_lookup() {
+        let _test_lock = LOOKUP_TEST_LOCK.lock().unwrap();
+        let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+        let remote_address = remote.local_addr().unwrap();
+        let proxy = TcpListener::bind("127.0.0.1:0").unwrap();
+        let proxy_address = proxy.local_addr().unwrap();
+        let proxy_worker = proxy.try_clone().unwrap();
+        let (release_tx, release_rx) = mpsc::channel();
+        let server = thread::spawn(move || {
+            let (mut client, _) = proxy_worker.accept().unwrap();
+            let mut greeting = [0; 3];
+            client.read_exact(&mut greeting).unwrap();
+            assert_eq!(greeting, [5, 1, 0]);
+            client.write_all(&[5, 0]).unwrap();
+            let mut request = [0; 10];
+            client.read_exact(&mut request).unwrap();
+            assert_eq!(&request[..4], &[5, 1, 0, 1]);
+            assert_eq!(&request[8..], &remote_address.port().to_be_bytes());
+            let upstream = TcpStream::connect(remote_address).unwrap();
+            client.write_all(&[5, 0, 0, 1, 127, 0, 0, 1, 0, 1]).unwrap();
+            release_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+            drop((client, upstream));
+        });
+        let (mut relay, events) = Relay::start_with_options(
+            Config {
+                listen: "127.0.0.1:0".parse().unwrap(),
+                remote: remote_address.to_string(),
+            },
+            RelayOptions {
+                shockwave: true,
+                socks: Some(SocksConfig {
+                    proxy: proxy_address.to_string(),
+                    credentials: None,
+                }),
+                ..RelayOptions::default()
+            },
+        )
+        .unwrap();
+        let client = TcpStream::connect(relay.address).unwrap();
+        let (_remote, _) = remote.accept().unwrap();
+        wait_for(
+            &events,
+            |event| matches!(event, Event::Status(text) if text.contains("requires the web feature")),
+        );
+        wait_for(&events, |event| matches!(event, Event::Connected(_)));
+        proxy.set_nonblocking(true).unwrap();
+        assert_eq!(
+            proxy.accept().err().unwrap().kind(),
+            io::ErrorKind::WouldBlock
+        );
+        drop(client);
+        wait_for(&events, |event| matches!(event, Event::Disconnected));
+        release_tx.send(()).unwrap();
+        server.join().unwrap();
+        relay.stop();
     }
 
     #[test]

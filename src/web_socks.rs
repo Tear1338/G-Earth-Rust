@@ -173,20 +173,68 @@ async fn download_json(
 }
 
 pub(crate) fn fetch_nitro(socks: SocksConfig) -> io::Result<PacketInfoManager> {
-    let cache = crate::settings::Settings::default_path()
+    fetch_sulek(socks, NITRO_REVISION, false)
+}
+
+pub(crate) fn fetch_sulek(
+    socks: SocksConfig,
+    requested: &str,
+    origins: bool,
+) -> io::Result<PacketInfoManager> {
+    let cache_dir = crate::settings::Settings::default_path()
         .parent()
         .unwrap_or_else(|| std::path::Path::new("."))
-        .join("packet-identifiers")
-        .join(format!("FLASH-{NITRO_REVISION}.bin"));
-    fetch_nitro_using(
+        .join("packet-identifiers");
+    fetch_sulek_using(
         socks,
         default_tls()?,
         "https://api.sulek.dev",
-        &cache,
+        &cache_dir,
+        requested,
+        origins,
         SystemTime::now(),
     )
 }
 
+fn fetch_sulek_using(
+    socks: SocksConfig,
+    tls: rustls::ClientConfig,
+    base: &str,
+    cache_dir: &std::path::Path,
+    requested: &str,
+    origins: bool,
+    now: SystemTime,
+) -> io::Result<PacketInfoManager> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    let version = crate::packet_info::resolve_sulek_version(requested, origins, || {
+        runtime.block_on(download_json(
+            socks.clone(),
+            tls.clone(),
+            &format!("{base}/releases?variant=shockwave-windows"),
+        ))
+    })?;
+    let cache = cache_dir.join(format!(
+        "{}-{version}.bin",
+        if origins { "SHOCKWAVE" } else { "FLASH" }
+    ));
+    let endpoint = if origins {
+        format!("{base}/releases/shockwave-windows/{version}/messages")
+    } else {
+        format!("{base}/releases/{version}/messages")
+    };
+    let mut database = PacketInfoManager::load_or_refresh(&cache, &version, now, || {
+        let bytes = runtime.block_on(download_json(socks, tls, &endpoint))?;
+        PacketInfoManager::from_json(&version, &bytes).map_err(io::Error::other)
+    })?;
+    if origins && database.entries().is_empty() {
+        database.version = requested.to_owned();
+    }
+    Ok(database)
+}
+
+#[cfg(test)]
 fn fetch_nitro_using(
     socks: SocksConfig,
     tls: rustls::ClientConfig,
@@ -312,6 +360,9 @@ mod tests {
                     "ca/gearth-proxy-key.pem",
                     "metadata.bin",
                     "bad.bin",
+                    "SHOCKWAVE-ORIG-2.bin",
+                    "SHOCKWAVE-ORIG-OLD.bin",
+                    "FLASH-FLASH-2.bin",
                 ] {
                     let _ = std::fs::remove_file(self.0.join(file));
                 }
@@ -348,7 +399,7 @@ mod tests {
             )
             .await;
         let server = tokio::spawn(async move {
-            for index in 0..11 {
+            for index in 0..16 {
                 let (stream, _) = upstream.accept().await.unwrap();
                 let mut stream = tokio_rustls::TlsAcceptor::from(server_config.clone())
                     .accept(stream)
@@ -361,7 +412,7 @@ mod tests {
                     request.push(b[0]);
                     assert!(request.len() < 8192);
                 }
-                if index >= 8 {
+                if (8..=10).contains(&index) {
                     assert!(request.starts_with(b"POST /habbocity HTTP/1.1\r\n"));
                     let headers = String::from_utf8(request.clone())
                         .unwrap()
@@ -376,6 +427,14 @@ mod tests {
                     let mut body = vec![0; length];
                     stream.read_exact(&mut body).await.unwrap();
                     assert!(body.windows(8).any(|chunk| chunk == b"\0asm\x01\0\0\0"));
+                } else if index >= 11 {
+                    let expected = match index {
+                        11 | 14 => "/releases?variant=shockwave-windows",
+                        12 => "/releases/shockwave-windows/ORIG-2/messages",
+                        13 => "/releases/FLASH-2/messages",
+                        _ => "/releases/shockwave-windows/ORIG-OLD/messages",
+                    };
+                    assert!(request.starts_with(format!("GET {expected} HTTP/1.1\r\n").as_bytes()));
                 } else if index == 1 {
                     assert!(request.starts_with(b"GET /redirect HTTP/1.1\r\n"));
                 } else {
@@ -394,7 +453,10 @@ mod tests {
                     7 => "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{}".to_owned(),
                     8 => { let body = r#"{"status":"ok","result":{"aes_key":"000102030405060708090a0b0c0d0e0f","aes_iv":"000102030405060708090a0b","salt_key":["11","22"],"salt_iv":["33"]}}"#; format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()) },
                     9 => "HTTP/1.1 307 Temporary Redirect\r\nLocation: https://leak.invalid/\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_owned(),
-                    _ => { let body = "x".repeat(65537); format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()) },
+                    10 => { let body = "x".repeat(65537); format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()) },
+                    11 => "HTTP/1.1 200 OK\r\nContent-Length: 22\r\nConnection: close\r\n\r\n[{\"version\":\"ORIG-2\"}]".to_owned(),
+                    14 => "HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".to_owned(),
+                    _ => { let body = r#"{"messages":{"incoming":[],"outgoing":[{"id":900,"name":"KnownComposer"}]}}"#; format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()) },
                 };
                 let _ = stream.write_all(response.as_bytes()).await;
                 let _ = stream.shutdown().await;
@@ -404,7 +466,7 @@ mod tests {
         let proxy_address = proxy.local_addr().unwrap();
         let socks_server = tokio::spawn(async move {
             let mut tasks = Vec::new();
-            for _ in 0..11 {
+            for _ in 0..16 {
                 let (mut client, _) = proxy.accept().await.unwrap();
                 tasks.push(tokio::spawn(async move {
                     let mut greeting = [0; 3];
@@ -517,14 +579,32 @@ mod tests {
         }
         let (content_type, body) = crate::nitro_city::helper_multipart(wasm).unwrap();
         let result = upload_city(
-            config,
-            tls,
+            config.clone(),
+            tls.clone(),
             "http://fixture.invalid/habbocity",
             &content_type,
             body,
         )
         .await;
         assert!(result.is_err(), "non-HTTPS helper upload accepted");
+        for (requested, origins, expected) in [
+            ("OLD", true, "ORIG-2"),
+            ("FLASH-2", false, "FLASH-2"),
+            ("ORIG-OLD", true, "ORIG-OLD"),
+        ] {
+            let config = config.clone();
+            let tls = tls.clone();
+            let endpoint = endpoint.clone();
+            let cache_dir = directory.0.clone();
+            let database = tokio::task::spawn_blocking(move || {
+                fetch_sulek_using(config, tls, &endpoint, &cache_dir, requested, origins, now)
+            })
+            .await
+            .unwrap()
+            .unwrap();
+            assert_eq!(database.version, expected);
+            assert_eq!(database.entries()[0].header, 900);
+        }
         tokio::time::timeout(Duration::from_secs(5), server)
             .await
             .unwrap()

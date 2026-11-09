@@ -1446,11 +1446,25 @@ impl Desktop {
             {
                 let version = self.hotel_version.clone();
                 let origins = self.origins;
+                let socks = match configured_socks(
+                    self.socks_enabled,
+                    &self.socks_proxy,
+                    &self.socks_user,
+                    &self.socks_password,
+                ) {
+                    Ok(socks) => socks,
+                    Err(error) => {
+                        self.status = error.to_string();
+                        return;
+                    }
+                };
                 let (send, receive) = std::sync::mpsc::channel();
                 self.packet_download = Some(receive);
                 self.status = self.i18n.text("rust.connection.loading_identifiers");
                 std::thread::spawn(move || {
-                    let _ = send.send(PacketInfoManager::fetch_sulek(&version, origins));
+                    let _ = send.send(PacketInfoManager::fetch_sulek_for_proxy(
+                        &version, origins, socks,
+                    ));
                 });
             }
             ui.label(format!(

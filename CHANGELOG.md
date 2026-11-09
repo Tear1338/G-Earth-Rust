@@ -1,5 +1,7 @@
 # Changelog
 
+- Route Flash and Origins metadata lookups through configured SOCKS when the web feature is present; no-web builds fail closed for that lookup.
+
 - Enable authenticated SOCKS5 in desktop Nitro settings, including metadata and explicitly opted-in City helper requests.
 
 - Route opt-in Nitro City helper uploads through SOCKS5 without forwarding uploads across redirects.

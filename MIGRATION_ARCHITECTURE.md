@@ -27,3 +27,5 @@ When SOCKS is configured, Nitro metadata HTTPS now uses the same SOCKS transport
 With SOCKS configured, the session-opted-in Nitro City helper also uses authenticated SOCKS and bounded HTTPS; it does not follow upload redirects.
 
 The desktop Nitro panel shares validated SOCKS settings with the relay, applies them to manual Nitro metadata retrieval and the browser proxy, and retains session-only City Helper opt-in. Unity still rejects SOCKS.
+
+Flash and Origins metadata fetching uses the same SOCKS HTTPS path when `web` is enabled. A minimal no-web build refuses SOCKS metadata lookup rather than connecting directly; the relay continues without names.

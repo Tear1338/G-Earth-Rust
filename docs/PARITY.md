@@ -131,3 +131,5 @@ Nitro metadata retrieval and its cache now use SOCKS when configured. Local auth
 The opt-in City helper now uploads via configured SOCKS and rejects redirects and oversized responses; a local test confirms the upload is not attempted without opt-in. Desktop enablement and live hotel/service testing remain open.
 
 Nitro desktop SOCKS settings now feed HTTP/TLS, WebSocket, raw CONNECT, metadata and the session-opted-in City helper. Local authenticated proxy fixtures and settings tests pass; actual SOCKS servers, hotels and interactive desktop controls remain unverified. Unity SOCKS remains unavailable.
+
+Flash and Origins automatic and manual metadata requests now use configured SOCKS with the web feature. Minimal builds refuse those requests instead of falling back directly. Local authenticated fixtures cover discovery and metadata; real SOCKS/client sessions and desktop interaction remain unverified.

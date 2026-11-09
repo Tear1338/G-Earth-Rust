@@ -10,7 +10,7 @@ fn valid_sulek_version(version: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
 }
 
-fn resolve_sulek_version(
+pub(crate) fn resolve_sulek_version(
     requested: &str,
     origins: bool,
     discover: impl FnOnce() -> std::io::Result<Vec<u8>>,
@@ -171,6 +171,30 @@ impl PacketInfoManager {
             "https://api.sulek.dev",
             &cache_dir,
         )
+    }
+    /// Fetch metadata on a worker thread, honoring a configured SOCKS proxy.
+    pub fn fetch_sulek_for_proxy(
+        version: &str,
+        origins: bool,
+        socks: Option<crate::socks::SocksConfig>,
+    ) -> std::io::Result<Self> {
+        match socks {
+            None => Self::fetch_sulek(version, origins),
+            Some(socks) => {
+                #[cfg(feature = "web")]
+                {
+                    crate::web_socks::fetch_sulek(socks, version, origins)
+                }
+                #[cfg(not(feature = "web"))]
+                {
+                    let _ = socks;
+                    Err(std::io::Error::new(
+                        std::io::ErrorKind::Unsupported,
+                        "SOCKS metadata lookup requires the web feature",
+                    ))
+                }
+            }
+        }
     }
     pub(crate) fn fetch_sulek_using(
         version: &str,
@@ -421,6 +445,21 @@ pub(crate) fn download_json(agent: &ureq::Agent, url: &str) -> std::io::Result<V
 mod cache_refresh_tests {
     use super::*;
     use std::time::{Duration, SystemTime};
+
+    #[cfg(not(feature = "web"))]
+    #[test]
+    fn socks_metadata_without_web_feature_fails_without_direct_fallback() {
+        let proxy = crate::socks::SocksConfig {
+            proxy: "127.0.0.1:0".into(),
+            credentials: None,
+        };
+        for origins in [false, true] {
+            let error =
+                PacketInfoManager::fetch_sulek_for_proxy("TEST", origins, Some(proxy.clone()))
+                    .unwrap_err();
+            assert_eq!(error.kind(), std::io::ErrorKind::Unsupported);
+        }
+    }
 
     #[test]
     fn origins_discovery_uses_latest_or_falls_back_to_requested_version() {
