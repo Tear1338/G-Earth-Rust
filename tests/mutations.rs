@@ -334,6 +334,45 @@ fn java_literal_substring_templates_handle_group_zero_and_escapes() {
 }
 
 #[test]
+fn java_literal_capture_group_requires_raw_pattern_and_is_transactional() {
+    let mut packet = Packet::new(9);
+    packet.put_string("cat (cat) cat").unwrap();
+    let original = packet.clone();
+    assert!(packet
+        .replace_substrings_java_group("(cat)", "$2", None)
+        .is_err());
+    assert_eq!(packet, original);
+    assert!(packet
+        .replace_substrings_java_group("(c.t)", "$1", None)
+        .is_err());
+    assert_eq!(packet, original);
+    assert_eq!(
+        packet
+            .replace_substrings_java_group("(dog)", "$2", None)
+            .unwrap(),
+        0
+    );
+    assert_eq!(packet, original);
+    assert_eq!(
+        packet
+            .replace_substrings_java_group("(cat)", "[$1]", None)
+            .unwrap(),
+        1
+    );
+    packet.reset();
+    assert_eq!(packet.read_string().unwrap(), "[cat] ([cat]) [cat]");
+    let mut large = Packet::new(9);
+    large
+        .put_string(&format!("(a){}", "a".repeat(40_000)))
+        .unwrap();
+    let before = large.clone();
+    assert!(large
+        .replace_substrings_java_group("(a)", "aaa", None)
+        .is_err());
+    assert_eq!(large, before);
+}
+
+#[test]
 fn append_typed_fields_preserves_prior_fields_on_error() {
     use gearth_rust::packet::{PacketField, PacketFormat};
     let mut packet = Packet::new(7);

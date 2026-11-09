@@ -1274,7 +1274,7 @@ impl Packet {
                 "empty or regex substring replacement is not supported",
             ));
         }
-        self.replace_substrings_literal_inner(old, new, limit)
+        self.replace_substrings_literal_inner(old, old, new, limit)
     }
 
     /// Java replacement-template handling for a nonempty literal pattern.
@@ -1295,7 +1295,7 @@ impl Packet {
         }
         // Java parses the replacement only after it finds a candidate field.
         let mut probe = self.clone();
-        if probe.replace_substrings_literal_inner(old, old, limit)? == 0 {
+        if probe.replace_substrings_literal_inner(old, old, old, limit)? == 0 {
             return Ok(0);
         }
         let mut expanded = String::new();
@@ -1322,12 +1322,68 @@ impl Packet {
                 return Err(error("short string too long"));
             }
         }
-        self.replace_substrings_literal_inner(old, &expanded, limit)
+        self.replace_substrings_literal_inner(old, old, &expanded, limit)
+    }
+
+    /// Java substring replacement for a single nonempty literal capture group,
+    /// for example `(cat)`. Other regex constructs remain unsupported.
+    pub fn replace_substrings_java_group(
+        &mut self,
+        pattern: &str,
+        replacement: &str,
+        limit: Option<usize>,
+    ) -> Result<usize> {
+        self.ensure_eva()?;
+        if limit == Some(0) {
+            return Ok(0);
+        }
+        let literal = pattern
+            .strip_prefix('(')
+            .and_then(|s| s.strip_suffix(')'))
+            .filter(|s| !s.is_empty() && !s.chars().any(|c| ".^$|?*+()[]{}\\".contains(c)))
+            .ok_or_else(|| error("only one nonempty literal capture group is supported"))?;
+        let mut probe = self.clone();
+        if probe.replace_substrings_literal_inner(pattern, literal, literal, limit)? == 0 {
+            return Ok(0);
+        }
+        let mut expanded = String::new();
+        let mut chars = replacement.chars().peekable();
+        while let Some(c) = chars.next() {
+            match c {
+                '\\' => expanded.push(
+                    chars
+                        .next()
+                        .ok_or_else(|| error("invalid replacement escape"))?,
+                ),
+                '$' => {
+                    let first = chars
+                        .next()
+                        .filter(|c| *c == '0' || *c == '1')
+                        .ok_or_else(|| error("invalid replacement group"))?;
+                    let mut group = first.to_digit(10).unwrap();
+                    while let Some(next) = chars.peek().and_then(|c| c.to_digit(10)) {
+                        let next_group = group * 10 + next;
+                        if next_group > 1 {
+                            break;
+                        }
+                        group = next_group;
+                        chars.next();
+                    }
+                    expanded.push_str(literal);
+                }
+                _ => expanded.push(c),
+            }
+            if expanded.len() > usize::from(u16::MAX) * 2 {
+                return Err(error("short string too long"));
+            }
+        }
+        self.replace_substrings_literal_inner(pattern, literal, &expanded, limit)
     }
 
     fn replace_substrings_literal_inner(
         &mut self,
         old: &str,
+        needle: &str,
         new: &str,
         limit: Option<usize>,
     ) -> Result<usize> {
@@ -1336,6 +1392,7 @@ impl Packet {
         }
         let old_bytes = latin1_encode(old)?;
         let new_bytes = latin1_encode(new)?;
+        let needle_bytes = latin1_encode(needle)?;
         let mut candidate = self.clone();
         let mut offset = candidate.bytes.len() as isize - 2 - old_bytes.len() as isize;
         let mut max = candidate.bytes.len();
@@ -1354,9 +1411,9 @@ impl Packet {
                         .ok_or_else(|| error("substring scan limit exceeded"))?;
                     let text = latin1_decode(&candidate.bytes[i + 2..end]);
                     if text.contains(old) {
-                        let occurrences = text.matches(old).count();
+                        let occurrences = text.matches(needle).count();
                         let result_len = length
-                            .checked_sub(occurrences * old_bytes.len())
+                            .checked_sub(occurrences * needle_bytes.len())
                             .and_then(|n| {
                                 occurrences
                                     .checked_mul(new_bytes.len())
@@ -1367,7 +1424,7 @@ impl Packet {
                         if candidate.bytes.len() - length + result_len > MAX_FRAME + 4 {
                             return Err(error("packet too large"));
                         }
-                        let replacement = text.replace(old, new);
+                        let replacement = text.replace(needle, new);
                         candidate.replace_string(i, &replacement)?;
                         count += 1;
                         offset -= 1 + old_bytes.len() as isize;

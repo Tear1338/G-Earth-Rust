@@ -69,6 +69,8 @@
 
 ## Unreleased
 
+- Add bounded substring replacement for a single literal capture group with Java-compatible replacement references, checked against the beta-29 API.
+
 - Route Unity asset and game WebSocket proxy traffic through configured SOCKS, expose shared desktop controls, and test local TLS and refusal behavior.
 
 - Share authenticated SOCKS HTTPS metadata transport with minimal builds, including Origins discovery and Flash metadata; verify loopback TLS and proxy refusal without direct fallback.

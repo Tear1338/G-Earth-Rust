@@ -616,6 +616,30 @@ fn mutations_match_original_java_packets_and_cursor() {
             }
         }
     }
+    let groups = [
+        ("(cat) cat", "(cat)", "[$1]", Some(1)),
+        ("(cat) cat", "(cat)", "$0/$1/$01/$10", None),
+        ("(cat) cat", "(cat)", "\\$\\\\", Some(1)),
+        ("(cat) cat", "(cat)", "$2", Some(1)),
+        ("cat cat", "(cat)", "$2", Some(1)),
+        ("(a) aaaa", "(a)", "x", None),
+        ("(é) é", "(é)", "[$1]", Some(1)),
+        ("(cat) cat", "(cat)", "$", Some(0)),
+    ];
+    for (i, (value, pattern, replacement, limit)) in groups.iter().enumerate() {
+        let mut packet = Packet::new(9);
+        packet.put_string(value).unwrap();
+        packet.set_cursor(7).unwrap();
+        let before = packet.clone();
+        let key = format!("substring_group_{i}");
+        match packet.replace_substrings_java_group(pattern, replacement, *limit) {
+            Ok(_) => check(&key, &packet),
+            Err(_) => {
+                assert_eq!(expected[key.as_str()], "error");
+                assert_eq!(packet, before);
+            }
+        }
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

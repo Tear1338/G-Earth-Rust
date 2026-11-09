@@ -271,6 +271,33 @@ public class JavaMutationOracle {
             if (failed) System.out.println("substring_template_" + i + "=error");
             else emit("substring_template_" + i, sample);
         }
+        String[][] groups = {
+            {"(cat) cat", "(cat)", "[$1]", "1"},
+            {"(cat) cat", "(cat)", "$0/$1/$01/$10", "-1"},
+            {"(cat) cat", "(cat)", "\\$\\\\", "1"},
+            {"(cat) cat", "(cat)", "$2", "1"},
+            {"cat cat", "(cat)", "$2", "1"},
+            {"(a) aaaa", "(a)", "x", "-1"},
+            {"(é) é", "(é)", "[$1]", "1"},
+            {"(cat) cat", "(cat)", "$", "0"},
+        };
+        for (int i = 0; i < groups.length; i++) {
+            HPacket sample = new HPacket(9);
+            sample.appendString(groups[i][0]);
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            boolean failed = false;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(groups[i][1], groups[i][2], Integer.parseInt(groups[i][3]));
+            } catch (RuntimeException expected) {
+                failed = true;
+            } finally {
+                System.setOut(original);
+            }
+            if (failed) System.out.println("substring_group_" + i + "=error");
+            else emit("substring_group_" + i, sample);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);
