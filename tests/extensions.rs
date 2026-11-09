@@ -264,6 +264,65 @@ fn flash_relay_identifies_fragmented_hello_and_starts_extension_session() {
 }
 
 #[test]
+fn flash_empty_revision_metadata_failure_keeps_extension_and_relay_operational() {
+    use gearth_rust::relay::{Config, Event, Relay, RelayOptions};
+    use std::net::TcpListener;
+
+    let (host, host_events) =
+        ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+    let (mut extension, _) = connect(&host, &host_events);
+    let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut connection = details();
+    connection.packets = PacketInfoManager::default();
+    let (mut relay, events) = Relay::start_with_options(
+        Config {
+            listen: "127.0.0.1:0".parse().unwrap(),
+            remote: remote.local_addr().unwrap().to_string(),
+        },
+        RelayOptions {
+            flash_process: Some(1),
+            extensions: Some(host.clone()),
+            connection: Some(connection),
+            ..RelayOptions::default()
+        },
+    )
+    .unwrap();
+    let mut client = TcpStream::connect(relay.address).unwrap();
+    let (mut server, _) = remote.accept().unwrap();
+    server
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    let mut hello = Packet::new(1);
+    hello.put_string("").unwrap().put_string("FLASH").unwrap();
+    write_frame(&mut client, &hello).unwrap();
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Ok(Event::Status(status)) = events.recv_timeout(Duration::from_millis(100)) {
+            if status.contains("Connected without packet names: enter a valid hotel version") {
+                break;
+            }
+        }
+        assert!(Instant::now() < deadline, "missing metadata failure status");
+    }
+    let mut start = read_frame(&mut extension).unwrap();
+    assert_eq!(start.header(), 5);
+    assert_eq!(start.read_string().unwrap(), "test.example");
+    assert_eq!(start.read_i32().unwrap(), 30000);
+    assert_eq!(start.read_string().unwrap(), "");
+    assert_eq!(start.read_string().unwrap(), "FLASH");
+    let mut intercepted = read_frame(&mut extension).unwrap();
+    assert_eq!(intercepted.header(), 3);
+    let message = Message::parse(&intercepted.read_long_string().unwrap()).unwrap();
+    write_frame(&mut extension, &extension::manipulated(&message).unwrap()).unwrap();
+    assert_eq!(read_frame(&mut server).unwrap().bytes(), hello.bytes());
+    drop(client);
+    assert_eq!(read_frame(&mut extension).unwrap().header(), 6);
+    relay.stop();
+    drop(extension);
+    host.stop();
+}
+
+#[test]
 fn relay_ends_extension_session_only_after_it_has_started_one() {
     use gearth_rust::relay::{Config, Event, Relay, RelayOptions};
     use std::net::TcpListener;

@@ -11,7 +11,7 @@ use std::collections::VecDeque;
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
     mpsc::{self, Receiver, SyncSender},
     Arc, Mutex,
 };
@@ -19,6 +19,70 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 const MAX_PENDING_BYTES: usize = 64 * 1024 * 1024;
+const MAX_FLASH_LOOKUPS: usize = 4;
+static ACTIVE_FLASH_LOOKUPS: AtomicUsize = AtomicUsize::new(0);
+
+// The HTTP client cannot interrupt a request already in flight. Bound detached
+// lookups and let the relay stop without waiting for their network timeout.
+fn cancellable_flash_lookup<T: Send + 'static>(
+    stop: &AtomicBool,
+    closed: &AtomicBool,
+    lookup: impl FnOnce() -> io::Result<T> + Send + 'static,
+) -> io::Result<T> {
+    if stop.load(Ordering::Acquire) || closed.load(Ordering::Acquire) {
+        return Err(io::Error::new(
+            io::ErrorKind::Interrupted,
+            "Flash lookup cancelled",
+        ));
+    }
+    let mut count = ACTIVE_FLASH_LOOKUPS.load(Ordering::Acquire);
+    loop {
+        if count >= MAX_FLASH_LOOKUPS {
+            return Err(io::Error::other(
+                "too many Flash metadata lookups still in progress",
+            ));
+        }
+        match ACTIVE_FLASH_LOOKUPS.compare_exchange_weak(
+            count,
+            count + 1,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => break,
+            Err(actual) => count = actual,
+        }
+    }
+    struct LookupSlot;
+    impl Drop for LookupSlot {
+        fn drop(&mut self) {
+            ACTIVE_FLASH_LOOKUPS.fetch_sub(1, Ordering::AcqRel);
+        }
+    }
+    let slot = LookupSlot;
+    let (tx, rx) = mpsc::sync_channel(1);
+    thread::Builder::new()
+        .name("flash-metadata".into())
+        .spawn(move || {
+            let _slot = slot;
+            let _ = tx.send(lookup());
+        })?;
+    loop {
+        if stop.load(Ordering::Acquire) || closed.load(Ordering::Acquire) {
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "Flash lookup cancelled",
+            ));
+        }
+        match rx.recv_timeout(Duration::from_millis(25)) {
+            Ok(result) => return result,
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(io::Error::other("Flash metadata lookup worker failed"))
+            }
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum Event {
     Status(String),
@@ -626,10 +690,10 @@ fn run_session(
                                 "Loading packet identifiers for the detected Flash revision..."
                                     .into(),
                             ));
-                            match crate::packet_info::PacketInfoManager::fetch_sulek(
-                                &details.version,
-                                false,
-                            ) {
+                            let version = details.version.clone();
+                            match cancellable_flash_lookup(stop, closed, move || {
+                                crate::packet_info::PacketInfoManager::fetch_sulek(&version, false)
+                            }) {
                                 Ok(database) => {
                                     let _ =
                                         events.try_send(Event::PacketIdentifiers(database.clone()));
@@ -641,7 +705,7 @@ fn run_session(
                                     )));
                                 }
                             }
-                            if stop.load(Ordering::Acquire) {
+                            if stop.load(Ordering::Acquire) || closed.load(Ordering::Acquire) {
                                 return Ok(());
                             }
                         }
@@ -732,6 +796,48 @@ mod tests {
         }
         panic!("timed out waiting for Raw-IP relay event");
     }
+    #[test]
+    fn flash_metadata_lookup_returns_results_and_can_be_cancelled() {
+        let stop = AtomicBool::new(false);
+        let closed = AtomicBool::new(false);
+        assert_eq!(
+            cancellable_flash_lookup(&stop, &closed, || Ok(42)).unwrap(),
+            42
+        );
+        assert_eq!(
+            cancellable_flash_lookup::<()>(&stop, &closed, || Err(io::Error::other("offline")))
+                .unwrap_err()
+                .to_string(),
+            "offline"
+        );
+        for cancel_stop in [true, false] {
+            let stop = Arc::new(AtomicBool::new(false));
+            let closed = Arc::new(AtomicBool::new(false));
+            let (started_tx, started_rx) = mpsc::channel();
+            let (release_tx, release_rx) = mpsc::channel();
+            let stop_worker = stop.clone();
+            let closed_worker = closed.clone();
+            let waiter = thread::spawn(move || {
+                cancellable_flash_lookup(&stop_worker, &closed_worker, move || {
+                    started_tx.send(()).unwrap();
+                    release_rx.recv().unwrap();
+                    Ok(99)
+                })
+            });
+            started_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+            let now = Instant::now();
+            if cancel_stop {
+                stop.store(true, Ordering::Release);
+            } else {
+                closed.store(true, Ordering::Release);
+            }
+            let error = waiter.join().unwrap().unwrap_err();
+            assert_eq!(error.kind(), io::ErrorKind::Interrupted);
+            assert!(now.elapsed() < Duration::from_secs(2));
+            release_tx.send(()).unwrap();
+        }
+    }
+
     #[test]
     fn orderly_eof_flushes_already_queued_injections() {
         let client_listener = TcpListener::bind("127.0.0.1:0").unwrap();

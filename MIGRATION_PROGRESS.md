@@ -57,6 +57,9 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - Java `HProxy.verifyProxy` registers metadata packet IDs as safe before traffic is observed. Rust now registers supplied metadata by revision and direction for TCP/Flash, Nitro and Unity, including empty revisions as Java does. Controlled tests cover all three transports and extension injection of a known but unseen Flash ID; 16 extension tests, 12 relay tests, 7 Nitro tests, 3 Unity tests, packet-safety tests and desktop/web Clippy pass locally. Metadata is trusted: stale or wrong user-supplied data can allow the wrong IDs. The registry remains limited to 64 revisions; live clients and extensions remain untested.
 - GitHub Actions run 42532954255 passed all eight validation jobs for the Flash identification change.
 
+- A controlled Flash relay test shows an empty revision and unavailable metadata still initialize the extension, report the lookup error, forward the hello and disconnect normally. Flash metadata lookup now runs on a bounded worker: explicit relay stop or close stops waiting, with at most four HTTP lookups still in flight; a lookup already running is not forcibly cancelled and can finish/cache later. A deterministic worker test covers result, failure and both cancellation flags; 17 extension and 12 relay tests and desktop/web Clippy pass locally. Actual stalled network calls, peer EOF during lookup and live clients remain unverified.
+- GitHub Actions run 42533401980 passed all eight validation jobs for the packet-metadata safety change.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -76,4 +79,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect CI for the packet metadata safety and Flash relay commits. Investigate Flash metadata lookup failure and cancellation when the identifier database is empty using a deterministic offline fixture; assess false identification with representative non-handshake traffic. Validate the no-byte-view logger interaction visually when a safe desktop test session is available.
+Inspect CI for cancellable Flash metadata lookup. Test explicit stop during an actual stalled lookup through the relay using a controllable local provider, then assess false Flash identification with representative non-handshake traffic. Validate the no-byte-view logger interaction visually when a safe desktop test session is available.
