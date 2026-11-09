@@ -1955,6 +1955,7 @@ impl Packet {
         let pattern_bytes = latin1_encode(pattern)?;
         let mut literal = String::new();
         let mut groups: Vec<String> = Vec::new();
+        let mut parents: Vec<Option<usize>> = Vec::new();
         let mut names: Vec<Option<String>> = Vec::new();
         let mut atoms: Vec<FixedRegexAtom> = Vec::new();
         let mut ranges: Vec<(usize, usize)> = Vec::new();
@@ -1962,6 +1963,7 @@ impl Packet {
         let mut optional = Vec::new();
         let mut repeated = Vec::new();
         let mut group_repeat = None;
+        let mut repeated_group_owner = None;
         let mut quantifiable = false;
         let mut last_closed_group = None;
         let mut open: Vec<usize> = Vec::new();
@@ -2014,6 +2016,7 @@ impl Packet {
                     };
                     quantifiable = false;
                     last_closed_group = None;
+                    parents.push(open.last().copied());
                     open.push(groups.len());
                     groups.push(String::new());
                     names.push(name);
@@ -2107,7 +2110,9 @@ impl Packet {
                     if quantifiable {
                         repeated.push((atoms.len() - 1, min, None, greedy));
                     } else {
-                        let (start, end) = ranges[last_closed_group.unwrap()];
+                        let owner = last_closed_group.unwrap();
+                        repeated_group_owner = Some(owner);
+                        let (start, end) = ranges[owner];
                         if group_repeat
                             .replace((start, end, min, None, greedy))
                             .is_some()
@@ -2137,7 +2142,9 @@ impl Packet {
                     if quantifiable {
                         repeated.push((atoms.len() - 1, min, limit, greedy));
                     } else {
-                        let (start, end) = ranges[last_closed_group.unwrap()];
+                        let owner = last_closed_group.unwrap();
+                        repeated_group_owner = Some(owner);
+                        let (start, end) = ranges[owner];
                         if group_repeat
                             .replace((start, end, min, limit, greedy))
                             .is_some()
@@ -2168,9 +2175,20 @@ impl Packet {
         }
         let needle = latin1_encode(&literal)?;
         if let Some((start, end, ..)) = group_repeat {
-            if groups.len() != 1 || start == end || !optional.is_empty() || !repeated.is_empty() {
+            let owner = repeated_group_owner.unwrap();
+            let descendants_only = (0..groups.len()).all(|group| {
+                let mut current = Some(group);
+                while let Some(index) = current {
+                    if index == owner {
+                        return true;
+                    }
+                    current = parents[index];
+                }
+                false
+            });
+            if !descendants_only || start == end || !optional.is_empty() || !repeated.is_empty() {
                 return Err(error(
-                    "repeated groups require one nonempty fixed-length capture",
+                    "repeated groups require nonempty fixed-length nested captures",
                 ));
             }
         }

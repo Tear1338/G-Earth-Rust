@@ -1194,6 +1194,38 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_simple_repeat_group_{i}"), &packet);
     }
+    assert_eq!(expected["repeated_capture_retention"], "b,a");
+    let mut unsupported_nested_repeat = Packet::new(9);
+    unsupported_nested_repeat
+        .put_string("((a)?b)* abb")
+        .unwrap();
+    let unchanged = unsupported_nested_repeat.clone();
+    assert!(unsupported_nested_repeat
+        .replace_substrings_java_groups("((a)?b)*", "$1/$2", Some(1))
+        .is_err());
+    assert_eq!(unsupported_nested_repeat, unchanged);
+    let fixed_nested_patterns = [
+        "((a)b)*",
+        "(x(?<inner>y))+",
+        "((a)(b)){1,3}",
+        "x((a)b)*c",
+        "(((ab)))+",
+    ];
+    let fixed_nested_alphabet = ['a', 'b', 'c', 'x', 'y', 'é', ' ', '\n', '\u{85}'];
+    for i in 0..150 {
+        let pattern = fixed_nested_patterns[i % fixed_nested_patterns.len()];
+        let mut value = format!("{pattern} abab xyxy xabc ");
+        for j in 0..20 {
+            value.push(fixed_nested_alphabet[(i * 7 + j * 3) % fixed_nested_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java_groups(pattern, "$1/$2/$0", Some(1))
+            .unwrap();
+        check(&format!("substring_fixed_nested_repeat_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

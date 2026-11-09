@@ -69,6 +69,8 @@
 
 ## Unreleased
 
+- Support fixed-length repeated Java regex groups containing nested captures; record Java capture-retention behavior for variable-length groups.
+
 - Support bounded repetition of one fixed-length Java regex capture group.
 
 - Support bounded greedy and reluctant Java regex `{m}`, `{m,n}` and `{m,}` atom repetitions.

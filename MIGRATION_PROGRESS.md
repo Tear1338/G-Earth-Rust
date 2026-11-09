@@ -220,6 +220,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - A single nonempty fixed-length capture group can now be repeated with Java greedy/reluctant `*`, `+` and bounded counts. Three targeted cases and 150 generated packets match the released beta-29 API, including last-iteration capture values. Tests cover rejected nested/combined quantifiers and a large field; 29 mutation tests, the work-budget test, both Clippy configurations and desktop/web build pass. Repeated nested groups and combinations with other quantifiers remain unsupported.
 
+- Fixed-length repeated Java regex groups may now contain nested captures; 150 generated packets match the released beta-29 API, with captures from the last iteration. Java also confirms `((a)?b)*` on `abb` retains inner capture `a` from the earlier iteration; Rust still rejects variable-length nested repetition transactionally. Twenty-nine mutation tests, the budget test, both Clippy configurations and desktop/web build pass locally. Windows GNU desktop/web release build succeeded at `5daab36`; Actions run 42716299176 passed all eight jobs for bounded atom counts.
+
 ## Exact next step
 
-Implement bounded state and capture restoration for repeated nested Java regex groups: use the existing beta-29 oracle cases for `((a)?b)*` and related patterns, add differential fixtures, and retain the work budget. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Implement bounded state and capture restoration for variable-length repeated nested Java regex groups: `((a)?b)*` on `abb` must retain inner capture `a` from the preceding iteration. Use the existing beta-29 oracle cases, add differential fixtures, and retain the work budget. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

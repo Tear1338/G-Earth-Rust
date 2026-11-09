@@ -785,6 +785,25 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_simple_repeat_group_" + i, sample);
         }
+        java.util.regex.Matcher retainedCapture = java.util.regex.Pattern.compile("((a)?b)*").matcher("abb");
+        if (!retainedCapture.matches()) throw new AssertionError("expected repeated-group match");
+        System.out.println("repeated_capture_retention=" + retainedCapture.group(1) + "," + retainedCapture.group(2));
+        String[] fixedNestedPatterns = {"((a)b)*", "(x(?<inner>y))+", "((a)(b)){1,3}", "x((a)b)*c", "(((ab)))+"};
+        char[] fixedNestedAlphabet = {'a', 'b', 'c', 'x', 'y', 'é', ' ', '\n', '\u0085'};
+        for (int i = 0; i < 150; i++) {
+            String pattern = fixedNestedPatterns[i % fixedNestedPatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(" abab xyxy xabc ");
+            for (int j = 0; j < 20; j++) value.append(fixedNestedAlphabet[(i * 7 + j * 3) % fixedNestedAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, "$1/$2/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_fixed_nested_repeat_" + i, sample);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);
