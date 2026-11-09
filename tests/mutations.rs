@@ -471,6 +471,27 @@ fn java_dot_group_captures_each_match_and_bounds_expansion() {
 }
 
 #[test]
+fn java_character_classes_reject_unsupported_forms_transactionally() {
+    let mut packet = Packet::new(9);
+    packet.put_string("([abc]) abc").unwrap();
+    let before = packet.clone();
+    for pattern in ["([a&&b])", "([z-a])", "([])", "([a", "([\\d])"] {
+        assert!(packet
+            .replace_substrings_java_groups(pattern, "x", None)
+            .is_err());
+        assert_eq!(packet, before);
+    }
+    assert_eq!(
+        packet
+            .replace_substrings_java_groups("([abc])", "[$1]", None)
+            .unwrap(),
+        1
+    );
+    packet.reset();
+    assert_eq!(packet.read_string().unwrap(), "([[a][b][c]]) [a][b][c]");
+}
+
+#[test]
 fn append_typed_fields_preserves_prior_fields_on_error() {
     use gearth_rust::packet::{PacketField, PacketFormat};
     let mut packet = Packet::new(7);

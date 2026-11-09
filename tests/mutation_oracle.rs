@@ -793,6 +793,47 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_dot_corpus_{i}"), &packet);
     }
+    let class_groups = [
+        ("([abc]) a b c d", "([abc])", "<$1>", Some(1)),
+        ("x([a-c])y xay xby xdy", "x([a-c])y", "$1:$0", Some(1)),
+        ("([^a]) a é\n", "([^a])", "[$1]", Some(1)),
+        ("([é-ÿ]) é ç z", "([é-ÿ])", "[$1]", Some(1)),
+        ("([\\-\\]]) - ] a", "([\\-\\]])", "<$1>", Some(1)),
+        ("([a-c]) abc", "([a-c])", "$2", Some(1)),
+        ("x([a])y xby", "x([a])y", "$9", Some(1)),
+    ];
+    for (i, (value, pattern, replacement, limit)) in class_groups.iter().enumerate() {
+        let mut packet = Packet::new(9);
+        packet.put_string(value).unwrap();
+        packet.set_cursor(7).unwrap();
+        let before = packet.clone();
+        let key = format!("substring_class_{i}");
+        match packet.replace_substrings_java_groups(pattern, replacement, *limit) {
+            Ok(_) => check(&key, &packet),
+            Err(_) => {
+                assert_eq!(expected[key.as_str()], "error");
+                assert_eq!(packet, before);
+            }
+        }
+    }
+    let class_patterns = ["([abc])", "x([a-c])y", "([^a])", "([é-ÿ])", "([\\-\\]])"];
+    let class_alphabet = [
+        'a', 'b', 'c', 'd', 'x', 'y', 'é', 'ÿ', '-', ']', '\n', '\u{85}',
+    ];
+    for i in 0..120 {
+        let pattern = class_patterns[i % class_patterns.len()];
+        let mut value = format!("{pattern} ");
+        for j in 0..28 {
+            value.push(class_alphabet[(i * 7 + j * 5) % class_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java_groups(pattern, "$1/$0", Some(1))
+            .unwrap();
+        check(&format!("substring_class_corpus_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

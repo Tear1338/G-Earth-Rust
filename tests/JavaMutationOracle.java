@@ -447,6 +447,45 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_dot_corpus_" + i, sample);
         }
+        String[][] classGroups = {
+            {"([abc]) a b c d", "([abc])", "<$1>", "1"},
+            {"x([a-c])y xay xby xdy", "x([a-c])y", "$1:$0", "1"},
+            {"([^a]) a é\n", "([^a])", "[$1]", "1"},
+            {"([é-ÿ]) é ç z", "([é-ÿ])", "[$1]", "1"},
+            {"([\\-\\]]) - ] a", "([\\-\\]])", "<$1>", "1"},
+            {"([a-c]) abc", "([a-c])", "$2", "1"},
+            {"x([a])y xby", "x([a])y", "$9", "1"},
+        };
+        for (int i = 0; i < classGroups.length; i++) {
+            HPacket sample = new HPacket(9);
+            sample.appendString(classGroups[i][0]);
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            boolean failed = false;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(classGroups[i][1], classGroups[i][2], Integer.parseInt(classGroups[i][3]));
+            } catch (RuntimeException expected) { failed = true; }
+            finally { System.setOut(original); }
+            if (failed) System.out.println("substring_class_" + i + "=error");
+            else emit("substring_class_" + i, sample);
+        }
+        String[] classPatterns = {"([abc])", "x([a-c])y", "([^a])", "([é-ÿ])", "([\\-\\]])"};
+        char[] classAlphabet = {'a', 'b', 'c', 'd', 'x', 'y', 'é', 'ÿ', '-', ']', '\n', '\u0085'};
+        for (int i = 0; i < 120; i++) {
+            String pattern = classPatterns[i % classPatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(' ');
+            for (int j = 0; j < 28; j++) value.append(classAlphabet[(i * 7 + j * 5) % classAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, "$1/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_class_corpus_" + i, sample);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);

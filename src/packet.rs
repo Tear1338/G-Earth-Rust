@@ -351,9 +351,77 @@ fn expand_literal_groups(
     Ok(expanded)
 }
 
+enum FixedRegexAtom {
+    Literal(u8),
+    Dot,
+    Class(Box<[bool; 256]>),
+}
+
+fn parse_character_class(
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+) -> Result<Box<[bool; 256]>> {
+    let negated = if chars.peek() == Some(&'^') {
+        chars.next();
+        true
+    } else {
+        false
+    };
+    let mut elements = Vec::new();
+    let mut closed = false;
+    while let Some(c) = chars.next() {
+        if c == ']' {
+            closed = true;
+            break;
+        }
+        let (c, escaped) = if c == '\\' {
+            let escaped = chars
+                .next()
+                .filter(|c| "[]^-\\.".contains(*c))
+                .ok_or_else(|| error("unsupported character class escape"))?;
+            (escaped, true)
+        } else {
+            if c == '[' || c == '&' {
+                return Err(error("unsupported character class construct"));
+            }
+            (c, false)
+        };
+        elements.push((c as u8, escaped));
+    }
+    if !closed || elements.is_empty() {
+        return Err(error("invalid character class"));
+    }
+    let mut class = Box::new([false; 256]);
+    let mut i = 0;
+    while i < elements.len() {
+        if elements[i] == (b'-', false) && i != 0 && i + 1 != elements.len() {
+            return Err(error("ambiguous character class range"));
+        }
+        if i + 2 < elements.len() && elements[i + 1] == (b'-', false) {
+            let start = elements[i].0;
+            let end = elements[i + 2].0;
+            if start > end {
+                return Err(error("invalid character class range"));
+            }
+            for byte in start..=end {
+                class[usize::from(byte)] = true;
+            }
+            i += 3;
+        } else {
+            class[usize::from(elements[i].0)] = true;
+            i += 1;
+        }
+    }
+    if negated {
+        for included in class.iter_mut() {
+            *included = !*included;
+        }
+    }
+    Ok(class)
+}
+
 fn replace_dot_pattern(
     text: &str,
-    atoms: &[Option<u8>],
+    atoms: &[FixedRegexAtom],
     ranges: &[(usize, usize)],
     names: &[Option<String>],
     replacement: &str,
@@ -371,9 +439,12 @@ fn replace_dot_pattern(
                 .filter(|n| *n <= MAX_FRAME * 4)
                 .ok_or_else(|| error("regex comparison limit exceeded"))?;
             let byte = input[offset + index];
-            if atom.is_some_and(|expected| expected != byte)
-                || (atom.is_none() && matches!(byte, b'\n' | b'\r' | 0x85))
-            {
+            let accepted = match atom {
+                FixedRegexAtom::Literal(expected) => *expected == byte,
+                FixedRegexAtom::Dot => !matches!(byte, b'\n' | b'\r' | 0x85),
+                FixedRegexAtom::Class(class) => class[usize::from(byte)],
+            };
+            if !accepted {
                 matches = false;
                 break;
             }
@@ -1480,7 +1551,8 @@ impl Packet {
 
     /// Java replacement for fixed literal patterns with capture groups, including
     /// named, nested and empty groups, escaped metacharacters, quoted literals
-    /// and the Java dot wildcard. Other regex constructs remain unsupported.
+    /// the dot wildcard and a bounded subset of character classes. Other regex
+    /// constructs remain unsupported.
     pub fn replace_substrings_java_groups(
         &mut self,
         pattern: &str,
@@ -1498,7 +1570,7 @@ impl Packet {
         let mut literal = String::new();
         let mut groups: Vec<String> = Vec::new();
         let mut names: Vec<Option<String>> = Vec::new();
-        let mut atoms: Vec<Option<u8>> = Vec::new();
+        let mut atoms: Vec<FixedRegexAtom> = Vec::new();
         let mut ranges: Vec<(usize, usize)> = Vec::new();
         let mut dynamic = false;
         let mut open: Vec<usize> = Vec::new();
@@ -1512,7 +1584,7 @@ impl Packet {
                     continue;
                 }
                 literal.push(c);
-                atoms.push(Some(c as u8));
+                atoms.push(FixedRegexAtom::Literal(c as u8));
                 for &index in &open {
                     groups[index].push(c);
                 }
@@ -1573,17 +1645,22 @@ impl Packet {
                     }
                 }
                 '.' => {
-                    atoms.push(None);
+                    atoms.push(FixedRegexAtom::Dot);
                     dynamic = true;
                     continue;
                 }
-                '^' | '$' | '|' | '?' | '*' | '+' | '[' | ']' | '{' | '}' => {
+                '[' => {
+                    atoms.push(FixedRegexAtom::Class(parse_character_class(&mut chars)?));
+                    dynamic = true;
+                    continue;
+                }
+                '^' | '$' | '|' | '?' | '*' | '+' | ']' | '{' | '}' => {
                     return Err(error("unsupported regex construct"));
                 }
                 _ => {}
             }
             literal.push(c);
-            atoms.push(Some(c as u8));
+            atoms.push(FixedRegexAtom::Literal(c as u8));
             for &index in &open {
                 groups[index].push(c);
             }
