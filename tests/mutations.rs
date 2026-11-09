@@ -587,6 +587,29 @@ fn java_bounded_regex_repetition_rejects_invalid_bounds_transactionally() {
 }
 
 #[test]
+fn java_repeated_capture_group_rejects_unsupported_nesting_transactionally() {
+    let mut packet = Packet::new(9);
+    packet.put_string("(ab)* abab").unwrap();
+    let before = packet.clone();
+    for pattern in ["((a)b)*", "(a*)*", "()*", "(ab)*(c)", "a?(ab)*"] {
+        assert!(packet
+            .replace_substrings_java_groups(pattern, "x", None)
+            .is_err());
+        assert_eq!(packet, before);
+    }
+    let mut large = Packet::new(9);
+    large
+        .put_string(&format!("(ÿÿ)*{}", "ÿÿ".repeat(20_000)))
+        .unwrap();
+    assert_eq!(
+        large
+            .replace_substrings_java_groups("(ÿÿ)*", "$1", Some(1))
+            .unwrap(),
+        1
+    );
+}
+
+#[test]
 fn append_typed_fields_preserves_prior_fields_on_error() {
     use gearth_rust::packet::{PacketField, PacketFormat};
     let mut packet = Packet::new(7);

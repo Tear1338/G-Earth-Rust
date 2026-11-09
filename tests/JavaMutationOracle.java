@@ -746,6 +746,45 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_bounded_corpus_" + i, sample);
         }
+        String[][] repeatedCaptures = {
+            {"(ab)* abab x", "(ab)*", "[$1]", "1"},
+            {"(ab)+? ababab", "(ab)+?", "[$1]", "1"},
+            {"((a)?b)* abb ab", "((a)?b)*", "$1/$2", "1"},
+            {"x((a)?b)+c xabbc", "x((a)?b)+c", "$1/$2/$0", "1"},
+            {"(a*)* aa", "(a*)*", "[$1]", "1"},
+            {"(ab){2,3} abababab", "(ab){2,3}", "<$1>", "1"},
+            {"(a?)* a", "(a?)*", "[$1]", "1"},
+        };
+        for (int i = 0; i < repeatedCaptures.length; i++) {
+            HPacket sample = new HPacket(9);
+            sample.appendString(repeatedCaptures[i][0]);
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            boolean failed = false;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(repeatedCaptures[i][1], repeatedCaptures[i][2], Integer.parseInt(repeatedCaptures[i][3]));
+            } catch (RuntimeException expected) { failed = true; }
+            finally { System.setOut(original); }
+            if (failed) System.out.println("substring_repeated_capture_" + i + "=error");
+            else emit("substring_repeated_capture_" + i, sample);
+        }
+        String[] simpleRepeatGroupPatterns = {"(ab)*", "(ab)+?", "x(ab)*ab", "x([ab]){1,3}b", "(?<v>ab)+?", "(ab){0,2}"};
+        char[] simpleRepeatGroupAlphabet = {'a', 'b', 'c', 'x', '0', 'é', ' ', '\n', '\u0085'};
+        for (int i = 0; i < 150; i++) {
+            String pattern = simpleRepeatGroupPatterns[i % simpleRepeatGroupPatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(" abab ababab xabab xab ");
+            for (int j = 0; j < 20; j++) value.append(simpleRepeatGroupAlphabet[(i * 7 + j * 3) % simpleRepeatGroupAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, "$1/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_simple_repeat_group_" + i, sample);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);

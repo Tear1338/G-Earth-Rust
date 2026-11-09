@@ -1155,6 +1155,45 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_bounded_corpus_{i}"), &packet);
     }
+    let repeated_capture_groups = [
+        (0, "(ab)* abab x", "(ab)*", "[$1]"),
+        (1, "(ab)+? ababab", "(ab)+?", "[$1]"),
+        (5, "(ab){2,3} abababab", "(ab){2,3}", "<$1>"),
+    ];
+    for (index, value, pattern, replacement) in repeated_capture_groups {
+        let mut packet = Packet::new(9);
+        packet.put_string(value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java_groups(pattern, replacement, Some(1))
+            .unwrap();
+        check(&format!("substring_repeated_capture_{index}"), &packet);
+    }
+    let simple_repeat_group_patterns = [
+        "(ab)*",
+        "(ab)+?",
+        "x(ab)*ab",
+        "x([ab]){1,3}b",
+        "(?<v>ab)+?",
+        "(ab){0,2}",
+    ];
+    let simple_repeat_group_alphabet = ['a', 'b', 'c', 'x', '0', 'é', ' ', '\n', '\u{85}'];
+    for i in 0..150 {
+        let pattern = simple_repeat_group_patterns[i % simple_repeat_group_patterns.len()];
+        let mut value = format!("{pattern} abab ababab xabab xab ");
+        for j in 0..20 {
+            value.push(
+                simple_repeat_group_alphabet[(i * 7 + j * 3) % simple_repeat_group_alphabet.len()],
+            );
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java_groups(pattern, "$1/$0", Some(1))
+            .unwrap();
+        check(&format!("substring_simple_repeat_group_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

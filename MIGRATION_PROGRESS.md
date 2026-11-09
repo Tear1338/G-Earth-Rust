@@ -218,6 +218,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Java bounded repetition `{m}`, `{m,n}` and `{m,}` on individual regex atoms now supports greedy and reluctant matching under the shared work budget. Eight targeted cases and 160 generated packets match the released beta-29 Java API, including zero-width cases and invalid bounds. Twenty-eight mutation tests, the budget test, both Clippy configurations and desktop/web build pass. Repetition of groups, possessive quantifiers and full Java regex remain open. Actions run 42715824651 passed all eight jobs for `*`/`+` atom repetition.
 
+- A single nonempty fixed-length capture group can now be repeated with Java greedy/reluctant `*`, `+` and bounded counts. Three targeted cases and 150 generated packets match the released beta-29 API, including last-iteration capture values. Tests cover rejected nested/combined quantifiers and a large field; 29 mutation tests, the work-budget test, both Clippy configurations and desktop/web build pass. Repeated nested groups and combinations with other quantifiers remain unsupported.
+
 ## Exact next step
 
-Compare Java repetition quantifiers applied to capture groups, especially last-iteration and nested capture restoration, against the released beta-29 API; design bounded iterative state restoration and differential fixtures before implementation. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Implement bounded state and capture restoration for repeated nested Java regex groups: use the existing beta-29 oracle cases for `((a)?b)*` and related patterns, add differential fixtures, and retain the work budget. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

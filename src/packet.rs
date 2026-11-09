@@ -532,10 +532,12 @@ fn repetition_bounds(
 enum RegexInstruction {
     Atom(usize),
     Repeat {
-        index: usize,
+        start: usize,
+        end: usize,
         min: usize,
         limit: Option<usize>,
         greedy: bool,
+        group: bool,
     },
     Split {
         start: usize,
@@ -549,6 +551,7 @@ fn compile_optional_program(
     atom_count: usize,
     optional: &[(usize, usize, bool)],
     repeated: &[Option<(usize, Option<usize>, bool)>],
+    group_repeat: Option<(usize, usize, usize, Option<usize>, bool)>,
 ) -> Vec<RegexInstruction> {
     let mut starts = vec![Vec::new(); atom_count];
     let mut ends = vec![Vec::new(); atom_count + 1];
@@ -559,6 +562,9 @@ fn compile_optional_program(
     let mut program = Vec::with_capacity(atom_count + optional.len());
     let mut split_locations = vec![0; optional.len()];
     for atom in 0..atom_count {
+        if group_repeat.is_some_and(|(start, end, ..)| atom > start && atom < end) {
+            continue;
+        }
         starts[atom].sort_by_key(|&index| {
             (
                 std::cmp::Reverse(optional[index].1),
@@ -575,12 +581,25 @@ fn compile_optional_program(
                 greedy,
             });
         }
-        if let Some((min, limit, greedy)) = repeated[atom] {
+        if let Some((start, end, min, limit, greedy)) =
+            group_repeat.filter(|(start, ..)| *start == atom)
+        {
             program.push(RegexInstruction::Repeat {
-                index: atom,
+                start,
+                end,
                 min,
                 limit,
                 greedy,
+                group: true,
+            });
+        } else if let Some((min, limit, greedy)) = repeated[atom] {
+            program.push(RegexInstruction::Repeat {
+                start: atom,
+                end: atom + 1,
+                min,
+                limit,
+                greedy,
+                group: false,
             });
         } else {
             program.push(RegexInstruction::Atom(atom));
@@ -613,6 +632,26 @@ fn consume_regex_budget(comparisons: &mut usize) -> Result<()> {
     Ok(())
 }
 
+fn repetition_unit_matches(
+    input: &[u8],
+    position: usize,
+    atoms: &[FixedRegexAtom],
+    start: usize,
+    end: usize,
+    comparisons: &mut usize,
+) -> Result<bool> {
+    for (offset, atom) in atoms[start..end].iter().enumerate() {
+        consume_regex_budget(comparisons)?;
+        if !input
+            .get(position + offset)
+            .is_some_and(|byte| atom_accepts(atom, *byte))
+        {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 fn match_fixed_at(
     input: &[u8],
     offset: usize,
@@ -628,21 +667,27 @@ fn match_fixed_at(
             return Ok(Some(positions));
         }
         if let RegexInstruction::Repeat {
-            index,
+            start,
+            end,
             min,
             limit,
             greedy,
+            ..
         } = &program[*pc]
         {
             if *greedy {
                 if maximum.is_none() {
                     let mut length = 0;
+                    let width = end - start;
                     while limit.is_none_or(|limit| length < limit) {
-                        let Some(&byte) = input.get(*position + length) else {
-                            break;
-                        };
-                        consume_regex_budget(comparisons)?;
-                        if !atom_accepts(&atoms[*index], byte) {
+                        if !repetition_unit_matches(
+                            input,
+                            *position + length * width,
+                            atoms,
+                            *start,
+                            *end,
+                            comparisons,
+                        )? {
                             break;
                         }
                         length += 1;
@@ -661,12 +706,16 @@ fn match_fixed_at(
                 }
                 let first = if *choice == 0 { 0 } else { length - 1 };
                 let mut matched = true;
+                let width = end - start;
                 for step in first..length {
-                    consume_regex_budget(comparisons)?;
-                    if !input
-                        .get(*position + step)
-                        .is_some_and(|byte| atom_accepts(&atoms[*index], *byte))
-                    {
+                    if !repetition_unit_matches(
+                        input,
+                        *position + step * width,
+                        atoms,
+                        *start,
+                        *end,
+                        comparisons,
+                    )? {
                         matched = false;
                         break;
                     }
@@ -719,16 +768,37 @@ fn match_fixed_at(
                 }
             }
             RegexInstruction::Repeat {
-                index, min, greedy, ..
+                start,
+                end,
+                min,
+                greedy,
+                group,
+                ..
             } => {
                 let length = if *greedy {
                     maximum.unwrap() - branch
                 } else {
                     min + branch
                 };
-                positions[*index] = position;
-                positions[*index + 1] = position + length;
-                frames.push((pc + 1, position + length, 0, None));
+                let width = end - start;
+                if *group {
+                    let group_start = if length == 0 {
+                        position
+                    } else {
+                        position + (length - 1) * width
+                    };
+                    for (offset, boundary) in positions[*start..=*end].iter_mut().enumerate() {
+                        *boundary = if length == 0 {
+                            position
+                        } else {
+                            group_start + offset
+                        };
+                    }
+                } else {
+                    positions[*start] = position;
+                    positions[*end] = position + length;
+                }
+                frames.push((pc + 1, position + length * width, 0, None));
             }
         }
     }
@@ -795,7 +865,8 @@ mod regex_budget_tests {
     fn optional_backtracking_respects_shared_comparison_budget() {
         let atoms = [FixedRegexAtom::Literal(b'a'), FixedRegexAtom::Literal(b'b')];
         let mut comparisons = MAX_FRAME * 4 - 1;
-        let program = compile_optional_program(2, &[(0, 1, true), (1, 2, true)], &[None, None]);
+        let program =
+            compile_optional_program(2, &[(0, 1, true), (1, 2, true)], &[None, None], None);
         let error = match_fixed_at(b"ac", 0, &atoms, &program, &mut comparisons).unwrap_err();
         assert!(error.0.contains("comparison limit"));
     }
@@ -1890,6 +1961,7 @@ impl Packet {
         let mut dynamic = false;
         let mut optional = Vec::new();
         let mut repeated = Vec::new();
+        let mut group_repeat = None;
         let mut quantifiable = false;
         let mut last_closed_group = None;
         let mut open: Vec<usize> = Vec::new();
@@ -2019,7 +2091,7 @@ impl Packet {
                     continue;
                 }
                 '*' | '+' => {
-                    if !quantifiable {
+                    if !quantifiable && last_closed_group.is_none() {
                         return Err(error("unsupported repetition quantifier"));
                     }
                     let min = usize::from(c == '+');
@@ -2032,14 +2104,24 @@ impl Packet {
                     if chars.peek() == Some(&'+') {
                         return Err(error("unsupported possessive quantifier"));
                     }
-                    repeated.push((atoms.len() - 1, min, None, greedy));
+                    if quantifiable {
+                        repeated.push((atoms.len() - 1, min, None, greedy));
+                    } else {
+                        let (start, end) = ranges[last_closed_group.unwrap()];
+                        if group_repeat
+                            .replace((start, end, min, None, greedy))
+                            .is_some()
+                        {
+                            return Err(error("multiple repeated groups are not supported"));
+                        }
+                    }
                     dynamic = true;
                     quantifiable = false;
                     last_closed_group = None;
                     continue;
                 }
                 '{' => {
-                    if !quantifiable {
+                    if !quantifiable && last_closed_group.is_none() {
                         return Err(error("unsupported repetition quantifier"));
                     }
                     let (min, limit) = repetition_bounds(&mut chars)?;
@@ -2052,7 +2134,17 @@ impl Packet {
                     if chars.peek() == Some(&'+') {
                         return Err(error("unsupported possessive quantifier"));
                     }
-                    repeated.push((atoms.len() - 1, min, limit, greedy));
+                    if quantifiable {
+                        repeated.push((atoms.len() - 1, min, limit, greedy));
+                    } else {
+                        let (start, end) = ranges[last_closed_group.unwrap()];
+                        if group_repeat
+                            .replace((start, end, min, limit, greedy))
+                            .is_some()
+                        {
+                            return Err(error("multiple repeated groups are not supported"));
+                        }
+                    }
                     dynamic = true;
                     quantifiable = false;
                     last_closed_group = None;
@@ -2075,11 +2167,19 @@ impl Packet {
             return Err(error("invalid capture pattern"));
         }
         let needle = latin1_encode(&literal)?;
+        if let Some((start, end, ..)) = group_repeat {
+            if groups.len() != 1 || start == end || !optional.is_empty() || !repeated.is_empty() {
+                return Err(error(
+                    "repeated groups require one nonempty fixed-length capture",
+                ));
+            }
+        }
         let mut repeated_atoms = vec![None; atoms.len()];
         for (index, min, limit, greedy) in repeated {
             repeated_atoms[index] = Some((min, limit, greedy));
         }
-        let program = compile_optional_program(atoms.len(), &optional, &repeated_atoms);
+        let program =
+            compile_optional_program(atoms.len(), &optional, &repeated_atoms, group_repeat);
         let mut candidate = self.clone();
         let mut offset = candidate.bytes.len() as isize - 2 - pattern_bytes.len() as isize;
         let mut max = candidate.bytes.len();
