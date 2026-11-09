@@ -77,6 +77,9 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - The Java 21 formatting corpus now includes the first 10,000 negative subnormals and the immediate neighbors of powers of ten. Seven selected difficult heights were additionally compared byte-for-byte in Java and Rust entity and floor-item packets. All six Java room/social oracle tests and desktop/web Clippy pass locally. A Windows GNU release build with desktop and web succeeded for commit `e668ae2`; this is not live compatibility evidence.
 - GitHub Actions run 42540214388 passed all eight validation jobs for Java-style height parsing.
 
+- Added `replace_substrings_java_literal` for nonempty literal patterns with Java-style `$0` group references and backslash escapes. Ten templates, including invalid groups and escapes, are checked against the beta-29 Java API; fifteen mutation tests and desktop/web Clippy pass locally. Regex patterns, other capture groups, empty patterns and Java partial-failure behavior remain unsupported; the bounded transactional Rust behavior is deliberate. This helper scans candidates twice, and real extensions remain untested.
+- GitHub Actions run 42540504234 passed all eight validation jobs for subnormal formatting.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -96,4 +99,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect CI for the expanded height serialization oracle. Compare the remaining `HPacket.replaceXSubstrings` Java regex and replacement behavior against the existing Rust literal-only method; determine a compatible implementation and explicit unsupported cases. Validate the no-byte-view logger interaction visually when a safe desktop test session is available.
+Inspect CI for the literal-pattern Java replacement helper and height serialization oracle. Compare Java `replaceXSubstrings` behavior for regex patterns, capture groups, lookarounds, zero-width matches and invalid replacements against candidate Rust regex engines; document exact unsupported cases and avoid claiming full regex parity. Validate the no-byte-view logger interaction visually when a safe desktop test session is available.

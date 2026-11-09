@@ -291,3 +291,44 @@ fn substring_replacement_scans_from_the_end_and_is_transactional() {
     assert!(large.replace_substrings_literal("a", "aaa", None).is_err());
     assert_eq!(large, before);
 }
+
+#[test]
+fn java_literal_substring_templates_handle_group_zero_and_escapes() {
+    let mut packet = Packet::new(9);
+    packet
+        .put_string("cat cat")
+        .unwrap()
+        .put_string("catdog")
+        .unwrap();
+    assert_eq!(
+        packet
+            .replace_substrings_java_literal("cat", "[$0]\\$", Some(1))
+            .unwrap(),
+        1
+    );
+    packet.reset();
+    assert_eq!(packet.read_string().unwrap(), "cat cat");
+    assert_eq!(packet.read_string().unwrap(), "[cat]$dog");
+    let before = packet.clone();
+    assert!(packet
+        .replace_substrings_java_literal("cat", "$1", None)
+        .is_err());
+    assert_eq!(packet, before);
+    assert_eq!(
+        packet
+            .replace_substrings_java_literal("missing", "$1", None)
+            .unwrap(),
+        0
+    );
+    assert_eq!(packet, before);
+    assert_eq!(
+        packet
+            .replace_substrings_java_literal("cat", "$1", Some(0))
+            .unwrap(),
+        0
+    );
+    assert_eq!(packet, before);
+    assert!(packet
+        .replace_substrings_java_literal("c.t", "$0", None)
+        .is_err());
+}

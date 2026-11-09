@@ -893,6 +893,63 @@ impl Packet {
                 "empty or regex substring replacement is not supported",
             ));
         }
+        self.replace_substrings_literal_inner(old, new, limit)
+    }
+
+    /// Java replacement-template handling for a nonempty literal pattern.
+    /// Regex metacharacters in the pattern and capturing groups other than $0
+    /// are not yet supported; no replacement is attempted for those patterns.
+    pub fn replace_substrings_java_literal(
+        &mut self,
+        old: &str,
+        replacement: &str,
+        limit: Option<usize>,
+    ) -> Result<usize> {
+        self.ensure_eva()?;
+        if limit == Some(0) {
+            return Ok(0);
+        }
+        if old.is_empty() || old.chars().any(|c| ".^$|?*+()[]{}\\".contains(c)) {
+            return Err(error("empty or regex substring pattern is not supported"));
+        }
+        // Java parses the replacement only after it finds a candidate field.
+        let mut probe = self.clone();
+        if probe.replace_substrings_literal_inner(old, old, limit)? == 0 {
+            return Ok(0);
+        }
+        let mut expanded = String::new();
+        let mut chars = replacement.chars().peekable();
+        while let Some(c) = chars.next() {
+            match c {
+                '\\' => expanded.push(
+                    chars
+                        .next()
+                        .ok_or_else(|| error("invalid replacement escape"))?,
+                ),
+                '$' => {
+                    if chars.next() != Some('0') {
+                        return Err(error("invalid replacement group"));
+                    }
+                    while chars.peek() == Some(&'0') {
+                        chars.next();
+                    }
+                    expanded.push_str(old);
+                }
+                _ => expanded.push(c),
+            }
+            if expanded.len() > usize::from(u16::MAX) * 2 {
+                return Err(error("short string too long"));
+            }
+        }
+        self.replace_substrings_literal_inner(old, &expanded, limit)
+    }
+
+    fn replace_substrings_literal_inner(
+        &mut self,
+        old: &str,
+        new: &str,
+        limit: Option<usize>,
+    ) -> Result<usize> {
         if old.len() > usize::from(u16::MAX) * 2 || new.len() > usize::from(u16::MAX) * 2 {
             return Err(error("short string too long"));
         }

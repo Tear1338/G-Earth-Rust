@@ -356,6 +356,30 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_{limit}"), &packet);
     }
+    let templates = [
+        "x$0y", "\\$", "\\\\", "$00", "$01", "$1", "$", "\\", "$$", "a\\qb",
+    ];
+    for (i, template) in templates.iter().enumerate() {
+        let mut packet = Packet::new(9);
+        packet
+            .put_string("cat cat")
+            .unwrap()
+            .put_string("catdog")
+            .unwrap();
+        packet.set_cursor(7).unwrap();
+        let before = packet.clone();
+        let key = format!("substring_template_{i}");
+        match packet.replace_substrings_java_literal("cat", template, Some(1)) {
+            Ok(count) => {
+                assert_eq!(count, 1);
+                check(&key, &packet);
+            }
+            Err(_) => {
+                assert_eq!(expected[key.as_str()], "error");
+                assert_eq!(packet, before);
+            }
+        }
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

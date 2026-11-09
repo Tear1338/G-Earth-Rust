@@ -145,6 +145,24 @@ public class JavaMutationOracle {
             }
             emit("substring_" + limit, substring);
         }
+        String[] templates = {"x$0y", "\\$", "\\\\", "$00", "$01", "$1", "$", "\\", "$$", "a\\qb"};
+        for (int i = 0; i < templates.length; i++) {
+            HPacket sample = new HPacket(9);
+            sample.appendString("cat cat").appendString("catdog");
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            boolean failed = false;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings("cat", templates[i], 1);
+            } catch (RuntimeException e) {
+                failed = true;
+            } finally {
+                System.setOut(original);
+            }
+            if (failed) System.out.println("substring_template_" + i + "=error");
+            else emit("substring_template_" + i, sample);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);

@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: inspect CI for height serialization, then compare Java substring regex and replacement semantics with the Rust packet API; validate logger interaction visually when possible.
+Next: inspect CI for literal-pattern Java replacement templates and height serialization, then compare Java regex constructs and capture semantics with candidate Rust engines; validate logger interaction visually when possible.

@@ -61,3 +61,5 @@ Entity, movement and floor-item heights accept Java-style floating-point text, i
 Height formatting now matches Java 21 for the first 10,000 positive subnormal bit patterns, selected boundaries and approximately 5,000 deterministic random finite values. The previous output differed for the two smallest subnormals. This is finite coverage and does not prove equivalence for all doubles or Java versions.
 
 Additional Java 21 vectors cover the first 10,000 negative subnormals, powers of ten and adjacent values. Seven difficult heights also match complete entity and floor-item packet bytes from the released Java API. The comparisons are finite and real client traffic remains untested.
+
+The packet API offers Java-style replacement templates for nonempty literal substring patterns, including `$0` and backslash escapes, with ten Java oracle cases. Regex patterns, nonzero capture groups and empty patterns remain unsupported; Rust replacement is bounded and transactional and does not reproduce every Java error or partial mutation. Real extensions remain untested.
