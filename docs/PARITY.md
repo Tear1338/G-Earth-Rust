@@ -99,3 +99,5 @@ Within one process, an older concurrent cache refresh cannot overwrite a later-s
 A controlled Nitro session-replacement test now also checks that the shared cache retains the newer metadata after the cancelled older worker completes. It uses a simulated provider, not two HTTPS requests.
 
 A local HTTPS race fixture combines cancellation, extension-session replacement and shared cache persistence; the newer metadata survives an older response. The fixture checks cleanup and does not establish live service or extension compatibility.
+
+Origins discovery now prefers the latest Sulek release over a supplied version, like beta-29, and falls back to the supplied version if discovery fails. Rust also validates release strings; unsafe values trigger fallback. Tests use controlled responses; actual Origins clients and the production service remain unverified.

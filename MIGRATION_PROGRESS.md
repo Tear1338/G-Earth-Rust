@@ -148,6 +148,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - A local HTTPS fixture now holds an old Nitro metadata response until a replacement session has loaded a newer response into the shared cache. After cancellation, the extension and cache retain the newer metadata; the older worker still returns its own response. The temporary CA is trusted only by the fixture and its temporary files are now verified removed. The HTTPS fixture, desktop/web build and Clippy pass locally. This is not a live hotel or real extension test.
 
+- Origins Sulek lookup now tries to discover the latest release even when a version was supplied, like the pinned Java provider; on discovery failure it falls back to the supplied valid version. Rust rejects unsafe discovered versions and falls back, whereas Java does not apply that validation. The desktop adopts the returned version, so a supplied older version can be replaced. Unit tests cover latest, offline, malformed, absent and unsafe values, and Flash avoids the Origins query. Packet-provider tests, desktop/web build and Clippy pass. Real Origins and service behavior remain unverified.
+
 ## Exact next step
 
-Compare Origins Sulek release discovery and explicit-version fallback with beta-29 Java, including unavailable or malformed release data, then implement and test the appropriate behavior. Inspect CI for the latest pushed changes. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Exercise Origins release discovery and fallback through a local HTTPS fixture with actual metadata/cache requests, and compare Java behavior when the discovered database is empty. Inspect CI for the latest pushed changes. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

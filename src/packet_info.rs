@@ -2,6 +2,44 @@
 use crate::packet::{error, Direction, Packet, Result};
 use std::collections::HashMap;
 
+fn valid_sulek_version(version: &str) -> bool {
+    !version.is_empty()
+        && version.len() <= 200
+        && version
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+}
+
+fn resolve_sulek_version(
+    requested: &str,
+    origins: bool,
+    discover: impl FnOnce() -> std::io::Result<Vec<u8>>,
+) -> std::io::Result<String> {
+    if origins {
+        let latest = discover().and_then(|bytes| {
+            let json: serde_json::Value =
+                serde_json::from_slice(&bytes).map_err(std::io::Error::other)?;
+            let version = json[0]["version"]
+                .as_str()
+                .ok_or_else(|| std::io::Error::other("no Origins release found"))?;
+            if !valid_sulek_version(version) {
+                return Err(std::io::Error::other("invalid Origins release version"));
+            }
+            Ok(version.to_owned())
+        });
+        match latest {
+            Ok(version) => return Ok(version),
+            Err(error) if requested.is_empty() => return Err(error),
+            Err(_) => {}
+        }
+    }
+    if valid_sulek_version(requested) {
+        Ok(requested.to_owned())
+    } else {
+        Err(std::io::Error::other("enter a valid hotel version"))
+    }
+}
+
 // Only the most recently started refresh for a path may publish its result.
 // Entries live only while a refresh is in progress.
 struct RefreshGuard {
@@ -122,28 +160,12 @@ impl PacketInfoManager {
         let agent = ureq::AgentBuilder::new()
             .timeout(std::time::Duration::from_secs(10))
             .build();
-        let version = if version.is_empty() && origins {
-            let bytes = download_json(
+        let version = resolve_sulek_version(version, origins, || {
+            download_json(
                 &agent,
                 "https://api.sulek.dev/releases?variant=shockwave-windows",
-            )?;
-            let json: serde_json::Value =
-                serde_json::from_slice(&bytes).map_err(std::io::Error::other)?;
-            json[0]["version"]
-                .as_str()
-                .ok_or_else(|| std::io::Error::other("no Origins release found"))?
-                .to_owned()
-        } else {
-            version.to_owned()
-        };
-        if version.is_empty()
-            || version.len() > 200
-            || !version
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
-        {
-            return Err(std::io::Error::other("enter a valid hotel version"));
-        }
+            )
+        })?;
         let url = if origins {
             format!("https://api.sulek.dev/releases/shockwave-windows/{version}/messages")
         } else {
@@ -375,6 +397,44 @@ pub(crate) fn download_json(agent: &ureq::Agent, url: &str) -> std::io::Result<V
 mod cache_refresh_tests {
     use super::*;
     use std::time::{Duration, SystemTime};
+
+    #[test]
+    fn origins_discovery_uses_latest_or_falls_back_to_requested_version() {
+        let releases = || Ok(br#"[{"version":"LATEST-2"}]"#.to_vec());
+        assert_eq!(
+            resolve_sulek_version("OLD", true, releases).unwrap(),
+            "LATEST-2"
+        );
+        assert_eq!(
+            resolve_sulek_version("", true, releases).unwrap(),
+            "LATEST-2"
+        );
+        assert_eq!(
+            resolve_sulek_version("FLASH", false, || panic!("Flash must not query Origins"))
+                .unwrap(),
+            "FLASH"
+        );
+        for data in [
+            &b"not json"[..],
+            &b"[]"[..],
+            &b"[{\"version\":\"../invalid\"}]"[..],
+        ] {
+            assert_eq!(
+                resolve_sulek_version("OLD", true, || Ok(data.to_vec())).unwrap(),
+                "OLD"
+            );
+            assert!(resolve_sulek_version("", true, || Ok(data.to_vec())).is_err());
+        }
+        assert_eq!(
+            resolve_sulek_version("OLD", true, || Err(std::io::Error::other("offline"))).unwrap(),
+            "OLD"
+        );
+        assert!(resolve_sulek_version("", true, || Err(std::io::Error::other("offline"))).is_err());
+        assert!(
+            resolve_sulek_version("../invalid", true, || Err(std::io::Error::other("offline")))
+                .is_err()
+        );
+    }
 
     #[test]
     fn older_refresh_cannot_replace_newer_refresh_even_after_it_finishes() {

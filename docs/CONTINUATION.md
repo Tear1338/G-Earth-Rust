@@ -231,3 +231,5 @@ A per-path in-process refresh guard stops older concurrent workers from overwrit
 The cancelled Nitro lookup and replacement extension-session fixture now verifies the shared on-disk cache after releasing the old worker. The provider remains simulated; combine this ordering with two local HTTPS requests next.
 
 Two local HTTPS responses now exercise the cancelled Nitro session and cache race end to end. The extension session and cache retain the newer data; temporary fixture cleanup is checked. Compare Origins release discovery and fallback against the Java provider next.
+
+Origins Sulek lookup now attempts latest-release discovery regardless of the supplied version and falls back to the supplied version on discovery failure. The desktop updates its version to the returned database version. Invalid release strings are rejected or cause fallback, unlike the Java provider. Test combined local HTTPS discovery/metadata/cache and compare the empty-database case next.

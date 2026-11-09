@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: compare Origins release discovery and explicit-version fallback with beta-29 Java. Full Java regex and live extension validation remain open.
+Next: test Origins discovery and fallback over local HTTPS and compare empty metadata behavior with beta-29 Java. Full Java regex and live extension validation remain open.
