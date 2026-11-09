@@ -233,3 +233,5 @@ The cancelled Nitro lookup and replacement extension-session fixture now verifie
 Two local HTTPS responses now exercise the cancelled Nitro session and cache race end to end. The extension session and cache retain the newer data; temporary fixture cleanup is checked. Compare Origins release discovery and fallback against the Java provider next.
 
 Origins Sulek lookup now attempts latest-release discovery regardless of the supplied version and falls back to the supplied version on discovery failure. The desktop updates its version to the returned database version. Invalid release strings are rejected or cause fallback, unlike the Java provider. Test combined local HTTPS discovery/metadata/cache and compare the empty-database case next.
+
+Origins discovery, metadata retrieval and cache are covered together over local HTTPS, including a 503 fallback and empty database. Empty results preserve the requested version as in Java; the cache remains keyed by the discovered release. Compare automatic Origins initialization in the relay next.

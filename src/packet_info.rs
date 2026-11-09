@@ -160,28 +160,52 @@ impl PacketInfoManager {
         let agent = ureq::AgentBuilder::new()
             .timeout(std::time::Duration::from_secs(10))
             .build();
+        let cache_dir = crate::settings::Settings::default_path()
+            .parent()
+            .unwrap_or_else(|| std::path::Path::new("."))
+            .join("packet-identifiers");
+        Self::fetch_sulek_using(
+            version,
+            origins,
+            &agent,
+            "https://api.sulek.dev",
+            &cache_dir,
+        )
+    }
+    pub(crate) fn fetch_sulek_using(
+        version: &str,
+        origins: bool,
+        agent: &ureq::Agent,
+        base_url: &str,
+        cache_dir: &std::path::Path,
+    ) -> std::io::Result<Self> {
+        let requested = version;
         let version = resolve_sulek_version(version, origins, || {
             download_json(
-                &agent,
-                "https://api.sulek.dev/releases?variant=shockwave-windows",
+                agent,
+                &format!("{base_url}/releases?variant=shockwave-windows"),
             )
         })?;
         let url = if origins {
-            format!("https://api.sulek.dev/releases/shockwave-windows/{version}/messages")
+            format!("{base_url}/releases/shockwave-windows/{version}/messages")
         } else {
-            format!("https://api.sulek.dev/releases/{version}/messages")
+            format!("{base_url}/releases/{version}/messages")
         };
-        let cache = crate::settings::Settings::default_path()
-            .parent()
-            .unwrap_or_else(|| std::path::Path::new("."))
-            .join("packet-identifiers")
-            .join(format!(
-                "{}-{version}.bin",
-                if origins { "SHOCKWAVE" } else { "FLASH" }
-            ));
-        Self::load_or_refresh(&cache, &version, std::time::SystemTime::now(), || {
-            Self::from_json(&version, &download_json(&agent, &url)?).map_err(std::io::Error::other)
-        })
+        let cache = cache_dir.join(format!(
+            "{}-{version}.bin",
+            if origins { "SHOCKWAVE" } else { "FLASH" }
+        ));
+        let mut database =
+            Self::load_or_refresh(&cache, &version, std::time::SystemTime::now(), || {
+                Self::from_json(&version, &download_json(agent, &url)?)
+                    .map_err(std::io::Error::other)
+            })?;
+        // PacketInfoManagerRemote only adopts a provider's version when it
+        // returns at least one entry, even if discovery found a newer release.
+        if origins && database.entries().is_empty() {
+            database.version = requested.to_owned();
+        }
+        Ok(database)
     }
     pub(crate) fn load_or_refresh(
         path: &std::path::Path,

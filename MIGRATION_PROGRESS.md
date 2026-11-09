@@ -150,6 +150,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Origins Sulek lookup now tries to discover the latest release even when a version was supplied, like the pinned Java provider; on discovery failure it falls back to the supplied valid version. Rust rejects unsafe discovered versions and falls back, whereas Java does not apply that validation. The desktop adopts the returned version, so a supplied older version can be replaced. Unit tests cover latest, offline, malformed, absent and unsafe values, and Flash avoids the Origins query. Packet-provider tests, desktop/web build and Clippy pass. Real Origins and service behavior remain unverified.
 
+- Local HTTPS now exercises Origins discovery followed by the actual metadata and cache path: latest release, HTTP 503 fallback to the supplied version and an empty database. Java PacketInfoManagerRemote only adopts the discovered version if entries exist; Rust now preserves the requested version for an empty result while caching under the discovered release. The HTTPS fixture verifies paths and cleanup; provider tests, desktop/web build and Clippy pass. No production service or real Origins client was tested.
+
 ## Exact next step
 
-Exercise Origins release discovery and fallback through a local HTTPS fixture with actual metadata/cache requests, and compare Java behavior when the discovered database is empty. Inspect CI for the latest pushed changes. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Compare automatic Origins metadata initialization and extension lifecycle in the Rust relay with Java HProxy.verifyProxy; implement and test missing behavior without requiring an extension host. Inspect CI for the latest pushed changes. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

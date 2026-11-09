@@ -1362,6 +1362,9 @@ mod lifecycle_tests {
                     "cache_failure.bin",
                     "cache_stall.bin",
                     "race.bin",
+                    "SHOCKWAVE-LATEST.bin",
+                    "SHOCKWAVE-OLD.bin",
+                    "SHOCKWAVE-EMPTY.bin",
                 ] {
                     let _ = std::fs::remove_file(self.0.join(file));
                 }
@@ -1506,6 +1509,39 @@ mod lifecycle_tests {
                 }
                 state.close(&peer);
             }
+            // Exercise the actual Origins discovery and metadata sequence over
+            // the same locally trusted HTTPS transport, with an isolated cache.
+            for mode in ["latest", "fallback", "empty"] {
+                let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+                let address = format!("localhost:{}", listener.local_addr().unwrap().port());
+                let server_config = authority.gen_server_config(&address.parse().unwrap()).await;
+                let expected = match mode { "latest" => "LATEST", "empty" => "EMPTY", _ => "OLD" };
+                let server = tokio::spawn(async move {
+                    for index in 0..2 {
+                        let (stream, _) = listener.accept().await.unwrap();
+                        let mut tls = tokio_rustls::TlsAcceptor::from(server_config.clone()).accept(stream).await.unwrap();
+                        let mut request = Vec::new();
+                        while !request.ends_with(b"\r\n\r\n") {
+                            let mut byte = [0]; tls.read_exact(&mut byte).await.unwrap(); request.push(byte[0]); assert!(request.len() < 8192);
+                        }
+                        let expected_path = if index == 0 { "/releases?variant=shockwave-windows".to_owned() } else { format!("/releases/shockwave-windows/{expected}/messages") };
+                        assert!(request.starts_with(format!("GET {expected_path} HTTP/1.1\r\n").as_bytes()));
+                        let status = if index == 0 && mode == "fallback" { "503 Service Unavailable" } else { "200 OK" };
+                        let body = if index == 0 { format!(r#"[{{"version":"{expected}"}}]"#) } else if mode == "empty" { r#"{"messages":{"incoming":[],"outgoing":[]}}"#.to_owned() } else { r#"{"messages":{"incoming":[],"outgoing":[{"id":900,"name":"KnownComposer"}]}}"#.to_owned() };
+                        let headers = format!("HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
+                        tls.write_all(headers.as_bytes()).await.unwrap(); tls.write_all(body.as_bytes()).await.unwrap(); tls.shutdown().await.unwrap();
+                    }
+                });
+                let agent = agent.clone();
+                let base_url = format!("https://{address}");
+                let cache_dir = directory.0.clone();
+                let database = tokio::task::spawn_blocking(move || PacketInfoManager::fetch_sulek_using("OLD", true, &agent, &base_url, &cache_dir)).await.unwrap().unwrap();
+                assert_eq!(database.version, if mode == "empty" { "OLD" } else { expected });
+                assert_eq!(database.entries().len(), usize::from(mode != "empty"));
+                let saved = PacketInfoManager::load_cache(&directory.0.join(format!("SHOCKWAVE-{expected}.bin")), expected).unwrap();
+                assert_eq!(saved.entries().len(), database.entries().len());
+                tokio::time::timeout(Duration::from_secs(5), server).await.unwrap().unwrap();
+            }
             // Keep the first HTTPS response pending while a replacement session
             // receives a second response and writes the same cache file.
             let cache = directory.0.join("race.bin");
@@ -1557,6 +1593,7 @@ mod lifecycle_tests {
             let url = format!("https://{address}/fixture");
             let worker_cache = cache.clone();
             let (finished_tx, finished_rx) = mpsc::channel();
+            let agent = agent.clone();
             options.nitro_lookup = Some(Arc::new(move || {
                 let result = PacketInfoManager::load_or_refresh(&worker_cache, NITRO_REVISION, std::time::SystemTime::now() + Duration::from_secs(301), || {
                     download_json(&agent, &url).and_then(|bytes| PacketInfoManager::from_json(NITRO_REVISION, &bytes).map_err(io::Error::other))
