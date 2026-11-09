@@ -1,5 +1,7 @@
 # Changelog
 
+- Exercise Sulek cache refresh, offline fallback and cancelled workers over a locally trusted HTTPS server.
+
 - Refresh Sulek metadata caches after five minutes and retain a valid matching cache on fetch or parse failure.
 
 - Test Nitro metadata success, HTTP failure, malformed and truncated responses, the size limit and cancellation over verified local HTTPS; verify extension forwarding after errors.

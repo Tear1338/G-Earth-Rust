@@ -122,7 +122,7 @@ impl PacketInfoManager {
             Self::from_json(&version, &download_json(&agent, &url)?).map_err(std::io::Error::other)
         })
     }
-    fn load_or_refresh(
+    pub(crate) fn load_or_refresh(
         path: &std::path::Path,
         version: &str,
         now: std::time::SystemTime,

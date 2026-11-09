@@ -91,3 +91,5 @@ A controlled Nitro test cancels one blocked metadata lookup, starts a replacemen
 A local HTTPS metadata fixture now exercises the actual JSON downloader for successful data, HTTP 503, malformed JSON, truncated and oversized responses, and cancellation during a stalled response, with a temporary CA trusted only by the test client. A controlled extension peer can initialize and forward a packet after each error. It does not validate the production metadata service, a real extension session or a live hotel.
 
 Sulek caches refresh after five minutes and fall back to a valid matching cache on network or parse failure. Unlike Java, malformed downloaded JSON does not overwrite the last valid cache. Tests use controlled fetch results; production service and concurrent refresh behavior remain unverified.
+
+A local HTTPS fixture now covers cache refresh, HTTP 503 fallback and a cancelled Nitro lookup whose worker finishes later and updates the cache. It verifies no stale Nitro session is published; concurrent cache writes and live service behavior remain open.

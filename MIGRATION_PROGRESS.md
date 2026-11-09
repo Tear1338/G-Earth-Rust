@@ -140,6 +140,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Sulek caches now expire after five minutes as in Java; stale revision-matched caches are used on network or parse failure. Unlike Java, invalid downloaded JSON does not replace a valid cache. Invalid, truncated, oversized or wrong-version cache files are never used as fallback. Tests cover fresh reuse, offline and malformed fallback, refresh persistence and rejected caches; packet-provider and Nitro HTTPS fixtures, desktop/web build and Clippy pass locally. The real service remains unverified.
 
+- Local HTTPS now exercises stale-cache refresh, HTTP 503 fallback and cancellation while the worker continues. A cancelled lookup publishes no stale Nitro session, but can still update the cache after cancellation. The focused HTTPS fixture and desktop/web Clippy pass. CI run 42545396795 passed all eight jobs. The real Sulek service remains unverified.
+
 ## Exact next step
 
-Exercise stale Sulek cache fallback and refresh through a local HTTPS provider, including concurrent lookup and cancellation behavior; inspect CI for the latest pushed changes. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Reproduce and address out-of-order concurrent refreshes of the same Sulek cache, including an older cancelled lookup finishing after a replacement; inspect CI for the latest pushed changes. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

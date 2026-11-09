@@ -881,7 +881,13 @@ mod unity_http_tests {
     struct Directory(PathBuf);
     impl Drop for Directory {
         fn drop(&mut self) {
-            for file in ["ca/gearth-proxy-cert.pem", "ca/gearth-proxy-key.pem"] {
+            for file in [
+                "ca/gearth-proxy-cert.pem",
+                "ca/gearth-proxy-key.pem",
+                "cache_success.bin",
+                "cache_failure.bin",
+                "cache_stall.bin",
+            ] {
                 let _ = std::fs::remove_file(self.0.join(file));
             }
             let _ = std::fs::remove_dir(self.0.join("ca"));
@@ -1369,7 +1375,7 @@ mod lifecycle_tests {
             .build();
         let runtime = tokio::runtime::Runtime::new().unwrap();
         runtime.block_on(async {
-            for mode in ["success", "failure", "malformed", "truncated", "oversized", "stall"] {
+            for mode in ["success", "failure", "malformed", "truncated", "oversized", "stall", "cache_success", "cache_failure", "cache_stall"] {
                 let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
                 let address = format!("localhost:{}", listener.local_addr().unwrap().port());
                 let server_config = authority.gen_server_config(&address.parse().unwrap()).await;
@@ -1384,14 +1390,14 @@ mod lifecycle_tests {
                     }
                     assert!(request.starts_with(b"GET /fixture HTTP/1.1\r\n"));
                     request_tx.send(()).unwrap();
-                    if mode == "stall" { release_rx.await.unwrap(); }
+                    if matches!(mode, "stall" | "cache_stall") { release_rx.await.unwrap(); }
                     let body = match mode {
-                        "failure" => "offline".to_string(),
+                        "failure" | "cache_failure" => "offline".to_string(),
                         "malformed" | "truncated" => "{".to_string(),
                         "oversized" => "x".repeat(8 * 1024 * 1024 + 1),
                         _ => r#"{"messages":{"incoming":[],"outgoing":[{"id":900,"name":"KnownComposer"}]}}"#.to_string(),
                     };
-                    let status = if mode == "failure" { "503 Service Unavailable" } else { "200 OK" };
+                    let status = if matches!(mode, "failure" | "cache_failure") { "503 Service Unavailable" } else { "200 OK" };
                     let length = if mode == "truncated" { body.len() + 100 } else { body.len() };
                     let headers = format!("HTTP/1.1 {status}\r\nContent-Length: {length}\r\nConnection: close\r\n\r\n");
                     let _ = tls.write_all(headers.as_bytes()).await;
@@ -1400,9 +1406,15 @@ mod lifecycle_tests {
                 });
                 let url = format!("https://{address}/fixture");
                 let agent = agent.clone();
+                let cache = mode.starts_with("cache_").then(|| directory.0.join(format!("{mode}.bin")));
+                if let Some(path) = &cache {
+                    let old = PacketInfoManager::from_json(NITRO_REVISION, br#"{"messages":{"incoming":[],"outgoing":[{"id":899,"name":"OldComposer"}]}}"#).unwrap();
+                    old.save_cache(path).unwrap();
+                }
+                let cache_for_worker = cache.clone();
                 let (done_tx, done_rx) = mpsc::channel();
                 let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), PathBuf::new());
-                let extension_fixture = if !matches!(mode, "success" | "stall") {
+                let extension_fixture = if !matches!(mode, "success" | "stall" | "cache_success" | "cache_failure" | "cache_stall") {
                     let (host, host_events) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
                     let mut peer = TcpStream::connect(host.address).unwrap();
                     peer.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
@@ -1418,7 +1430,10 @@ mod lifecycle_tests {
                 let safety = Arc::new(Mutex::new(PacketSafety::default()));
                 options.packet_safety = Some(safety.clone());
                 options.nitro_lookup = Some(Arc::new(move || {
-                    let result = download_json(&agent, &url).and_then(|bytes| PacketInfoManager::from_json(NITRO_REVISION, &bytes).map_err(io::Error::other));
+                    let fetch = || download_json(&agent, &url).and_then(|bytes| PacketInfoManager::from_json(NITRO_REVISION, &bytes).map_err(io::Error::other));
+                    let result = if let Some(path) = &cache_for_worker {
+                        PacketInfoManager::load_or_refresh(path, NITRO_REVISION, std::time::SystemTime::now() + Duration::from_secs(301), fetch)
+                    } else { fetch() };
                     let _ = done_tx.send(result.as_ref().err().map(ToString::to_string));
                     result
                 }));
@@ -1428,14 +1443,15 @@ mod lifecycle_tests {
                 let worker_state = state.clone(); let worker_peer = peer.clone();
                 let task = tokio::spawn(async move { worker_state.activate(&worker_peer, &"ws://fixture".parse().unwrap()).await });
                 request_rx.recv_timeout(Duration::from_secs(3)).unwrap();
-                if mode == "stall" {
+                if matches!(mode, "stall" | "cache_stall") {
                     state.close(&peer);
                     assert_eq!(tokio::time::timeout(Duration::from_secs(2), task).await.unwrap().unwrap().unwrap_err().kind(), io::ErrorKind::Interrupted);
                     release_tx.send(()).unwrap();
                 } else {
                     tokio::time::timeout(Duration::from_secs(15), task).await.unwrap().unwrap().unwrap();
                     assert!(peer.ready.load(Ordering::Acquire));
-                    assert_eq!(safety.lock().unwrap().is_safe(Some(NITRO_REVISION), Direction::ToServer, 900), mode == "success");
+                    assert_eq!(safety.lock().unwrap().is_safe(Some(NITRO_REVISION), Direction::ToServer, 900), matches!(mode, "success" | "cache_success"));
+                    assert_eq!(safety.lock().unwrap().is_safe(Some(NITRO_REVISION), Direction::ToServer, 899), mode == "cache_failure");
                     if let Some((_, mut extension_peer)) = extension_fixture {
                         let mut start = read_frame(&mut extension_peer).unwrap();
                         assert_eq!(start.header(), 5);
@@ -1456,14 +1472,18 @@ mod lifecycle_tests {
                 }
                 let error = done_rx.recv_timeout(Duration::from_secs(15)).unwrap();
                 match mode {
-                    "success" | "stall" => assert!(error.is_none(), "{error:?}"),
+                    "success" | "stall" | "cache_success" | "cache_failure" | "cache_stall" => assert!(error.is_none(), "{error:?}"),
                     "failure" => assert!(error.unwrap().contains("503")),
                     "oversized" => assert!(error.unwrap().contains("8 MiB")),
                     "malformed" | "truncated" => assert!(error.is_some(), "{mode} unexpectedly succeeded"),
                     _ => unreachable!(),
                 }
                 tokio::time::timeout(Duration::from_secs(15), server).await.unwrap().unwrap();
-                if mode == "stall" { assert!(!receiver.try_iter().any(|event| matches!(event, Event::PacketIdentifiers(_) | Event::Connected(_)))); }
+                if matches!(mode, "stall" | "cache_stall") { assert!(!receiver.try_iter().any(|event| matches!(event, Event::PacketIdentifiers(_) | Event::Connected(_)))); }
+                if let Some(path) = cache {
+                    let cached = PacketInfoManager::load_cache(&path, NITRO_REVISION).unwrap();
+                    assert_eq!(cached.entries()[0].header, if mode == "cache_failure" { 899 } else { 900 });
+                }
                 state.close(&peer);
             }
         });

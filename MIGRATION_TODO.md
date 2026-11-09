@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: exercise stale Sulek cache refresh and fallback through local HTTPS, including concurrent lookup and cancellation. Full Java regex and live extension validation remain open.
+Next: test and address out-of-order concurrent Sulek cache refreshes, including cancelled workers. Full Java regex and live extension validation remain open.
