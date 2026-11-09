@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: inspect CI for cancellable Flash metadata lookup, test actual relay stop during a controllable stalled provider and assess false identification; validate on-screen logger interaction when a safe desktop session is available.
+Next: inspect CI for Flash lookup cancellation, investigate peer EOF during a stalled lookup and test stale extension-session cleanup; then assess false identification and validate logger interaction visually when possible.

@@ -110,6 +110,10 @@ pub struct RelayOptions {
     /// Optional session-shared registry for tracking IDs from real traffic.
     pub packet_safety: Option<Arc<Mutex<crate::packet_safety::PacketSafety>>>,
     pub admin_service: Option<Arc<Mutex<crate::admin_service::AdminService>>>,
+    #[cfg(test)]
+    flash_lookup: Option<
+        Arc<dyn Fn(String) -> io::Result<crate::packet_info::PacketInfoManager> + Send + Sync>,
+    >,
 }
 struct Session {
     injections: SyncSender<(Direction, Packet)>,
@@ -691,7 +695,13 @@ fn run_session(
                                     .into(),
                             ));
                             let version = details.version.clone();
+                            #[cfg(test)]
+                            let lookup = options.flash_lookup.clone();
                             match cancellable_flash_lookup(stop, closed, move || {
+                                #[cfg(test)]
+                                if let Some(lookup) = lookup {
+                                    return lookup(version);
+                                }
                                 crate::packet_info::PacketInfoManager::fetch_sulek(&version, false)
                             }) {
                                 Ok(database) => {
@@ -836,6 +846,61 @@ mod tests {
             assert!(now.elapsed() < Duration::from_secs(2));
             release_tx.send(()).unwrap();
         }
+    }
+
+    #[test]
+    fn relay_stop_does_not_wait_for_stalled_flash_metadata_lookup() {
+        use crate::packet_info::PacketInfoManager;
+        let (host, _) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+        let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let release_rx = Mutex::new(release_rx);
+        let lookup = Arc::new(move |version: String| {
+            started_tx.send(version).unwrap();
+            release_rx.lock().unwrap().recv().unwrap();
+            Ok(PacketInfoManager::default())
+        });
+        let (mut relay, _) = Relay::start_with_options(
+            Config {
+                listen: "127.0.0.1:0".parse().unwrap(),
+                remote: remote.local_addr().unwrap().to_string(),
+            },
+            RelayOptions {
+                flash_process: Some(1),
+                extensions: Some(host.clone()),
+                flash_lookup: Some(lookup),
+                connection: Some(ConnectionDetails {
+                    host: "fixture".into(),
+                    port: 1,
+                    version: String::new(),
+                    identifier: String::new(),
+                    client_type: "FLASH".into(),
+                    packets: PacketInfoManager::default(),
+                }),
+                ..RelayOptions::default()
+            },
+        )
+        .unwrap();
+        let mut client = TcpStream::connect(relay.address).unwrap();
+        let (_server, _) = remote.accept().unwrap();
+        let mut hello = Packet::new(1);
+        hello
+            .put_string("TEST-2026")
+            .unwrap()
+            .put_string("FLASH")
+            .unwrap();
+        write_frame(&mut client, &hello).unwrap();
+        assert_eq!(
+            started_rx.recv_timeout(Duration::from_secs(3)).unwrap(),
+            "TEST-2026"
+        );
+        let start = Instant::now();
+        relay.stop();
+        assert!(start.elapsed() < Duration::from_secs(2));
+        assert!(!relay.connected());
+        release_tx.send(()).unwrap();
+        host.stop();
     }
 
     #[test]

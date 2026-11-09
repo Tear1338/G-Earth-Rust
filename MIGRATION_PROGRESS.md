@@ -60,6 +60,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 - A controlled Flash relay test shows an empty revision and unavailable metadata still initialize the extension, report the lookup error, forward the hello and disconnect normally. Flash metadata lookup now runs on a bounded worker: explicit relay stop or close stops waiting, with at most four HTTP lookups still in flight; a lookup already running is not forcibly cancelled and can finish/cache later. A deterministic worker test covers result, failure and both cancellation flags; 17 extension and 12 relay tests and desktop/web Clippy pass locally. Actual stalled network calls, peer EOF during lookup and live clients remain unverified.
 - GitHub Actions run 42533401980 passed all eight validation jobs for the packet-metadata safety change.
 
+- A loopback relay test injects a controllable stalled Flash metadata provider, waits until it starts, then verifies explicit `stop` returns within two seconds without waiting for that worker. The full local library suite passes 45 tests with one Python test ignored; desktop/web all-target Clippy passes. This is not a stalled real HTTP server or peer-EOF test.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -79,4 +81,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect CI for cancellable Flash metadata lookup. Test explicit stop during an actual stalled lookup through the relay using a controllable local provider, then assess false Flash identification with representative non-handshake traffic. Validate the no-byte-view logger interaction visually when a safe desktop test session is available.
+Inspect CI for the cancellable Flash metadata lookup and its relay test. Investigate detection of peer EOF during a stalled Flash metadata lookup and test cleanup without starting a stale extension session; then assess false Flash identification with representative non-handshake traffic. Validate the no-byte-view logger interaction visually when a safe desktop test session is available.
