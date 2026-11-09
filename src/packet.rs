@@ -357,6 +357,8 @@ enum FixedRegexAtom {
     Start,
     End,
     EndStrict,
+    WordBoundary,
+    NonWordBoundary,
     Class(Box<[bool; 256]>),
 }
 
@@ -623,7 +625,11 @@ fn atom_accepts(atom: &FixedRegexAtom, byte: u8) -> bool {
     match atom {
         FixedRegexAtom::Literal(expected) => *expected == byte,
         FixedRegexAtom::Dot => !matches!(byte, b'\n' | b'\r' | 0x85),
-        FixedRegexAtom::Start | FixedRegexAtom::End | FixedRegexAtom::EndStrict => false,
+        FixedRegexAtom::Start
+        | FixedRegexAtom::End
+        | FixedRegexAtom::EndStrict
+        | FixedRegexAtom::WordBoundary
+        | FixedRegexAtom::NonWordBoundary => false,
         FixedRegexAtom::Class(class) => class[usize::from(byte)],
     }
 }
@@ -632,6 +638,16 @@ fn atom_width(atom: &FixedRegexAtom, input: &[u8], position: usize) -> Option<us
     match atom {
         FixedRegexAtom::Start => (position == 0).then_some(0),
         FixedRegexAtom::EndStrict => (position == input.len()).then_some(0),
+        FixedRegexAtom::WordBoundary | FixedRegexAtom::NonWordBoundary => {
+            let word = |byte: u8| byte.is_ascii_alphanumeric() || byte == b'_';
+            let before = position
+                .checked_sub(1)
+                .and_then(|index| input.get(index))
+                .is_some_and(|byte| word(*byte));
+            let after = input.get(position).is_some_and(|byte| word(*byte));
+            let boundary = before != after;
+            (boundary == matches!(atom, FixedRegexAtom::WordBoundary)).then_some(0)
+        }
         FixedRegexAtom::End => {
             let final_terminator = position + 1 == input.len()
                 && matches!(input[position], b'\n' | b'\r' | 0x85)
@@ -879,6 +895,28 @@ fn replace_fixed_pattern(
 #[cfg(test)]
 mod regex_budget_tests {
     use super::*;
+
+    #[test]
+    fn java_21_word_boundaries_handle_empty_and_latin1() {
+        assert_eq!(atom_width(&FixedRegexAtom::WordBoundary, b"", 0), None);
+        assert_eq!(
+            atom_width(&FixedRegexAtom::NonWordBoundary, b"", 0),
+            Some(0)
+        );
+        let input = [0xe9, b'a', b'_'];
+        assert_eq!(
+            atom_width(&FixedRegexAtom::WordBoundary, &input, 1),
+            Some(0)
+        );
+        assert_eq!(
+            atom_width(&FixedRegexAtom::NonWordBoundary, &input, 2),
+            Some(0)
+        );
+        assert_eq!(
+            atom_width(&FixedRegexAtom::WordBoundary, &input, 3),
+            Some(0)
+        );
+    }
 
     #[test]
     fn java_end_anchor_handles_crlf_as_one_terminator() {
@@ -2645,10 +2683,12 @@ impl Packet {
                         quoted = true;
                         continue;
                     }
-                    if matches!(c, 'A' | 'z' | 'Z') {
+                    if matches!(c, 'A' | 'z' | 'Z' | 'b' | 'B') {
                         atoms.push(match c {
                             'A' => FixedRegexAtom::Start,
                             'z' => FixedRegexAtom::EndStrict,
+                            'b' => FixedRegexAtom::WordBoundary,
+                            'B' => FixedRegexAtom::NonWordBoundary,
                             _ => FixedRegexAtom::End,
                         });
                         dynamic = true;
@@ -2828,7 +2868,11 @@ impl Packet {
                 || atoms[start..end].iter().any(|atom| {
                     matches!(
                         atom,
-                        FixedRegexAtom::Start | FixedRegexAtom::End | FixedRegexAtom::EndStrict
+                        FixedRegexAtom::Start
+                            | FixedRegexAtom::End
+                            | FixedRegexAtom::EndStrict
+                            | FixedRegexAtom::WordBoundary
+                            | FixedRegexAtom::NonWordBoundary
                     )
                 })
                 || repeated

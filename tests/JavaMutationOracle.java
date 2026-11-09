@@ -1000,6 +1000,22 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_anchor_corpus_" + i, sample);
         }
+        String[] wordBoundaryPatterns = {"(\\b)", "(\\B)", "\\b(a)", "\\B(a)", "(a)\\b", "(\\b)(a)", "\\b(\\w+)\\b"};
+        char[] wordBoundaryAlphabet = {'a', 'b', '0', '_', 'é', 'ÿ', '!', ' ', '\n', '\u0085'};
+        for (int i = 0; i < 175; i++) {
+            String pattern = wordBoundaryPatterns[i % wordBoundaryPatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(" éa _a 9é ! ");
+            for (int j = 0; j < 16; j++) value.append(wordBoundaryAlphabet[(i * 7 + j * 3) % wordBoundaryAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, "$1/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_word_boundary_" + i, sample);
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);

@@ -242,6 +242,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Actions run 42721796496 failed its Windows G-Python job when two concurrent Jupyter kernels timed out after 20 seconds; the next run 42722422100 passed all eight jobs. The G-Python CI tests now run serially to reduce competition with isolated environment installs. All five serial G-Python tests pass locally on Windows, including real G-Python kernel injection and offscreen QtConsole. The exact runner cause remains unproven; the next Actions run must verify the mitigation.
 
+- Java 21 regex word boundaries `\b` and `\B` are supported as bounded zero-width matches over Latin-1, using the Java 21 ASCII word definition. A 175-packet corpus and empty/accented-character tests match the released beta-29 API. Nine budget/state tests, 29 mutation tests, both Clippy configurations and desktop/web build pass; Unicode regex flags and general Java regex remain open.
+
 ## Exact next step
 
-Compare Java 21 regex word boundaries `\b`/`\B` in Latin-1 fields against the released beta-29 API, including empty strings and accented characters; add differential fixtures and bounded zero-width matching. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Compare Java 21 global case-insensitive regex flag `(?i)` for ASCII and Latin-1 literals, classes, captures and negation against the released beta-29 API; add differential fixtures before extending bounded matching. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

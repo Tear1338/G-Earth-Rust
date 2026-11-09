@@ -69,6 +69,8 @@
 
 ## Unreleased
 
+- Support Java 21 word-boundary regex assertions over Latin-1 packet strings.
+
 - Run G-Python integration tests serially in CI to reduce concurrent Jupyter startup contention.
 
 - Support bounded Java start/end regex anchors, including final line terminators.
