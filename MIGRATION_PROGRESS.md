@@ -160,6 +160,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - The beta-29 Java extension fixture now injects named outgoing WEDGIE packets before and after the handshake, injects an incoming packet during encrypted traffic, blocks a packet and modifies both directions; all checks pass across two controlled connections. Fourteen relay tests and desktop/web Clippy pass locally. The Windows GNU `cargo build --release --locked --features desktop,web` succeeded on production code equivalent to commit 1689e65; later edits affect test code only. Actions run 42635400025 passed all eight jobs for the previous Java-extension fixture. Real hotels and third-party game workflows remain unverified.
 
+- The released G-Presets CI fixture has been extended to start a loopback relay, send packets in both directions and reconnect twice after authentication. The test compiles and desktop/web Clippy passes locally, but the extended real-extension test has not yet run: this Windows environment lacks the pinned JAR and isolated JavaFX display. The existing isolated GitHub Actions job must validate it.
+
 ## Exact next step
 
-Extend the pinned G-Presets compatibility fixture to exercise actual connection and disconnection events and packet interception across reconnects; run its isolated CI job and inspect results. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Inspect the G-Presets CI job for the extended loopback lifecycle fixture, diagnose and fix any failure, and verify both sessions and interception; then inspect the latest Origins Java-extension CI. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.

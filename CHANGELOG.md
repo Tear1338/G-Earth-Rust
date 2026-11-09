@@ -1,5 +1,7 @@
 # Changelog
 
+- Extend the isolated G-Presets fixture to exercise loopback relay traffic and reconnect (CI validation pending).
+
 - Test Java extension WEDGIE injection before and after encryption, blocking and reconnect.
 
 - Exercise beta-29 Java extension packet modification through encrypted Origins relay sessions and reconnect.

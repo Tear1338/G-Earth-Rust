@@ -243,3 +243,5 @@ The full local Origins relay now has a controlled two-session encrypted handshak
 The Origins relay fixture also runs a real extension compiled against the released Java API: named outgoing and numeric incoming WEDGIE modifications survive encryption and reconnect. CI includes this ignored Java-dependent test. Test Java WEDGIE injection next; the hotel endpoints remain simulated.
 
 The real beta-29 Java API fixture now tests WEDGIE injection before and after handshake in both directions, blocking, modification and reconnect; its endpoints remain simulated. A Windows GNU desktop/web release build succeeded on production code equivalent to 1689e65. Strengthen the released G-Presets connection/reconnect fixture next.
+
+The pinned G-Presets fixture now drives two loopback TCP relay sessions with traffic in both directions. Local compilation and Clippy pass, but the extended real-extension run requires the existing Linux JavaFX/Xvfb CI job; inspect and fix that run next. No hotel is contacted.

@@ -1,10 +1,13 @@
 //! Controlled startup check for the user's released G-Presets extension.
 use gearth_rust::{
-    extension_host::{ExtensionHost, HostEvent},
-    packet::{Direction, Message, Packet},
+    extension_host::{ConnectionDetails, ExtensionHost, HostEvent},
+    packet::{read_frame, write_frame, Direction, Message, Packet},
+    packet_info::PacketInfoManager,
+    relay::{Config, Event, Relay, RelayOptions},
 };
 use std::{
     fs,
+    net::{TcpListener, TcpStream},
     path::PathBuf,
     process::{Child, Command, Stdio},
     time::{Duration, Instant},
@@ -115,5 +118,72 @@ fn released_gpresets_authenticates_to_the_rust_host() {
         assert_eq!(message.packet.read_i32().unwrap(), 123);
         assert!(!message.blocked);
     }
+    // Use loopback peers so the published extension receives real connection,
+    // interception and disconnection IPC without joining a hotel.
+    let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+    let details = ConnectionDetails {
+        host: "fixture.invalid".into(),
+        port: 30000,
+        version: "FIXTURE".into(),
+        identifier: "fixture".into(),
+        client_type: "FLASH".into(),
+        packets: PacketInfoManager::new("FIXTURE", Vec::new()),
+    };
+    let (mut relay, relay_events) = Relay::start_with_options(
+        Config {
+            listen: "127.0.0.1:0".parse().unwrap(),
+            remote: remote.local_addr().unwrap().to_string(),
+        },
+        RelayOptions {
+            extensions: Some(host.clone()),
+            connection: Some(details),
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    for session in 0..2 {
+        let mut client = TcpStream::connect(relay.address).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        let (mut server, _) = remote.accept().unwrap();
+        server
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        for direction in [Direction::ToServer, Direction::ToClient] {
+            let mut packet = Packet::new(77);
+            packet.put_i32(123 + session).unwrap();
+            let received = match direction {
+                Direction::ToServer => {
+                    write_frame(&mut client, &packet).unwrap();
+                    read_frame(&mut server).unwrap()
+                }
+                Direction::ToClient => {
+                    write_frame(&mut server, &packet).unwrap();
+                    read_frame(&mut client).unwrap()
+                }
+            };
+            assert_eq!(received.bytes(), packet.bytes());
+        }
+        drop(client);
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            if matches!(
+                relay_events.recv_timeout(Duration::from_millis(100)),
+                Ok(Event::Disconnected)
+            ) {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "relay did not disconnect after session {session}"
+            );
+        }
+        assert!(
+            process.0.try_wait().unwrap().is_none(),
+            "G-Presets exited during session {session}"
+        );
+    }
+    relay.stop();
     host.stop();
 }

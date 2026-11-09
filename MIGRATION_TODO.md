@@ -27,4 +27,4 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: exercise released G-Presets connection lifecycle and interception across controlled reconnects. Full Java regex and live extension validation remain open.
+Next: validate the new released G-Presets loopback connection/reconnect fixture in isolated CI and resolve any failures. Full Java regex and live extension validation remain open.
