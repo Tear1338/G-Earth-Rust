@@ -193,12 +193,16 @@ fn identification_compares_with_java_and_handles_fragmentation() {
             "split {split}"
         );
     }
-    for case in 0..3 {
-        let mut packet = Packet::new(1);
+    for case in 0..4 {
+        let mut packet = Packet::new(if case == 3 { 999 } else { 1 });
         packet
-            .put_string(if case == 2 { "" } else { "TEST-2026" })
+            .put_string(match case {
+                2 => "",
+                3 => "ordinary",
+                _ => "TEST-2026",
+            })
             .unwrap()
-            .put_string("FLASH")
+            .put_string(if case == 3 { "payload" } else { "FLASH" })
             .unwrap();
         if case == 1 {
             packet.put_u8(42).unwrap();

@@ -64,6 +64,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - While Flash metadata is loading, the relay now checks nonblocking sockets for visible EOF or reset and abandons initialization when a peer closes. Controlled stalled-provider fixtures close client and server separately and check that an existing extension session is not replaced. A final check also runs when the lookup returns. If unread socket data hides EOF, closure can still be noticed only after lookup; disconnect races, real HTTP and clients remain unverified. Local library, relay and extension suites and desktop/web Clippy pass.
 
+- A controlled non-handshake packet with header 999 and two ordinary strings is identified as a Flash hello by both the pinned Java method and Rust. This demonstrates a false-positive risk in the shared heuristic; there is no evidence here for a safe universal header or version rule. Real handshake captures are needed before tightening it.
+
 ## Remaining work
 
 - Complete real end-to-end validation for Flash, Origins, Nitro and Unity, including encryption, reconnect, extensions, G-Presets and cleanup.
@@ -83,4 +85,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect CI for Flash metadata lookup cancellation and peer-EOF handling. Assess false Flash identification with representative non-handshake traffic and compare with the pinned Java handler, including short packets with two strings; validate the no-byte-view logger interaction visually when a safe desktop test session is available.
+Inspect CI for Flash lookup cancellation and peer-EOF handling. Compare Java and Rust `HEntityUpdate` parsing for trailing action delimiters and Java `Integer.decode` sign/radix edge cases; implement and validate any discrepancies with a Java oracle. Validate the no-byte-view logger interaction visually when a safe desktop test session is available.

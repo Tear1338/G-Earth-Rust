@@ -8,9 +8,9 @@ public class JavaFlashIdentityOracle {
     public static void main(String[] args) throws Exception {
         Method check = OutgoingFlashPacketHandler.class.getDeclaredMethod("dataStreamCheck", byte[].class);
         check.setAccessible(true);
-        for (int i = 0; i < 3; i++) {
-            HPacket packet = new HPacket(1);
-            packet.appendString(i == 2 ? "" : "TEST-2026").appendString("FLASH");
+        for (int i = 0; i < 4; i++) {
+            HPacket packet = new HPacket(i == 3 ? 999 : 1);
+            packet.appendString(i == 2 ? "" : i == 3 ? "ordinary" : "TEST-2026").appendString(i == 3 ? "payload" : "FLASH");
             if (i == 1) packet.appendByte((byte) 42);
             OutgoingFlashPacketHandler handler = new OutgoingFlashPacketHandler(new ByteArrayOutputStream(), null, null);
             final String[] identity = {"none"};
