@@ -41,6 +41,79 @@ impl Drop for Directory {
 
 #[test]
 #[ignore = "requires pinned G-Presets, JavaFX and a virtual display"]
+fn released_gpresets_original_launcher_authenticates() {
+    let jar = PathBuf::from(std::env::var_os("GEARTH_GPRESETS_JAR").expect("pinned G-Presets JAR"));
+    let modules = std::env::var_os("GEARTH_JAVAFX_MODULES").expect("JavaFX module directory");
+    let mut random = [0; 16];
+    getrandom::fill(&mut random).unwrap();
+    let suffix = random
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect::<String>();
+    let directory = Directory(std::env::temp_dir().join(format!("gearth-gpresets-{suffix}")));
+    fs::create_dir(&directory.0).unwrap();
+    let (host, events) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
+    let filename = "GPresets-1.6.5.jar";
+    let token = host.register_launch(filename).unwrap();
+    let offline_proxy = TcpListener::bind("127.0.0.1:0").unwrap();
+    let stderr = fs::File::create(directory.0.join("stderr.log")).unwrap();
+    let mut process = Process(
+        Command::new("java")
+            .current_dir(&directory.0)
+            .arg(format!("-Duser.home={}", directory.0.display()))
+            .arg("-Dhttps.proxyHost=127.0.0.1")
+            .arg(format!(
+                "-Dhttps.proxyPort={}",
+                offline_proxy.local_addr().unwrap().port()
+            ))
+            .arg("--module-path")
+            .arg(modules)
+            .arg("--add-modules=javafx.controls,javafx.fxml,javafx.web,javafx.swing")
+            .arg("-jar")
+            .arg(jar)
+            .args([
+                "-p",
+                &host.address.port().to_string(),
+                "-f",
+                filename,
+                "-c",
+                &token,
+            ])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::from(stderr))
+            .spawn()
+            .unwrap(),
+    );
+    let deadline = Instant::now() + Duration::from_secs(45);
+    let mut connected = false;
+    while Instant::now() < deadline {
+        if let Ok(HostEvent::Connected { info, .. }) =
+            events.recv_timeout(Duration::from_millis(100))
+        {
+            if info.title == "G-Presets" {
+                connected = true;
+                break;
+            }
+        }
+        if process.0.try_wait().unwrap().is_some() {
+            break;
+        }
+    }
+    if !connected {
+        let log = fs::read_to_string(directory.0.join("stderr.log"))
+            .unwrap_or_default()
+            .replace(&token, "[token]");
+        panic!(
+            "original G-Presets launcher did not authenticate: {}",
+            log.chars().take(8000).collect::<String>()
+        );
+    }
+    host.stop();
+}
+
+#[test]
+#[ignore = "requires pinned G-Presets, JavaFX and a virtual display"]
 fn released_gpresets_authenticates_to_the_rust_host() {
     let jar = PathBuf::from(std::env::var_os("GEARTH_GPRESETS_JAR").expect("pinned G-Presets JAR"));
     let modules = std::env::var_os("GEARTH_JAVAFX_MODULES").expect("JavaFX module directory");
@@ -52,6 +125,25 @@ fn released_gpresets_authenticates_to_the_rust_host() {
         .collect::<String>();
     let directory = Directory(std::env::temp_dir().join(format!("gearth-gpresets-{suffix}")));
     fs::create_dir(&directory.0).unwrap();
+    let observer_source =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/GPresetsObserver.java");
+    let status = Command::new("javac")
+        .args(["-encoding", "UTF-8", "--module-path"])
+        .arg(&modules)
+        .args([
+            "--add-modules",
+            "javafx.controls,javafx.fxml,javafx.web,javafx.swing",
+            "-cp",
+        ])
+        .arg(&jar)
+        .arg("-d")
+        .arg(&directory.0)
+        .arg(observer_source)
+        .status()
+        .expect("compile G-Presets observer");
+    assert!(status.success(), "G-Presets observer compilation failed");
+    let classpath = std::env::join_paths([directory.0.as_path(), jar.as_path()]).unwrap();
+    let state_path = directory.0.join("inventory-state.txt");
     let (host, events) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
     let filename = "GPresets-1.6.5.jar";
     let token = host.register_launch(filename).unwrap();
@@ -67,11 +159,13 @@ fn released_gpresets_authenticates_to_the_rust_host() {
             .arg(format!("-Duser.home={}", directory.0.display()))
             .arg("-Dhttps.proxyHost=127.0.0.1")
             .arg(format!("-Dhttps.proxyPort={proxy_port}"))
+            .arg(format!("-Dgearth.fixture.state={}", state_path.display()))
             .arg("--module-path")
             .arg(modules)
             .arg("--add-modules=javafx.controls,javafx.fxml,javafx.web,javafx.swing")
-            .arg("-jar")
-            .arg(jar)
+            .arg("-cp")
+            .arg(classpath)
+            .arg("GPresetsObserver")
             .args([
                 "--debug",
                 "-p",
@@ -141,17 +235,23 @@ fn released_gpresets_authenticates_to_the_rust_host() {
         client_type: "FLASH".into(),
         packets: PacketInfoManager::new(
             "FIXTURE",
-            [(78, "FurniList"), (79, "Objects"), (80, "Items")]
-                .into_iter()
-                .map(|(header, name)| PacketInfo {
-                    header,
-                    hash: None,
-                    name: Some(name.into()),
-                    structure: None,
-                    direction: Direction::ToClient,
-                    source: "fixture".into(),
-                })
-                .collect(),
+            [
+                (78, "FurniList"),
+                (79, "Objects"),
+                (80, "Items"),
+                (81, "FurniListAddOrUpdate"),
+                (82, "FurniListRemove"),
+            ]
+            .into_iter()
+            .map(|(header, name)| PacketInfo {
+                header,
+                hash: None,
+                name: Some(name.into()),
+                structure: None,
+                direction: Direction::ToClient,
+                source: "fixture".into(),
+            })
+            .collect(),
         ),
     };
     let (mut relay, relay_events) = Relay::start_with_options(
@@ -249,6 +349,35 @@ fn released_gpresets_authenticates_to_the_rust_host() {
             );
             std::thread::sleep(Duration::from_millis(50));
         }
+        let wait_state = |expected: &str| {
+            let deadline = Instant::now() + Duration::from_secs(10);
+            loop {
+                let state = fs::read_to_string(&state_path).unwrap_or_default();
+                if state == expected {
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "G-Presets inventory expected {expected:?}, observed {state:?}"
+                );
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        };
+        wait_state(&(1200 + session).to_string());
+        let mut added = item.clone();
+        added.placement_id = 2200 + session;
+        added.id = 2400 + session;
+        let mut update = Packet::new(81);
+        update.put_i32(1).unwrap();
+        added.append(&mut update).unwrap();
+        write_frame(&mut server, &update).unwrap();
+        assert_eq!(read_frame(&mut client).unwrap().bytes(), update.bytes());
+        wait_state(&format!("{},{}", 1200 + session, 2200 + session));
+        let mut remove = Packet::new(82);
+        remove.put_i32(1200 + session).unwrap();
+        write_frame(&mut server, &remove).unwrap();
+        assert_eq!(read_frame(&mut client).unwrap().bytes(), remove.bytes());
+        wait_state(&(2200 + session).to_string());
         let floor = HFloorItem {
             id: 1600 + session,
             type_id: 1500,

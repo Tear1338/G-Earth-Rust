@@ -1,5 +1,7 @@
 # Changelog
 
+- Verify real G-Presets incremental inventory state over loopback and retain original launcher coverage.
+
 - Exercise real G-Presets floor and wall parsing over isolated relay sessions.
 
 - Exercise actual G-Presets inventory parsing across isolated relay reconnects.

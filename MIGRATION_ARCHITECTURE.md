@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+A test-only G-Presets launcher observes the unmodified extension public inventory during loopback tests; a separate fixture exercises the original JAR launcher.
+
 The released G-Presets loopback fixture also supplies named floor and wall packets and verifies the extension reports parsing them on each reconnect.
 
 The pinned G-Presets loopback fixture supplies named packet metadata and verifies actual inventory parsing using the extension debug log; HTTPS is isolated on loopback.

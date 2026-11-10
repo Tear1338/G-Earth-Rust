@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+G-Presets 1.6.5 incrementally added and removed simulated inventory items with expected public state across two Windows loopback sessions, observed via a test-only launcher; the original JAR launcher separately authenticated. Linux CI and real hotel/preset workflows remain unverified.
+
 Released G-Presets 1.6.5 logged parsing one floor and one wall item in each of two isolated Windows relay sessions. The prior inventory fixture passed Linux CI; Linux CI for the extended fixture and real hotel/preset workflows remain unverified.
 
 The pinned G-Presets 1.6.5 binary parsed a one-item inventory in two isolated Windows relay sessions, as confirmed by its debug log. Linux CI is pending; real hotel and preset workflows remain unverified.

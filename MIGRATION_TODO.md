@@ -1,5 +1,7 @@
 # Migration tasks
 
+The released G-Presets binary exposes expected incremental inventory state through an isolated observer; next observe floor and wall item state and updates. Live hotel and preset workflows remain open.
+
 The released G-Presets binary handles one floor and one wall room item in two isolated Windows relay sessions; next investigate its incremental inventory updates and observable state. Live hotel and preset workflows remain open.
 
 The released G-Presets binary parses a one-item inventory across two isolated Windows relay sessions; next exercise floor and wall room data through the same fixture. Real hotel and preset workflows remain open.

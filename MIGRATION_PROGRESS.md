@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- A test-only launcher subclasses the published G-Presets launcher without modifying its JAR and observes its public inventory. In two isolated Windows relay sessions, a full inventory, incremental addition and removal produce the expected placement IDs. A separate test retains authentication via the original `java -jar` launcher. Both tests, both Clippy configurations and desktop/web debug build pass; Linux CI is pending. No live hotel or preset import/export was tested.
+
 - Extended the released G-Presets loopback fixture with one floor item and one wall item, using named Objects and Items metadata. Its debug log confirms both parsers ran on each of two Windows relay sessions; forwarding, reconnect, both Clippy configurations and desktop/web debug build pass. The preceding inventory fixture passed its Linux G-Presets CI job in run 42923554869; Linux validation of this extension is pending. No live hotel or preset import/export was tested.
 
 - Executed the pinned G-Presets 1.6.5 binary locally on Windows with JavaFX and loopback-only networking. Its debug log confirms it parsed a named one-item FurniList in each of two relay sessions, with bidirectional forwarding and reconnect; the test, both Clippy configurations and desktop/web debug build pass. GitHub Linux verification is pending. No real hotel, room or preset import/export was tested.
@@ -386,4 +388,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect incremental inventory updates in the released G-Presets loopback fixture and add observable state checks; verify Linux CI. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
+Observe floor and wall item state and updates in the released G-Presets loopback fixture; verify Linux CI. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
