@@ -743,12 +743,22 @@ fn java_backreferences_reject_unsupported_cases_transactionally() {
 }
 #[test]
 fn lookbehind_with_unknown_maximum_rejects_without_mutation() {
-    let pattern = "(a)(?<=\\1)b";
-    let mut packet = Packet::new(9);
-    packet.put_string(pattern).unwrap();
-    let before = packet.bytes().to_vec();
-    assert!(packet
-        .replace_substrings_java(pattern, "$0", Some(1))
-        .is_err());
-    assert_eq!(packet.bytes(), before);
+    for pattern in [
+        "(a)(?<=\\1)b",
+        "(?<=(a|b){1})c",
+        "(?<=(a{1,3})+)b",
+        "(?<=(ab)+)c",
+        "(?<=((a)?b){1,3})c",
+    ] {
+        let mut packet = Packet::new(9);
+        packet.put_string(pattern).unwrap();
+        let before = packet.bytes().to_vec();
+        assert!(
+            packet
+                .replace_substrings_java(pattern, "$0", Some(1))
+                .is_err(),
+            "{pattern}"
+        );
+        assert_eq!(packet.bytes(), before);
+    }
 }

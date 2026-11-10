@@ -1,6 +1,6 @@
 # Compatibility with 1.5.4-beta-29
 
-Selected positive and negative lookbehinds match 360 beta-29 packet cases, including variable widths, nested assertions and captures. More combinations and real-session compatibility remain unverified.
+Selected positive and negative lookbehinds match 360 beta-29 packet cases, including variable widths, nested assertions and repeated captures. Selected Java rejections for indeterminate repeated groups are covered. More combinations and real-session compatibility remain unverified.
 
 Selected positive and negative lookaheads, including captures in failed negative assertions and assertions inside repeated groups, match 300 beta-29 packet cases. Full Java regex and real-session compatibility remain unverified.
 

@@ -1713,11 +1713,23 @@ struct AlternationNode {
     children: Vec<(usize, usize)>,
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 struct RegexWidth {
     min: usize,
     max: usize,
     unknown: bool,
+    deterministic: bool,
+}
+
+impl Default for RegexWidth {
+    fn default() -> Self {
+        Self {
+            min: 0,
+            max: 0,
+            unknown: false,
+            deterministic: true,
+        }
+    }
 }
 
 impl RegexWidth {
@@ -1725,6 +1737,21 @@ impl RegexWidth {
         self.min = self.min.saturating_add(other.min);
         self.max = self.max.saturating_add(other.max);
         self.unknown |= other.unknown;
+        self.deterministic &= other.deterministic;
+    }
+
+    fn repeat(&mut self, min: usize, max: Option<usize>, group: bool) {
+        if group && !self.deterministic {
+            self.unknown = true;
+        }
+        self.min = self.min.saturating_mul(min);
+        let count = max.unwrap_or(i32::MAX as usize).min(i32::MAX as usize);
+        let result = (self.max as i32).wrapping_mul(count as i32);
+        if result < 0 {
+            self.unknown = true;
+        }
+        self.max = (result as u32) as usize;
+        self.deterministic &= max == Some(min);
     }
 }
 
@@ -1760,15 +1787,11 @@ fn alternation_widths(
                         widths[child]
                     };
                     if let Some((min, max, _, _, _)) = spec.repeat {
-                        part.min = part.min.saturating_mul(min);
-                        part.max = if part.max == 0 {
-                            0
-                        } else {
-                            part.max.saturating_mul(max.unwrap_or(usize::MAX))
-                        };
+                        part.repeat(min, max, true);
                     }
                     if optional_nodes[child].is_some() {
                         part.min = 0;
+                        part.deterministic = false;
                     }
                     width.append(part);
                     cursor = spec.end;
@@ -1779,6 +1802,7 @@ fn alternation_widths(
                             min: 0,
                             max: usize::MAX,
                             unknown: true,
+                            deterministic: true,
                         },
                         FixedRegexAtom::Start
                         | FixedRegexAtom::StartLine
@@ -1796,18 +1820,15 @@ fn alternation_widths(
                             min: 1,
                             max: 1,
                             unknown: false,
+                            deterministic: true,
                         },
                     };
                     if let Some((min, max, _)) = repeated[cursor] {
-                        part.min = part.min.saturating_mul(min);
-                        part.max = if part.max == 0 {
-                            0
-                        } else {
-                            part.max.saturating_mul(max.unwrap_or(usize::MAX))
-                        };
+                        part.repeat(min, max, false);
                     }
                     if optional_atoms[cursor].is_some() {
                         part.min = 0;
+                        part.deterministic = false;
                     }
                     width.append(part);
                     cursor += 1;
@@ -1819,6 +1840,7 @@ fn alternation_widths(
                     min: prior.min.min(width.min),
                     max: prior.max.max(width.max),
                     unknown: prior.unknown || width.unknown,
+                    deterministic: false,
                 },
             });
         }

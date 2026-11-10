@@ -1,5 +1,7 @@
 # Continuation state
 
+The 360-case beta-29 lookbehind corpus now includes repeated groups and nested captures. Width analysis rejects selected nondeterministic and overflowing repeated groups that Java rejects. Thirty-six mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug build pass; Actions run 42842373921 passed for the prior commit. Next: compare width overflow for unbounded repetitions, alternatives and anchors. The dedicated AIR session is being prepared; real relay and extension validation is outstanding.
+
 Positive and negative lookbehinds now use calculated width bounds and match a 360-packet beta-29 corpus, including nested assertions and captures. Thirty-six mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. Next: compare repeated groups and nested repeated captures inside lookbehinds. A dedicated AIR session is being prepared by the user; end-to-end relay and extension validation remains outstanding.
 
 The 300-packet beta-29 lookahead corpus now includes captures and backreferences in repeated groups. The serialized workspace suite passed with environment-dependent tests ignored; desktop/web Clippy and the Windows GNU desktop/web release build passed locally. Actions run 42839941896 passed for the preceding commit. Next: compare Java lookbehinds, bounds and captures. Real clients and extensions have not been validated end-to-end.

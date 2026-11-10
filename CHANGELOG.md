@@ -1,5 +1,7 @@
 # Changelog
 
+- Match selected Java lookbehind width rejection cases for repeated groups.
+
 - Add bounded Java lookbehind assertions with capture and width handling.
 
 - Extend Java lookahead comparisons to repeated groups and backreferences.

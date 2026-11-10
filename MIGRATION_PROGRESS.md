@@ -324,6 +324,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Positive and negative Java lookbehinds now run in the bounded VM with calculated minimum and maximum candidate widths, captures and alternatives. A 360-packet beta-29 corpus includes nested assertions, variable lengths and capture retention; backreferences with no obvious maximum width are rejected as by Java. Thirty-six mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. Actions run 42840825469 passed all eight jobs for the preceding commit. Complete regex parity and live compatibility remain unverified.
 
+- Expanded the 360-packet beta-29 lookbehind corpus with repeated groups and nested captures. Width analysis now rejects selected nondeterministic repetitions and overflowing group bounds rejected by Java. Thirty-six mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. Actions run 42842373921 passed all eight jobs for the preceding commit. Wider regex combinations and live compatibility remain unverified.
+
 ## Exact next step
 
-Compare lookbehinds inside repeated groups and lookbehind bodies with repeated nested captures against the beta-29 API; extend differential fixtures and correct any divergence. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
+Compare Java lookbehind width analysis and overflow behavior for combinations of unbounded repetitions, alternatives and anchors; add differential fixtures and correct divergences. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
