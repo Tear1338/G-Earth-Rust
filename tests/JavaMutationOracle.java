@@ -1106,6 +1106,23 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_unicode_case_" + i, sample);
         }
+        String[] unixLinePatterns = {"(?d)(.)", "(?dm)^(a)", "(?dm)(a)$", "(?d)(a)\\Z", "(?ds)(.)", "(?d)(?-d:(.))", "(?d)(a)(?-d)$", "(?d:(.))", "(?dm)(^)(.)", "(?d)(a)$", "(?d)(a)\\z", "(?dm)(?-d:^(a))"};
+        char[] unixLineAlphabet = {'a', 'A', '\n', '\r', '\u0085', ' ', 'b'};
+        for (int i = 0; i < 240; i++) {
+            String pattern = unixLinePatterns[i % unixLinePatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(" a\ra\na\r\na\u0085a ");
+            for (int j = 0; j < 14; j++) value.append(unixLineAlphabet[(i * 7 + j * 3) % unixLineAlphabet.length]);
+            if (i % 3 == 0) value.append('\n'); else if (i % 3 == 1) value.append('\r'); else value.append('\u0085');
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, "$1/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_unix_lines_" + i, sample);
+        }
         String[] embeddedFlagPatterns = {"(a(?i)b)c", "(?i)(a(?-i)b)c", "(?i)(?-i)(a)", "(a)(?i)b", "(?iu)(é(?-u)é)", "(?s)(.(?-s).)", "(a(?i)b(?-i)c)d", "((?i)a)b", "(?i)((?-i)a)b", "(?i)(?-i)(?i)(a)b", "(?U)(?i)(é(?-U)é)", "(?i)(a(?-i)b(?i)c)", "(?i)(a)(?-i)b", "(a)(?s).", "(?m)(a)(?-m)$"};
         char[] embeddedFlagAlphabet = {'a', 'A', 'b', 'B', 'c', 'C', 'é', 'É', '\n', '\r', '\u0085', ' '};
         for (int i = 0; i < 300; i++) {

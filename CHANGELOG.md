@@ -1,5 +1,7 @@
 # Changelog
 
+- Match Java UNIX_LINES regex dot and anchor behavior.
+
 - Support Java embedded regex flags with enclosing-group restoration.
 
 - Support scoped Java regex flags and restore their state at group boundaries.

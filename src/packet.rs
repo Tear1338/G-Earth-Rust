@@ -356,11 +356,15 @@ enum FixedRegexAtom {
     CaseInsensitive(u8),
     UnicodeCaseInsensitive(u8),
     Dot,
+    DotUnix,
     DotAll,
     Start,
     StartLine,
+    StartLineUnix,
     End,
+    EndUnix,
     EndLine,
+    EndLineUnix,
     EndStrict,
     WordBoundary,
     NonWordBoundary,
@@ -689,12 +693,16 @@ fn atom_accepts(atom: &FixedRegexAtom, byte: u8) -> bool {
             fold_latin1(*expected) == fold_latin1(byte)
         }
         FixedRegexAtom::Dot => !matches!(byte, b'\n' | b'\r' | 0x85),
+        FixedRegexAtom::DotUnix => byte != b'\n',
         FixedRegexAtom::DotAll => true,
         FixedRegexAtom::Start
         | FixedRegexAtom::End
+        | FixedRegexAtom::EndUnix
         | FixedRegexAtom::EndStrict
         | FixedRegexAtom::StartLine
+        | FixedRegexAtom::StartLineUnix
         | FixedRegexAtom::EndLine
+        | FixedRegexAtom::EndLineUnix
         | FixedRegexAtom::WordBoundary
         | FixedRegexAtom::NonWordBoundary
         | FixedRegexAtom::UnicodeWordBoundary
@@ -722,6 +730,15 @@ fn atom_width(atom: &FixedRegexAtom, input: &[u8], position: usize) -> Option<us
                     && input[position - 1] == b'\r');
             (position == input.len() || at_terminator).then_some(0)
         }
+        FixedRegexAtom::StartLineUnix => {
+            (position < input.len() && (position == 0 || input[position - 1] == b'\n')).then_some(0)
+        }
+        FixedRegexAtom::EndLineUnix => {
+            (position == input.len() || input.get(position) == Some(&b'\n')).then_some(0)
+        }
+        FixedRegexAtom::EndUnix => (position == input.len()
+            || (position + 1 == input.len() && input.get(position) == Some(&b'\n')))
+        .then_some(0),
         FixedRegexAtom::WordBoundary
         | FixedRegexAtom::NonWordBoundary
         | FixedRegexAtom::UnicodeWordBoundary
@@ -1097,6 +1114,20 @@ mod regex_budget_tests {
             atom_width(&FixedRegexAtom::WordBoundary, &input, 3),
             Some(0)
         );
+    }
+
+    #[test]
+    fn java_unix_lines_anchors_and_dot_handle_crlf() {
+        assert!(!atom_accepts(&FixedRegexAtom::DotUnix, b'\n'));
+        assert!(atom_accepts(&FixedRegexAtom::DotUnix, b'\r'));
+        assert!(atom_accepts(&FixedRegexAtom::DotUnix, 0x85));
+        assert_eq!(atom_width(&FixedRegexAtom::StartLineUnix, b"", 0), None);
+        assert_eq!(atom_width(&FixedRegexAtom::EndLineUnix, b"", 0), Some(0));
+        let input = b"a\r\n";
+        assert_eq!(atom_width(&FixedRegexAtom::EndUnix, input, 1), None);
+        assert_eq!(atom_width(&FixedRegexAtom::EndUnix, input, 2), Some(0));
+        assert_eq!(atom_width(&FixedRegexAtom::EndLineUnix, input, 2), Some(0));
+        assert_eq!(atom_width(&FixedRegexAtom::StartLineUnix, input, 3), None);
     }
 
     #[test]
@@ -2802,6 +2833,7 @@ impl Packet {
         let mut case_insensitive = false;
         let mut dot_all = false;
         let mut multiline = false;
+        let mut unix_lines = false;
         let mut unicode_case = false;
         let mut unicode_class = false;
         while let Some(flags) = pattern_source
@@ -2812,13 +2844,14 @@ impl Packet {
                 || !flags
                     .0
                     .chars()
-                    .all(|flag| matches!(flag, 'i' | 's' | 'm' | 'u' | 'U'))
+                    .all(|flag| matches!(flag, 'i' | 's' | 'm' | 'u' | 'U' | 'd'))
             {
                 break;
             }
             case_insensitive |= flags.0.contains('i');
             dot_all |= flags.0.contains('s');
             multiline |= flags.0.contains('m');
+            unix_lines |= flags.0.contains('d');
             unicode_case |= flags.0.contains('u') || flags.0.contains('U');
             unicode_class |= flags.0.contains('U');
             pattern_source = flags.1;
@@ -2839,7 +2872,7 @@ impl Packet {
         let mut last_closed_group = None;
         let mut open: Vec<usize> = Vec::new();
         // Restore flags when leaving any group, including ordinary captures.
-        type Flags = (bool, bool, bool, bool, bool);
+        type Flags = (bool, bool, bool, bool, bool, bool);
         let mut group_frames: Vec<(Option<usize>, usize, Flags)> = Vec::new();
         let mut last_noncapturing = None;
         let mut chars = pattern_source.chars().peekable();
@@ -2869,7 +2902,7 @@ impl Packet {
                         let mut flags = Vec::new();
                         while lookahead
                             .peek()
-                            .is_some_and(|c| matches!(c, 'i' | 's' | 'm' | 'u' | 'U' | '-'))
+                            .is_some_and(|c| matches!(c, 'i' | 's' | 'm' | 'u' | 'U' | 'd' | '-'))
                         {
                             flags.push(lookahead.next().unwrap());
                         }
@@ -2880,6 +2913,7 @@ impl Packet {
                                 case_insensitive,
                                 dot_all,
                                 multiline,
+                                unix_lines,
                                 unicode_case,
                                 unicode_class,
                             );
@@ -2896,6 +2930,7 @@ impl Packet {
                                     'i' => case_insensitive = !disable,
                                     's' => dot_all = !disable,
                                     'm' => multiline = !disable,
+                                    'd' => unix_lines = !disable,
                                     'u' => unicode_case = !disable,
                                     'U' => {
                                         unicode_class = !disable;
@@ -2953,6 +2988,7 @@ impl Packet {
                             case_insensitive,
                             dot_all,
                             multiline,
+                            unix_lines,
                             unicode_case,
                             unicode_class,
                         ),
@@ -2979,6 +3015,7 @@ impl Packet {
                         case_insensitive,
                         dot_all,
                         multiline,
+                        unix_lines,
                         unicode_case,
                         unicode_class,
                     ) = flags;
@@ -2997,6 +3034,7 @@ impl Packet {
                         atoms.push(match c {
                             'A' => FixedRegexAtom::Start,
                             'z' => FixedRegexAtom::EndStrict,
+                            'Z' if unix_lines => FixedRegexAtom::EndUnix,
                             'b' if unicode_class => FixedRegexAtom::UnicodeWordBoundary,
                             'B' if unicode_class => FixedRegexAtom::UnicodeNonWordBoundary,
                             'b' => FixedRegexAtom::WordBoundary,
@@ -3022,10 +3060,13 @@ impl Packet {
                     }
                 }
                 '^' | '$' => {
-                    atoms.push(match (c, multiline) {
-                        ('^', true) => FixedRegexAtom::StartLine,
-                        ('^', false) => FixedRegexAtom::Start,
-                        (_, true) => FixedRegexAtom::EndLine,
+                    atoms.push(match (c, multiline, unix_lines) {
+                        ('^', true, true) => FixedRegexAtom::StartLineUnix,
+                        ('^', true, false) => FixedRegexAtom::StartLine,
+                        ('^', false, _) => FixedRegexAtom::Start,
+                        (_, true, true) => FixedRegexAtom::EndLineUnix,
+                        (_, true, false) => FixedRegexAtom::EndLine,
+                        (_, false, true) => FixedRegexAtom::EndUnix,
                         _ => FixedRegexAtom::End,
                     });
                     dynamic = true;
@@ -3036,6 +3077,8 @@ impl Packet {
                 '.' => {
                     atoms.push(if dot_all {
                         FixedRegexAtom::DotAll
+                    } else if unix_lines {
+                        FixedRegexAtom::DotUnix
                     } else {
                         FixedRegexAtom::Dot
                     });
@@ -3207,8 +3250,11 @@ impl Packet {
                         atom,
                         FixedRegexAtom::Start
                             | FixedRegexAtom::StartLine
+                            | FixedRegexAtom::StartLineUnix
                             | FixedRegexAtom::End
+                            | FixedRegexAtom::EndUnix
                             | FixedRegexAtom::EndLine
+                            | FixedRegexAtom::EndLineUnix
                             | FixedRegexAtom::EndStrict
                             | FixedRegexAtom::WordBoundary
                             | FixedRegexAtom::NonWordBoundary
@@ -3241,8 +3287,11 @@ impl Packet {
                         atom,
                         FixedRegexAtom::Start
                             | FixedRegexAtom::StartLine
+                            | FixedRegexAtom::StartLineUnix
                             | FixedRegexAtom::End
+                            | FixedRegexAtom::EndUnix
                             | FixedRegexAtom::EndLine
+                            | FixedRegexAtom::EndLineUnix
                             | FixedRegexAtom::EndStrict
                             | FixedRegexAtom::WordBoundary
                             | FixedRegexAtom::NonWordBoundary

@@ -270,6 +270,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Java unscoped embedded regex flags i, s, m, u and U can now change within a pattern and restore their enclosing group state on exit. A 300-packet corpus matches the beta-29 Java API for nested changes, negation, Unicode case and line handling. Thirty-one mutation tests, eleven budget tests, both Clippy configurations and the desktop/web debug build pass locally. Unsupported Java flags and complete regex semantics remain open. Actions run 42728074987 passed all eight validation jobs.
 
+- Java UNIX_LINES (?d) now applies to dot, multiline anchors, dollar and \Z, including scoped and embedded flag changes. Java 21 checks and 240 beta-29 packet comparisons cover LF, CR, CRLF, NEL, empty input and combinations with dotall/multiline. Thirty-one mutation tests, twelve budget tests, both Clippy configurations and desktop/web debug compilation pass locally. Complete Java regex and live client compatibility remain open.
+
 ## Exact next step
 
-Compare Java UNIX_LINES flag (?d), scoped and embedded, against the beta-29 API for dot and line anchors over all Latin-1 line terminators; implement bounded differential fixtures. Separately, Java retains captures from failed searches in (?:(a)b)*?b on abab, unlike the Rust matcher; fix that lifecycle before enabling the rejected zero-minimum or reluctant repeated captures. Real game sessions and interactive UI validation remain open.
+Compare Java COMMENTS regex flag (?x) with the beta-29 API for whitespace, comments, escapes, character classes, and scoped/embedded changes; build differential fixtures before implementation. Separately, Java retains captures from failed searches in (?:(a)b)*?b on abab, unlike the Rust matcher; fix that lifecycle before enabling rejected zero-minimum or reluctant repeated captures. Real game sessions and interactive UI validation remain open.
