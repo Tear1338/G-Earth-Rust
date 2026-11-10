@@ -1,5 +1,7 @@
 # Continuation state
 
+Inventory paging now offers bounded beta-29-compatible construction and static parsing separately from corrected client paging. Byte/cursor comparisons cover all product and special types and page sizes 0, 1, 599, 600, 601, 1200 and 1201, including Java's original count/content defects. The oracle, inventory unit test, both Clippy configurations and desktop/web debug build pass. Next: compare floor/wall collection owner mapping. The dedicated AIR session is being prepared; real relay and extension validation remains outstanding.
+
 Java 21 script and block property names now cover 320 script aliases and 756 block aliases; 104 property tables and every alias pass exhaustive Latin-1 comparisons for eight flags and negation. Beta-29 packet comparisons, 38 mutation tests, 14 budget tests, both Clippy configurations and desktop/web debug compilation pass. CI now runs the additional names oracle. Next: compare `HInventoryItem` parsing and page boundaries against beta-29. The dedicated AIR session is being prepared; real relay and extension testing remains outstanding.
 
 Selected `gc=`, `script=`, `sc=`, `block=` and `blk=` aliases match 520 beta-29 packet cases and invalid-name tests. Thirty-eight mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. Next: expand Unicode script and block names and aliases. Real AIR and extension relay validation awaits the dedicated session.

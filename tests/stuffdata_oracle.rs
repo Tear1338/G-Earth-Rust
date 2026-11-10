@@ -143,6 +143,57 @@ fn all_stuff_data_wire_formats_match_original_java() {
             .unwrap(),
         inventory
     );
+    for (code, product) in [
+        ("I", HProductType::WallItem),
+        ("S", HProductType::FloorItem),
+        ("E", HProductType::Effect),
+        ("B", HProductType::Badge),
+        ("s", HProductType::FloorItem),
+    ] {
+        for special in 1..=23 {
+            let mut expected = inventory.clone();
+            expected.product_type = product;
+            expected.special_type = special;
+            expected.floor_details =
+                (product == HProductType::FloorItem).then(|| ("slot".into(), 7));
+            let key = format!("inventory_item_{code}_{special}");
+            let bytes = &observed[key.as_str()];
+            let mut packet = Packet::new(1);
+            expected.append(&mut packet).unwrap();
+            assert_eq!(packet.bytes(), bytes, "{key}");
+            assert_eq!(
+                HInventoryItem::read(&mut Packet::from_bytes(bytes.clone()).unwrap()).unwrap(),
+                expected,
+                "{key}"
+            );
+        }
+    }
+    for size in [0usize, 1, 599, 600, 601, 1200, 1201] {
+        let items = vec![inventory.clone(); size];
+        let pages = HInventoryItem::construct_java_packets(&items, 44).unwrap();
+        assert_eq!(pages.len(), size.div_ceil(600));
+        for (index, page) in pages.iter().enumerate() {
+            let key = format!("inventory_page_{size}_{index}");
+            assert_eq!(page.bytes(), observed[key.as_str()], "{key}");
+            let mut java_page = Packet::from_bytes(observed[key.as_str()].clone()).unwrap();
+            java_page.set_cursor(6).unwrap();
+            let parsed = HInventoryItem::parse_java(&mut java_page).unwrap();
+            let expected_count = if index + 1 == pages.len() {
+                size % 600
+            } else {
+                600
+            };
+            assert_eq!(parsed, vec![inventory.clone(); expected_count], "{key}");
+            let mut summary = Packet::new(1);
+            summary
+                .put_i32(parsed.len() as i32)
+                .unwrap()
+                .put_i32(java_page.cursor() as i32)
+                .unwrap();
+            let parse_key = format!("inventory_parse_{size}_{index}");
+            assert_eq!(summary.bytes(), observed[parse_key.as_str()], "{parse_key}");
+        }
+    }
     let friend = gearth_rust::parsers::social::HFriend {
         id: 8,
         name: "Bob".into(),

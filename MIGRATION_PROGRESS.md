@@ -344,6 +344,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Expanded Java 21 Unicode script and block property aliases to 320 script and 756 block names, plus 104 generated property tables. Exhaustive comparisons cover all 256 Latin-1 bytes, eight flag combinations and negation for every name; the beta-29 packet corpus also passes. Thirty-eight mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. The exhaustive name oracle is included in CI; its first remote run is pending. Full regex and live-client parity remain unverified.
 
+- Compared `HInventoryItem` with the actual beta-29 API for four product types, all 23 special types, lowercase floor codes and page sizes 0, 1, 599, 600, 601, 1200 and 1201. Java's `constructPackets` writes zero as the final count at exact multiples of 600 and includes later items in earlier pages. New bounded `construct_java_packets` and `parse_java` reproduce the tested bytes and Java parser cursor; `construct_pages` retains correctly bounded client pages. The Java oracle, inventory unit test, both Clippy configurations and desktop/web debug build pass. Live extension compatibility remains unverified.
+
 ## Exact next step
 
-Compare Java `HInventoryItem` page construction and parsing across empty inventories, all product types, page boundaries and special types; add beta-29 differential fixtures and correct discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
+Compare Java `HFloorItem` and `HWallItem` collection construction and parsing with multiple, duplicate and missing owners against beta-29; add differential fixtures and address discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.

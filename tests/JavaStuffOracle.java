@@ -58,6 +58,34 @@ public class JavaStuffOracle {
         new HInventoryItem(inventoryInput).appendToPacket(inventoryOutput);
         System.out.println("inventory=" + HexFormat.of().formatHex(inventoryOutput.toBytes()));
 
+        for (String type : new String[]{"I", "S", "E", "B", "s"}) {
+            for (int special = 1; special <= 23; special++) {
+                HPacket input = new HPacket(1);
+                input.appendInt(1).appendString(type).appendInt(2).appendInt(3).appendInt(special);
+                new EmptyStuffData().appendToPacket(input);
+                input.appendBoolean(true).appendBoolean(true).appendBoolean(false).appendBoolean(true)
+                        .appendInt(-1).appendBoolean(false).appendInt(9);
+                if (type.equalsIgnoreCase("S")) input.appendString("slot").appendInt(7);
+                HPacket output = new HPacket(1);
+                new HInventoryItem(input).appendToPacket(output);
+                System.out.println("inventory_item_" + type + "_" + special + "=" + HexFormat.of().formatHex(output.toBytes()));
+            }
+        }
+        HInventoryItem sampleInventory = new HInventoryItem(new HPacket(inventoryOutput.toBytes()));
+        for (int size : new int[]{0, 1, 599, 600, 601, 1200, 1201}) {
+            HInventoryItem[] items = new HInventoryItem[size];
+            java.util.Arrays.fill(items, sampleInventory);
+            HPacket[] pages = HInventoryItem.constructPackets(items, 44);
+            for (int page = 0; page < pages.length; page++) {
+                System.out.println("inventory_page_" + size + "_" + page + "=" + HexFormat.of().formatHex(pages[page].toBytes()));
+                pages[page].setReadIndex(6);
+                HInventoryItem[] parsed = HInventoryItem.parse(pages[page]);
+                HPacket result = new HPacket(1);
+                result.appendInt(parsed.length).appendInt(pages[page].getReadIndex());
+                System.out.println("inventory_parse_" + size + "_" + page + "=" + HexFormat.of().formatHex(result.toBytes()));
+            }
+        }
+
         HPacket friendInput = new HPacket(1);
         friendInput.appendInt(8).appendString("Bob").appendInt(1).appendBoolean(true).appendBoolean(false)
                 .appendString("hr").appendInt(2).appendString("m").appendString("").appendString("")

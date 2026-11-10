@@ -1,5 +1,7 @@
 # Changelog
 
+- Add explicit beta-29 inventory pagination and parser compatibility, including original boundary defects.
+
 - Expand Java regex Unicode script and block names and aliases.
 
 - Resolve selected Java regex category, script and block property aliases.

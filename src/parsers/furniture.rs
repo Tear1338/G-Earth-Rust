@@ -152,6 +152,18 @@ impl HInventoryItem {
         }
         Ok((pages, index, items))
     }
+    /// Match beta-29's static `HInventoryItem.parse`, which seeks to byte 14
+    /// before reading the item count and ignores the two preceding page fields.
+    /// The port's item-count limit still applies.
+    pub fn parse_java(packet: &mut Packet) -> Result<Vec<Self>> {
+        packet.set_cursor(14)?;
+        let n = count(packet)?;
+        let mut items = Vec::with_capacity(n);
+        for _ in 0..n {
+            items.push(Self::read(packet)?);
+        }
+        Ok(items)
+    }
     /// Split inventory into pages of at most 600 items.
     pub fn construct_pages(items: &[Self], header: u16) -> Result<Vec<Packet>> {
         if items.len() > 65_536 {
@@ -168,6 +180,39 @@ impl HInventoryItem {
             for item in chunk {
                 item.append(&mut packet)?;
             }
+            result.push(packet);
+        }
+        Ok(result)
+    }
+
+    /// Reproduce beta-29's `constructPackets`, including its page-length bugs,
+    /// within the port's item and aggregate-size limits. Use `construct_pages`
+    /// to create correctly bounded pages for clients.
+    pub fn construct_java_packets(items: &[Self], header: u16) -> Result<Vec<Packet>> {
+        if items.len() > 65_536 {
+            return Err(error("too many inventory entries"));
+        }
+        let pages = items.len().div_ceil(600);
+        let mut result = Vec::with_capacity(pages);
+        let mut total_bytes = 0usize;
+        for index in 0..pages {
+            let mut packet = Packet::new(header);
+            let count = if index + 1 == pages {
+                items.len() % 600
+            } else {
+                600
+            };
+            packet
+                .put_i32(pages as i32)?
+                .put_i32(index as i32)?
+                .put_i32(count as i32)?;
+            for item in &items[index * 600..] {
+                item.append(&mut packet)?;
+                if total_bytes.saturating_add(packet.bytes().len()) > crate::packet::MAX_FRAME * 4 {
+                    return Err(error("inventory pages exceed aggregate size limit"));
+                }
+            }
+            total_bytes += packet.bytes().len();
             result.push(packet);
         }
         Ok(result)
@@ -423,5 +468,21 @@ mod tests {
         let (_, index, last) = HInventoryItem::parse_page(&mut pages[1]).unwrap();
         assert_eq!((index, last.len()), (1, 1));
         assert_eq!(last[0], items[600]);
+
+        let mut java_pages = HInventoryItem::construct_java_packets(&items, 44).unwrap();
+        assert_eq!(java_pages.len(), 2);
+        let (total, index, first) = HInventoryItem::parse_page(&mut java_pages[0]).unwrap();
+        assert_eq!((total, index, first.len()), (2, 0, 600));
+        assert!(java_pages[0].cursor() < java_pages[0].bytes().len());
+        assert_eq!(
+            HInventoryItem::parse_java(&mut java_pages[1]).unwrap(),
+            vec![items[600].clone()]
+        );
+
+        let mut exact = HInventoryItem::construct_java_packets(&items[..600], 44).unwrap();
+        assert!(HInventoryItem::parse_java(&mut exact[0])
+            .unwrap()
+            .is_empty());
+        assert!(exact[0].cursor() < exact[0].bytes().len());
     }
 }
