@@ -364,10 +364,18 @@ enum FixedRegexAtom {
     EndStrict,
     WordBoundary,
     NonWordBoundary,
+    UnicodeWordBoundary,
+    UnicodeNonWordBoundary,
     Class(Box<[bool; 256]>),
 }
 
-fn predefined_class(kind: char) -> Option<Box<[bool; 256]>> {
+fn unicode_word(byte: u8) -> bool {
+    byte.is_ascii_alphanumeric()
+        || byte == b'_'
+        || matches!(byte, 0xaa | 0xb5 | 0xba | 0xc0..=0xd6 | 0xd8..=0xf6 | 0xf8..=0xff)
+}
+
+fn predefined_class(kind: char, unicode: bool) -> Option<Box<[bool; 256]>> {
     let (base, negated) = match kind {
         'd' => ('d', false),
         'D' => ('d', true),
@@ -381,8 +389,17 @@ fn predefined_class(kind: char) -> Option<Box<[bool; 256]>> {
     for byte in 0u8..=u8::MAX {
         let included = match base {
             'd' => byte.is_ascii_digit(),
-            'w' => byte.is_ascii_alphanumeric() || byte == b'_',
-            's' => matches!(byte, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r'),
+            'w' => {
+                if unicode {
+                    unicode_word(byte)
+                } else {
+                    byte.is_ascii_alphanumeric() || byte == b'_'
+                }
+            }
+            's' => {
+                matches!(byte, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
+                    || (unicode && matches!(byte, 0x85 | 0xa0))
+            }
             _ => unreachable!(),
         };
         class[usize::from(byte)] = included != negated;
@@ -427,6 +444,7 @@ fn parse_character_class(
     chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
     case_insensitive: bool,
     unicode_case: bool,
+    unicode_class: bool,
 ) -> Result<Box<[bool; 256]>> {
     let negated = if chars.peek() == Some(&'^') {
         chars.next();
@@ -445,7 +463,7 @@ fn parse_character_class(
             let escaped = chars
                 .next()
                 .ok_or_else(|| error("unsupported character class escape"))?;
-            if let Some(class) = predefined_class(escaped) {
+            if let Some(class) = predefined_class(escaped, unicode_class) {
                 elements.push(CharacterClassElement::Predefined(class));
             } else if let Some(byte) = control_escape(escaped, chars)? {
                 elements.push(CharacterClassElement::Literal(byte, true));
@@ -678,7 +696,9 @@ fn atom_accepts(atom: &FixedRegexAtom, byte: u8) -> bool {
         | FixedRegexAtom::StartLine
         | FixedRegexAtom::EndLine
         | FixedRegexAtom::WordBoundary
-        | FixedRegexAtom::NonWordBoundary => false,
+        | FixedRegexAtom::NonWordBoundary
+        | FixedRegexAtom::UnicodeWordBoundary
+        | FixedRegexAtom::UnicodeNonWordBoundary => false,
         FixedRegexAtom::Class(class) => class[usize::from(byte)],
     }
 }
@@ -702,15 +722,33 @@ fn atom_width(atom: &FixedRegexAtom, input: &[u8], position: usize) -> Option<us
                     && input[position - 1] == b'\r');
             (position == input.len() || at_terminator).then_some(0)
         }
-        FixedRegexAtom::WordBoundary | FixedRegexAtom::NonWordBoundary => {
-            let word = |byte: u8| byte.is_ascii_alphanumeric() || byte == b'_';
+        FixedRegexAtom::WordBoundary
+        | FixedRegexAtom::NonWordBoundary
+        | FixedRegexAtom::UnicodeWordBoundary
+        | FixedRegexAtom::UnicodeNonWordBoundary => {
+            let unicode = matches!(
+                atom,
+                FixedRegexAtom::UnicodeWordBoundary | FixedRegexAtom::UnicodeNonWordBoundary
+            );
+            let word = |byte: u8| {
+                if unicode {
+                    unicode_word(byte)
+                } else {
+                    byte.is_ascii_alphanumeric() || byte == b'_'
+                }
+            };
             let before = position
                 .checked_sub(1)
                 .and_then(|index| input.get(index))
                 .is_some_and(|byte| word(*byte));
             let after = input.get(position).is_some_and(|byte| word(*byte));
             let boundary = before != after;
-            (boundary == matches!(atom, FixedRegexAtom::WordBoundary)).then_some(0)
+            (boundary
+                == matches!(
+                    atom,
+                    FixedRegexAtom::WordBoundary | FixedRegexAtom::UnicodeWordBoundary
+                ))
+            .then_some(0)
         }
         FixedRegexAtom::End => {
             let final_terminator = position + 1 == input.len()
@@ -988,6 +1026,39 @@ mod regex_budget_tests {
             count += 1;
         }
         assert_eq!(count, 256);
+    }
+
+    #[test]
+    #[ignore = "requires Java 21 Unicode class vectors"]
+    fn unicode_latin1_classes_match_java() {
+        let path = std::env::var("GEARTH_MUTATION_ORACLE").unwrap();
+        let oracle = std::fs::read_to_string(path).unwrap();
+        let mut count = 0;
+        for line in oracle.lines() {
+            let Some(line) = line.strip_prefix("unicode_class_") else {
+                continue;
+            };
+            let (kind, hex) = line.split_once('=').unwrap();
+            let kind = kind.chars().next().unwrap();
+            let bytes: Vec<u8> = (0..hex.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+                .collect();
+            assert_eq!(bytes.len(), 32);
+            for value in 0u8..=255 {
+                let expected = bytes[usize::from(value) / 8] & (1 << (value % 8)) != 0;
+                let actual = match kind {
+                    'b' => atom_width(&FixedRegexAtom::UnicodeWordBoundary, &[value], 0).is_some(),
+                    'B' => {
+                        atom_width(&FixedRegexAtom::UnicodeNonWordBoundary, &[value], 0).is_some()
+                    }
+                    _ => predefined_class(kind, true).unwrap()[usize::from(value)],
+                };
+                assert_eq!(actual, expected, "{kind}: {value:02x}");
+            }
+            count += 1;
+        }
+        assert_eq!(count, 8);
     }
 
     #[test]
@@ -2716,6 +2787,7 @@ impl Packet {
         let mut dot_all = false;
         let mut multiline = false;
         let mut unicode_case = false;
+        let mut unicode_class = false;
         while let Some(flags) = pattern_source
             .strip_prefix("(?")
             .and_then(|source| source.split_once(')'))
@@ -2724,14 +2796,15 @@ impl Packet {
                 || !flags
                     .0
                     .chars()
-                    .all(|flag| matches!(flag, 'i' | 's' | 'm' | 'u'))
+                    .all(|flag| matches!(flag, 'i' | 's' | 'm' | 'u' | 'U'))
             {
                 break;
             }
             case_insensitive |= flags.0.contains('i');
             dot_all |= flags.0.contains('s');
             multiline |= flags.0.contains('m');
-            unicode_case |= flags.0.contains('u');
+            unicode_case |= flags.0.contains('u') || flags.0.contains('U');
+            unicode_class |= flags.0.contains('U');
             pattern_source = flags.1;
         }
         let mut literal = String::new();
@@ -2826,6 +2899,8 @@ impl Packet {
                         atoms.push(match c {
                             'A' => FixedRegexAtom::Start,
                             'z' => FixedRegexAtom::EndStrict,
+                            'b' if unicode_class => FixedRegexAtom::UnicodeWordBoundary,
+                            'B' if unicode_class => FixedRegexAtom::UnicodeNonWordBoundary,
                             'b' => FixedRegexAtom::WordBoundary,
                             'B' => FixedRegexAtom::NonWordBoundary,
                             _ => FixedRegexAtom::End,
@@ -2835,7 +2910,7 @@ impl Packet {
                         last_closed_group = None;
                         continue;
                     }
-                    if let Some(class) = predefined_class(c) {
+                    if let Some(class) = predefined_class(c, unicode_class) {
                         atoms.push(FixedRegexAtom::Class(class));
                         dynamic = true;
                         quantifiable = true;
@@ -2876,6 +2951,7 @@ impl Packet {
                         &mut chars,
                         case_insensitive,
                         unicode_case,
+                        unicode_class,
                     )?));
                     dynamic = true;
                     quantifiable = true;
@@ -3023,6 +3099,8 @@ impl Packet {
                             | FixedRegexAtom::EndStrict
                             | FixedRegexAtom::WordBoundary
                             | FixedRegexAtom::NonWordBoundary
+                            | FixedRegexAtom::UnicodeWordBoundary
+                            | FixedRegexAtom::UnicodeNonWordBoundary
                     )
                 })
                 || repeated

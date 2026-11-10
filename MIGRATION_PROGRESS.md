@@ -254,6 +254,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Java global `(?u)` combined with `(?i)` now matches Latin-1 case pairs in literals and positive/negated classes; `(?u)` alone leaves case sensitive matching unchanged. All 65,536 Latin-1 pairs match Java 21 and 210 packet mutations match the released beta-29 API, including captures and flag combinations. The pair oracle also runs in CI. Thirty mutation tests, ten budget tests, both Clippy configurations and the desktop/web debug build pass locally. Full Java regex, embedded flags and live clients/extensions remain unverified. Actions run 42724130488 passed all eight jobs for dotall.
 
+- Java global `(?U)` now enables Unicode predefined digit, word and whitespace classes, their complements, and word boundaries over Latin-1, and implies Unicode case folding when combined with `(?i)`. Java 21 comparisons cover all 256 bytes for each class and boundary, plus 200 packet mutations against the beta-29 API; both oracle checks run in CI. Thirty mutation tests, ten budget tests, both Clippy configurations and desktop/web debug compilation pass locally. Full Java regex and live clients/extensions remain unverified. Windows GNU desktop/web release compilation succeeded for commit a41e862; it does not establish live compatibility.
+
 ## Exact next step
 
-Compare Java 21 `(?U)` Unicode predefined classes and word boundaries over all Latin-1 bytes with exhaustive differential fixtures, then implement only the evidenced subset. Real game sessions and visual UI validation remain open.
+Compare non-capturing groups `(?:...)`, nesting and quantifiers against the released Java API, starting with bounded differential fixtures; implement only structures that retain capture and backtracking semantics. Real game sessions and interactive UI validation remain open.

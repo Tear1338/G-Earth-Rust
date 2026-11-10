@@ -27,6 +27,6 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: compare `(?U)` Unicode predefined classes and word boundaries exhaustively over Latin-1 against Java 21. Full Java regex and live extension validation remain open.
+Next: compare non-capturing groups, nesting and quantifiers against the released Java API. Full Java regex and live extension validation remain open.
 
 CI: serialized G-Python jobs passed on Windows and Linux in run 42723118432; continue monitoring intermittent kernel startup timeouts.

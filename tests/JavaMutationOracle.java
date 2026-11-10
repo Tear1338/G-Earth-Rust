@@ -1106,6 +1106,39 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_unicode_case_" + i, sample);
         }
+        String[] unicodeClassPatterns = {"(?U)(\\w+)", "(?U)(\\W+)", "(?U)(\\s+)", "(?U)(\\S+)", "(?U)(\\d+)", "(?U)([\\w]+)", "(?U)([^\\w]+)", "(?U)(\\b)", "(?U)(\\B)", "(?iU)(é)"};
+        char[] unicodeClassAlphabet = {'é', 'É', 'µ', 'ª', 'º', '×', '9', ' ', '\u0085', '\u00a0', 'a', '_'};
+        for (int i = 0; i < 200; i++) {
+            String pattern = unicodeClassPatterns[i % unicodeClassPatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(" éÉ µªº 9_ ");
+            for (int j = 0; j < 16; j++) value.append(unicodeClassAlphabet[(i * 7 + j * 3) % unicodeClassAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, "$1/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_unicode_class_" + i, sample);
+        }
+        for (String kind : new String[]{"b", "B"}) {
+            var pattern = java.util.regex.Pattern.compile("\\" + kind, java.util.regex.Pattern.UNICODE_CHARACTER_CLASS);
+            byte[] matches = new byte[32];
+            for (int value = 0; value < 256; value++) {
+                var matcher = pattern.matcher(Character.toString((char) value));
+                if (matcher.find() && matcher.start() == 0) matches[value / 8] |= (byte) (1 << (value % 8));
+            }
+            System.out.println("unicode_class_" + kind + "=" + java.util.HexFormat.of().formatHex(matches));
+        }
+        for (String kind : new String[]{"d", "D", "w", "W", "s", "S"}) {
+            var pattern = java.util.regex.Pattern.compile("\\" + kind, java.util.regex.Pattern.UNICODE_CHARACTER_CLASS);
+            byte[] matches = new byte[32];
+            for (int value = 0; value < 256; value++) {
+                if (pattern.matcher(Character.toString((char) value)).matches()) matches[value / 8] |= (byte) (1 << (value % 8));
+            }
+            System.out.println("unicode_class_" + kind + "=" + java.util.HexFormat.of().formatHex(matches));
+        }
         for (int first = 0; first < 256; first++) {
             var pattern = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote(Character.toString((char) first)),
                 java.util.regex.Pattern.CASE_INSENSITIVE | java.util.regex.Pattern.UNICODE_CASE);
