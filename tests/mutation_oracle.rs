@@ -1898,6 +1898,42 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_unix_lines_{i}"), &packet);
     }
+    let comment_patterns = [
+        "(?x)(a b)",
+        "(?x)(a #comment\n b)",
+        "(?x)([a b])",
+        "(?x)([a#comment\nb])",
+        "(?x)(a\\ b)",
+        "(?x)(a\\#b)",
+        "(?x)(\\Q a#b \\E)",
+        "(?x)(?-x:(a b))",
+        "(?x)((?-x) a b)",
+        "(?x:(a b)) c",
+        "(?x)(a){1 , 2 }",
+        "(?x)(\\x 4 1)",
+        "(?xd)(a)# c\r\nb",
+        "(?x)(a#c\u{85}b)",
+        "(?x)([a\\ b])",
+        "(?x)(a)(? -x) b",
+        "(?x i:(a b))",
+        "(?x)(a\u{b}b)",
+        "(?x)(?:a #comment\n (b))",
+    ];
+    let comment_alphabet = ['a', 'A', 'b', 'B', '#', ' ', '\n', '\r', '\u{85}'];
+    for i in 0..380 {
+        let pattern = comment_patterns[i % comment_patterns.len()];
+        let mut value = format!("{pattern} ab a b a#b  a#b  Aab ");
+        for j in 0..14 {
+            value.push(comment_alphabet[(i * 7 + j * 3) % comment_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, "$1/$0", Some(1))
+            .unwrap();
+        check(&format!("substring_comments_mode_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

@@ -1106,6 +1106,22 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_unicode_case_" + i, sample);
         }
+        String[] commentPatterns = {"(?x)(a b)", "(?x)(a #comment\n b)", "(?x)([a b])", "(?x)([a#comment\nb])", "(?x)(a\\ b)", "(?x)(a\\#b)", "(?x)(\\Q a#b \\E)", "(?x)(?-x:(a b))", "(?x)((?-x) a b)", "(?x:(a b)) c", "(?x)(a){1 , 2 }", "(?x)(\\x 4 1)", "(?xd)(a)# c\r\nb", "(?x)(a#c\u0085b)", "(?x)([a\\ b])", "(?x)(a)(? -x) b", "(?x i:(a b))", "(?x)(a\u000bb)", "(?x)(?:a #comment\n (b))"};
+        char[] commentAlphabet = {'a', 'A', 'b', 'B', '#', ' ', '\n', '\r', '\u0085'};
+        for (int i = 0; i < 380; i++) {
+            String pattern = commentPatterns[i % commentPatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(" ab a b a#b  a#b  Aab ");
+            for (int j = 0; j < 14; j++) value.append(commentAlphabet[(i * 7 + j * 3) % commentAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, "$1/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_comments_mode_" + i, sample);
+        }
         String[] unixLinePatterns = {"(?d)(.)", "(?dm)^(a)", "(?dm)(a)$", "(?d)(a)\\Z", "(?ds)(.)", "(?d)(?-d:(.))", "(?d)(a)(?-d)$", "(?d:(.))", "(?dm)(^)(.)", "(?d)(a)$", "(?d)(a)\\z", "(?dm)(?-d:^(a))"};
         char[] unixLineAlphabet = {'a', 'A', '\n', '\r', '\u0085', ' ', 'b'};
         for (int i = 0; i < 240; i++) {

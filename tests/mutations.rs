@@ -681,3 +681,16 @@ fn java_noncapturing_groups_reject_repetition_and_unbalanced_patterns_transactio
         assert_eq!(packet.bytes(), original.bytes(), "{pattern}");
     }
 }
+
+#[test]
+fn java_comments_mode_rejects_invalid_counted_closure_transactionally() {
+    for pattern in ["(?x)(a){ 1}", "(?x)(a){#comment\n1}"] {
+        let mut packet = Packet::new(9);
+        packet.put_string(pattern).unwrap();
+        let before = packet.bytes().to_vec();
+        assert!(packet
+            .replace_substrings_java(pattern, "$1", Some(1))
+            .is_err());
+        assert_eq!(packet.bytes(), before);
+    }
+}

@@ -439,6 +439,138 @@ fn control_escape(
     Ok(Some(value))
 }
 
+// Java COMMENTS mode skips ASCII whitespace and # comments while parsing,
+// including inside character classes. Escaped and quoted characters stay literal.
+fn regex_skip_layout(chars: &[char], mut at: usize, comments: bool, unix: bool) -> usize {
+    if !comments {
+        return at;
+    }
+    while at < chars.len() {
+        if matches!(chars[at], ' ' | '\t' | '\n' | '\r' | '\u{0b}' | '\u{0c}') {
+            at += 1;
+        } else if chars[at] == '#' {
+            at += 1;
+            while at < chars.len()
+                && !(chars[at] == '\n'
+                    || (!unix && matches!(chars[at], '\r' | '\u{85}' | '\u{2028}' | '\u{2029}')))
+            {
+                at += 1;
+            }
+        } else {
+            break;
+        }
+    }
+    at
+}
+
+fn normalize_regex_comments(pattern: &str) -> String {
+    let chars: Vec<char> = pattern.chars().collect();
+    let mut output = String::with_capacity(pattern.len());
+    let mut stack = Vec::new();
+    let (mut comments, mut unix, mut in_class, mut quoted) = (false, false, false, false);
+    let mut at = 0;
+    while at < chars.len() {
+        if !quoted {
+            at = regex_skip_layout(&chars, at, comments, unix);
+        }
+        if at >= chars.len() {
+            break;
+        }
+        let c = chars[at];
+        if c == '\\' && at + 1 < chars.len() {
+            let next = chars[at + 1];
+            output.push(c);
+            output.push(next);
+            at += 2;
+            if !in_class && next == 'Q' && !quoted {
+                quoted = true;
+            } else if quoted && next == 'E' {
+                quoted = false;
+            }
+            continue;
+        }
+        if quoted {
+            output.push(c);
+            at += 1;
+            continue;
+        }
+        // Java's counted-closure parser reads the first byte after '{' raw,
+        // even in COMMENTS mode; preserving it prevents accepting invalid input.
+        if c == '{' && comments && !in_class {
+            output.push(c);
+            at += 1;
+            if at < chars.len() {
+                output.push(chars[at]);
+                at += 1;
+            }
+            continue;
+        }
+        if c == '[' && !in_class {
+            in_class = true;
+            output.push(c);
+            at += 1;
+            continue;
+        }
+        if c == ']' && in_class {
+            in_class = false;
+            output.push(c);
+            at += 1;
+            continue;
+        }
+        if c == '(' && !in_class {
+            let question = regex_skip_layout(&chars, at + 1, comments, unix);
+            if chars.get(question) == Some(&'?') {
+                let (saved_comments, saved_unix) = (comments, unix);
+                let (mut candidate_comments, mut candidate_unix, mut disable) =
+                    (comments, unix, false);
+                let mut flags = String::new();
+                let mut cursor =
+                    regex_skip_layout(&chars, question + 1, candidate_comments, candidate_unix);
+                while let Some(&flag) = chars.get(cursor) {
+                    if flag == '-' && !disable {
+                        disable = true;
+                    } else if matches!(flag, 'i' | 's' | 'm' | 'u' | 'U' | 'd' | 'x') {
+                        if flag == 'x' {
+                            candidate_comments = !disable;
+                        }
+                        if flag == 'd' {
+                            candidate_unix = !disable;
+                        }
+                    } else {
+                        break;
+                    }
+                    flags.push(flag);
+                    cursor =
+                        regex_skip_layout(&chars, cursor + 1, candidate_comments, candidate_unix);
+                }
+                if matches!(chars.get(cursor), Some(':') | Some(')'))
+                    && (!flags.is_empty() || chars[cursor] == ':')
+                {
+                    output.push_str("(?");
+                    output.push_str(&flags);
+                    output.push(chars[cursor]);
+                    if chars[cursor] == ':' {
+                        stack.push((saved_comments, saved_unix));
+                    }
+                    comments = candidate_comments;
+                    unix = candidate_unix;
+                    at = cursor + 1;
+                    continue;
+                }
+            }
+            stack.push((comments, unix));
+        } else if c == ')' && !in_class {
+            if let Some((previous_comments, previous_unix)) = stack.pop() {
+                comments = previous_comments;
+                unix = previous_unix;
+            }
+        }
+        output.push(c);
+        at += 1;
+    }
+    output
+}
+
 enum CharacterClassElement {
     Literal(u8, bool),
     Predefined(Box<[bool; 256]>),
@@ -471,7 +603,7 @@ fn parse_character_class(
                 elements.push(CharacterClassElement::Predefined(class));
             } else if let Some(byte) = control_escape(escaped, chars)? {
                 elements.push(CharacterClassElement::Literal(byte, true));
-            } else if "[]^-\\.".contains(escaped) {
+            } else if "[]^-\\.#".contains(escaped) || escaped.is_ascii_whitespace() {
                 elements.push(CharacterClassElement::Literal(escaped as u8, true));
             } else {
                 return Err(error("unsupported character class escape"));
@@ -2829,7 +2961,8 @@ impl Packet {
             return Err(error("short string too long"));
         }
         let pattern_bytes = latin1_encode(pattern)?;
-        let mut pattern_source = pattern;
+        let normalized_pattern = normalize_regex_comments(pattern);
+        let mut pattern_source = normalized_pattern.as_str();
         let mut case_insensitive = false;
         let mut dot_all = false;
         let mut multiline = false;
@@ -2844,7 +2977,7 @@ impl Packet {
                 || !flags
                     .0
                     .chars()
-                    .all(|flag| matches!(flag, 'i' | 's' | 'm' | 'u' | 'U' | 'd'))
+                    .all(|flag| matches!(flag, 'i' | 's' | 'm' | 'u' | 'U' | 'd' | 'x'))
             {
                 break;
             }
@@ -2900,10 +3033,9 @@ impl Packet {
                         let mut lookahead = chars.clone();
                         lookahead.next();
                         let mut flags = Vec::new();
-                        while lookahead
-                            .peek()
-                            .is_some_and(|c| matches!(c, 'i' | 's' | 'm' | 'u' | 'U' | 'd' | '-'))
-                        {
+                        while lookahead.peek().is_some_and(|c| {
+                            matches!(c, 'i' | 's' | 'm' | 'u' | 'U' | 'd' | 'x' | '-')
+                        }) {
                             flags.push(lookahead.next().unwrap());
                         }
                         let scoped = lookahead.peek() == Some(&':');
@@ -2931,6 +3063,7 @@ impl Packet {
                                     's' => dot_all = !disable,
                                     'm' => multiline = !disable,
                                     'd' => unix_lines = !disable,
+                                    'x' => {}
                                     'u' => unicode_case = !disable,
                                     'U' => {
                                         unicode_class = !disable;
@@ -3055,7 +3188,7 @@ impl Packet {
                     }
                     if let Some(byte) = control_escape(c, &mut chars)? {
                         c = char::from(byte);
-                    } else if !".^$|?*+()[]{}\\".contains(c) {
+                    } else if !".^$|?*+()[]{}\\#".contains(c) && !c.is_ascii_whitespace() {
                         return Err(error("unsupported regex escape"));
                     }
                 }

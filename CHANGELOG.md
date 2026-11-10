@@ -1,5 +1,7 @@
 # Changelog
 
+- Support Java COMMENTS regex whitespace, comments and scoped changes.
+
 - Add opt-in read-only official AIR process, TCP ownership and scan diagnostics.
 
 - Match Java UNIX_LINES regex dot and anchor behavior.

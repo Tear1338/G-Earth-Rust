@@ -27,6 +27,6 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: compare COMMENTS (?x) whitespace, comments and escapes against Java. Java preserves a capture from a failed search for `(?:(a)b)*?b` on `abab`; fix that lifecycle separately before enabling zero-minimum or reluctant repeated captures. Full Java regex and live extension validation remain open.
+Next: compare regex alternation and branch capture/backtracking behavior against Java. Java preserves a capture from a failed search for `(?:(a)b)*?b` on `abab`; fix that lifecycle separately before enabling zero-minimum or reluctant repeated captures. Full Java regex and live extension validation remain open.
 
 CI: serialized G-Python jobs passed on Windows and Linux in run 42723118432; continue monitoring intermittent kernel startup timeouts.
