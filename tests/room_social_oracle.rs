@@ -83,6 +83,22 @@ fn entity_update_actions_match_java() {
         "mv 1,2,3,",
         "sign 0x1",
         "mv --1,2,3",
+        "sit 1/lay 2/sign 18/mv 1,2,3/flatctrl 1",
+        "flatctrl 1/mv 1,2,3/sit 1/sign 11/lay 1",
+        "mv 1,2,3/mv 4,5,6",
+        "sign 1/sign 2",
+        "sit 1/unknown 4/lay 1",
+        "sign 19",
+        "sign -1",
+        "sign +1",
+        "mv 1,,3",
+        "mv 1,2,three",
+        "mv 1,2",
+        "mv 1,2,3,4",
+        "/sit 1//lay 1/",
+        "sit\t1",
+        " flatctrl 1",
+        "flatctrl 1/flatctrl 1",
     ];
     for (index, action) in cases.iter().enumerate() {
         let mut packet = Packet::new(1);
@@ -143,6 +159,7 @@ fn entity_update_actions_match_java() {
             }
             Err(_) => "error".to_string(),
         };
+        let actual = format!("{actual};{}", packet.cursor());
         assert_eq!(
             actual,
             expected[format!("case_{index}").as_str()],

@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- Compared 27 entity-update action strings with the beta-29 Java API, including action ordering, repeated actions, invalid numbers, delimiters and cursor positions on success and failure. Java oracle, five entity tests, both Clippy configurations and desktop/web debug build pass; live traffic is not verified.
+
 - Beta-29 entity fixtures now cover unknown type IDs, gender normalization and invalid genders, negative bot skill counts, invalid directions and negative entity/update counts. Java omits the final Habbo integer when serializing; Rust provides separate `append_java`/`construct_java` methods while retaining complete client wire output. The original Java oracle, five entity unit tests, both Clippy configurations and desktop/web debug build pass. Real clients and extensions remain unverified.
 
 Last updated: 2026-11-11. Baseline: Java 1.5.4-beta-29; current status and changes are tracked in the GitHub main branch.
@@ -370,4 +372,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Compare beta-29 entity-update action ordering, malformed numeric values and cursor behavior; add differential fixtures and correct discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
+Compare beta-29 pet and bot entity fields and serialization; add differential fixtures and correct discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.

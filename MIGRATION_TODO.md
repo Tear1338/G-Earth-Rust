@@ -1,5 +1,7 @@
 # Migration tasks
 
+Entity-update fixtures now compare action ordering, malformed values and cursor positions; next compare pet and bot entity fields and serialization against beta-29.
+
 Entity edge cases and Java serialization have differential fixtures; next compare entity-update action ordering, malformed values and cursor behavior against beta-29. Live client and extension tests remain open.
 
 Status key: **partial** means implemented for selected cases only; **open** means no evidence of completion. All areas remain open to broader Java comparison and live validation. See `docs/PARITY.md` for details.

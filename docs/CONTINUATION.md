@@ -1,5 +1,7 @@
 # Continuation state
 
+Entity-update fixtures compare 27 ordered, repeated and malformed action strings plus cursor positions against beta-29. Java oracle, five entity tests, both Clippy configurations and desktop/web debug build pass. Next: compare pet and bot entity fields and serialization. The dedicated AIR session is being prepared; live relay and extension tests remain outstanding.
+
 Entity edge cases and beta-29 serialization now have Java oracle coverage; five entity unit tests, both Clippy configurations and the desktop/web debug build pass. Next: compare entity-update action ordering, malformed numeric values and cursor behavior against beta-29. The dedicated AIR session is being prepared; live relay and extension testing remains outstanding.
 
 Navigator room serialization now matches Java sentinel omission for group ID and ad expiry `-1`; 256 flag/sentinel combinations and negative list versus tag-array counts match beta-29. Java oracle, two navigator tests, both Clippy configurations and desktop/web debug build pass. Next: compare room entity/update edge cases. The dedicated AIR session is being prepared; live relay and extension testing remains outstanding.
