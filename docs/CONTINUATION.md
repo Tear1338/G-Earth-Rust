@@ -1,5 +1,7 @@
 # Continuation state
 
+Negative floor and wall furniture owner/item count failures and cursor positions match beta-29 in four fixtures. Java oracle, three furniture tests, both Clippy configurations and desktop/web debug build pass. Next: compare malformed and unknown stuff-data formats against Java. The dedicated AIR session is being prepared; live relay and extension tests remain outstanding.
+
 Furniture fixtures compare 12 wall ID formats and floor directions -1 through 8 against beta-29. Java oracle, three furniture tests, both Clippy configurations and desktop/web debug build pass. Next: compare furniture owner and item count failure behavior and cursor positions. The dedicated AIR session is being prepared; live relay and extension testing remains outstanding.
 
 Pet and bot entity fixtures compare 64 pet flag combinations and bot skill boundaries against beta-29. Java oracle, five entity tests, both Clippy configurations and desktop/web debug build pass. Next: compare remaining room furniture placement and state formats against Java. The dedicated AIR session is being prepared; live relay and extension tests remain outstanding.

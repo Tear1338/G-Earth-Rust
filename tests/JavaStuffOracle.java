@@ -407,6 +407,19 @@ public class JavaStuffOracle {
             System.out.println("forum_overview_normalized_" + mode + "=" + HexFormat.of().formatHex(normalized.toBytes()));
         }
 
+        for (int which = 0; which < 2; which++) {
+            for (int where = 0; where < 2; where++) {
+                HPacket input = new HPacket(1);
+                if (where == 0) input.appendInt(-1); else input.appendInt(0).appendInt(-1);
+                try {
+                    if (which == 0) HFloorItem.parse(input); else HWallItem.parse(input);
+                    throw new AssertionError("negative furniture count accepted");
+                } catch (IllegalArgumentException | NegativeArraySizeException expected) { }
+                HPacket summary = new HPacket(1); summary.appendInt(input.getReadIndex());
+                System.out.println("furniture_count_input_" + which + "_" + where + "=" + HexFormat.of().formatHex(input.toBytes()));
+                System.out.println("furniture_count_cursor_" + which + "_" + where + "=" + HexFormat.of().formatHex(summary.toBytes()));
+            }
+        }
         String[] wallIds = {"0", "-1", "+42", "0x7fffffff", "-0x80000000", "#a", "077", "08", "2147483648", "0x-1", "", " 1"};
         for (int i = 0; i < wallIds.length; i++) {
             HPacket input = new HPacket(1); input.appendString(wallIds[i]).appendInt(456).appendString(":w=1,2 l=3,4 r").appendString("state").appendInt(-1).appendInt(2).appendInt(42);

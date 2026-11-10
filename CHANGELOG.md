@@ -1,5 +1,7 @@
 # Changelog
 
+- Compare furniture collection count failures and cursors with beta-29.
+
 - Compare wall furniture IDs and floor directions against beta-29.
 
 - Compare pet flags and bot skills with beta-29 entity serialization.

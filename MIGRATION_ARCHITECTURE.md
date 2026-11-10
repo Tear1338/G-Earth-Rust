@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Furniture collection fixtures compare error cursor positions for negative owner and item counts against Java.
+
 Furniture fixtures exercise Java numeric wall IDs and floor direction bounds; finite cases do not establish live wire compatibility.
 
 Pet entity fixtures cover all six-flag combinations; bot fixtures cover skill-count and signed-short boundaries against Java serialization.

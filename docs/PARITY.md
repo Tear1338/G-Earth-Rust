@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Negative floor and wall furniture owner/item counts fail at the same cursor positions as beta-29 in four fixtures. Real traffic remains unverified.
+
 Furniture fixtures compare 12 wall ID forms and floor directions -1 through 8 against beta-29, including invalid cases. Real furniture traffic and extensions remain unverified.
 
 Pet entity fixtures cover 64 flag combinations, while bot fixtures cover skill counts and signed-short boundaries; normalized bytes match beta-29 for these cases. Live client and extension behavior remains unverified.

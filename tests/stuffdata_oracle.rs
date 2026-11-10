@@ -602,6 +602,24 @@ fn all_stuff_data_wire_formats_match_original_java() {
             "{key}"
         );
     }
+    for which in 0..2 {
+        for where_count in 0..2 {
+            let key = format!("furniture_count_input_{which}_{where_count}");
+            let mut input = Packet::from_bytes(observed[key.as_str()].clone()).unwrap();
+            let result = if which == 0 {
+                HFloorItem::parse(&mut input).map(|_| ())
+            } else {
+                HWallItem::parse(&mut input).map(|_| ())
+            };
+            assert!(result.is_err(), "{key}");
+            let mut cursor = Packet::new(1);
+            cursor.put_i32(input.cursor() as i32).unwrap();
+            assert_eq!(
+                cursor.bytes(),
+                observed[format!("furniture_count_cursor_{which}_{where_count}").as_str()]
+            );
+        }
+    }
     for i in 0..12 {
         let mut input =
             Packet::from_bytes(observed[format!("wall_id_input_{i}").as_str()].clone()).unwrap();
