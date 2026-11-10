@@ -1106,6 +1106,20 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_unicode_case_" + i, sample);
         }
+        String[] noncapturingOptionalPatterns = {"(?:ab)?c", "(?:ab)??c", "(?:ab)?(?:cd)?", "a(?:[a-c]d)?b", "(?i)(?:Ab)?b", "(?:)?a", "(?:(?:a)?b)?c"};
+        for (int i = 0; i < 140; i++) {
+            String pattern = noncapturingOptionalPatterns[i % noncapturingOptionalPatterns.length];
+            String value = pattern + " abc ac abcd c AbB adab " + "ab".repeat(i % 5);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value);
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, "[$0]", 1);
+            } finally { System.setOut(original); }
+            emit("substring_noncapturing_optional_" + i, sample);
+        }
         String[] noncapturingRepeatPatterns = {"(?:ab)*", "(?:ab)+", "(?:ab){1,3}", "(?:ab)*?b", "a(?:bc)+d", "(?:[a-c]d){0,2}", "(?i)(?:Ab)+"};
         for (int i = 0; i < 140; i++) {
             String pattern = noncapturingRepeatPatterns[i % noncapturingRepeatPatterns.length];

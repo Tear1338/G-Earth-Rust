@@ -260,6 +260,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Java non-capturing groups support bounded or unbounded greedy/reluctant repetition when the pattern has no captures and the repeated body consists of nonempty fixed-width atoms. A 140-packet corpus matches the released beta-29 API. Optional groups, repeated bodies containing quantifiers or assertions, and repeated non-capturing groups with captures remain rejected. Thirty-one mutation tests, ten budget tests, both Clippy configurations and desktop/web debug compilation pass locally. Windows GNU desktop/web release build and the Java packet oracle in release mode pass for commit c4e75e8; Actions run 42725963585 passed all eight validation jobs.
 
+- Optional `(?:...)?` and reluctant `(?:...)??` groups now work in patterns without capture groups, including nesting and empty groups. A 140-packet corpus matches the released beta-29 API. Patterns combining optional non-capturing groups and captures are still rejected; full Java regex remains incomplete. Thirty-one mutation tests, ten budget tests, both Clippy configurations and desktop/web debug compilation pass locally.
+
 ## Exact next step
 
 Extend quantified non-capturing groups to preserve nested captures and backtracking, starting with Java differential fixtures for optional and repeated captures; retain explicit rejection for unsupported structures. Real game sessions and interactive UI validation remain open.

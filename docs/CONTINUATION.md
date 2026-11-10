@@ -1,5 +1,7 @@
 # Continuation state
 
+Optional `(?:...)?` and reluctant `(?:...)??` groups now work in patterns without capture groups, including nesting and empty groups. A 140-packet corpus matches the released beta-29 API. Patterns combining optional non-capturing groups and captures are still rejected; full Java regex remains incomplete. Thirty-one mutation tests, ten budget tests, both Clippy configurations and desktop/web debug compilation pass locally. Next: validate quantified non-capturing groups with captures.
+
 Java non-capturing groups support bounded or unbounded greedy/reluctant repetition when the pattern has no captures and the repeated body consists of nonempty fixed-width atoms. A 140-packet corpus matches the released beta-29 API. Optional groups, repeated bodies containing quantifiers or assertions, and repeated non-capturing groups with captures remain rejected. Thirty-one mutation tests, ten budget tests, both Clippy configurations and desktop/web debug compilation pass locally. Next: validate and support nested captures in repeated non-capturing groups.
 
 Unquantified Java non-capturing groups `(?:...)` now preserve nested captures and numbering, including empty groups. A 180-packet corpus matches the released beta-29 API. Quantifiers on non-capturing groups and unbalanced patterns are rejected transactionally; other regex semantics remain incomplete. Thirty-one mutation tests, ten budget tests, both Clippy configurations and desktop/web debug compilation pass locally. Next: compare bounded quantifiers on these groups with Java.

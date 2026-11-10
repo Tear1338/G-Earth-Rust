@@ -2816,6 +2816,7 @@ impl Packet {
         let mut dynamic = case_insensitive;
         let mut optional = Vec::new();
         let mut optional_group_owners = Vec::new();
+        let mut noncapturing_optional = false;
         let mut repeated = Vec::new();
         let mut group_repeat = None;
         let mut repeated_group_owner = None;
@@ -2982,7 +2983,8 @@ impl Packet {
                     continue;
                 }
                 '?' => {
-                    if !quantifiable && last_closed_group.is_none() {
+                    if !quantifiable && last_closed_group.is_none() && prior_noncapturing.is_none()
+                    {
                         return Err(error("unsupported optional quantifier"));
                     }
                     let greedy = if chars.peek() == Some(&'?') {
@@ -2996,8 +2998,11 @@ impl Packet {
                     }
                     let (start, end) = if quantifiable {
                         (atoms.len() - 1, atoms.len())
+                    } else if let Some(group) = last_closed_group {
+                        ranges[group]
                     } else {
-                        ranges[last_closed_group.unwrap()]
+                        noncapturing_optional = true;
+                        prior_noncapturing.unwrap()
                     };
                     if start != end {
                         optional.push((start, end, greedy));
@@ -3101,6 +3106,11 @@ impl Packet {
         }
         if !group_frames.is_empty() {
             return Err(error("invalid capture pattern"));
+        }
+        if noncapturing_optional && !groups.is_empty() {
+            return Err(error(
+                "optional noncapturing groups with captures are not supported",
+            ));
         }
         let needle = latin1_encode(&literal)?;
         let mut repeated_atoms = vec![None; atoms.len()];
