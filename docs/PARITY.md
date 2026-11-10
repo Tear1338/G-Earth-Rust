@@ -1,6 +1,6 @@
 # Compatibility with 1.5.4-beta-29
 
-Eighty-nine Java regex properties have exhaustive Latin-1 bitmap comparisons for eight flag combinations and 450 beta-29 packet cases. Selected category, script and block aliases match 520 additional cases; other properties and aliases remain incomplete. Full regex and live-session compatibility remain unverified.
+Java regex properties and 1,076 script/block names have exhaustive Latin-1 bitmap comparisons for eight flag combinations. Selected property and alias packet cases match beta-29; other regex behavior and live-session compatibility remain unverified.
 
 Nested character classes and intersections match 540 beta-29 packet cases, including COMMENTS mode, Latin-1 case folding and selected recursive consecutive-ampersand cases. Complete regex and live-session compatibility remain unverified.
 

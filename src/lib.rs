@@ -14,6 +14,7 @@ pub mod gpython;
 pub mod i18n;
 pub mod injection;
 mod java_regex_properties;
+mod java_unicode_names;
 pub mod logger_display;
 pub mod logger_filter;
 mod maven_version;

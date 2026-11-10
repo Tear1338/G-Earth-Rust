@@ -1,5 +1,7 @@
 # Changelog
 
+- Expand Java regex Unicode script and block names and aliases.
+
 - Resolve selected Java regex category, script and block property aliases.
 
 - Add 89 Java Unicode, POSIX and character properties for Latin-1 regex input.

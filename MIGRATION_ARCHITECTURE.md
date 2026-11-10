@@ -1,6 +1,6 @@
 # Rust migration architecture
 
-Java regex properties use generated Java 21 Latin-1 bitmaps for eight flag combinations. The generator and exhaustive oracle live in `tests/JavaRegexPropertyGenerator.java`; selected category, script and block aliases are resolved, and unlisted names are rejected.
+Java regex properties use generated Java 21 Latin-1 bitmaps for eight flag combinations. The generator and exhaustive oracle live in `tests/JavaRegexPropertyGenerator.java`; generated script and block name tables and their reproducible source generator are in `src/java_unicode_names.rs` and `tests/generate_java_unicode_names.py`.
 
 Character classes support bounded nesting, union and recursively parsed intersection over Latin-1 sets, with per-operand case folding. Selected consecutive ampersand combinations match beta-29; full grammar parity remains unverified.
 

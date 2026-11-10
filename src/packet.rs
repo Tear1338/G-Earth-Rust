@@ -452,40 +452,48 @@ fn java_property_class(
         | (usize::from(unicode_class) << 2);
     let canonical = if let Some((key, value)) = name.split_once('=') {
         if key.eq_ignore_ascii_case("gc") || key.eq_ignore_ascii_case("general_category") {
-            if value.starts_with("Is") || value.starts_with("In") || value.starts_with("java") {
+            if value.starts_with("Is") || value.starts_with("In") {
                 return Err(error("unsupported regex character property"));
             }
             value.to_owned()
         } else if key.eq_ignore_ascii_case("sc") || key.eq_ignore_ascii_case("script") {
-            match value.to_ascii_uppercase().as_str() {
-                "LATIN" | "LATN" => "IsLatin".into(),
-                "COMMON" | "ZYYY" => "IsCommon".into(),
-                "INHERITED" | "ZINH" => "IsInherited".into(),
-                _ => return Err(error("unsupported regex character property")),
-            }
+            java_property_unicode_name(value, true)?.to_owned()
         } else if key.eq_ignore_ascii_case("blk") || key.eq_ignore_ascii_case("block") {
-            java_property_block(value)?.to_owned()
+            java_property_unicode_name(value, false)?.to_owned()
         } else {
             return Err(error("unsupported regex character property"));
         }
     } else if let Some(value) = name.strip_prefix("In") {
-        java_property_block(value)?.to_owned()
+        java_property_unicode_name(value, false)?.to_owned()
     } else if let Some(value) = name.strip_prefix("Is") {
-        match value.to_ascii_uppercase().as_str() {
-            "LATN" => "IsLatin".into(),
-            "ZYYY" => "IsCommon".into(),
-            "ZINH" => "IsInherited".into(),
-            _ => crate::java_regex_properties::JAVA_REGEX_PROPERTIES
+        if let Some((candidate, _)) = crate::java_regex_properties::JAVA_REGEX_PROPERTIES
+            .iter()
+            .find(|(candidate, _)| {
+                candidate.starts_with("Is")
+                    && if matches!(&candidate[2..], "ASCII" | "Lu" | "L") {
+                        &candidate[2..] == value
+                    } else {
+                        candidate[2..].eq_ignore_ascii_case(value)
+                    }
+            })
+        {
+            (*candidate).to_owned()
+        } else if !value.starts_with("Is")
+            && !value.starts_with("In")
+            && crate::java_regex_properties::JAVA_REGEX_PROPERTIES
                 .iter()
-                .find(|(candidate, _)| {
-                    candidate.starts_with("Is") && candidate[2..].eq_ignore_ascii_case(value)
-                })
-                .map(|(candidate, _)| (*candidate).to_owned())
-                .ok_or_else(|| error("unsupported regex character property"))?,
+                .any(|(candidate, _)| *candidate == value)
+        {
+            value.to_owned()
+        } else {
+            java_property_unicode_name(value, true)?.to_owned()
         }
     } else {
         name
     };
+    if canonical.is_empty() {
+        return Ok(Box::new([kind == 'P'; 256]));
+    }
     let bits = crate::java_regex_properties::JAVA_REGEX_PROPERTIES
         .iter()
         .find(|(candidate, _)| *candidate == canonical)
@@ -498,14 +506,23 @@ fn java_property_class(
     Ok(class)
 }
 
-fn java_property_block(value: &str) -> Result<&'static str> {
-    match value.to_ascii_uppercase().as_str() {
-        "BASIC_LATIN" | "BASIC LATIN" | "BASICLATIN" => Ok("InBasic_Latin"),
-        "LATIN_1_SUPPLEMENT" | "LATIN-1 SUPPLEMENT" | "LATIN-1SUPPLEMENT" => {
-            Ok("InLatin_1_Supplement")
-        }
-        _ => Err(error("unsupported regex character property")),
-    }
+fn java_property_unicode_name(value: &str, script: bool) -> Result<&'static str> {
+    let names = if script {
+        crate::java_unicode_names::JAVA_UNICODE_SCRIPT_NAMES
+    } else {
+        crate::java_unicode_names::JAVA_UNICODE_BLOCK_NAMES
+    };
+    let name = value.to_ascii_uppercase();
+    let index = names
+        .binary_search_by(|(candidate, _)| candidate.cmp(&name.as_str()))
+        .map_err(|_| error("unsupported regex character property"))?;
+    Ok(match (script, names[index].1) {
+        (true, 1) => "IsLatin",
+        (true, 2) => "IsCommon",
+        (false, 1) => "InBasic_Latin",
+        (false, 2) => "InLatin_1_Supplement",
+        _ => "",
+    })
 }
 
 fn control_escape(
@@ -1591,6 +1608,53 @@ fn replace_alternatives(
 #[cfg(test)]
 mod regex_budget_tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requires Java 21 Unicode script and block vectors"]
+    fn java_unicode_property_names_match_java() {
+        let path = std::env::var("GEARTH_REGEX_PROPERTY_NAMES_ORACLE").unwrap();
+        let oracle = std::fs::read_to_string(path).unwrap();
+        let mut count = 0;
+        for line in oracle.lines() {
+            let (key, hex) = line.split_once('=').unwrap();
+            let (prefix, flags) = key.rsplit_once(':').unwrap();
+            let (kind, name) = prefix.split_once(':').unwrap();
+            let flags: usize = flags.parse().unwrap();
+            let bytes: Vec<u8> = (0..hex.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+                .collect();
+            let key = if kind == "S" { "sc" } else { "blk" };
+            let expression = format!("{{{key}={name}}}");
+            for polarity in ['p', 'P'] {
+                let mut chars = expression.chars().peekable();
+                let set = java_property_class(
+                    polarity,
+                    &mut chars,
+                    flags & 1 != 0,
+                    flags & 2 != 0,
+                    flags & 4 != 0,
+                )
+                .unwrap();
+                assert!(chars.next().is_none());
+                for value in 0..256 {
+                    let expected = bytes[value / 8] & (1 << (value % 8)) != 0;
+                    assert_eq!(
+                        set[value],
+                        expected == (polarity == 'p'),
+                        "{key}={name} flags={flags} byte={value}"
+                    );
+                }
+            }
+            count += 1;
+        }
+        assert_eq!(
+            count,
+            (crate::java_unicode_names::JAVA_UNICODE_SCRIPT_NAMES.len()
+                + crate::java_unicode_names::JAVA_UNICODE_BLOCK_NAMES.len())
+                * 8
+        );
+    }
 
     #[test]
     #[ignore = "requires Java 21 property vectors"]

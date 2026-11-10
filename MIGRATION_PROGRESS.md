@@ -342,6 +342,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Added selected Java `gc=`, `script=`, `sc=`, `block=` and `blk=` property aliases and case rules for the currently supported Latin, Common, Inherited, Basic Latin and Latin-1 Supplement tables. A 520-packet beta-29 corpus and invalid-name tests pass. Thirty-eight mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. Other scripts, blocks and properties remain unsupported; full regex and live-client parity remain unverified.
 
+- Expanded Java 21 Unicode script and block property aliases to 320 script and 756 block names, plus 104 generated property tables. Exhaustive comparisons cover all 256 Latin-1 bytes, eight flag combinations and negation for every name; the beta-29 packet corpus also passes. Thirty-eight mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. The exhaustive name oracle is included in CI; its first remote run is pending. Full regex and live-client parity remain unverified.
+
 ## Exact next step
 
-Expand Java Unicode script and block property names and aliases beyond Latin/Common/Inherited and the first two blocks, comparing all Latin-1 values with Java 21. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
+Compare Java `HInventoryItem` page construction and parsing across empty inventories, all product types, page boundaries and special types; add beta-29 differential fixtures and correct discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.

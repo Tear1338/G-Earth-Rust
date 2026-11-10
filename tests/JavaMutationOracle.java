@@ -1181,7 +1181,7 @@ public class JavaMutationOracle {
             finally { System.setOut(original); }
             emit("substring_property_" + i, sample);
         }
-        String[] propertyAliases = {"gc=Lu", "GC=Lu", "general_category=Lu", "General_Category=Ll", "gc=Lower", "gc=ASCII", "gc=L1", "sc=Latin", "script=latin", "sc=Latn", "script=LATIN", "sc=Zyyy", "script=Inherited", "sc=Zinh", "blk=Basic_Latin", "block=Basic Latin", "block=BasicLatin", "block=Latin_1_Supplement", "block=Latin-1Supplement", "IsLATN", "IsLATIN", "Islowercase", "Iswhite_space", "InBASIC_LATIN", "InBasicLatin", "InLatin-1Supplement"};
+        String[] propertyAliases = {"gc=Lu", "GC=Lu", "general_category=Lu", "General_Category=Ll", "gc=Lower", "gc=ASCII", "gc=L1", "sc=Latin", "script=latin", "sc=Latn", "script=LATIN", "sc=Zyyy", "script=Inherited", "sc=Zinh", "blk=Basic_Latin", "block=Basic Latin", "block=BasicLatin", "block=Latin_1_Supplement", "block=Latin-1Supplement", "IsLATN", "IsLATIN", "Islowercase", "Iswhite_space", "InBASIC_LATIN", "InBasicLatin", "InLatin-1Supplement", "sc=Greek", "script=Grek", "IsGrek", "IsCyrillic", "sc=Cyrl", "blk=Greek", "blk=Arabic", "InGreek", "IsLu", "IsL", "IsLower", "IsASCII", "gc=javaLowerCase", "IsjavaLowerCase", "IsLC"};
         char[] aliasAlphabet = {'a', 'A', 'b', 'B', '0', '9', ' ', '\t', '\n', 'é', 'É', 'ö', 'Ö', 'ß', '\u00a0', '\u0085'};
         for (int i = 0; i < 520; i++) {
             String pattern = "(\\p{" + propertyAliases[i % propertyAliases.length] + "}+)";

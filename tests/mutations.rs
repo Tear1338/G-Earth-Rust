@@ -515,6 +515,11 @@ fn java_character_properties_reject_unknown_or_unclosed_names_transactionally() 
         "\\p{isLatin}",
         "\\p{blk=ASCII}",
         "\\p{block=Latin-1_Supplement}",
+        "\\p{Islu}",
+        "\\p{IsLU}",
+        "\\p{Isascii}",
+        "\\p{IsInBasic_Latin}",
+        "\\p{IsIsLatin}",
     ] {
         let mut packet = Packet::new(9);
         packet.put_string(pattern).unwrap();

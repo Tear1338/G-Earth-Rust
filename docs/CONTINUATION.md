@@ -1,5 +1,7 @@
 # Continuation state
 
+Java 21 script and block property names now cover 320 script aliases and 756 block aliases; 104 property tables and every alias pass exhaustive Latin-1 comparisons for eight flags and negation. Beta-29 packet comparisons, 38 mutation tests, 14 budget tests, both Clippy configurations and desktop/web debug compilation pass. CI now runs the additional names oracle. Next: compare `HInventoryItem` parsing and page boundaries against beta-29. The dedicated AIR session is being prepared; real relay and extension testing remains outstanding.
+
 Selected `gc=`, `script=`, `sc=`, `block=` and `blk=` aliases match 520 beta-29 packet cases and invalid-name tests. Thirty-eight mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. Next: expand Unicode script and block names and aliases. Real AIR and extension relay validation awaits the dedicated session.
 
 Eighty-nine Java Unicode, POSIX and Java character properties now use Java 21-generated Latin-1 bitmaps. Exhaustive 256-byte, eight-flag and negation comparisons and 450 beta-29 packet cases pass, as do 38 mutation tests, 14 budget tests, both Clippy configurations and desktop/web debug compilation. The exhaustive oracle was added to CI. Next: compare and implement `gc=`, `script=` and `block=` aliases. Real AIR and extension relay validation awaits the dedicated session.
