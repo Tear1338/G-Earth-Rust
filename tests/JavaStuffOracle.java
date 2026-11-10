@@ -407,6 +407,29 @@ public class JavaStuffOracle {
             System.out.println("forum_overview_normalized_" + mode + "=" + HexFormat.of().formatHex(normalized.toBytes()));
         }
 
+        String[] wallIds = {"0", "-1", "+42", "0x7fffffff", "-0x80000000", "#a", "077", "08", "2147483648", "0x-1", "", " 1"};
+        for (int i = 0; i < wallIds.length; i++) {
+            HPacket input = new HPacket(1); input.appendString(wallIds[i]).appendInt(456).appendString(":w=1,2 l=3,4 r").appendString("state").appendInt(-1).appendInt(2).appendInt(42);
+            System.out.println("wall_id_input_" + i + "=" + HexFormat.of().formatHex(input.toBytes()));
+            try {
+                HWallItem wallCase = new HWallItem(input); HPacket output = new HPacket(1); wallCase.appendToPacket(output);
+                System.out.println("wall_id_output_" + i + "=" + HexFormat.of().formatHex(output.toBytes()));
+            } catch (NumberFormatException expected) {
+                // Invalid ID is expected to fail.
+            }
+        }
+        for (int direction : new int[]{-1, 0, 1, 2, 3, 4, 5, 6, 7, 8}) {
+            HPacket input = new HPacket(1); input.appendInt(77).appendInt(5).appendInt(3).appendInt(4).appendInt(direction).appendString("3.5").appendString("1").appendInt(0);
+            new LegacyStuffData(0, 0, "3").appendToPacket(input);
+            input.appendInt(-1).appendInt(2).appendInt(42);
+            System.out.println("floor_direction_input_" + direction + "=" + HexFormat.of().formatHex(input.toBytes()));
+            try {
+                HFloorItem floorCase = new HFloorItem(input); HPacket output = new HPacket(1); floorCase.appendToPacket(output);
+                System.out.println("floor_direction_output_" + direction + "=" + HexFormat.of().formatHex(output.toBytes()));
+            } catch (ArrayIndexOutOfBoundsException expected) {
+                // Invalid direction is expected to fail.
+            }
+        }
         HPacket entities = new HPacket(1);
         entities.appendInt(4);
         for (int i = 0; i < 4; i++) {

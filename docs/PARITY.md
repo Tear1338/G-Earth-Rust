@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Furniture fixtures compare 12 wall ID forms and floor directions -1 through 8 against beta-29, including invalid cases. Real furniture traffic and extensions remain unverified.
+
 Pet entity fixtures cover 64 flag combinations, while bot fixtures cover skill counts and signed-short boundaries; normalized bytes match beta-29 for these cases. Live client and extension behavior remains unverified.
 
 Entity-update fixtures now compare 27 action strings and cursor positions against beta-29, including repeated and malformed actions. This finite corpus does not establish live compatibility.

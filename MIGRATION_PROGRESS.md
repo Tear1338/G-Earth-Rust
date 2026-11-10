@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- Compared 12 wall furniture ID representations and floor directions -1 through 8 against beta-29; valid serialized bytes and selected invalid-input failures match. Java oracle, three furniture tests, both Clippy configurations and desktop/web debug build pass; real furniture traffic remains unverified.
+
 - Compared pet serialization for all 64 flag combinations and bot serialization for 0, 1 and 4 skills, including signed-short boundaries, against beta-29. The Java oracle, five entity tests, both Clippy configurations and desktop/web debug build pass. Live behavior remains unverified.
 
 - Compared 27 entity-update action strings with the beta-29 Java API, including action ordering, repeated actions, invalid numbers, delimiters and cursor positions on success and failure. Java oracle, five entity tests, both Clippy configurations and desktop/web debug build pass; live traffic is not verified.
@@ -374,4 +376,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Compare remaining room furniture placement and state formats against beta-29; add differential fixtures and correct discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
+Compare furniture owner and item count failures and cursor positions against beta-29; add differential fixtures and correct discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.

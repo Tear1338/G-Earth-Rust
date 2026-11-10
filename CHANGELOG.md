@@ -1,5 +1,7 @@
 # Changelog
 
+- Compare wall furniture IDs and floor directions against beta-29.
+
 - Compare pet flags and bot skills with beta-29 entity serialization.
 
 - Expand Java entity-update action and cursor comparisons.

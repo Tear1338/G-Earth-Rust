@@ -602,6 +602,36 @@ fn all_stuff_data_wire_formats_match_original_java() {
             "{key}"
         );
     }
+    for i in 0..12 {
+        let mut input =
+            Packet::from_bytes(observed[format!("wall_id_input_{i}").as_str()].clone()).unwrap();
+        if let Some(expected) = observed.get(format!("wall_id_output_{i}").as_str()) {
+            let item = HWallItem::read(&mut input).unwrap();
+            let mut output = Packet::new(1);
+            item.append(&mut output).unwrap();
+            assert_eq!(output.bytes(), expected, "wall ID {i}");
+        } else {
+            assert!(HWallItem::read(&mut input).is_err(), "wall ID {i}");
+        }
+    }
+    for direction in -1..=8 {
+        let mut input = Packet::from_bytes(
+            observed[format!("floor_direction_input_{direction}").as_str()].clone(),
+        )
+        .unwrap();
+        if let Some(expected) = observed.get(format!("floor_direction_output_{direction}").as_str())
+        {
+            let item = HFloorItem::read(&mut input).unwrap();
+            let mut output = Packet::new(1);
+            item.append(&mut output).unwrap();
+            assert_eq!(output.bytes(), expected, "floor direction {direction}");
+        } else {
+            assert!(
+                HFloorItem::read(&mut input).is_err(),
+                "floor direction {direction}"
+            );
+        }
+    }
     let entities = gearth_rust::parsers::entity::HEntity::parse(
         &mut Packet::from_bytes(observed["entities"].clone()).unwrap(),
     )

@@ -1,5 +1,7 @@
 # Migration tasks
 
+Wall ID number formats and floor direction boundaries have beta-29 fixtures; next compare furniture owner and item count failure behavior and cursor positions.
+
 Pet flags and bot skill boundary values have beta-29 fixtures; next compare remaining room furniture placement and state formats against Java.
 
 Entity-update fixtures now compare action ordering, malformed values and cursor positions; next compare pet and bot entity fields and serialization against beta-29.

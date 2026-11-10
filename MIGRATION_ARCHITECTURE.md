@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Furniture fixtures exercise Java numeric wall IDs and floor direction bounds; finite cases do not establish live wire compatibility.
+
 Pet entity fixtures cover all six-flag combinations; bot fixtures cover skill-count and signed-short boundaries against Java serialization.
 
 Entity-update fixtures cover action ordering and retained movement, stance and sign state, including cursor position after selected errors.
