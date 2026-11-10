@@ -2447,6 +2447,33 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
         check(&format!("substring_variable_nested_{i}"), &packet);
     }
+    let fixed_inner_cases = [
+        ("(?:(a{2})b)+(?:c)+", "$1/$0"),
+        ("(?:(a{0})b)+(?:c)+", "$1/$0"),
+        ("(?:(?<x>[ab]{2})b){1,3}(?:c)+", "${x}/$0"),
+        ("((a{2})b)+(c)+", "$1/$2/$3/$0"),
+        ("(?:(a{2})b)+(?:c)*|d", "$1/$0"),
+        ("(?:(a{2})b)+?(?:c)+", "$1/$0"),
+        ("(?:(a{2})b){0,3}(?:c)+", "$1/$0"),
+        ("(?:(a{2})b)+(?:c){2}", "$1/$0"),
+        ("(?:(a{2}?)b)+(?:c)+", "$1/$0"),
+        ("((?:(a{2})b)+)?(?:c)+", "$1/$2/$0"),
+    ];
+    let fixed_inner_alphabet = ['a', 'A', 'b', 'c', 'd', ' ', '\n'];
+    for i in 0..250 {
+        let (pattern, replacement) = fixed_inner_cases[i % fixed_inner_cases.len()];
+        let mut value = format!("{pattern} aabaabcc aaabcc bcc aabc ");
+        for j in 0..12 {
+            value.push(fixed_inner_alphabet[(i * 5 + j * 3 + j * j) % fixed_inner_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, replacement, Some(1))
+            .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
+        check(&format!("substring_fixed_inner_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

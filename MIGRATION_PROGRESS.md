@@ -306,6 +306,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Repeated Java groups with non-deterministic variable-width bodies can now contain nested captures; the bounded VM uses Loop-style rollback for optional captures and variable atom repetitions. A 250-packet beta-29 corpus matches named captures, nullable bodies, reluctant backtracking and capturing ancestors. Fixed-count inner repetitions and nested repeated groups in this GroupCurly-sensitive path remain explicitly rejected. Thirty-four mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally.
 
+- Fixed-count inner atom repetitions in deterministic GroupCurly-style groups now preserve nested captures during backtracking. A 250-packet beta-29 corpus covers zero/exact counts, named captures, reluctant repeats and optional ancestors. Nested repeated groups in this deterministic capture path remain conservatively rejected. Thirty-four mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally. Actions run 42832162345 passed all eight validation jobs.
+
 ## Exact next step
 
-Compare and implement deterministic fixed-count inner repetitions in GroupCurly-sensitive capture groups, including (?:(a{2})b)+(?:c)+ and combinations with optional ancestors. Preserve Java capture retention and bounded resource limits. Validate official AIR traffic and an extension through the relay when a dedicated session is available.
+Compare Java GroupCurly behavior for genuinely nested repeated groups containing captures, such as (?:(a+)+b)+(?:c)+, then implement only after differential coverage of rollback and nullable loops. Validate official AIR traffic and an extension through the relay when a dedicated session is available.

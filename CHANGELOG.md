@@ -1,5 +1,7 @@
 # Changelog
 
+- Preserve Java captures for deterministic fixed-count inner repetitions.
+
 - Support nested captures in nondeterministic repeated Java groups.
 
 - Preserve GroupCurly nested captures across fixed repeated bodies and failed searches.

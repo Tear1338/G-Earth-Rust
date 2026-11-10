@@ -3970,11 +3970,6 @@ impl Packet {
                         // Java uses Loop rather than GroupCurly for non-deterministic bodies.
                         continue;
                     }
-                    if repeated.iter().any(|&(a, ..)| a >= start && a < end) {
-                        return Err(error(
-                            "fixed-count nested captures require Java capture validation",
-                        ));
-                    }
                     let first = descendants[0];
                     let end = descendants[descendants.len() - 1] + 1;
                     if end - first != descendants.len() {

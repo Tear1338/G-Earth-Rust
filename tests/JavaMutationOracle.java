@@ -1106,6 +1106,23 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_unicode_case_" + i, sample);
         }
+        String[][] fixedInnerCases = {{"(?:(a{2})b)+(?:c)+", "$1/$0"}, {"(?:(a{0})b)+(?:c)+", "$1/$0"}, {"(?:(?<x>[ab]{2})b){1,3}(?:c)+", "${x}/$0"}, {"((a{2})b)+(c)+", "$1/$2/$3/$0"}, {"(?:(a{2})b)+(?:c)*|d", "$1/$0"}, {"(?:(a{2})b)+?(?:c)+", "$1/$0"}, {"(?:(a{2})b){0,3}(?:c)+", "$1/$0"}, {"(?:(a{2})b)+(?:c){2}", "$1/$0"}, {"(?:(a{2}?)b)+(?:c)+", "$1/$0"}, {"((?:(a{2})b)+)?(?:c)+", "$1/$2/$0"}};
+        char[] fixedInnerAlphabet = {'a', 'A', 'b', 'c', 'd', ' ', '\n'};
+        for (int i = 0; i < 250; i++) {
+            String[] entry = fixedInnerCases[i % fixedInnerCases.length];
+            String pattern = entry[0];
+            StringBuilder value = new StringBuilder(pattern).append(" aabaabcc aaabcc bcc aabc ");
+            for (int j = 0; j < 12; j++) value.append(fixedInnerAlphabet[(i * 5 + j * 3 + j * j) % fixedInnerAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, entry[1], 1);
+            } finally { System.setOut(original); }
+            emit("substring_fixed_inner_" + i, sample);
+        }
         String[][] variableNestedCases = {{"(?:(a)?b)+(?:c)+", "$1/$0"}, {"(?:(a+)b)+(?:c)+", "$1/$0"}, {"(?:(a*)b)*?(?:c)+", "$1/$0"}, {"(?:(a{1,3})b)+(?:c)+", "$1/$0"}, {"(?:(a)?b){0,3}(?:c)+", "$1/$0"}, {"((a?)b)+(c)+", "$1/$2/$3/$0"}, {"(?:(?<x>a+)b)+(?:c)+", "${x}/$0"}, {"(?:(a+)b)+?b(?:c)+", "$1/$0"}, {"((?:(a)?b)+)", "$1/$2/$0"}, {"(?:a(b)?)*", "$1/$0"}};
         char[] variableNestedAlphabet = {'a', 'A', 'b', 'c', 'd', ' ', '\n'};
         for (int i = 0; i < 250; i++) {
