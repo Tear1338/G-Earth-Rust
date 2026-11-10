@@ -286,6 +286,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Top-level alternation now supports ordinary captures followed by a fallible suffix. Java 21 GroupTail restores ordinary captures when a branch fails; unlike GroupCurly nested captures, (a)c|b does not retain a failed capture. A 250-packet beta-29 corpus checks this behavior, nested and named captures, optional atoms and backtracking. Repeated capturing groups and nested alternation remain unsupported. Thirty-three mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally. Actions run 42731810976 passed all eight validation jobs.
 
+- Nested Java regex alternation without captures now uses a bounded branch-aware matcher, preserving ordered choices and backtracking through surrounding atom quantifiers. A 240-packet beta-29 corpus covers empty/nested branches, scoped flags and optional groups. Captures and repeated groups containing nested alternatives remain rejected; group nesting is capped at 128 for this matcher. Thirty-four mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally. Actions runs 42732151018 and 42732399257 passed all eight validation jobs.
+
 ## Exact next step
 
-Implement nested regex alternation using a bounded branch-aware matcher, preserving Java group capture rollback and repetition semantics; begin with a differential corpus for (?:a|b)c, captures, empty branches and backtracking. Validate official AIR traffic and an extension through the relay when a disposable client session is available.
+Extend nested regex alternation to ordinary capturing groups with Java GroupHead/GroupTail rollback and branch-specific capture fixtures, then support quantified alternative groups. Validate official AIR traffic and an extension through the relay when a disposable client session is available.

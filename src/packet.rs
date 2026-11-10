@@ -1690,6 +1690,32 @@ mod regex_budget_tests {
     }
 }
 
+#[derive(Default)]
+struct AlternationNode {
+    start: usize,
+    end: usize,
+    splits: Vec<usize>,
+    // The branch index records ownership even for zero-width child groups.
+    children: Vec<(usize, usize)>,
+}
+
+fn push_alternation_node(
+    nodes: &mut Vec<AlternationNode>,
+    stack: &mut Vec<usize>,
+    start: usize,
+) -> usize {
+    let parent = *stack.last().unwrap();
+    let branch = nodes[parent].splits.len();
+    let id = nodes.len();
+    nodes[parent].children.push((branch, id));
+    nodes.push(AlternationNode {
+        start,
+        ..AlternationNode::default()
+    });
+    stack.push(id);
+    id
+}
+
 #[derive(Clone, Copy)]
 enum NestedInstruction {
     Atom(usize),
@@ -1702,6 +1728,7 @@ enum NestedInstruction {
     Start(usize),
     End(usize),
     Split(usize, usize),
+    Jump(usize),
     Initial {
         body: usize,
         exit: usize,
@@ -1750,6 +1777,77 @@ fn emit_nested_atoms(
             };
         }
     }
+}
+
+fn emit_alternation_node(
+    program: &mut Vec<NestedInstruction>,
+    nodes: &[AlternationNode],
+    id: usize,
+    optional_nodes: &[Option<bool>],
+    repeated: &[Option<(usize, Option<usize>, bool)>],
+    optional_atoms: &[Option<bool>],
+    depth: usize,
+) -> Result<()> {
+    if depth > 128 {
+        return Err(error("regex group nesting limit exceeded"));
+    }
+    let node = &nodes[id];
+    let optional_split = optional_nodes[id].map(|_| {
+        let pc = program.len();
+        program.push(NestedInstruction::Split(0, 0));
+        pc
+    });
+    let body = program.len();
+    let mut boundaries = Vec::with_capacity(node.splits.len() + 2);
+    boundaries.push(node.start);
+    boundaries.extend_from_slice(&node.splits);
+    boundaries.push(node.end);
+    let mut exits = Vec::new();
+    let mut children = node.children.iter().peekable();
+    for (branch, pair) in boundaries.windows(2).enumerate() {
+        let split = (branch + 1 < boundaries.len() - 1).then(|| {
+            let pc = program.len();
+            program.push(NestedInstruction::Split(0, 0));
+            pc
+        });
+        let branch_start = program.len();
+        let mut cursor = pair[0];
+        while children.peek().is_some_and(|(owner, _)| *owner == branch) {
+            let &(_, child) = children.next().unwrap();
+            let child_node = &nodes[child];
+            emit_nested_atoms(program, cursor..child_node.start, repeated, optional_atoms);
+            emit_alternation_node(
+                program,
+                nodes,
+                child,
+                optional_nodes,
+                repeated,
+                optional_atoms,
+                depth + 1,
+            )?;
+            cursor = child_node.end;
+        }
+        emit_nested_atoms(program, cursor..pair[1], repeated, optional_atoms);
+        if let Some(split) = split {
+            let jump = program.len();
+            program.push(NestedInstruction::Jump(0));
+            exits.push(jump);
+            let next = program.len();
+            program[split] = NestedInstruction::Split(branch_start, next);
+        }
+    }
+    let after = program.len();
+    for pc in exits {
+        program[pc] = NestedInstruction::Jump(after);
+    }
+    if let Some(split) = optional_split {
+        program[split] = if optional_nodes[id].unwrap() {
+            NestedInstruction::Split(body, after)
+        } else {
+            NestedInstruction::Split(after, body)
+        };
+    }
+    Ok(())
 }
 
 fn compile_nested_repeat(
@@ -2044,6 +2142,7 @@ fn match_nested_repeat(
                 position,
                 iterations,
             ),
+            NestedInstruction::Jump(target) => (target, position, iterations),
             NestedInstruction::Initial {
                 body,
                 exit,
@@ -3265,6 +3364,9 @@ impl Packet {
         let mut dynamic = case_insensitive;
         let mut alternatives = Vec::new();
         let mut group_branches = Vec::new();
+        let mut alternative_nodes = vec![AlternationNode::default()];
+        let mut node_stack = vec![0usize];
+        let mut optional_node_entries = Vec::new();
         let mut optional = Vec::new();
         let mut optional_group_owners = Vec::new();
         let mut repeated = Vec::new();
@@ -3275,7 +3377,7 @@ impl Packet {
         let mut open: Vec<usize> = Vec::new();
         // Restore flags when leaving any group, including ordinary captures.
         type Flags = (bool, bool, bool, bool, bool, bool);
-        let mut group_frames: Vec<(Option<usize>, usize, Flags)> = Vec::new();
+        let mut group_frames: Vec<(Option<usize>, usize, Flags, usize)> = Vec::new();
         let mut last_noncapturing = None;
         let mut chars = pattern_source.chars().peekable();
         let mut quoted = false;
@@ -3344,7 +3446,12 @@ impl Packet {
                             lookahead.next();
                             chars = lookahead;
                             if scoped {
-                                group_frames.push((None, atoms.len(), saved));
+                                let node = push_alternation_node(
+                                    &mut alternative_nodes,
+                                    &mut node_stack,
+                                    atoms.len(),
+                                );
+                                group_frames.push((None, atoms.len(), saved, node));
                             }
                             dynamic = true;
                             quantifiable = false;
@@ -3384,6 +3491,8 @@ impl Packet {
                     parents.push(open.last().copied());
                     group_branches.push(alternatives.len());
                     open.push(groups.len());
+                    let node =
+                        push_alternation_node(&mut alternative_nodes, &mut node_stack, atoms.len());
                     group_frames.push((
                         Some(groups.len()),
                         atoms.len(),
@@ -3395,6 +3504,7 @@ impl Packet {
                             unicode_case,
                             unicode_class,
                         ),
+                        node,
                     ));
                     groups.push(String::new());
                     names.push(name);
@@ -3402,9 +3512,12 @@ impl Packet {
                     continue;
                 }
                 ')' => {
-                    let (frame, start, flags) = group_frames
+                    let (frame, start, flags, node) = group_frames
                         .pop()
                         .ok_or_else(|| error("unbalanced capture group"))?;
+                    alternative_nodes[node].end = atoms.len();
+                    let popped_node = node_stack.pop();
+                    debug_assert_eq!(popped_node, Some(node));
                     if let Some(group) = frame {
                         let popped = open.pop();
                         debug_assert_eq!(popped, Some(group));
@@ -3412,7 +3525,7 @@ impl Packet {
                         last_closed_group = Some(group);
                     } else {
                         last_closed_group = None;
-                        last_noncapturing = Some((start, atoms.len()));
+                        last_noncapturing = Some((start, atoms.len(), node));
                     }
                     (
                         case_insensitive,
@@ -3521,9 +3634,14 @@ impl Packet {
                     } else if let Some(group) = last_closed_group {
                         ranges[group]
                     } else {
-                        prior_noncapturing.unwrap()
+                        let (start, end, _) = prior_noncapturing.unwrap();
+                        (start, end)
                     };
                     if start != end {
+                        if !quantifiable && last_closed_group.is_none() {
+                            let (_, _, node) = prior_noncapturing.unwrap();
+                            optional_node_entries.push((optional.len(), node, greedy));
+                        }
                         optional.push((start, end, greedy));
                         optional_group_owners.push(if quantifiable {
                             None
@@ -3562,7 +3680,8 @@ impl Packet {
                                 return Err(error("capturing ancestors of repeated noncapturing groups are not supported"));
                             }
                             repeated_group_owner = None;
-                            prior_noncapturing.unwrap()
+                            let (start, end, _) = prior_noncapturing.unwrap();
+                            (start, end)
                         };
                         if group_repeat
                             .replace((start, end, min, None, greedy))
@@ -3602,7 +3721,8 @@ impl Packet {
                                 return Err(error("capturing ancestors of repeated noncapturing groups are not supported"));
                             }
                             repeated_group_owner = None;
-                            prior_noncapturing.unwrap()
+                            let (start, end, _) = prior_noncapturing.unwrap();
+                            (start, end)
                         };
                         if group_repeat
                             .replace((start, end, min, limit, greedy))
@@ -3617,10 +3737,11 @@ impl Packet {
                     continue;
                 }
                 '|' => {
-                    if !group_frames.is_empty() {
-                        return Err(error("alternation inside groups is not supported"));
+                    let node = *node_stack.last().unwrap();
+                    alternative_nodes[node].splits.push(atoms.len());
+                    if node == 0 {
+                        alternatives.push(atoms.len());
                     }
-                    alternatives.push(atoms.len());
                     dynamic = true;
                     quantifiable = false;
                     last_closed_group = None;
@@ -3641,6 +3762,16 @@ impl Packet {
         }
         if !group_frames.is_empty() {
             return Err(error("invalid capture pattern"));
+        }
+        alternative_nodes[0].end = atoms.len();
+        let has_nested_alternation = alternative_nodes
+            .iter()
+            .skip(1)
+            .any(|node| !node.splits.is_empty());
+        if has_nested_alternation && (!groups.is_empty() || group_repeat.is_some()) {
+            return Err(error(
+                "nested alternation with captures or repeated groups is not supported",
+            ));
         }
         let needle = latin1_encode(&literal)?;
         let mut repeated_atoms = vec![None; atoms.len()];
@@ -3801,8 +3932,38 @@ impl Packet {
                 }
             }
         }
+        if has_nested_alternation {
+            let mut node_optional = vec![None; alternative_nodes.len()];
+            let mut optional_owners = vec![None; optional.len()];
+            for &(index, node, greedy) in &optional_node_entries {
+                optional_owners[index] = Some(node);
+                if node_optional[node].replace(greedy).is_some() {
+                    return Err(error("multiple optional quantifiers on a group"));
+                }
+            }
+            let mut atom_optional = vec![None; atoms.len()];
+            for (index, &(start, end, greedy)) in optional.iter().enumerate() {
+                if optional_owners[index].is_some() {
+                    continue;
+                }
+                if end != start + 1 || atom_optional[start].replace(greedy).is_some() {
+                    return Err(error("unsupported optional alternation structure"));
+                }
+            }
+            let mut compiled = Vec::new();
+            emit_alternation_node(
+                &mut compiled,
+                &alternative_nodes,
+                0,
+                &node_optional,
+                &repeated_atoms,
+                &atom_optional,
+                0,
+            )?;
+            nested_program = Some(compiled);
+        }
         let mut branch_programs = Vec::new();
-        if !alternatives.is_empty() {
+        if !alternatives.is_empty() && !has_nested_alternation {
             if !groups.is_empty() && group_repeat.is_some() {
                 return Err(error("repeated capturing alternation is not supported"));
             }

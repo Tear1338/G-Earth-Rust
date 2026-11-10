@@ -2110,6 +2110,37 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_branch_capture_rollback_{i}"), &packet);
     }
+    let nested_alternation_patterns = [
+        "(?:a|b)c",
+        "a(?:b|c)d",
+        "(?:a|ab)b",
+        "a*(?:a|b)",
+        "(?:a|b)?c",
+        "a(?:b|(?:c|d)e)f",
+        "(?i:a|b)c",
+        "(?:a||b)c",
+        "(?:|a)b",
+        "(?:a?|bc)d",
+        "(?:a|b)|c",
+    ];
+    let nested_alternation_alphabet = ['a', 'A', 'b', 'B', 'c', 'd', 'e', 'f', ' ', '\n'];
+    for i in 0..240 {
+        let pattern = nested_alternation_patterns[i % nested_alternation_patterns.len()];
+        let mut value = format!("{pattern} abc abd aab aaab acd acef ab ");
+        for j in 0..14 {
+            value.push(
+                nested_alternation_alphabet
+                    [(i * 3 + j * 7 + j * j) % nested_alternation_alphabet.len()],
+            );
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, "[$0]", Some(1))
+            .unwrap();
+        check(&format!("substring_nested_alternation_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

@@ -1,5 +1,7 @@
 # Changelog
 
+- Support bounded nested Java alternation without capture groups.
+
 - Support Java alternation branches with captures before fallible suffixes.
 
 - Fix greedy repeated-group capture retention during Java-style backtracking.
