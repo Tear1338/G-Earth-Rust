@@ -1062,6 +1062,22 @@ mod regex_budget_tests {
     }
 
     #[test]
+    fn repeated_noncapturing_group_zero_iterations_do_not_reuse_capture() {
+        let atoms = [
+            FixedRegexAtom::Literal(b'a'),
+            FixedRegexAtom::Literal(b'b'),
+            FixedRegexAtom::Literal(b'b'),
+        ];
+        let program =
+            compile_optional_program(3, &[], &[None, None, None], Some((0, 2, 0, None, false)));
+        let mut comparisons = 0;
+        let positions = match_fixed_at(b"abab", 1, &atoms, &program, &mut comparisons)
+            .unwrap()
+            .unwrap();
+        assert_eq!(positions[0], positions[1]);
+    }
+
+    #[test]
     fn java_21_word_boundaries_handle_empty_and_latin1() {
         assert_eq!(atom_width(&FixedRegexAtom::WordBoundary, b"", 0), None);
         assert_eq!(

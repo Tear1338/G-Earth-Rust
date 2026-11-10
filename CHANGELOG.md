@@ -1,5 +1,7 @@
 # Changelog
 
+- Document Java failed-search capture retention and preserve explicit rejection for affected patterns.
+
 - Support fixed-width captures in greedy non-capturing repetitions with a positive minimum.
 
 - Preserve captures around optional non-capturing regex groups.
