@@ -491,6 +491,39 @@ fn all_stuff_data_wire_formats_match_original_java() {
     let mut encoded = Packet::new(1);
     navigation.append(&mut encoded).unwrap();
     assert_eq!(encoded.bytes(), observed["navigator"]);
+    use gearth_rust::parsers::navigator::{NavigatorRoom, NavigatorSearchResult};
+    for mask in 0..64 {
+        for variant in 0..4 {
+            let input_key = format!("navigator_room_input_{mask}_{variant}");
+            let output_key = format!("navigator_room_output_{mask}_{variant}");
+            let room = NavigatorRoom::read(
+                &mut Packet::from_bytes(observed[input_key.as_str()].clone()).unwrap(),
+            )
+            .unwrap();
+            let mut output = Packet::new(1);
+            room.append(&mut output).unwrap();
+            assert_eq!(output.bytes(), observed[output_key.as_str()], "{input_key}");
+        }
+    }
+    for kind in ["blocks", "rooms"] {
+        let key = format!("navigator_negative_{kind}");
+        let result = NavigatorSearchResult::read(
+            &mut Packet::from_bytes(observed[key.as_str()].clone()).unwrap(),
+        )
+        .unwrap();
+        let mut normalized = Packet::new(1);
+        result.append(&mut normalized).unwrap();
+        let normalized_key = format!("{key}_normalized");
+        assert_eq!(
+            normalized.bytes(),
+            observed[normalized_key.as_str()],
+            "{key}"
+        );
+    }
+    assert!(NavigatorRoom::read(
+        &mut Packet::from_bytes(observed["navigator_negative_tags"].clone()).unwrap()
+    )
+    .is_err());
     let comments = gearth_rust::parsers::forums::CommentOverview::read(
         &mut Packet::from_bytes(observed["comments"].clone()).unwrap(),
     )

@@ -8,6 +8,13 @@ fn count(packet: &mut Packet) -> Result<usize> {
     }
     Ok(n)
 }
+fn loop_count(packet: &mut Packet) -> Result<usize> {
+    let n = packet.read_i32()?.max(0) as usize;
+    if n > 65_536 {
+        return Err(error("navigator count exceeds limit"));
+    }
+    Ok(n)
+}
 fn size(n: usize) -> Result<i32> {
     if n > 65_536 {
         return Err(error("navigator count exceeds limit"));
@@ -124,10 +131,14 @@ impl NavigatorRoom {
         if self.official_picture.is_some() {
             flags |= 1;
         }
-        if self.group.is_some() {
+        if self.group.as_ref().is_some_and(|(id, _, _)| *id != -1) {
             flags |= 2;
         }
-        if self.advertisement.is_some() {
+        if self
+            .advertisement
+            .as_ref()
+            .is_some_and(|(_, _, minutes)| *minutes != -1)
+        {
             flags |= 4;
         }
         if self.show_owner {
@@ -143,10 +154,14 @@ impl NavigatorRoom {
         if let Some(picture) = &self.official_picture {
             packet.put_string(picture)?;
         }
-        if let Some((id, name, badge)) = &self.group {
+        if let Some((id, name, badge)) = self.group.as_ref().filter(|(id, _, _)| *id != -1) {
             packet.put_i32(*id)?.put_string(name)?.put_string(badge)?;
         }
-        if let Some((name, description, minutes)) = &self.advertisement {
+        if let Some((name, description, minutes)) = self
+            .advertisement
+            .as_ref()
+            .filter(|(_, _, minutes)| *minutes != -1)
+        {
             packet
                 .put_string(name)?
                 .put_string(description)?
@@ -172,7 +187,7 @@ impl NavigatorBlock {
         let action_allowed = packet.read_i32()?;
         let force_closed = packet.read_bool()?;
         let view_mode = packet.read_i32()?;
-        let n = count(packet)?;
+        let n = loop_count(packet)?;
         let mut rooms = Vec::with_capacity(n);
         for _ in 0..n {
             rooms.push(NavigatorRoom::read(packet)?);
@@ -211,7 +226,7 @@ impl NavigatorSearchResult {
     pub fn read(packet: &mut Packet) -> Result<Self> {
         let search_code = packet.read_string()?;
         let filtering_data = packet.read_string()?;
-        let n = count(packet)?;
+        let n = loop_count(packet)?;
         let mut blocks = Vec::with_capacity(n);
         for _ in 0..n {
             blocks.push(NavigatorBlock::read(packet)?);
@@ -275,5 +290,44 @@ mod tests {
         let mut packet = Packet::new(1);
         expected.append(&mut packet).unwrap();
         assert_eq!(NavigatorSearchResult::read(&mut packet).unwrap(), expected);
+        let mut sentinel = expected.blocks[0].rooms[0].clone();
+        sentinel.group = Some((-1, "group".into(), "badge".into()));
+        sentinel.advertisement = Some(("ad".into(), "details".into(), -1));
+        let mut packet = Packet::new(1);
+        sentinel.append(&mut packet).unwrap();
+        let normalized = NavigatorRoom::read(&mut packet).unwrap();
+        assert_eq!(normalized.group, None);
+        assert_eq!(normalized.advertisement, None);
+    }
+
+    #[test]
+    fn negative_block_and_room_counts_are_empty_like_java() {
+        let mut blocks = Packet::new(1);
+        blocks
+            .put_string("search")
+            .unwrap()
+            .put_string("filter")
+            .unwrap()
+            .put_i32(-1)
+            .unwrap();
+        assert!(NavigatorSearchResult::read(&mut blocks)
+            .unwrap()
+            .blocks
+            .is_empty());
+        let mut rooms = Packet::new(1);
+        rooms
+            .put_string("code")
+            .unwrap()
+            .put_string("text")
+            .unwrap()
+            .put_i32(1)
+            .unwrap()
+            .put_bool(false)
+            .unwrap()
+            .put_i32(0)
+            .unwrap()
+            .put_i32(-1)
+            .unwrap();
+        assert!(NavigatorBlock::read(&mut rooms).unwrap().rooms.is_empty());
     }
 }

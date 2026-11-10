@@ -364,6 +364,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Compared a three-level beta-29 catalog index with multiple children, offer IDs, visibility flags and parser cursor; Rust matches Java's observed values. Java accepted a chain at depth 65, while Rust deliberately rejects depth above 64; depth 64 passes. The Java oracle, two catalog tests, both Clippy configurations and desktop/web debug build pass. Live catalog behavior remains unverified.
 
+- Compared 256 beta-29 navigator room flag/sentinel combinations, including unknown bits. Rust now drops group ID `-1` and advertisement expiry `-1` on serialization as Java does. Negative block/room list counts become empty while negative tag-array counts fail. The Java oracle, two navigator tests, both Clippy configurations and desktop/web debug build pass. Live navigator behavior remains unverified.
+
 ## Exact next step
 
-Compare beta-29 navigator search results with multiple blocks, room option flags, tags and negative list versus array counts; add differential fixtures and correct discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
+Compare beta-29 room entity and entity-update parsing for unknown types, direction/stance values, negative counts and cursor behavior; add differential fixtures and correct discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.

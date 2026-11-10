@@ -11,6 +11,7 @@ import gearth.extensions.parsers.HEntityType;
 import gearth.extensions.parsers.catalog.HCatalogPage;
 import gearth.extensions.parsers.catalog.HCatalogIndex;
 import gearth.extensions.parsers.navigator.HNavigatorSearchResult;
+import gearth.extensions.parsers.navigator.HNavigatorRoom;
 import gearth.extensions.parsers.forums.HCommentOverview;
 import gearth.extensions.parsers.forums.HThreadState;
 import gearth.extensions.parsers.forums.HThread;
@@ -310,6 +311,36 @@ public class JavaStuffOracle {
         HPacket navigatorOutput = new HPacket(1);
         new HNavigatorSearchResult(navigatorInput).appendToPacket(navigatorOutput);
         System.out.println("navigator=" + HexFormat.of().formatHex(navigatorOutput.toBytes()));
+        for (int mask = 0; mask < 64; mask++) for (int variant = 0; variant < 4; variant++) {
+            HPacket input = new HPacket(1);
+            input.appendInt(1).appendString("Room").appendInt(2).appendString("Alice").appendInt(0).appendInt(3).appendInt(20)
+                .appendString("Test").appendInt(1).appendInt(4).appendInt(5).appendInt(6).appendInt(2).appendString("tag1").appendString("tag2")
+                .appendInt(mask | 64);
+            if ((mask & 1) != 0) input.appendString("pic");
+            if ((mask & 2) != 0) input.appendInt((variant & 1) != 0 ? -1 : 7).appendString("group").appendString("badge");
+            if ((mask & 4) != 0) input.appendString("ad").appendString("details").appendInt((variant & 2) != 0 ? -1 : 8);
+            HNavigatorRoom room = new HNavigatorRoom(input);
+            HPacket output = new HPacket(1); room.appendToPacket(output);
+            System.out.println("navigator_room_input_" + mask + "_" + variant + "=" + HexFormat.of().formatHex(input.toBytes()));
+            System.out.println("navigator_room_output_" + mask + "_" + variant + "=" + HexFormat.of().formatHex(output.toBytes()));
+        }
+        HPacket negativeBlocks = new HPacket(1); negativeBlocks.appendString("search").appendString("filter").appendInt(-1);
+        HNavigatorSearchResult emptyBlocks = new HNavigatorSearchResult(negativeBlocks);
+        HPacket normalizedBlocks = new HPacket(1); emptyBlocks.appendToPacket(normalizedBlocks);
+        System.out.println("navigator_negative_blocks=" + HexFormat.of().formatHex(negativeBlocks.toBytes()));
+        System.out.println("navigator_negative_blocks_normalized=" + HexFormat.of().formatHex(normalizedBlocks.toBytes()));
+        HPacket negativeRooms = new HPacket(1); negativeRooms.appendString("search").appendString("filter").appendInt(1)
+            .appendString("code").appendString("block").appendInt(1).appendBoolean(false).appendInt(0).appendInt(-1);
+        HNavigatorSearchResult emptyRooms = new HNavigatorSearchResult(negativeRooms);
+        HPacket normalizedRooms = new HPacket(1); emptyRooms.appendToPacket(normalizedRooms);
+        System.out.println("navigator_negative_rooms=" + HexFormat.of().formatHex(negativeRooms.toBytes()));
+        System.out.println("navigator_negative_rooms_normalized=" + HexFormat.of().formatHex(normalizedRooms.toBytes()));
+        HPacket negativeTags = new HPacket(1);
+        negativeTags.appendInt(1).appendString("Room").appendInt(2).appendString("Alice").appendInt(0).appendInt(3).appendInt(20)
+            .appendString("Test").appendInt(1).appendInt(4).appendInt(5).appendInt(6).appendInt(-1);
+        try { new HNavigatorRoom(negativeTags); throw new AssertionError("expected negative tag count rejection"); }
+        catch (NegativeArraySizeException expected) { }
+        System.out.println("navigator_negative_tags=" + HexFormat.of().formatHex(negativeTags.toBytes()));
 
         HPacket comments = new HPacket(1);
         comments.appendInt(1).appendInt(2).appendInt(0).appendInt(1).appendInt(3).appendInt(4).appendInt(5)

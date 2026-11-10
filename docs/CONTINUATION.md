@@ -1,5 +1,7 @@
 # Continuation state
 
+Navigator room serialization now matches Java sentinel omission for group ID and ad expiry `-1`; 256 flag/sentinel combinations and negative list versus tag-array counts match beta-29. Java oracle, two navigator tests, both Clippy configurations and desktop/web debug build pass. Next: compare room entity/update edge cases. The dedicated AIR session is being prepared; live relay and extension testing remains outstanding.
+
 Nested catalog index fields and cursor match beta-29 for selected trees. Java accepted depth 65, while Rust deliberately limits depth to 64; the boundary is covered. Java oracle, two catalog tests, both Clippy configurations and desktop/web debug build pass. Next: compare navigator blocks, room flags and count handling. The dedicated AIR session is being prepared; live relay and extension testing remains outstanding.
 
 Catalog pages now match selected beta-29 multi-offer/product and front-page fixtures, including Java's negative-list versus negative-array distinction. Java oracle, two catalog tests, both Clippy configurations and desktop/web debug build pass. Next: compare nested catalog index trees. The dedicated AIR session is being prepared; real relay and extension testing remains outstanding.

@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Navigator fixtures compare 256 room flag/sentinel combinations and negative list versus tag-array counts with beta-29. Live navigator and extension behavior remains unverified.
+
 Catalog index fixtures compare nested children, offer IDs, visibility and cursor position. Java accepted a 65-level chain that Rust deliberately rejects beyond its 64-level depth bound.
 
 Catalog fixtures compare multiple offers, all product types, limited products and front-page target forms with beta-29. Negative list counts match Java's empty-loop behavior; negative image arrays are rejected. Live catalog compatibility remains unverified.
