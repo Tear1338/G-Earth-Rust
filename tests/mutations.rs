@@ -475,7 +475,7 @@ fn java_character_classes_reject_unsupported_forms_transactionally() {
     let mut packet = Packet::new(9);
     packet.put_string("([abc]) abc").unwrap();
     let before = packet.clone();
-    for pattern in ["([ab&&bc&&&a])", "([z-a])", "([])", "([a", "([\\p])"] {
+    for pattern in ["([&&&a])", "([z-a])", "([])", "([a", "([\\p])"] {
         assert!(packet
             .replace_substrings_java_groups(pattern, "x", None)
             .is_err());

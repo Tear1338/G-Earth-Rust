@@ -1,5 +1,7 @@
 # Changelog
 
+- Match selected recursive Java character-class intersection parsing cases.
+
 - Match selected Java character-class syntax with consecutive ampersands.
 
 - Support bounded nested Java regex character classes and intersections.

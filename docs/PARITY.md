@@ -1,6 +1,6 @@
 # Compatibility with 1.5.4-beta-29
 
-Nested character classes and intersections match 540 beta-29 packet cases, including COMMENTS mode, Latin-1 case folding and selected consecutive ampersands. Some consecutive ampersand syntax remains unsupported; complete regex and live-session compatibility remain unverified.
+Nested character classes and intersections match 540 beta-29 packet cases, including COMMENTS mode, Latin-1 case folding and selected recursive consecutive-ampersand cases. Complete regex and live-session compatibility remain unverified.
 
 Possessive quantifiers match 600 beta-29 packet cases, including captures, empty repetitions and lookbehinds. Full Java regex and real-session parity remain unverified.
 

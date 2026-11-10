@@ -334,8 +334,10 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Nested Java character classes, unions and intersections now use bounded recursive set parsing, including case folding and COMMENTS mode. A 540-packet beta-29 corpus passes; at that stage, unusual consecutive ampersands such as `[a&&&b]` were rejected; the following step adds selected cases. Thirty-six existing mutation tests plus the new nesting-limit test, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. Actions run 42845774643 passed all eight jobs for the preceding commit. Complete regex and live-client parity remain unverified.
 
-- Character-class parsing now covers selected consecutive ampersands, including `[a&&&b]` and `[a&&&&b]`, in the 540-packet beta-29 corpus. More complex cases such as `[ab&&bc&&&a]` remain rejected. Thirty-seven mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. Full regex and live-client parity remain unverified.
+- Character-class parsing now covers selected consecutive ampersands, including `[a&&&b]` and `[a&&&&b]`, in the 540-packet beta-29 corpus. At that stage, more complex cases such as `[ab&&bc&&&a]` were rejected; the following step covers selected cases. Thirty-seven mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. Full regex and live-client parity remain unverified.
+
+- Character-class intersection operands now follow Java's recursive parsing for selected consecutive-ampersand cases after an earlier intersection, including `[ab&&bc&&&a]`. The 540-packet beta-29 corpus, thirty-seven mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. Actions run 42846684044 passed all eight jobs for the earlier nested-class commit. Full regex and live-client parity remain unverified.
 
 ## Exact next step
 
-Reproduce Java character-class parsing for consecutive ampersands after an existing intersection, such as `[ab&&bc&&&a]`, using the JDK parser and differential fixtures. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
+Compare Java Unicode and POSIX character properties (`\\p{...}` and `\\P{...}`) on the Latin-1 packet domain with beta-29, then implement and test supported properties. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.

@@ -605,7 +605,14 @@ fn parse_character_class(
     unicode_case: bool,
     unicode_class: bool,
 ) -> Result<Box<[bool; 256]>> {
-    parse_character_class_inner(chars, case_insensitive, unicode_case, unicode_class, 0)
+    parse_character_class_inner(
+        chars,
+        case_insensitive,
+        unicode_case,
+        unicode_class,
+        0,
+        true,
+    )
 }
 
 fn parse_character_class_inner(
@@ -614,11 +621,12 @@ fn parse_character_class_inner(
     unicode_case: bool,
     unicode_class: bool,
     depth: usize,
+    consume_close: bool,
 ) -> Result<Box<[bool; 256]>> {
     if depth > 128 {
         return Err(error("regex character class nesting limit exceeded"));
     }
-    let negated = if chars.peek() == Some(&'^') {
+    let negated = if consume_close && chars.peek() == Some(&'^') {
         chars.next();
         true
     } else {
@@ -627,11 +635,15 @@ fn parse_character_class_inner(
     let mut elements = Vec::new();
     let mut intersection: Option<Box<[bool; 256]>> = None;
     let mut closed = false;
-    while let Some(c) = chars.next() {
+    while let Some(&c) = chars.peek() {
         if c == ']' && (!elements.is_empty() || intersection.is_some()) {
+            if consume_close {
+                chars.next();
+            }
             closed = true;
             break;
         }
+        chars.next();
         if c == '[' {
             let nested = parse_character_class_inner(
                 chars,
@@ -639,6 +651,7 @@ fn parse_character_class_inner(
                 unicode_case,
                 unicode_class,
                 depth + 1,
+                true,
             )?;
             elements.push(CharacterClassElement::Predefined(nested));
             continue;
@@ -669,6 +682,23 @@ fn parse_character_class_inner(
                     intersection = Some(part);
                 }
                 elements.clear();
+            }
+            if chars.peek().is_some_and(|c| *c != ']' && *c != '&') {
+                let right = parse_character_class_inner(
+                    chars,
+                    case_insensitive,
+                    unicode_case,
+                    unicode_class,
+                    depth + 1,
+                    false,
+                )?;
+                if let Some(acc) = &mut intersection {
+                    for (left, right) in acc.iter_mut().zip(right.iter()) {
+                        *left &= *right;
+                    }
+                } else {
+                    intersection = Some(right);
+                }
             }
             continue;
         }
