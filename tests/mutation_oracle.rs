@@ -1934,6 +1934,39 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_comments_mode_{i}"), &packet);
     }
+    let alternation_patterns = [
+        "a|ab",
+        "ab|a",
+        "a|",
+        "|b",
+        "(?i)a|B",
+        "a+|b*",
+        "(?:ab)|bc",
+        "\\w+|x",
+        "a?|b",
+        "(?x)a #comment\n | b",
+        "(?s).|a",
+        "^a|b$",
+        "(?:ab)+|cd",
+        "a|(?:bc){2}|d",
+        "a|(?i)b|c",
+        "a||b",
+    ];
+    let alternation_alphabet = ['a', 'A', 'b', 'B', 'c', 'x', ' ', '\n', '\r', '\u{85}'];
+    for i in 0..240 {
+        let pattern = alternation_patterns[i % alternation_patterns.len()];
+        let mut value = format!("{pattern} ab abc ba aB\n ");
+        for j in 0..14 {
+            value.push(alternation_alphabet[(i * 7 + j * 3) % alternation_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, "[$0]", Some(1))
+            .unwrap();
+        check(&format!("substring_alternation_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

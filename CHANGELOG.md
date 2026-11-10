@@ -1,5 +1,7 @@
 # Changelog
 
+- Support ordered top-level Java regex alternation without captures.
+
 - Support Java COMMENTS regex whitespace, comments and scoped changes.
 
 - Add opt-in read-only official AIR process, TCP ownership and scan diagnostics.

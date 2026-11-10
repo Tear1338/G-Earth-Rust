@@ -1143,6 +1143,59 @@ fn replace_fixed_pattern(
     Ok(latin1_decode(&output))
 }
 
+// Alternation branches are evaluated in source order at every input offset, as in Java.
+fn replace_alternatives(
+    text: &str,
+    atoms: &[FixedRegexAtom],
+    branches: &[(usize, usize, Vec<RegexInstruction>)],
+    replacement: &str,
+    comparisons: &mut usize,
+) -> Result<String> {
+    let input = latin1_encode(text)?;
+    let mut output = Vec::new();
+    let mut copied = 0;
+    let mut offset = 0;
+    while offset <= input.len() {
+        let mut matched_end = None;
+        for (start, end, program) in branches {
+            if let Some(positions) =
+                match_fixed_at(&input, offset, &atoms[*start..*end], program, comparisons)?
+            {
+                matched_end = positions.last().copied();
+                break;
+            }
+        }
+        if let Some(end) = matched_end {
+            let whole = latin1_decode(&input[offset..end]);
+            let expanded = latin1_encode(&expand_literal_groups(replacement, &whole, &[], &[])?)?;
+            let prefix = offset - copied;
+            if output
+                .len()
+                .checked_add(prefix)
+                .and_then(|n| n.checked_add(expanded.len()))
+                .is_none_or(|n| n > usize::from(u16::MAX))
+            {
+                return Err(error("short string too long"));
+            }
+            output.extend_from_slice(&input[copied..offset]);
+            output.extend_from_slice(&expanded);
+            copied = end;
+            offset = if end == offset { offset + 1 } else { end };
+        } else {
+            offset += 1;
+        }
+    }
+    if output
+        .len()
+        .checked_add(input.len() - copied)
+        .is_none_or(|n| n > usize::from(u16::MAX))
+    {
+        return Err(error("short string too long"));
+    }
+    output.extend_from_slice(&input[copied..]);
+    Ok(latin1_decode(&output))
+}
+
 #[cfg(test)]
 mod regex_budget_tests {
     use super::*;
@@ -2996,6 +3049,7 @@ impl Packet {
         let mut atoms: Vec<FixedRegexAtom> = Vec::new();
         let mut ranges: Vec<(usize, usize)> = Vec::new();
         let mut dynamic = case_insensitive;
+        let mut alternatives = Vec::new();
         let mut optional = Vec::new();
         let mut optional_group_owners = Vec::new();
         let mut repeated = Vec::new();
@@ -3346,7 +3400,17 @@ impl Packet {
                     last_closed_group = None;
                     continue;
                 }
-                '|' | ']' | '}' => {
+                '|' => {
+                    if !group_frames.is_empty() {
+                        return Err(error("alternation inside groups is not supported"));
+                    }
+                    alternatives.push(atoms.len());
+                    dynamic = true;
+                    quantifiable = false;
+                    last_closed_group = None;
+                    continue;
+                }
+                ']' | '}' => {
                     return Err(error("unsupported regex construct"));
                 }
                 _ => {}
@@ -3522,6 +3586,34 @@ impl Packet {
                 }
             }
         }
+        let mut branch_programs = Vec::new();
+        if !alternatives.is_empty() {
+            if !groups.is_empty() {
+                return Err(error("alternation with capture groups is not supported"));
+            }
+            let mut boundaries = Vec::with_capacity(alternatives.len() + 2);
+            boundaries.push(0);
+            boundaries.extend(alternatives);
+            boundaries.push(atoms.len());
+            for pair in boundaries.windows(2) {
+                let (start, end) = (pair[0], pair[1]);
+                let branch_optional = optional
+                    .iter()
+                    .filter(|(a, b, _)| *a >= start && *b <= end)
+                    .map(|(a, b, greedy)| (a - start, b - start, *greedy))
+                    .collect::<Vec<_>>();
+                let branch_repeat = group_repeat.and_then(|(a, b, min, limit, greedy)| {
+                    (a >= start && b <= end).then(|| (a - start, b - start, min, limit, greedy))
+                });
+                let program = compile_optional_program(
+                    end - start,
+                    &branch_optional,
+                    &repeated_atoms[start..end],
+                    branch_repeat,
+                );
+                branch_programs.push((start, end, program));
+            }
+        }
         let program = if nested_program.is_some() {
             Vec::new()
         } else {
@@ -3546,7 +3638,15 @@ impl Packet {
                         .ok_or_else(|| error("substring scan limit exceeded"))?;
                     let text = latin1_decode(&candidate.bytes[i + 2..end]);
                     if text.contains(pattern) {
-                        let result = if let Some(nested_program) = &nested_program {
+                        let result = if !branch_programs.is_empty() {
+                            replace_alternatives(
+                                &text,
+                                &atoms,
+                                &branch_programs,
+                                replacement,
+                                &mut comparisons,
+                            )?
+                        } else if let Some(nested_program) = &nested_program {
                             replace_nested_pattern(
                                 &text,
                                 &atoms,
