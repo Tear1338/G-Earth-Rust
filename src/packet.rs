@@ -1692,6 +1692,7 @@ mod regex_budget_tests {
 
 #[derive(Default)]
 struct AlternationNode {
+    parent: Option<usize>,
     start: usize,
     end: usize,
     capture: Option<usize>,
@@ -1711,6 +1712,7 @@ fn push_alternation_node(
     let id = nodes.len();
     nodes[parent].children.push((branch, id));
     nodes.push(AlternationNode {
+        parent: Some(parent),
         start,
         ..AlternationNode::default()
     });
@@ -2197,7 +2199,7 @@ fn match_nested_repeat(
                 } else {
                     (branch == 0) == greedy
                 };
-                (if repeat { body } else { exit }, position, iterations)
+                (if repeat { body } else { exit }, position, 0)
             }
             NestedInstruction::Loop {
                 body,
@@ -2218,7 +2220,11 @@ fn match_nested_repeat(
                 } else {
                     (branch == 0) == greedy
                 };
-                (if repeat { body } else { exit }, position, completed)
+                (
+                    if repeat { body } else { exit },
+                    position,
+                    if repeat { completed } else { 0 },
+                )
             }
         };
         if frames.len() >= MAX_STATES || trail.len() >= MAX_STATES {
@@ -3415,7 +3421,7 @@ impl Packet {
         let mut repeated = Vec::new();
         let mut group_repeat = None;
         let mut repeated_group_owner = None;
-        let mut repeated_group_node = None;
+        let mut group_repeats = Vec::new();
         let mut quantifiable = false;
         let mut last_closed_group = None;
         let mut open: Vec<usize> = Vec::new();
@@ -3723,24 +3729,17 @@ impl Packet {
                     if quantifiable {
                         repeated.push((atoms.len() - 1, min, None, greedy));
                     } else {
-                        let (start, end) = if let Some(owner) = last_closed_group {
-                            repeated_group_owner = Some(owner);
-                            repeated_group_node = Some(group_nodes[owner]);
-                            ranges[owner]
+                        let ancestor = last_closed_group.is_none() && !open.is_empty();
+                        let (start, end, node) = if let Some(owner) = last_closed_group {
+                            let (start, end) = ranges[owner];
+                            (start, end, group_nodes[owner])
                         } else {
-                            if !open.is_empty() {
-                                return Err(error("capturing ancestors of repeated noncapturing groups are not supported"));
-                            }
-                            repeated_group_owner = None;
-                            let (start, end, node) = prior_noncapturing.unwrap();
-                            repeated_group_node = Some(node);
-                            (start, end)
+                            prior_noncapturing.unwrap()
                         };
-                        if group_repeat
-                            .replace((start, end, min, None, greedy))
-                            .is_some()
-                        {
-                            return Err(error("multiple repeated groups are not supported"));
+                        group_repeats.push((start, end, min, None, greedy, node, ancestor));
+                        if group_repeat.is_none() {
+                            group_repeat = Some((start, end, min, None, greedy));
+                            repeated_group_owner = last_closed_group;
                         }
                     }
                     dynamic = true;
@@ -3766,24 +3765,17 @@ impl Packet {
                     if quantifiable {
                         repeated.push((atoms.len() - 1, min, limit, greedy));
                     } else {
-                        let (start, end) = if let Some(owner) = last_closed_group {
-                            repeated_group_owner = Some(owner);
-                            repeated_group_node = Some(group_nodes[owner]);
-                            ranges[owner]
+                        let ancestor = last_closed_group.is_none() && !open.is_empty();
+                        let (start, end, node) = if let Some(owner) = last_closed_group {
+                            let (start, end) = ranges[owner];
+                            (start, end, group_nodes[owner])
                         } else {
-                            if !open.is_empty() {
-                                return Err(error("capturing ancestors of repeated noncapturing groups are not supported"));
-                            }
-                            repeated_group_owner = None;
-                            let (start, end, node) = prior_noncapturing.unwrap();
-                            repeated_group_node = Some(node);
-                            (start, end)
+                            prior_noncapturing.unwrap()
                         };
-                        if group_repeat
-                            .replace((start, end, min, limit, greedy))
-                            .is_some()
-                        {
-                            return Err(error("multiple repeated groups are not supported"));
+                        group_repeats.push((start, end, min, limit, greedy, node, ancestor));
+                        if group_repeat.is_none() {
+                            group_repeat = Some((start, end, min, limit, greedy));
+                            repeated_group_owner = last_closed_group;
                         }
                     }
                     dynamic = true;
@@ -3823,6 +3815,13 @@ impl Packet {
             .iter()
             .skip(1)
             .any(|node| !node.splits.is_empty());
+        if !has_nested_alternation
+            && (group_repeats.len() > 1 || group_repeats.iter().any(|entry| entry.6))
+        {
+            return Err(error(
+                "multiple repeated groups or capturing ancestors are not supported",
+            ));
+        }
         let needle = latin1_encode(&literal)?;
         let mut repeated_atoms = vec![None; atoms.len()];
         for &(index, min, limit, greedy) in &repeated {
@@ -3985,8 +3984,26 @@ impl Packet {
         }
         let mut nested_capture_count = names.len();
         if has_nested_alternation {
-            if let Some((start, end, min, limit, greedy)) = group_repeat {
-                let node = repeated_group_node.ok_or_else(|| error("missing repeated group"))?;
+            if group_repeats.len() > 128 {
+                return Err(error("regex repeated group limit exceeded"));
+            }
+            let mut repeated_nodes = vec![false; alternative_nodes.len()];
+            for &(_, _, _, _, _, node, _) in &group_repeats {
+                repeated_nodes[node] = true;
+            }
+            for &(start, end, min, limit, greedy, node, _) in &group_repeats {
+                let mut parent = alternative_nodes[node].parent;
+                let mut depth = 0;
+                while let Some(index) = parent {
+                    depth += 1;
+                    if depth > 128 {
+                        return Err(error("regex group nesting limit exceeded"));
+                    }
+                    if repeated_nodes[index] {
+                        return Err(error("nested repeated groups are not supported"));
+                    }
+                    parent = alternative_nodes[index].parent;
+                }
                 if alternative_nodes[node].start != start || alternative_nodes[node].end != end {
                     return Err(error("invalid repeated group range"));
                 }

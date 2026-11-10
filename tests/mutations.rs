@@ -689,8 +689,8 @@ fn java_comments_mode_rejects_invalid_counted_closure_transactionally() {
 #[test]
 fn java_alternation_rejects_unsupported_captures_and_invalid_references_transactionally() {
     for (pattern, replacement) in [
-        ("(?:(a)|b)+(?:c|d)+", "$0"),
-        ("(a|b)+(c|d)+", "$0"),
+        ("(?:(?:a|b)+|c)+", "$0"),
+        ("((?:a|b)+|c)+", "$0"),
         ("a|b", "$1"),
         ("(?:a|b)+", "$1"),
     ] {
@@ -706,7 +706,7 @@ fn java_alternation_rejects_unsupported_captures_and_invalid_references_transact
 
 #[test]
 fn java_nested_alternation_rejects_unimplemented_structures_and_limits_depth() {
-    for pattern in ["(a|b)+(c|d)+", "(?:a|b)+(?:c|d)+"] {
+    for pattern in ["(?:(?:a|b)+|c)+", "((?:a|b)+|c)+"] {
         let mut packet = Packet::new(9);
         packet.put_string(pattern).unwrap();
         let before = packet.bytes().to_vec();
@@ -715,6 +715,14 @@ fn java_nested_alternation_rejects_unimplemented_structures_and_limits_depth() {
             .is_err());
         assert_eq!(packet.bytes(), before);
     }
+    let many_repeats = "(?:a|b)*".repeat(129);
+    let mut packet = Packet::new(9);
+    packet.put_string(&many_repeats).unwrap();
+    let before = packet.bytes().to_vec();
+    assert!(packet
+        .replace_substrings_java(&many_repeats, "$0", Some(1))
+        .is_err());
+    assert_eq!(packet.bytes(), before);
     let pattern = format!("{}a|b{}", "(?:".repeat(130), ")".repeat(130));
     let mut packet = Packet::new(9);
     packet.put_string(&pattern).unwrap();

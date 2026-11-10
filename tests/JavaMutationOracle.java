@@ -1106,6 +1106,23 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_unicode_case_" + i, sample);
         }
+        String[][] multipleRepeatCases = {{"(?:a|b)+(?:c|d)+", "[$0]"}, {"(a|b)+(c|d)+", "$1/$2/$0"}, {"((?:a|b)+)c", "$1/$0"}, {"((?:a|b){1,3})c", "$1/$0"}, {"(?<x>(?:a|b)+)(c|d)+", "${x}/$2/$0"}, {"(?:a|b)*?(?:c|d)+", "[$0]"}, {"(?:a|)*(?:b|c)+", "[$0]"}, {"(?:a|b){2}(?:c|d){1,2}", "[$0]"}, {"(?:(a)|b)+(c|d)+", "$1/$2/$0"}, {"(a|b)*?(c|d)+?d", "$1/$2/$0"}};
+        char[] multipleRepeatAlphabet = {'a', 'A', 'b', 'B', 'c', 'd', ' ', '\n'};
+        for (int i = 0; i < 250; i++) {
+            String[] entry = multipleRepeatCases[i % multipleRepeatCases.length];
+            String pattern = entry[0];
+            StringBuilder value = new StringBuilder(pattern).append(" abcd abc aacc bbd acd ");
+            for (int j = 0; j < 14; j++) value.append(multipleRepeatAlphabet[(i * 3 + j * 7 + j * j) % multipleRepeatAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, entry[1], 1);
+            } finally { System.setOut(original); }
+            emit("substring_multiple_repeat_" + i, sample);
+        }
         String[][] nullableAlternationCases = {{"(?:|a){2,4}a", "[$0]"}, {"(a|){2,4}a", "$1/$0"}, {"(?:|a)+a", "[$0]"}, {"(a|)+?a", "$1/$0"}, {"(?:a|){0,2}a", "[$0]"}, {"(?:|a){2}b", "[$0]"}};
         for (int i = 0; i < 120; i++) {
             String[] entry = nullableAlternationCases[i % nullableAlternationCases.length];

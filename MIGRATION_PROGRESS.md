@@ -292,6 +292,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - A single quantified nested Java alternation group now supports greedy/reluctant and bounded repetitions with capture retention and zero-width-loop protection. The beta-29 oracle passes 280 packet cases plus 120 cases with nullable branches; internal progress captures cannot be referenced by replacement strings. Multiple repeated groups and some capturing-ancestor structures remain explicitly unsupported. Thirty-four mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally.
 
+- Multiple sequential quantified alternative groups and capturing ancestors now use separate bounded loop executions. A 250-packet beta-29 corpus covers greedy/reluctant combinations, nullable branches, named captures and bounded counts. Nested repeated groups remain rejected pending independent loop counters. The alternation matcher caps group nesting and repeated groups at 128. Thirty-four mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally.
+
 ## Exact next step
 
-Extend the bounded alternation matcher to support multiple independently quantified groups and capturing ancestors, with Java differential cases for nested loops, rollback and zero-width progress. Validate official AIR traffic and an extension through the relay when a disposable client session is available.
+Give the bounded alternation matcher independent rollback-aware counters for genuinely nested repeated groups; compare patterns such as (?:(?:a|b)+|c)+ and nullable inner loops against Java before enabling them. Validate official AIR traffic and an extension through the relay when a disposable client session is available.

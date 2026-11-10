@@ -2241,6 +2241,35 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_nullable_alternation_{i}"), &packet);
     }
+    let multiple_repeat_cases = [
+        ("(?:a|b)+(?:c|d)+", "[$0]"),
+        ("(a|b)+(c|d)+", "$1/$2/$0"),
+        ("((?:a|b)+)c", "$1/$0"),
+        ("((?:a|b){1,3})c", "$1/$0"),
+        ("(?<x>(?:a|b)+)(c|d)+", "${x}/$2/$0"),
+        ("(?:a|b)*?(?:c|d)+", "[$0]"),
+        ("(?:a|)*(?:b|c)+", "[$0]"),
+        ("(?:a|b){2}(?:c|d){1,2}", "[$0]"),
+        ("(?:(a)|b)+(c|d)+", "$1/$2/$0"),
+        ("(a|b)*?(c|d)+?d", "$1/$2/$0"),
+    ];
+    let multiple_repeat_alphabet = ['a', 'A', 'b', 'B', 'c', 'd', ' ', '\n'];
+    for i in 0..250 {
+        let (pattern, replacement) = multiple_repeat_cases[i % multiple_repeat_cases.len()];
+        let mut value = format!("{pattern} abcd abc aacc bbd acd ");
+        for j in 0..14 {
+            value.push(
+                multiple_repeat_alphabet[(i * 3 + j * 7 + j * j) % multiple_repeat_alphabet.len()],
+            );
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, replacement, Some(1))
+            .unwrap();
+        check(&format!("substring_multiple_repeat_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")
