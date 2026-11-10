@@ -2836,6 +2836,40 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
         check(&format!("substring_nested_class_{i}"), &packet);
     }
+    let property_cases = [
+        ("(\\p{L}+)", "$1/$0"),
+        ("(\\pL+)", "$1/$0"),
+        ("(\\P{L}+)", "$1/$0"),
+        ("(\\p{Lu}+)", "$1/$0"),
+        ("(?i)(\\p{Lu}+)", "$1/$0"),
+        ("(?iu)(\\p{Lu}+)", "$1/$0"),
+        ("(\\p{Lower}+)", "$1/$0"),
+        ("(?U)(\\p{Lower}+)", "$1/$0"),
+        ("([\\p{L}&&[^\\p{Lu}]]+)", "$1/$0"),
+        ("([\\P{ASCII}]+)", "$1/$0"),
+        ("(\\p{IsLatin}+)", "$1/$0"),
+        ("(\\p{InBasic_Latin}+)", "$1/$0"),
+        ("(\\p{javaWhitespace}+)", "$1/$0"),
+        ("(\\p{IsWhite_Space}+)", "$1/$0"),
+        ("(?x)([\\p{L} && [^ a ]] +)", "$1/$0"),
+    ];
+    let property_alphabet = [
+        'a', 'A', 'b', 'B', '0', '9', ' ', '\t', '\n', 'é', 'É', 'ö', 'Ö', 'ß', '\u{a0}', '\u{85}',
+    ];
+    for i in 0..450 {
+        let (pattern, replacement) = property_cases[i % property_cases.len()];
+        let mut value = format!("{pattern} abc ABC 012 éÉöÖ ß ");
+        for j in 0..16 {
+            value.push(property_alphabet[(i * 5 + j * 3 + j * j) % property_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, replacement, Some(1))
+            .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
+        check(&format!("substring_property_{i}"), &packet);
+    }
     let self_backref_cases = [
         ("(a\\1)", "$1/$0"),
         ("(a\\1?)+b", "$1/$0"),

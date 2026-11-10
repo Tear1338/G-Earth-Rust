@@ -338,6 +338,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Character-class intersection operands now follow Java's recursive parsing for selected consecutive-ampersand cases after an earlier intersection, including `[ab&&bc&&&a]`. The 540-packet beta-29 corpus, thirty-seven mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. Actions run 42846684044 passed all eight jobs for the earlier nested-class commit. Full regex and live-client parity remain unverified.
 
+- Added 89 Java Unicode, POSIX, script, block and Java character properties for the Latin-1 packet domain. Java 21-generated bitmaps match exhaustively for all 256 bytes and eight flag combinations, including negation; 450 beta-29 packet cases also pass. Thirty-eight mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass; the new Java oracle check was added to CI. Property aliases and other Java properties remain incomplete, as do full regex and live-client parity.
+
 ## Exact next step
 
-Compare Java Unicode and POSIX character properties (`\\p{...}` and `\\P{...}`) on the Latin-1 packet domain with beta-29, then implement and test supported properties. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
+Compare and implement Java character-property aliases such as `gc=Lu`, `script=Latin` and `block=Basic_Latin`, with case and invalid-name fixtures against Java 21. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.

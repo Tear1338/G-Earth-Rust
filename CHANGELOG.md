@@ -1,5 +1,7 @@
 # Changelog
 
+- Add 89 Java Unicode, POSIX and character properties for Latin-1 regex input.
+
 - Match selected recursive Java character-class intersection parsing cases.
 
 - Match selected Java character-class syntax with consecutive ampersands.

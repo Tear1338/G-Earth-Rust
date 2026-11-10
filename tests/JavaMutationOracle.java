@@ -1169,6 +1169,18 @@ public class JavaMutationOracle {
             finally { System.setOut(original); }
             emit("substring_nested_class_" + i, sample);
         }
+        String[][] propertyCases = {{"(\\p{L}+)", "$1/$0"}, {"(\\pL+)", "$1/$0"}, {"(\\P{L}+)", "$1/$0"}, {"(\\p{Lu}+)", "$1/$0"}, {"(?i)(\\p{Lu}+)", "$1/$0"}, {"(?iu)(\\p{Lu}+)", "$1/$0"}, {"(\\p{Lower}+)", "$1/$0"}, {"(?U)(\\p{Lower}+)", "$1/$0"}, {"([\\p{L}&&[^\\p{Lu}]]+)", "$1/$0"}, {"([\\P{ASCII}]+)", "$1/$0"}, {"(\\p{IsLatin}+)", "$1/$0"}, {"(\\p{InBasic_Latin}+)", "$1/$0"}, {"(\\p{javaWhitespace}+)", "$1/$0"}, {"(\\p{IsWhite_Space}+)", "$1/$0"}, {"(?x)([\\p{L} && [^ a ]] +)", "$1/$0"}};
+        char[] propertyAlphabet = {'a', 'A', 'b', 'B', '0', '9', ' ', '\t', '\n', 'é', 'É', 'ö', 'Ö', 'ß', '\u00a0', '\u0085'};
+        for (int i = 0; i < 450; i++) {
+            String[] entry = propertyCases[i % propertyCases.length]; String pattern = entry[0];
+            StringBuilder value = new StringBuilder(pattern).append(" abc ABC 012 éÉöÖ ß ");
+            for (int j = 0; j < 16; j++) value.append(propertyAlphabet[(i * 5 + j * 3 + j * j) % propertyAlphabet.length]);
+            HPacket sample = new HPacket(9); sample.appendString(value.toString()); sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try { System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream())); sample.replaceXSubstrings(pattern, entry[1], 1); }
+            finally { System.setOut(original); }
+            emit("substring_property_" + i, sample);
+        }
         String[][] selfBackrefCases = {{"(a\\1)", "$1/$0"}, {"(a\\1?)+b", "$1/$0"}, {"(?<x>a\\k<x>?)+b", "${x}/$0"}, {"(a\\1?){1,3}b", "$1/$0"}, {"(a\\1?)*?b", "$1/$0"}, {"(a\\1?)+(b)+", "$1/$2/$0"}, {"((a)\\1?)+b", "$1/$2/$0"}, {"((a)\\1?)+\\1", "$1/$2/$0"}, {"(?i)(a\\1?)+B", "$1/$0"}, {"(a\\1?)?b", "$1/$0"}};
         char[] selfBackrefAlphabet = {'a', 'A', 'b', 'B', ' ', '\n'};
         for (int i = 0; i < 250; i++) {

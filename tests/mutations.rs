@@ -504,6 +504,22 @@ fn java_character_class_nesting_is_bounded_and_transactional() {
 }
 
 #[test]
+fn java_character_properties_reject_unknown_or_unclosed_names_transactionally() {
+    for pattern in ["\\p{Missing}", "\\p{Lu", "\\p{}", "\\p1", "[\\P{Missing}]"] {
+        let mut packet = Packet::new(9);
+        packet.put_string(pattern).unwrap();
+        let before = packet.clone();
+        assert!(
+            packet
+                .replace_substrings_java(pattern, "x", Some(1))
+                .is_err(),
+            "{pattern}"
+        );
+        assert_eq!(packet, before);
+    }
+}
+
+#[test]
 fn java_control_escapes_reject_invalid_values_without_mutation() {
     let mut packet = Packet::new(9);
     packet.put_string("(\\x41) A").unwrap();

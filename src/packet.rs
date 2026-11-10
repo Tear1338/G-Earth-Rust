@@ -417,6 +417,49 @@ fn predefined_class(kind: char, unicode: bool) -> Option<Box<[bool; 256]>> {
     Some(class)
 }
 
+fn java_property_class(
+    kind: char,
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+    case_insensitive: bool,
+    unicode_case: bool,
+    unicode_class: bool,
+) -> Result<Box<[bool; 256]>> {
+    let mut name = String::new();
+    if chars.peek() == Some(&'{') {
+        chars.next();
+        loop {
+            match chars.next() {
+                Some('}') if !name.is_empty() => break,
+                Some(c) if c.is_ascii_alphanumeric() || c == '_' || c == '=' => name.push(c),
+                _ => return Err(error("invalid regex character property")),
+            }
+            if name.len() > 128 {
+                return Err(error("regex character property too long"));
+            }
+        }
+    } else {
+        name.push(
+            chars
+                .next()
+                .filter(|c| c.is_ascii_alphabetic())
+                .ok_or_else(|| error("invalid regex character property"))?,
+        );
+    }
+    let flags = usize::from(case_insensitive)
+        | (usize::from(unicode_case) << 1)
+        | (usize::from(unicode_class) << 2);
+    let bits = crate::java_regex_properties::JAVA_REGEX_PROPERTIES
+        .iter()
+        .find(|(candidate, _)| *candidate == name)
+        .map(|(_, variants)| &variants[flags])
+        .ok_or_else(|| error("unsupported regex character property"))?;
+    let mut class = Box::new([false; 256]);
+    for (value, included) in class.iter_mut().enumerate() {
+        *included = (bits[value / 8] & (1 << (value % 8)) != 0) == (kind == 'p');
+    }
+    Ok(class)
+}
+
 fn control_escape(
     kind: char,
     chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
@@ -706,7 +749,15 @@ fn parse_character_class_inner(
             let escaped = chars
                 .next()
                 .ok_or_else(|| error("unsupported character class escape"))?;
-            if let Some(class) = predefined_class(escaped, unicode_class) {
+            if matches!(escaped, 'p' | 'P') {
+                elements.push(CharacterClassElement::Predefined(java_property_class(
+                    escaped,
+                    chars,
+                    case_insensitive,
+                    unicode_case,
+                    unicode_class,
+                )?));
+            } else if let Some(class) = predefined_class(escaped, unicode_class) {
                 elements.push(CharacterClassElement::Predefined(class));
             } else if let Some(byte) = control_escape(escaped, chars)? {
                 elements.push(CharacterClassElement::Literal(byte, true));
@@ -1492,6 +1543,50 @@ fn replace_alternatives(
 #[cfg(test)]
 mod regex_budget_tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requires Java 21 property vectors"]
+    fn java_property_tables_match_java() {
+        let path = std::env::var("GEARTH_REGEX_PROPERTY_ORACLE").unwrap();
+        let oracle = std::fs::read_to_string(path).unwrap();
+        let mut count = 0;
+        for line in oracle.lines() {
+            let (key, hex) = line.split_once('=').unwrap();
+            let (name, flags) = key.split_once(':').unwrap();
+            let flags: usize = flags.parse().unwrap();
+            let bytes: Vec<u8> = (0..hex.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+                .collect();
+            assert_eq!(bytes.len(), 32);
+            for kind in ['p', 'P'] {
+                let expression = format!("{{{name}}}");
+                let mut chars = expression.chars().peekable();
+                let set = java_property_class(
+                    kind,
+                    &mut chars,
+                    flags & 1 != 0,
+                    flags & 2 != 0,
+                    flags & 4 != 0,
+                )
+                .unwrap();
+                assert!(chars.next().is_none());
+                for value in 0..256 {
+                    let expected = bytes[value / 8] & (1 << (value % 8)) != 0;
+                    assert_eq!(
+                        set[value],
+                        expected == (kind == 'p'),
+                        "{name} flags={flags} byte={value}"
+                    );
+                }
+            }
+            count += 1;
+        }
+        assert_eq!(
+            count,
+            crate::java_regex_properties::JAVA_REGEX_PROPERTIES.len() * 8
+        );
+    }
 
     #[test]
     #[ignore = "requires Java 21 Unicode case-pair vectors"]
@@ -4433,6 +4528,20 @@ impl Packet {
                         });
                         dynamic = true;
                         quantifiable = false;
+                        last_closed_group = None;
+                        continue;
+                    }
+                    if matches!(c, 'p' | 'P') {
+                        let class = java_property_class(
+                            c,
+                            &mut chars,
+                            case_insensitive,
+                            unicode_case,
+                            unicode_class,
+                        )?;
+                        atoms.push(FixedRegexAtom::Class(class));
+                        dynamic = true;
+                        quantifiable = true;
                         last_closed_group = None;
                         continue;
                     }

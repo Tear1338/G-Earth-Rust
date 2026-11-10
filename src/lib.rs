@@ -13,6 +13,7 @@ pub mod flash;
 pub mod gpython;
 pub mod i18n;
 pub mod injection;
+mod java_regex_properties;
 pub mod logger_display;
 pub mod logger_filter;
 mod maven_version;

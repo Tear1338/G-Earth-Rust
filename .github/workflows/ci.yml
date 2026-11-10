@@ -157,6 +157,9 @@ jobs:
           cargo test --locked --test mutation_oracle -- --ignored
           cargo test --locked --lib unicode_latin1_case_pairs_match_java -- --ignored
           cargo test --locked --lib unicode_latin1_classes_match_java -- --ignored
+          javac -encoding UTF-8 tests/JavaRegexPropertyGenerator.java
+          java -cp tests JavaRegexPropertyGenerator --oracle > /tmp/regex-property-oracle.txt
+          GEARTH_REGEX_PROPERTY_ORACLE=/tmp/regex-property-oracle.txt cargo test --locked --lib java_property_tables_match_java -- --ignored
         env:
           GEARTH_MUTATION_ORACLE: /tmp/mutation-oracle.txt
       - name: Compare Flash identification against pinned Java source
