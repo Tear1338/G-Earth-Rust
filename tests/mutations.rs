@@ -475,7 +475,7 @@ fn java_character_classes_reject_unsupported_forms_transactionally() {
     let mut packet = Packet::new(9);
     packet.put_string("([abc]) abc").unwrap();
     let before = packet.clone();
-    for pattern in ["([a&&b])", "([z-a])", "([])", "([a", "([\\p])"] {
+    for pattern in ["([a&&&b])", "([z-a])", "([])", "([a", "([\\p])"] {
         assert!(packet
             .replace_substrings_java_groups(pattern, "x", None)
             .is_err());
@@ -489,6 +489,18 @@ fn java_character_classes_reject_unsupported_forms_transactionally() {
     );
     packet.reset();
     assert_eq!(packet.read_string().unwrap(), "([[a][b][c]]) [a][b][c]");
+}
+
+#[test]
+fn java_character_class_nesting_is_bounded_and_transactional() {
+    let pattern = format!("{}a{}", "[".repeat(130), "]".repeat(130));
+    let mut packet = Packet::new(9);
+    packet.put_string(&pattern).unwrap();
+    let before = packet.clone();
+    assert!(packet
+        .replace_substrings_java(&pattern, "x", Some(1))
+        .is_err());
+    assert_eq!(packet, before);
 }
 
 #[test]

@@ -2784,6 +2784,46 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
         check(&format!("substring_possessive_{i}"), &packet);
     }
+    let nested_class_cases = [
+        ("([a-z&&[^bc]]+)", "$1/$0"),
+        ("([a-c&&b-d]+)", "$1/$0"),
+        ("([a[b-c]]+)", "$1/$0"),
+        ("([a-z&&[def]]+)", "$1/$0"),
+        ("([a-z&&[^m-p]&&[^x]]+)", "$1/$0"),
+        ("([a&&]+)", "$1/$0"),
+        ("([&&a]+)", "$1/$0"),
+        ("([]a]+)", "$1/$0"),
+        ("([^]a]+)", "$1/$0"),
+        ("([a&b]+)", "$1/$0"),
+        ("([a&&[b]c]+)", "$1/$0"),
+        ("(?i)([a-z&&[^bc]]+)", "$1/$0"),
+        ("(?iu)([é-ö&&[^é]]+)", "$1/$0"),
+        ("([a-z&&[^\\d]]+)", "$1/$0"),
+        ("([a-z[0-9]]+)", "$1/$0"),
+        ("([a-z&&[^a-c[x-z]]]+)", "$1/$0"),
+        ("([\\&a]+)", "$1/$0"),
+        ("([a-z&&[a-f[m-p]]]+)", "$1/$0"),
+        ("(?x)([a-z && [^ b c] ()] +)", "$1/$0"),
+        ("(?x)([a-z && [^ b c] #comment\n d] +)", "$1/$0"),
+        ("(?x)([]a && [^b] ()]+)", "$1/$0"),
+    ];
+    let class_alphabet = [
+        'a', 'A', 'b', 'c', 'd', 'e', 'm', 'x', 'z', '0', '9', '&', ']', 'é', 'É', 'ö', ' ', '\n',
+    ];
+    for i in 0..540 {
+        let (pattern, replacement) = nested_class_cases[i % nested_class_cases.len()];
+        let mut value = format!("{pattern} abcdef ABCDEF xyz &] 012 éÉö ");
+        for j in 0..16 {
+            value.push(class_alphabet[(i * 5 + j * 3 + j * j) % class_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, replacement, Some(1))
+            .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
+        check(&format!("substring_nested_class_{i}"), &packet);
+    }
     let self_backref_cases = [
         ("(a\\1)", "$1/$0"),
         ("(a\\1?)+b", "$1/$0"),

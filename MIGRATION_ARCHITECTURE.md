@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Character classes support bounded nesting, union and intersection over Latin-1 sets, with per-operand case folding. Unusual consecutive ampersand syntax remains unsupported pending Java comparison.
+
 Possessive quantifiers use bounded atomic subprograms around their atom or group repetition. Width analysis distinguishes possessive group repetitions inside lookbehinds; beta-29 comparison remains finite.
 
 Atomic groups reuse the bounded assertion subprogram mechanism but advance to the committed match endpoint. Their captures and rollback have finite beta-29 coverage.

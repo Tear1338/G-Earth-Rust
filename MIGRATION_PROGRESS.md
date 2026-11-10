@@ -332,6 +332,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Possessive quantifiers `?+`, `*+`, `++` and `{m,n}+` now commit their bounded matches for atoms and groups. A 600-packet beta-29 corpus covers captures, empty and nested repetitions, alternatives, backreferences and lookbehinds. Thirty-six mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. Actions run 42844459556 passed all eight jobs for the previous commit. Full regex and live client compatibility remain unverified.
 
+- Nested Java character classes, unions and intersections now use bounded recursive set parsing, including case folding and COMMENTS mode. A 540-packet beta-29 corpus passes; unusual consecutive ampersands such as `[a&&&b]` remain rejected. Thirty-six existing mutation tests plus the new nesting-limit test, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. Actions run 42845774643 passed all eight jobs for the preceding commit. Complete regex and live-client parity remain unverified.
+
 ## Exact next step
 
-Compare Java nested character classes and intersections (`[a-z&&[^...]]`) with beta-29, then implement them with differential fixtures. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
+Compare Java character-class intersections involving consecutive ampersands such as `[a&&&b]` and `[a&&&&b]`, then implement Java's parsing with differential fixtures. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.

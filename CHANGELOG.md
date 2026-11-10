@@ -1,5 +1,7 @@
 # Changelog
 
+- Support bounded nested Java regex character classes and intersections.
+
 - Add bounded Java possessive quantifiers for atoms and groups.
 
 - Add bounded Java atomic regex groups.

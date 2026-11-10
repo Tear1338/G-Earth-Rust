@@ -473,7 +473,8 @@ fn normalize_regex_comments(pattern: &str) -> String {
     let chars: Vec<char> = pattern.chars().collect();
     let mut output = String::with_capacity(pattern.len());
     let mut stack = Vec::new();
-    let (mut comments, mut unix, mut in_class, mut quoted) = (false, false, false, false);
+    let (mut comments, mut unix, mut quoted) = (false, false, false);
+    let mut class_first = Vec::new();
     let mut at = 0;
     while at < chars.len() {
         if !quoted {
@@ -483,10 +484,14 @@ fn normalize_regex_comments(pattern: &str) -> String {
             break;
         }
         let c = chars[at];
+        let in_class = !class_first.is_empty();
         if c == '\\' && at + 1 < chars.len() {
             let next = chars[at + 1];
             output.push(c);
             output.push(next);
+            if let Some(first) = class_first.last_mut() {
+                *first = false;
+            }
             at += 2;
             if !in_class && next == 'Q' && !quoted {
                 quoted = true;
@@ -511,17 +516,29 @@ fn normalize_regex_comments(pattern: &str) -> String {
             }
             continue;
         }
-        if c == '[' && !in_class {
-            in_class = true;
+        if c == '[' {
+            if let Some(first) = class_first.last_mut() {
+                *first = false;
+            }
+            class_first.push(true);
             output.push(c);
             at += 1;
             continue;
         }
         if c == ']' && in_class {
-            in_class = false;
+            if *class_first.last().unwrap() {
+                *class_first.last_mut().unwrap() = false;
+            } else {
+                class_first.pop();
+            }
             output.push(c);
             at += 1;
             continue;
+        }
+        if let Some(first) = class_first.last_mut() {
+            if c != '^' || !*first {
+                *first = false;
+            }
         }
         if c == '(' && !in_class {
             let question = regex_skip_layout(&chars, at + 1, comments, unix);
@@ -588,6 +605,19 @@ fn parse_character_class(
     unicode_case: bool,
     unicode_class: bool,
 ) -> Result<Box<[bool; 256]>> {
+    parse_character_class_inner(chars, case_insensitive, unicode_case, unicode_class, 0)
+}
+
+fn parse_character_class_inner(
+    chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
+    case_insensitive: bool,
+    unicode_case: bool,
+    unicode_class: bool,
+    depth: usize,
+) -> Result<Box<[bool; 256]>> {
+    if depth > 128 {
+        return Err(error("regex character class nesting limit exceeded"));
+    }
     let negated = if chars.peek() == Some(&'^') {
         chars.next();
         true
@@ -595,11 +625,41 @@ fn parse_character_class(
         false
     };
     let mut elements = Vec::new();
+    let mut intersection: Option<Box<[bool; 256]>> = None;
     let mut closed = false;
     while let Some(c) = chars.next() {
-        if c == ']' {
+        if c == ']' && (!elements.is_empty() || intersection.is_some()) {
             closed = true;
             break;
+        }
+        if c == '[' {
+            let nested = parse_character_class_inner(
+                chars,
+                case_insensitive,
+                unicode_case,
+                unicode_class,
+                depth + 1,
+            )?;
+            elements.push(CharacterClassElement::Predefined(nested));
+            continue;
+        }
+        if c == '&' && chars.peek() == Some(&'&') {
+            chars.next();
+            if chars.peek() == Some(&'&') {
+                return Err(error("unsupported character class intersection"));
+            }
+            if !elements.is_empty() {
+                let part = build_character_class(&elements, case_insensitive, unicode_case)?;
+                if let Some(acc) = &mut intersection {
+                    for (left, right) in acc.iter_mut().zip(part.iter()) {
+                        *left &= *right;
+                    }
+                } else {
+                    intersection = Some(part);
+                }
+                elements.clear();
+            }
+            continue;
         }
         if c == '\\' {
             let escaped = chars
@@ -609,21 +669,44 @@ fn parse_character_class(
                 elements.push(CharacterClassElement::Predefined(class));
             } else if let Some(byte) = control_escape(escaped, chars)? {
                 elements.push(CharacterClassElement::Literal(byte, true));
-            } else if "[]^-\\.#".contains(escaped) || escaped.is_ascii_whitespace() {
+            } else if "[]^-\\.#&".contains(escaped) || escaped.is_ascii_whitespace() {
                 elements.push(CharacterClassElement::Literal(escaped as u8, true));
             } else {
                 return Err(error("unsupported character class escape"));
             }
         } else {
-            if c == '[' || c == '&' {
-                return Err(error("unsupported character class construct"));
-            }
             elements.push(CharacterClassElement::Literal(c as u8, false));
         }
     }
-    if !closed || elements.is_empty() {
+    if !closed || (elements.is_empty() && intersection.is_none()) {
         return Err(error("invalid character class"));
     }
+    let mut class = if elements.is_empty() {
+        intersection.unwrap()
+    } else {
+        let part = build_character_class(&elements, case_insensitive, unicode_case)?;
+        if let Some(mut acc) = intersection {
+            for (left, right) in acc.iter_mut().zip(part.iter()) {
+                *left &= *right;
+            }
+            acc
+        } else {
+            part
+        }
+    };
+    if negated {
+        for included in class.iter_mut() {
+            *included = !*included;
+        }
+    }
+    Ok(class)
+}
+
+fn build_character_class(
+    elements: &[CharacterClassElement],
+    case_insensitive: bool,
+    unicode_case: bool,
+) -> Result<Box<[bool; 256]>> {
     let mut class = Box::new([false; 256]);
     let mut i = 0;
     while i < elements.len() {
@@ -676,11 +759,6 @@ fn parse_character_class(
                 class[usize::from(lower)] = included;
                 class[usize::from(upper)] = included;
             }
-        }
-    }
-    if negated {
-        for included in class.iter_mut() {
-            *included = !*included;
         }
     }
     Ok(class)
