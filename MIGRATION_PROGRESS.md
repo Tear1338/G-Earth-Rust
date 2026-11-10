@@ -298,6 +298,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Multiple fixed-width repeated groups now work even without nested alternation, including capturing ancestors and ordered top-level branches. A 250-packet beta-29 corpus covers greedy/reluctant and bounded cases, named captures and rollback. Repeated bodies containing variable-width constructs or nested captures remain conservatively rejected in this path pending GroupCurly comparison. The VM rejects more than 128 repeated groups before expensive validation. Thirty-four mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally.
 
+- Variable-width repeated Java groups without captures inside the repeated body now use the bounded loop VM, including nullable inner atoms and capturing ancestors. A 250-packet beta-29 corpus includes standalone and multiple greedy/reluctant repetitions. Repeated bodies containing captures still need GroupCurly-specific validation. Thirty-four mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally. Actions run 42735294651 passed all eight validation jobs.
+
 ## Exact next step
 
-Compare Java GroupCurly handling of variable-width repeated bodies and nested captures in patterns without alternation, then extend the VM with differential cases such as (?:a*)+(?:b)+ and (?:(a)b)+(?:c)+. Validate official AIR traffic and an extension through the relay when a disposable client session is available.
+Compare Java GroupCurly retention for nested captures inside variable-width repeated bodies, using differential cases such as (?:(a)b)+(?:c)+ and (a*)+(?:b)+; extend the VM only where capture rollback is established. A dedicated official AIR session is needed to validate encrypted traffic and an extension through the relay without interrupting an existing session.

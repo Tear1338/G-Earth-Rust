@@ -27,6 +27,6 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: compare Java GroupCurly for variable-width repeated bodies and nested captures without alternation.
+Next: compare nested captures inside variable-width repeated groups against Java GroupCurly.
 
 CI: serialized G-Python jobs passed on Windows and Linux in run 42723118432; continue monitoring intermittent kernel startup timeouts.

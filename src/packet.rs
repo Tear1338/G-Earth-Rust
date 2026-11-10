@@ -3838,14 +3838,20 @@ impl Packet {
             .any(|node| !node.splits.is_empty());
         let use_tree_vm = has_nested_alternation
             || group_repeats.len() > 1
-            || group_repeats.iter().any(|entry| entry.6);
+            || group_repeats.iter().any(|entry| entry.6)
+            || (groups.is_empty()
+                && group_repeats.iter().any(|&(start, end, ..)| {
+                    optional.iter().any(|&(a, b, _)| a >= start && b <= end)
+                        || repeated.iter().any(|&(a, ..)| a >= start && a < end)
+                }));
         if use_tree_vm && group_repeats.len() > 128 {
             return Err(error("regex repeated group limit exceeded"));
         }
         if use_tree_vm && !has_nested_alternation {
             for &(start, end, _, _, _, node, _) in &group_repeats {
-                if optional.iter().any(|&(a, b, _)| a >= start && b <= end)
-                    || repeated.iter().any(|&(a, ..)| a >= start && a < end)
+                if alternative_nodes[node].capture.is_some()
+                    && (optional.iter().any(|&(a, b, _)| a >= start && b <= end)
+                        || repeated.iter().any(|&(a, ..)| a >= start && a < end))
                 {
                     return Err(error(
                         "variable-width repeated groups require Java capture validation",
