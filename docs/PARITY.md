@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Friend update fixtures cover duplicate/missing categories, mixed changes, removals, unknown relationship IDs and negative counts. Separate Java-compatible parsing/construction paths preserve its cursor reset and missing change markers; category order can differ from Java `HashMap`. Live extension behavior remains unverified.
+
 Profile and group fixtures compare eight flag combinations, varying group counts and negative-count rejection with the beta-29 Java API. Live profile and extension compatibility remains unverified.
 
 Forum overview fixtures compare three rows across all known view modes and an unknown-mode fallback with beta-29 getters and normalized output. Live forum and extension behavior remains unverified.

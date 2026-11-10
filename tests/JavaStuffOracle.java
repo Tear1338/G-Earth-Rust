@@ -27,6 +27,11 @@ public class JavaStuffOracle {
         data.appendToPacket(packet);
         System.out.println(name + "=" + HexFormat.of().formatHex(packet.toBytes()));
     }
+    static void appendFriend(HPacket p, int id, int category, int relationship) {
+        p.appendInt(id).appendString("Friend" + id).appendInt(1).appendBoolean(true).appendBoolean(false)
+            .appendString("figure").appendInt(category).appendString("motto").appendString("").appendString("")
+            .appendBoolean(false).appendBoolean(true).appendBoolean(false).appendShort((short)relationship);
+    }
     public static void main(String[] args) {
         HashMap<String, String> map = new HashMap<>();
         map.put("state", "2");
@@ -134,6 +139,41 @@ public class JavaStuffOracle {
         HPacket friendOutput = new HPacket(1);
         new HFriend(friendInput).appendToPacket(friendOutput);
         System.out.println("friend=" + HexFormat.of().formatHex(friendOutput.toBytes()));
+
+        HPacket friendUpdate = new HPacket(3);
+        friendUpdate.appendInt(3).appendInt(2).appendString("Old").appendInt(7).appendString("Other").appendInt(2).appendString("New");
+        friendUpdate.appendInt(5).appendInt(0); appendFriend(friendUpdate, 8, 2, 0);
+        friendUpdate.appendInt(-1).appendInt(99).appendInt(5); appendFriend(friendUpdate, 9, 77, 3);
+        friendUpdate.appendInt(1); appendFriend(friendUpdate, 10, 7, 4);
+        friendUpdate.appendInt(-1).appendInt(100);
+        friendUpdate.setReadIndex(10);
+        HFriend[] updatedFriends = HFriend.parseFromUpdate(friendUpdate);
+        HPacket friendSummary = new HPacket(1);
+        friendSummary.appendInt(updatedFriends.length).appendInt(friendUpdate.getReadIndex());
+        for (HFriend f : updatedFriends) {
+            friendSummary.appendInt(f.getId()).appendBoolean(f.getCategoryName() != null);
+            if (f.getCategoryName() != null) friendSummary.appendString(f.getCategoryName());
+            friendSummary.appendInt(f.getRelationshipStatus() == null ? -1 : f.getRelationshipStatus().getId());
+        }
+        int[] removedFriends = HFriend.getRemovedFriendIdsFromUpdate(friendUpdate);
+        friendSummary.appendInt(removedFriends.length);
+        for (int id : removedFriends) friendSummary.appendInt(id);
+        friendSummary.appendInt(friendUpdate.getReadIndex());
+        if (updatedFriends.length != 3 || updatedFriends[2].getRelationshipStatus() != null || !"New".equals(updatedFriends[0].getCategoryName())) throw new AssertionError("friend update");
+        try { updatedFriends[2].appendToPacket(new HPacket(1)); throw new AssertionError("expected invalid relationship rejection"); }
+        catch (NullPointerException expected) { }
+        System.out.println("friend_update_mixed=" + HexFormat.of().formatHex(friendUpdate.toBytes()));
+        System.out.println("friend_update_summary=" + HexFormat.of().formatHex(friendSummary.toBytes()));
+        HPacket negativeCategories = new HPacket(3); negativeCategories.appendInt(-1).appendInt(0);
+        if (HFriend.parseFromUpdate(negativeCategories).length != 0) throw new AssertionError("negative categories");
+        System.out.println("friend_negative_categories=" + HexFormat.of().formatHex(negativeCategories.toBytes()));
+        HPacket negativeUpdates = new HPacket(3); negativeUpdates.appendInt(0).appendInt(-1);
+        if (HFriend.parseFromUpdate(negativeUpdates).length != 0) throw new AssertionError("negative updates");
+        System.out.println("friend_negative_updates=" + HexFormat.of().formatHex(negativeUpdates.toBytes()));
+        HFriend normalFriend = new HFriend(new HPacket(friendOutput.toBytes()));
+        normalFriend.setCategoryName("Friends");
+        HPacket javaUpdate = HFriend.constructUpdatePacket(new HFriend[]{normalFriend}, 3);
+        System.out.println("friend_construct_java=" + HexFormat.of().formatHex(javaUpdate.toBytes()));
 
         for (int flags = 0; flags < 8; flags++) {
             int groups = flags % 3;

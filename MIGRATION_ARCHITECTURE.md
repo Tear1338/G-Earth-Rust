@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Friend updates expose `HFriendUpdate::parse_java` and `HFriend::construct_java_update` for beta-29's cursor/count and marker-omission behavior, alongside the valid wire-format constructors. Unknown relationship IDs remain readable as raw values, with `java_relationship_status` returning `None` and serialization rejecting them.
+
 Profile and group parsers have beta-29 getter and normalized-byte fixtures covering flags, group collections and negative group counts; live behavior remains unverified.
 
 Forum overview parsing has beta-29 getter and normalized-output fixtures for known and unknown view modes and multiple rows; these finite fixtures do not establish live parity.

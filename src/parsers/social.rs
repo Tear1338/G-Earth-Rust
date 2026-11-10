@@ -162,7 +162,26 @@ pub struct HFriendUpdate {
 
 impl HFriendUpdate {
     pub fn parse(packet: &mut Packet) -> Result<Self> {
-        let category_count = count(packet)?;
+        Self::parse_inner(packet, false)
+    }
+    /// Match beta-29's static update parsers, which reset the read cursor and
+    /// interpret negative category and update counts as empty loops.
+    pub fn parse_java(packet: &mut Packet) -> Result<Self> {
+        packet.reset();
+        Self::parse_inner(packet, true)
+    }
+    fn parse_inner(packet: &mut Packet, java: bool) -> Result<Self> {
+        let read_count = |packet: &mut Packet| -> Result<usize> {
+            if !java {
+                return count(packet);
+            }
+            let count = packet.read_i32()?.max(0) as usize;
+            if count > 65_536 {
+                return Err(error("too many social entries"));
+            }
+            Ok(count)
+        };
+        let category_count = read_count(packet)?;
         let mut categories = Vec::with_capacity(category_count);
         let mut lookup = BTreeMap::new();
         for _ in 0..category_count {
@@ -171,7 +190,7 @@ impl HFriendUpdate {
             lookup.insert(id, name.clone());
             categories.push((id, name));
         }
-        let n = count(packet)?;
+        let n = read_count(packet)?;
         let mut changes = Vec::with_capacity(n);
         for _ in 0..n {
             let change_type = packet.read_i32()?;
@@ -245,9 +264,6 @@ impl HFriend {
         let vip_member = packet.read_bool()?;
         let pocket_habbo_user = packet.read_bool()?;
         let relationship_status = packet.read_u16()?;
-        if relationship_status > 3 {
-            return Err(error("invalid friend relationship status"));
-        }
         Ok(Self {
             id,
             name,
@@ -287,6 +303,10 @@ impl HFriend {
             .put_u16(self.relationship_status)?;
         Ok(())
     }
+    /// Java returns null for an unrecognized relationship ID.
+    pub fn java_relationship_status(&self) -> Option<u16> {
+        (self.relationship_status <= 3).then_some(self.relationship_status)
+    }
     pub fn parse_fragment(packet: &mut Packet) -> Result<(i32, i32, Vec<Self>)> {
         let pages = packet.read_i32()?;
         let index = packet.read_i32()?;
@@ -296,6 +316,16 @@ impl HFriend {
             friends.push(Self::read(packet)?);
         }
         Ok((pages, index, friends))
+    }
+    /// Match beta-29's static fragment parser, which seeks directly to byte 14.
+    pub fn parse_fragment_java(packet: &mut Packet) -> Result<Vec<Self>> {
+        packet.set_cursor(14)?;
+        let n = count(packet)?;
+        let mut friends = Vec::with_capacity(n);
+        for _ in 0..n {
+            friends.push(Self::read(packet)?);
+        }
+        Ok(friends)
     }
     pub fn construct_fragments(friends: &[Self], header: u16) -> Result<Vec<Packet>> {
         if friends.len() > 65_536 {
@@ -330,6 +360,29 @@ impl HFriend {
     /// Parse friend changes in wire order, retaining each non-removal type.
     pub fn parse_update_changes(packet: &mut Packet) -> Result<Vec<HFriendChange>> {
         Ok(HFriendUpdate::parse(packet)?.changes)
+    }
+    /// Reproduce beta-29's `constructUpdatePacket`, which omits change types.
+    /// Java's HashMap can serialize category entries in a different order.
+    pub fn construct_java_update(friends: &[Self], header: u16) -> Result<Packet> {
+        if friends.len() > 65_536 {
+            return Err(error("too many friend changes"));
+        }
+        let mut categories = BTreeMap::new();
+        for friend in friends {
+            if let Some(name) = &friend.category_name {
+                categories.insert(friend.category_id, name);
+            }
+        }
+        let mut packet = Packet::new(header);
+        packet.put_i32(categories.len() as i32)?;
+        for (id, name) in categories {
+            packet.put_i32(id)?.put_string(name)?;
+        }
+        packet.put_i32(friends.len() as i32)?;
+        for friend in friends {
+            friend.append(&mut packet)?;
+        }
+        Ok(packet)
     }
     /// Construct an update with explicit change types and optional removals.
     pub fn construct_update(changes: &[HFriendChange], header: u16) -> Result<Packet> {
@@ -495,5 +548,16 @@ mod tests {
         let parsed = HFriendUpdate::parse(&mut packet).unwrap();
         assert_eq!(parsed, full);
         assert_eq!(parsed.construct(3).unwrap().bytes(), packet.bytes());
+        packet.set_cursor(10).unwrap();
+        assert_eq!(HFriendUpdate::parse_java(&mut packet).unwrap(), full);
+
+        let mut original_friend = Packet::new(1);
+        friends[0].append(&mut original_friend).unwrap();
+        let mut invalid = original_friend.bytes().to_vec();
+        let end = invalid.len();
+        invalid[end - 2..].copy_from_slice(&[0xff, 0xff]);
+        let unknown = HFriend::read(&mut Packet::from_bytes(invalid).unwrap()).unwrap();
+        assert_eq!(unknown.java_relationship_status(), None);
+        assert!(unknown.append(&mut Packet::new(1)).is_err());
     }
 }

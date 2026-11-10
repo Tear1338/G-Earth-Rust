@@ -354,6 +354,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Compared beta-29 user profiles for all eight combinations of three relationship/online flags, varying group counts and group flags. Parsed values and normalized bytes match Java; negative group counts are rejected by both implementations. The Java oracle, social unit test, both Clippy configurations and desktop/web debug build pass. Live profile and extension behavior remains unverified.
 
+- Compared beta-29 friend updates with duplicate/missing categories, mixed changes, removals, unknown relationship IDs and negative counts. `HFriendUpdate::parse_java` reproduces Java cursor reset and negative-count behavior; unknown relationship IDs remain readable and expose Java's null through `java_relationship_status`, while serialization rejects them. `construct_java_update` reproduces Java's omission of change-type markers, while the existing constructor emits valid updates. Java category `HashMap` order may differ from Rust's sorted order. The Java oracle, social test, both Clippy configurations and desktop/web debug build pass. Live extension behavior remains unverified.
+
 ## Exact next step
 
-Compare Java `HFriend` update parsing with duplicate and missing categories, mixed update types and relationship statuses against beta-29; add differential fixtures and correct discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
+Compare Java `HFriend.constructFragmentPackets` and `parseFromFragment` at 100-item boundaries, including its original pagination defects; add bounded compatibility methods and beta-29 fixtures. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.

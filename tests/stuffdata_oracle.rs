@@ -298,6 +298,67 @@ fn all_stuff_data_wire_formats_match_original_java() {
         .unwrap(),
         friend
     );
+    use gearth_rust::parsers::social::{HFriend, HFriendChange, HFriendUpdate};
+    let mut update_packet = Packet::from_bytes(observed["friend_update_mixed"].clone()).unwrap();
+    update_packet.set_cursor(10).unwrap();
+    let update = HFriendUpdate::parse_java(&mut update_packet).unwrap();
+    let mut summary = Packet::new(1);
+    let friends: Vec<_> = update
+        .changes
+        .iter()
+        .filter_map(|change| match change {
+            HFriendChange::Upsert { friend, .. } => Some(friend),
+            HFriendChange::Removed(_) => None,
+        })
+        .collect();
+    summary
+        .put_i32(friends.len() as i32)
+        .unwrap()
+        .put_i32(update_packet.cursor() as i32)
+        .unwrap();
+    for item in &friends {
+        summary
+            .put_i32(item.id)
+            .unwrap()
+            .put_bool(item.category_name.is_some())
+            .unwrap();
+        if let Some(name) = &item.category_name {
+            summary.put_string(name).unwrap();
+        }
+        summary
+            .put_i32(item.java_relationship_status().map_or(-1, i32::from))
+            .unwrap();
+    }
+    let removed: Vec<_> = update
+        .changes
+        .iter()
+        .filter_map(|change| match change {
+            HFriendChange::Removed(id) => Some(*id),
+            _ => None,
+        })
+        .collect();
+    summary.put_i32(removed.len() as i32).unwrap();
+    for id in removed {
+        summary.put_i32(id).unwrap();
+    }
+    summary.put_i32(update_packet.cursor() as i32).unwrap();
+    assert_eq!(summary.bytes(), observed["friend_update_summary"]);
+    assert!(friends[2].append(&mut Packet::new(1)).is_err());
+    for key in ["friend_negative_categories", "friend_negative_updates"] {
+        let mut packet = Packet::from_bytes(observed[key].clone()).unwrap();
+        assert!(HFriendUpdate::parse_java(&mut packet)
+            .unwrap()
+            .changes
+            .is_empty());
+    }
+    let mut categorized = friend.clone();
+    categorized.category_name = Some("Friends".into());
+    assert_eq!(
+        HFriend::construct_java_update(&[categorized], 3)
+            .unwrap()
+            .bytes(),
+        observed["friend_construct_java"]
+    );
     let index = gearth_rust::parsers::catalog::HCatalogIndex::read(
         &mut Packet::from_bytes(observed["catalog_index"].clone()).unwrap(),
     )

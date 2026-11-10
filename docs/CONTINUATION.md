@@ -1,5 +1,7 @@
 # Continuation state
 
+Friend updates now offer beta-29-compatible cursor/count parsing and a separate constructor reproducing Java's omitted change markers. Unknown relationship IDs remain readable with Java-null semantics via an accessor; serialization rejects them. The beta-29 oracle covers category duplicates/missing entries, removals and unknown status; Java oracle, social test, both Clippy configurations and desktop/web debug build pass. Next: compare friend fragment boundaries. The dedicated AIR session is being prepared; real relay and extension testing remains outstanding.
+
 Profile and group fixtures compare all eight combinations of the three profile flags, group fields/counts and negative-count rejection against beta-29; parsed values and normalized bytes match. Java oracle, social unit test, both Clippy configurations and desktop/web debug build pass. Next: compare friend update categories, change types and relationship statuses. The dedicated AIR session is being prepared; real relay and extension testing remains outstanding.
 
 Forum overview rows and known/unknown view modes now have beta-29 getter and normalized-output fixtures. Java oracle, three forum tests, both Clippy configurations and desktop/web debug build pass. Next: compare user profiles and groups. The dedicated AIR session is being prepared; real relay and extension testing remains outstanding.

@@ -1,5 +1,7 @@
 # Changelog
 
+- Add explicit beta-29 friend update cursor and construction compatibility.
+
 - Compare beta-29 profiles and groups across flags and group counts.
 
 - Expand beta-29 forum overview and view-mode comparisons.
