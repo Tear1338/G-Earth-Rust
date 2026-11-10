@@ -2504,6 +2504,43 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
         check(&format!("substring_nested_group_curly_{i}"), &packet);
     }
+    let backreference_cases = [
+        ("(a)\\1", "$1/$0"),
+        ("(ab)\\1", "$1/$0"),
+        ("(a)?\\1b", "$1/$0"),
+        ("(a*)\\1b", "$1/$0"),
+        ("(?i)([ab])\\1", "$1/$0"),
+        ("(?iu)(é)\\1", "$1/$0"),
+        ("(?i)(a)(?-i)\\1", "$1/$0"),
+        ("(?<x>ab)\\k<x>", "${x}/$0"),
+        ("(a)\\10", "$1/$0"),
+        ("(a)(b)\\2\\1", "$1/$2/$0"),
+        ("(\\d)\\1+", "$1/$0"),
+        ("(a*)\\1*", "$1/$0"),
+        ("(a?)\\1{2}", "$1/$0"),
+        ("(a)?\\1*", "$1/$0"),
+        ("(a|b)\\1", "$1/$0"),
+        ("(a)|(b)\\2", "$1/$2/$0"),
+        ("\\1(a)", "$1/$0"),
+        ("(?x)(a)\\1 0", "$1/$0"),
+    ];
+    let backreference_alphabet = ['a', 'A', 'b', 'B', 'é', 'É', '0', '1', ' ', '\n'];
+    for i in 0..360 {
+        let (pattern, replacement) = backreference_cases[i % backreference_cases.len()];
+        let mut value = format!("{pattern} aa abab aAbB éÉ 11 aa0 bb ");
+        for j in 0..14 {
+            value.push(
+                backreference_alphabet[(i * 7 + j * 3 + j * j) % backreference_alphabet.len()],
+            );
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, replacement, Some(1))
+            .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
+        check(&format!("substring_backreference_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

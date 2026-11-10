@@ -727,3 +727,16 @@ fn java_nested_alternation_rejects_unimplemented_structures_and_limits_depth() {
         .is_err());
     assert_eq!(packet.bytes(), before);
 }
+
+#[test]
+fn java_backreferences_reject_unsupported_cases_transactionally() {
+    for pattern in ["(?<x>a)\\k<missing>", "(?<x>\\k<x>)", "(a)+\\1"] {
+        let mut packet = Packet::new(9);
+        packet.put_string(pattern).unwrap();
+        let before = packet.bytes().to_vec();
+        assert!(packet
+            .replace_substrings_java(pattern, "$0", Some(1))
+            .is_err());
+        assert_eq!(packet.bytes(), before);
+    }
+}

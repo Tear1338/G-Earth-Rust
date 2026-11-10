@@ -310,6 +310,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Nested repeated groups with captures now distinguish deterministic fixed-count bodies from non-deterministic bodies when selecting Java GroupCurly-style retention or Loop rollback. A 250-packet beta-29 corpus covers nested greedy/reluctant loops, exact counts, nullable bodies, named captures and capturing ancestors. Other regex constructs, performance limits and live relay behavior remain incomplete. Thirty-four mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally. Actions run 42833154248 passed all eight validation jobs.
 
+- Java numbered and named regex backreferences now use capture-aware bounded matching, including unmatched versus empty captures, Latin-1 case folding, optional and repeated references, and ordered alternatives. A 360-packet beta-29 oracle corpus passes. References to currently open groups and patterns combining backreferences with repeated groups remain explicitly unsupported. Thirty-five mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally. Actions run 42834244254 passed all eight validation jobs.
+
 ## Exact next step
 
-Compare Java regex backreferences (numbered and named) with beta-29 HPacket replacement, including optional/unmatched groups and scoped case flags; design bounded capture-aware matching and differential fixtures. Validate official AIR traffic and an extension through the relay when a dedicated session is available.
+Compare backreferences combined with repeated groups and capture retention against beta-29 Java, including (a)+\1 and repeated references inside/outside nested groups; extend the bounded VM only after differential coverage. Validate official AIR traffic and an extension through the relay when a dedicated session is available.

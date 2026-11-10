@@ -355,6 +355,11 @@ enum FixedRegexAtom {
     Literal(u8),
     CaseInsensitive(u8),
     UnicodeCaseInsensitive(u8),
+    Backref {
+        group: usize,
+        case_insensitive: bool,
+        unicode_case: bool,
+    },
     Dot,
     DotUnix,
     DotAll,
@@ -824,6 +829,7 @@ fn atom_accepts(atom: &FixedRegexAtom, byte: u8) -> bool {
         FixedRegexAtom::UnicodeCaseInsensitive(expected) => {
             fold_latin1(*expected) == fold_latin1(byte)
         }
+        FixedRegexAtom::Backref { .. } => false,
         FixedRegexAtom::Dot => !matches!(byte, b'\n' | b'\r' | 0x85),
         FixedRegexAtom::DotUnix => byte != b'\n',
         FixedRegexAtom::DotAll => true,
@@ -2045,6 +2051,70 @@ fn compile_deep_nested_repeat(
     program
 }
 
+fn vm_atom_width(
+    atom: &FixedRegexAtom,
+    input: &[u8],
+    position: usize,
+    captures: &[Option<(usize, usize)>],
+    sticky: &[Option<(usize, usize)>],
+    comparisons: &mut usize,
+) -> Result<Option<usize>> {
+    let FixedRegexAtom::Backref {
+        group,
+        case_insensitive,
+        unicode_case,
+    } = atom
+    else {
+        return Ok(atom_width(atom, input, position));
+    };
+    let capture = sticky
+        .get(*group)
+        .copied()
+        .flatten()
+        .or_else(|| captures.get(*group).copied().flatten());
+    let Some((start, end)) = capture else {
+        return Ok(None);
+    };
+    let length = end - start;
+    let Some(candidate) = position
+        .checked_add(length)
+        .and_then(|end| input.get(position..end))
+    else {
+        return Ok(None);
+    };
+    for (&left, &right) in input[start..end].iter().zip(candidate) {
+        consume_regex_budget(comparisons)?;
+        let equal = if !case_insensitive {
+            left == right
+        } else if *unicode_case {
+            fold_latin1(left) == fold_latin1(right)
+        } else {
+            left.eq_ignore_ascii_case(&right)
+        };
+        if !equal {
+            return Ok(None);
+        }
+    }
+    Ok(Some(length))
+}
+
+fn vm_repeat_width(
+    atom: &FixedRegexAtom,
+    captures: &[Option<(usize, usize)>],
+    sticky: &[Option<(usize, usize)>],
+) -> Option<usize> {
+    if let FixedRegexAtom::Backref { group, .. } = atom {
+        sticky
+            .get(*group)
+            .copied()
+            .flatten()
+            .or_else(|| captures.get(*group).copied().flatten())
+            .map(|(start, end)| end - start)
+    } else {
+        Some(1)
+    }
+}
+
 fn match_nested_repeat_with_sticky(
     input: &[u8],
     offset: usize,
@@ -2106,15 +2176,36 @@ fn match_nested_repeat_with_sticky(
                 limit,
                 greedy,
             } => {
-                if greedy {
+                let unit_width = vm_repeat_width(&atoms[index], &captures, sticky);
+                if unit_width.is_none() && min > 0 {
+                    0
+                } else if unit_width.is_none() || unit_width == Some(0) {
                     if maximum.is_none() {
+                        *maximum = Some(if unit_width.is_none() { 0 } else { min });
+                    }
+                    1
+                } else if greedy {
+                    if maximum.is_none() {
+                        let width = unit_width.unwrap();
                         let mut length = 0;
                         while limit.is_none_or(|limit| length < limit) {
-                            let Some(&byte) = input.get(*position + length) else {
+                            let Some(next) = length
+                                .checked_mul(width)
+                                .and_then(|delta| position.checked_add(delta))
+                            else {
                                 break;
                             };
                             consume_regex_budget(comparisons)?;
-                            if !atom_accepts(&atoms[index], byte) {
+                            if vm_atom_width(
+                                &atoms[index],
+                                input,
+                                next,
+                                &captures,
+                                sticky,
+                                comparisons,
+                            )?
+                            .is_none()
+                            {
                                 break;
                             }
                             length += 1;
@@ -2127,15 +2218,29 @@ fn match_nested_repeat_with_sticky(
                         maximum.unwrap() - min + 1
                     }
                 } else {
+                    let width = unit_width.unwrap();
                     let length = min + *choice;
                     let mut matched = !limit.is_some_and(|limit| length > limit);
                     if matched {
                         let first = if *choice == 0 { 0 } else { length - 1 };
                         for step in first..length {
                             consume_regex_budget(comparisons)?;
-                            if !input
-                                .get(*position + step)
-                                .is_some_and(|byte| atom_accepts(&atoms[index], *byte))
+                            let Some(next) = step
+                                .checked_mul(width)
+                                .and_then(|delta| position.checked_add(delta))
+                            else {
+                                matched = false;
+                                break;
+                            };
+                            if vm_atom_width(
+                                &atoms[index],
+                                input,
+                                next,
+                                &captures,
+                                sticky,
+                                comparisons,
+                            )?
+                            .is_none()
                             {
                                 matched = false;
                                 break;
@@ -2167,18 +2272,33 @@ fn match_nested_repeat_with_sticky(
         let checkpoint = trail.len();
         let next = match program[pc] {
             NestedInstruction::Atom(index) => {
-                let Some(width) = atom_width(&atoms[index], input, position) else {
+                let Some(width) = vm_atom_width(
+                    &atoms[index],
+                    input,
+                    position,
+                    &captures,
+                    sticky,
+                    comparisons,
+                )?
+                else {
                     continue;
                 };
                 (pc + 1, position + width, loop_state)
             }
-            NestedInstruction::Repeat { min, greedy, .. } => {
+            NestedInstruction::Repeat {
+                index, min, greedy, ..
+            } => {
                 let length = if greedy {
                     maximum.unwrap() - branch
                 } else {
                     min + branch
                 };
-                (pc + 1, position + length, loop_state)
+                let width = vm_repeat_width(&atoms[index], &captures, sticky).unwrap_or(0);
+                let end = length
+                    .checked_mul(width)
+                    .and_then(|n| position.checked_add(n))
+                    .ok_or_else(|| error("regex repetition length overflow"))?;
+                (pc + 1, end, loop_state)
             }
             NestedInstruction::Start(group) => {
                 trail.push((group, captures[group]));
@@ -3477,6 +3597,7 @@ impl Packet {
         let mut atoms: Vec<FixedRegexAtom> = Vec::new();
         let mut ranges: Vec<(usize, usize)> = Vec::new();
         let mut dynamic = case_insensitive;
+        let mut has_backreferences = false;
         let mut alternatives = Vec::new();
         let mut group_branches = Vec::new();
         let mut group_nodes = Vec::new();
@@ -3663,6 +3784,49 @@ impl Packet {
                         .ok_or_else(|| error("unsupported regex escape"))?;
                     if c == 'Q' {
                         quoted = true;
+                        continue;
+                    }
+                    if ('1'..='9').contains(&c) || c == 'k' {
+                        let group = if c == 'k' {
+                            if chars.next() != Some('<') {
+                                return Err(error("invalid named regex reference"));
+                            }
+                            let mut name = String::new();
+                            loop {
+                                match chars.next() {
+                                    Some('>') => break,
+                                    Some(ch) if ch.is_ascii_alphanumeric() => name.push(ch),
+                                    _ => return Err(error("invalid named regex reference")),
+                                }
+                            }
+                            names
+                                .iter()
+                                .position(|n| n.as_deref() == Some(name.as_str()))
+                                .ok_or_else(|| error("unknown named regex reference"))?
+                        } else {
+                            let mut number = c.to_digit(10).unwrap() as usize;
+                            while let Some(ch) = chars.peek().filter(|ch| ch.is_ascii_digit()) {
+                                let next = number * 10 + ch.to_digit(10).unwrap() as usize;
+                                if next > groups.len() {
+                                    break;
+                                }
+                                number = next;
+                                chars.next();
+                            }
+                            number - 1
+                        };
+                        if open.contains(&group) {
+                            return Err(error("references to an open group are not yet supported"));
+                        }
+                        atoms.push(FixedRegexAtom::Backref {
+                            group,
+                            case_insensitive,
+                            unicode_case,
+                        });
+                        has_backreferences = true;
+                        dynamic = true;
+                        quantifiable = true;
+                        last_closed_group = None;
                         continue;
                     }
                     if matches!(c, 'A' | 'z' | 'Z' | 'b' | 'B') {
@@ -3882,7 +4046,8 @@ impl Packet {
             .iter()
             .skip(1)
             .any(|node| !node.splits.is_empty());
-        let use_tree_vm = has_nested_alternation
+        let use_tree_vm = has_backreferences
+            || has_nested_alternation
             || group_repeats.len() > 1
             || group_repeats.iter().any(|entry| entry.6)
             || (repeated_group_owner.is_none()
@@ -3890,6 +4055,11 @@ impl Packet {
                     optional.iter().any(|&(a, b, _)| a >= start && b <= end)
                         || repeated.iter().any(|&(a, ..)| a >= start && a < end)
                 }));
+        if has_backreferences && !group_repeats.is_empty() {
+            return Err(error(
+                "backreferences within repeated groups are not yet supported",
+            ));
+        }
         if use_tree_vm && group_repeats.len() > 128 {
             return Err(error("regex repeated group limit exceeded"));
         }

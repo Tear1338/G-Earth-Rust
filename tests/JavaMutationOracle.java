@@ -1106,6 +1106,23 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_unicode_case_" + i, sample);
         }
+        String[][] backreferenceCases = {{"(a)\\1", "$1/$0"}, {"(ab)\\1", "$1/$0"}, {"(a)?\\1b", "$1/$0"}, {"(a*)\\1b", "$1/$0"}, {"(?i)([ab])\\1", "$1/$0"}, {"(?iu)(é)\\1", "$1/$0"}, {"(?i)(a)(?-i)\\1", "$1/$0"}, {"(?<x>ab)\\k<x>", "${x}/$0"}, {"(a)\\10", "$1/$0"}, {"(a)(b)\\2\\1", "$1/$2/$0"}, {"(\\d)\\1+", "$1/$0"}, {"(a*)\\1*", "$1/$0"}, {"(a?)\\1{2}", "$1/$0"}, {"(a)?\\1*", "$1/$0"}, {"(a|b)\\1", "$1/$0"}, {"(a)|(b)\\2", "$1/$2/$0"}, {"\\1(a)", "$1/$0"}, {"(?x)(a)\\1 0", "$1/$0"}};
+        char[] backreferenceAlphabet = {'a', 'A', 'b', 'B', 'é', 'É', '0', '1', ' ', '\n'};
+        for (int i = 0; i < 360; i++) {
+            String[] entry = backreferenceCases[i % backreferenceCases.length];
+            String pattern = entry[0];
+            StringBuilder value = new StringBuilder(pattern).append(" aa abab aAbB éÉ 11 aa0 bb ");
+            for (int j = 0; j < 14; j++) value.append(backreferenceAlphabet[(i * 7 + j * 3 + j * j) % backreferenceAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, entry[1], 1);
+            } finally { System.setOut(original); }
+            emit("substring_backreference_" + i, sample);
+        }
         String[][] nestedGroupCurlyCases = {{"(?:(a+)+b)+(?:c)+", "$1/$0"}, {"(?:(a*)+b)+(?:c)+", "$1/$0"}, {"(?:(a{2}){2}b)+(?:c)+", "$1/$0"}, {"(?:(a){2}b)+(?:c)+", "$1/$0"}, {"(?:(a){2}?b)+(?:c)+", "$1/$0"}, {"((a{2}){2}b)+(c)+", "$1/$2/$3/$0"}, {"(?:(a+){2}b)+(?:c)+", "$1/$0"}, {"(?:(?<x>a+)+b)+(?:c)+", "${x}/$0"}, {"(?:(a+)+b)+?(?:c)+", "$1/$0"}, {"(?:(a*){1,2}b){0,2}(?:c)+", "$1/$0"}};
         char[] nestedGroupCurlyAlphabet = {'a', 'A', 'b', 'c', 'd', ' ', '\n'};
         for (int i = 0; i < 250; i++) {
