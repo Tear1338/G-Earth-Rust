@@ -347,6 +347,26 @@ fn all_stuff_data_wire_formats_match_original_java() {
     .unwrap()
     .comments
     .is_empty());
+    for mode in [0, 1, 2, 99] {
+        let key = format!("forum_overview_{mode}");
+        let overview =
+            ForumOverview::read(&mut Packet::from_bytes(observed[key.as_str()].clone()).unwrap())
+                .unwrap();
+        assert_eq!(
+            (overview.size, overview.start_index, overview.forums.len()),
+            (100, 5, 3)
+        );
+        assert_eq!(overview.forums[1].guild_id, 21);
+        assert_eq!(overview.forums[1].guild_description, "Description é1");
+        let mut normalized = Packet::new(1);
+        overview.append(&mut normalized).unwrap();
+        let normalized_key = format!("forum_overview_normalized_{mode}");
+        assert_eq!(
+            normalized.bytes(),
+            observed[normalized_key.as_str()],
+            "{key}"
+        );
+    }
     let entities = gearth_rust::parsers::entity::HEntity::parse(
         &mut Packet::from_bytes(observed["entities"].clone()).unwrap(),
     )

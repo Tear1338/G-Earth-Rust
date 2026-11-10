@@ -1,5 +1,7 @@
 # Changelog
 
+- Expand beta-29 forum overview and view-mode comparisons.
+
 - Match Java negative forum overview counts and expand thread comparisons.
 
 - Match Java duplicate-owner resolution for floor and wall furniture collections.

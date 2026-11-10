@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Forum overview parsing has beta-29 getter and normalized-output fixtures for known and unknown view modes and multiple rows; these finite fixtures do not establish live parity.
+
 Forum overview parsers follow Java's empty-list behavior for negative counts while retaining a bounded limit for positive counts. Unknown thread states normalize to the Java default when serialized.
 
 Floor and wall collection construction resolves duplicate owners before rejecting a missing final owner name, as in beta-29. Rust sorts owner IDs while Java uses `HashMap`; parsed collection semantics are compared independently of ordering.

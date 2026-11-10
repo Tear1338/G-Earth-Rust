@@ -14,6 +14,7 @@ import gearth.extensions.parsers.forums.HThreadState;
 import gearth.extensions.parsers.forums.HThread;
 import gearth.extensions.parsers.forums.HThreadOverview;
 import gearth.extensions.parsers.forums.HForumOverview;
+import gearth.extensions.parsers.forums.HForum;
 import java.util.HashMap;
 import java.util.HexFormat;
 
@@ -197,6 +198,26 @@ public class JavaStuffOracle {
         HPacket negativeComments = new HPacket(1); negativeComments.appendInt(1).appendInt(2).appendInt(3).appendInt(-1);
         if (!new HCommentOverview(negativeComments).getComments().isEmpty()) throw new AssertionError("negative comment count");
         System.out.println("forum_comments_negative=" + HexFormat.of().formatHex(negativeComments.toBytes()));
+        for (int mode : new int[]{0, 1, 2, 99}) {
+            HPacket forumList = new HPacket(1);
+            forumList.appendInt(mode).appendInt(100).appendInt(5).appendInt(3);
+            for (int i = 0; i < 3; i++) {
+                forumList.appendInt(20 + i).appendString("Guild" + i).appendString("Description é" + i).appendString("Badge" + i)
+                    .appendInt(-i).appendInt(i + 1).appendInt(i + 2).appendInt(i + 3).appendInt(i + 4)
+                    .appendInt(i + 5).appendString("User" + i).appendInt(i + 6);
+            }
+            HForumOverview overview = new HForumOverview(forumList);
+            HPacket normalized = new HPacket(1);
+            normalized.appendInt(overview.getViewMode().getVal()).appendInt(overview.getSize()).appendInt(overview.getStartIndex()).appendInt(overview.getForums().size());
+            for (HForum f : overview.getForums()) {
+                normalized.appendInt(f.getGuildId()).appendString(f.getGuildName()).appendString(f.getGuildDescription()).appendString(f.getGuildBadge())
+                    .appendInt(f.getUnknown1()).appendInt(f.getRating()).appendInt(f.getAmountComments()).appendInt(f.getUnreadComments())
+                    .appendInt(f.getLastCommentIndexInForum()).appendInt(f.getLastCommentUserId()).appendString(f.getLastCommentUserName()).appendInt(f.getLastCommentPassedTime());
+            }
+            if (overview.getForums().size() != 3 || (mode == 99 && overview.getViewMode().getVal() != 2)) throw new AssertionError("forum overview");
+            System.out.println("forum_overview_" + mode + "=" + HexFormat.of().formatHex(forumList.toBytes()));
+            System.out.println("forum_overview_normalized_" + mode + "=" + HexFormat.of().formatHex(normalized.toBytes()));
+        }
 
         HPacket entities = new HPacket(1);
         entities.appendInt(4);

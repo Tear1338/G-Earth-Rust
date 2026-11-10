@@ -350,6 +350,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Compared beta-29 forum thread overviews with five rows, flags and known/unknown states; parsed data and normalized serialization match. Java treats negative list counts as empty in thread, forum and comment overviews; Rust now does the same while retaining its positive count limit. The Java oracle, three forum tests, both Clippy configurations and desktop/web debug build pass. Actions run 42916029988 passed all eight jobs for the earlier inventory commit. Live forum and extension behavior remains unverified.
 
+- Compared beta-29 forum overview collections with three rows in each known view mode and an unknown mode. Parsed fields and normalized serialized bytes match Java's getter values and fallback; the Java oracle, three forum tests, both Clippy configurations and desktop/web debug build pass. Live forum and extension compatibility remains unverified.
+
 ## Exact next step
 
-Compare Java `HForum` and `HForumOverview` fields, multiple rows and unknown view modes against beta-29, then add differential fixtures and correct discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
+Compare Java `HUserProfile` and `HGroup` fields, multiple groups, flags and negative group counts against beta-29; add differential fixtures and correct discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.

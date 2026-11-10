@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Forum overview fixtures compare three rows across all known view modes and an unknown-mode fallback with beta-29 getters and normalized output. Live forum and extension behavior remains unverified.
+
 Forum thread overview fixtures cover flags, multiple rows, known and unknown states, and Java's empty-list interpretation of negative overview counts. Positive counts remain bounded; live forum and extension behavior remains unverified.
 
 Floor and wall collection fixtures cover multiple, duplicate and missing owners against beta-29. Java uses `HashMap` owner order while Rust sorts IDs, so comparisons verify parsed semantics rather than identical ordering.
