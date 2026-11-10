@@ -1133,6 +1133,18 @@ public class JavaMutationOracle {
             finally { System.setOut(original); }
             emit("substring_lookbehind_" + i, sample);
         }
+        String[][] atomicCases = {{"(?>a|ab)c", "$0"}, {"(?>ab|a)c", "$0"}, {"(?>(a))b|a", "$1/$0"}, {"(?>(a))b|c", "$1/$0"}, {"(?>(a+))a", "$1/$0"}, {"(?>(a|b))+c", "$1/$0"}, {"(?>(a))\\1", "$1/$0"}, {"(?>(a)?b)+c", "$1/$0"}, {"(?>a*)a", "$0"}, {"(?>(?<x>a|b))\\k<x>", "${x}/$0"}, {"(?>(a|ab))c|b", "$1/$0"}, {"(?>(?=(a))a)b", "$1/$0"}, {"(?>ab)?c", "$0"}, {"(?>ab){1,3}c", "$0"}, {"(?>(a|b)){1,3}c", "$1/$0"}, {"(?>(a)|b)+c", "$1/$0"}, {"(?>(a)?b)*c", "$1/$0"}, {"(?>(a)?b){0,3}c", "$1/$0"}, {"(?>(a+))b|c", "$1/$0"}, {"(?<=(?>a|ab))c", "$0"}, {"(?<=(?>(a|ab)))c", "$1/$0"}, {"(?!((?>a)))b|a", "$1/$0"}, {"(?>((a|b)+))c", "$1/$2/$0"}, {"(?>(a*))a|b", "$1/$0"}, {"(?>a|ab){2}c", "$0"}};
+        char[] atomicAlphabet = {'a', 'A', 'b', 'B', 'c', ' ', '\n'};
+        for (int i = 0; i < 300; i++) {
+            String[] entry = atomicCases[i % atomicCases.length]; String pattern = entry[0];
+            StringBuilder value = new StringBuilder(pattern).append(" abc ac aaabaaa abac aabbc ");
+            for (int j = 0; j < 12; j++) value.append(atomicAlphabet[(i * 5 + j * 3 + j * j) % atomicAlphabet.length]);
+            HPacket sample = new HPacket(9); sample.appendString(value.toString()); sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try { System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream())); sample.replaceXSubstrings(pattern, entry[1], 1); }
+            finally { System.setOut(original); }
+            emit("substring_atomic_" + i, sample);
+        }
         String[][] selfBackrefCases = {{"(a\\1)", "$1/$0"}, {"(a\\1?)+b", "$1/$0"}, {"(?<x>a\\k<x>?)+b", "${x}/$0"}, {"(a\\1?){1,3}b", "$1/$0"}, {"(a\\1?)*?b", "$1/$0"}, {"(a\\1?)+(b)+", "$1/$2/$0"}, {"((a)\\1?)+b", "$1/$2/$0"}, {"((a)\\1?)+\\1", "$1/$2/$0"}, {"(?i)(a\\1?)+B", "$1/$0"}, {"(a\\1?)?b", "$1/$0"}};
         char[] selfBackrefAlphabet = {'a', 'A', 'b', 'B', ' ', '\n'};
         for (int i = 0; i < 250; i++) {

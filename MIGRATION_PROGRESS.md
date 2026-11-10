@@ -328,6 +328,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - The beta-29 lookbehind corpus now contains 840 cases, including unbounded repetitions, overflowing group widths, alternatives and anchors; all packet comparisons pass. Desktop/web Clippy and debug compilation also pass. These finite cases do not establish full regex parity.
 
+- Atomic groups `(?>...)` now execute as bounded, non-backtracking subprograms, preserving selected captures as in Java. The 300-packet beta-29 corpus includes alternatives, repeated atomic groups, assertions and backreferences. Thirty-six mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. Actions run 42843377108 passed all eight jobs for the prior implementation commit. Full regex parity and live compatibility remain unverified.
+
 ## Exact next step
 
-Compare Java atomic groups `(?>...)`, especially capture retention and backtracking, against beta-29 and implement them with bounded differential fixtures. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
+Compare Java possessive quantifiers (`?+`, `*+`, `++`, `{m,n}+`) and capture retention against beta-29, then implement them with bounded differential fixtures. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.

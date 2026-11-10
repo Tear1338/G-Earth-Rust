@@ -2690,6 +2690,48 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
         check(&format!("substring_lookbehind_{i}"), &packet);
     }
+    let atomic_cases = [
+        ("(?>a|ab)c", "$0"),
+        ("(?>ab|a)c", "$0"),
+        ("(?>(a))b|a", "$1/$0"),
+        ("(?>(a))b|c", "$1/$0"),
+        ("(?>(a+))a", "$1/$0"),
+        ("(?>(a|b))+c", "$1/$0"),
+        ("(?>(a))\\1", "$1/$0"),
+        ("(?>(a)?b)+c", "$1/$0"),
+        ("(?>a*)a", "$0"),
+        ("(?>(?<x>a|b))\\k<x>", "${x}/$0"),
+        ("(?>(a|ab))c|b", "$1/$0"),
+        ("(?>(?=(a))a)b", "$1/$0"),
+        ("(?>ab)?c", "$0"),
+        ("(?>ab){1,3}c", "$0"),
+        ("(?>(a|b)){1,3}c", "$1/$0"),
+        ("(?>(a)|b)+c", "$1/$0"),
+        ("(?>(a)?b)*c", "$1/$0"),
+        ("(?>(a)?b){0,3}c", "$1/$0"),
+        ("(?>(a+))b|c", "$1/$0"),
+        ("(?<=(?>a|ab))c", "$0"),
+        ("(?<=(?>(a|ab)))c", "$1/$0"),
+        ("(?!((?>a)))b|a", "$1/$0"),
+        ("(?>((a|b)+))c", "$1/$2/$0"),
+        ("(?>(a*))a|b", "$1/$0"),
+        ("(?>a|ab){2}c", "$0"),
+    ];
+    let atomic_alphabet = ['a', 'A', 'b', 'B', 'c', ' ', '\n'];
+    for i in 0..300 {
+        let (pattern, replacement) = atomic_cases[i % atomic_cases.len()];
+        let mut value = format!("{pattern} abc ac aaabaaa abac aabbc ");
+        for j in 0..12 {
+            value.push(atomic_alphabet[(i * 5 + j * 3 + j * j) % atomic_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, replacement, Some(1))
+            .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
+        check(&format!("substring_atomic_{i}"), &packet);
+    }
     let self_backref_cases = [
         ("(a\\1)", "$1/$0"),
         ("(a\\1?)+b", "$1/$0"),

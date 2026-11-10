@@ -1,5 +1,7 @@
 # Continuation state
 
+Atomic regex groups now run as bounded non-backtracking subprograms and match 300 beta-29 packet cases. Thirty-six mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. Next: compare possessive quantifiers and their captures. A dedicated AIR session is being prepared; end-to-end client and extension validation remains outstanding.
+
 The beta-29 lookbehind corpus now covers 840 packets, including unbounded repetitions, alternatives, anchors and overflowing group widths. The oracle, desktop/web Clippy and debug compilation pass. Next: compare Java atomic groups and capture retention. The dedicated AIR session is being prepared; live relay and extension validation is outstanding.
 
 The 360-case beta-29 lookbehind corpus now includes repeated groups and nested captures. Width analysis rejects selected nondeterministic and overflowing repeated groups that Java rejects. Thirty-six mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug build pass; Actions run 42842373921 passed for the prior commit. Next: compare width overflow for unbounded repetitions, alternatives and anchors. The dedicated AIR session is being prepared; real relay and extension validation is outstanding.

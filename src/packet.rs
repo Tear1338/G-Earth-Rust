@@ -1704,6 +1704,7 @@ struct AlternationNode {
     end: usize,
     capture: Option<usize>,
     assertion: Option<(bool, bool)>, // (positive, behind)
+    atomic: bool,
     assertion_group_start: usize,
     assertion_group_end: usize,
     sticky_captures: Option<(usize, usize)>,
@@ -1873,6 +1874,7 @@ enum NestedInstruction {
         end: usize,
         positive: bool,
         behind: bool,
+        atomic: bool,
         min_width: usize,
         max_width: usize,
         first_group: usize,
@@ -1955,11 +1957,6 @@ fn emit_alternation_node(
         return Err(error("regex group nesting limit exceeded"));
     }
     let node = &nodes[id];
-    let assertion_pc = node.assertion.map(|_| {
-        let pc = program.len();
-        program.push(NestedInstruction::Jump(0));
-        pc
-    });
     let optional_split = optional_nodes[id].map(|_| {
         let pc = program.len();
         program.push(NestedInstruction::Split(0, 0));
@@ -1974,6 +1971,11 @@ fn emit_alternation_node(
     if let Some((_, _, _, group, true)) = node.repeat {
         program.push(NestedInstruction::Start(group));
     }
+    let assertion_pc = (node.assertion.is_some() || node.atomic).then(|| {
+        let pc = program.len();
+        program.push(NestedInstruction::Jump(0));
+        pc
+    });
     if let Some(group) = node.capture {
         program.push(NestedInstruction::Start(group));
     }
@@ -2023,6 +2025,19 @@ fn emit_alternation_node(
     if let Some(group) = node.capture {
         program.push(NestedInstruction::End(group));
     }
+    if let Some(pc) = assertion_pc {
+        let (positive, behind) = node.assertion.unwrap_or((true, false));
+        program[pc] = NestedInstruction::Assert {
+            end: program.len(),
+            positive,
+            behind,
+            atomic: node.atomic,
+            min_width: widths[id].min,
+            max_width: widths[id].max,
+            first_group: node.assertion_group_start,
+            end_group: node.assertion_group_end,
+        };
+    }
     if let Some((first, end)) = node.sticky_captures {
         program.push(NestedInstruction::StickyCommit(first, end));
     }
@@ -2055,17 +2070,6 @@ fn emit_alternation_node(
             NestedInstruction::Split(body, after)
         } else {
             NestedInstruction::Split(after, body)
-        };
-    }
-    if let Some(pc) = assertion_pc {
-        program[pc] = NestedInstruction::Assert {
-            end: program.len(),
-            positive: node.assertion.unwrap().0,
-            behind: node.assertion.unwrap().1,
-            min_width: widths[id].min,
-            max_width: widths[id].max,
-            first_group: node.assertion_group_start,
-            end_group: node.assertion_group_end,
         };
     }
     Ok(())
@@ -2485,6 +2489,7 @@ fn run_nested_program(
                 end,
                 positive,
                 behind,
+                atomic,
                 min_width,
                 max_width,
                 first_group,
@@ -2546,7 +2551,11 @@ fn run_nested_program(
                     }
                     continue;
                 }
-                if let Some((_, state)) = result {
+                let mut next_position = position;
+                if let Some((matched_end, state)) = result {
+                    if atomic {
+                        next_position = matched_end;
+                    }
                     for group in 0..captures.len() {
                         if captures[group] != state.captures[group]
                             || starts[group] != state.starts[group]
@@ -2567,7 +2576,7 @@ fn run_nested_program(
                         }
                     }
                 }
-                (end, position, loop_state)
+                (end, next_position, loop_state)
             }
             NestedInstruction::Atom(index) => {
                 let Some(width) = vm_atom_width(
@@ -4001,14 +4010,21 @@ impl Packet {
                         } else {
                             first
                         };
-                        if let Some(kind @ ('=' | '!')) = kind {
+                        if let Some(kind @ ('=' | '!' | '>')) = kind {
+                            if behind && kind == '>' {
+                                return Err(error("unsupported regex group"));
+                            }
                             chars = assertion_prefix;
                             let node = push_alternation_node(
                                 &mut alternative_nodes,
                                 &mut node_stack,
                                 atoms.len(),
                             );
-                            alternative_nodes[node].assertion = Some((kind == '=', behind));
+                            if kind == '>' {
+                                alternative_nodes[node].atomic = true;
+                            } else {
+                                alternative_nodes[node].assertion = Some((kind == '=', behind));
+                            }
                             alternative_nodes[node].assertion_group_start = groups.len();
                             group_frames.push((
                                 None,
