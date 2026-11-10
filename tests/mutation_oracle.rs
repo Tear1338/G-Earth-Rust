@@ -2358,6 +2358,33 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
         check(&format!("substring_variable_repeat_{i}"), &packet);
     }
+    let group_curly_cases = [
+        ("(a*)+(?:b)+", "$1/$0"),
+        ("((a*)+)(b)+", "$1/$2/$3/$0"),
+        ("([ab]*)+(?:c)+", "$1/$0"),
+        ("(a?)+(b)+", "$1/$2/$0"),
+        ("(a+)+(b)+", "$1/$2/$0"),
+        ("(?<x>a*)+(b)+", "${x}/$2/$0"),
+        ("([ab]*)*?(?:c)+", "$1/$0"),
+        ("([ab]*)+(?:b)+", "$1/$0"),
+        ("([ab]*)+?(?:b)+", "$1/$0"),
+        ("(?<x>[ab]*)+(?:b)+", "${x}/$0"),
+    ];
+    let group_curly_alphabet = ['a', 'A', 'b', 'c', 'd', ' ', '\n'];
+    for i in 0..250 {
+        let (pattern, replacement) = group_curly_cases[i % group_curly_cases.len()];
+        let mut value = format!("{pattern} abababc cdefab aabb abc ");
+        for j in 0..12 {
+            value.push(group_curly_alphabet[(i * 5 + j * 3 + j * j) % group_curly_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, replacement, Some(1))
+            .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
+        check(&format!("substring_group_curly_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

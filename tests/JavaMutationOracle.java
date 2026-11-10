@@ -1106,6 +1106,23 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_unicode_case_" + i, sample);
         }
+        String[][] groupCurlyCases = {{"(a*)+(?:b)+", "$1/$0"}, {"((a*)+)(b)+", "$1/$2/$3/$0"}, {"([ab]*)+(?:c)+", "$1/$0"}, {"(a?)+(b)+", "$1/$2/$0"}, {"(a+)+(b)+", "$1/$2/$0"}, {"(?<x>a*)+(b)+", "${x}/$2/$0"}, {"([ab]*)*?(?:c)+", "$1/$0"}, {"([ab]*)+(?:b)+", "$1/$0"}, {"([ab]*)+?(?:b)+", "$1/$0"}, {"(?<x>[ab]*)+(?:b)+", "${x}/$0"}};
+        char[] groupCurlyAlphabet = {'a', 'A', 'b', 'c', 'd', ' ', '\n'};
+        for (int i = 0; i < 250; i++) {
+            String[] entry = groupCurlyCases[i % groupCurlyCases.length];
+            String pattern = entry[0];
+            StringBuilder value = new StringBuilder(pattern).append(" abababc cdefab aabb abc ");
+            for (int j = 0; j < 12; j++) value.append(groupCurlyAlphabet[(i * 5 + j * 3 + j * j) % groupCurlyAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, entry[1], 1);
+            } finally { System.setOut(original); }
+            emit("substring_group_curly_" + i, sample);
+        }
         String[][] variableRepeatCases = {{"(?:a*)+(?:b)+", "[$0]"}, {"(?:a*)+", "[$0]"}, {"(?:a?)+(?:b)+", "[$0]"}, {"(?:ab*){1,3}(?:c)+", "[$0]"}, {"(?:a*)+?(?:b)+", "[$0]"}, {"(?:a?){2,4}(?:b)+", "[$0]"}, {"(?:[ab]*)+(?:c)+", "[$0]"}, {"((?:a*)+)b", "$1/$0"}, {"(?:a+)+(?:b*)c", "[$0]"}, {"(?:a?)*?(?:b){1,2}", "[$0]"}, {"(?:ab?){1,3}?(?:c)+", "[$0]"}};
         char[] variableRepeatAlphabet = {'a', 'A', 'b', 'c', ' ', '\n'};
         for (int i = 0; i < 250; i++) {

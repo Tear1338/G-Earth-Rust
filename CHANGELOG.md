@@ -1,5 +1,7 @@
 # Changelog
 
+- Support variable-width captures in repeated Java groups.
+
 - Support repeated Java groups with variable-width capture-free bodies.
 
 - Support multiple fixed-width repeated Java groups without alternation.
