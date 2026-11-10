@@ -2299,6 +2299,35 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_nested_repeat_{i}"), &packet);
     }
+    let plain_multiple_cases = [
+        ("(?:a)+(?:b)+", "[$0]"),
+        ("(a)+(b)+", "$1/$2/$0"),
+        ("([ab])+b([cd])+d", "$1/$2/$0"),
+        ("(a){1,3}(b){0,2}", "$1/$2/$0"),
+        ("((?:a)+)b", "$1/$0"),
+        ("(a)+(b)+?b", "$1/$2/$0"),
+        ("(?:a)*?(?:b)+", "[$0]"),
+        ("(a)+(b)+|(c)", "$1/$2/$3/$0"),
+        ("((a)+)(b)+", "$1/$2/$3/$0"),
+        ("(?<x>a)+(?<y>b)+", "${x}/${y}/$0"),
+    ];
+    let plain_multiple_alphabet = ['a', 'A', 'b', 'c', 'd', ' ', '\n'];
+    for i in 0..250 {
+        let (pattern, replacement) = plain_multiple_cases[i % plain_multiple_cases.len()];
+        let mut value = format!("{pattern} aaabb ab ababccdd aabb ");
+        for j in 0..12 {
+            value.push(
+                plain_multiple_alphabet[(i * 5 + j * 3 + j * j) % plain_multiple_alphabet.len()],
+            );
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, replacement, Some(1))
+            .unwrap();
+        check(&format!("substring_plain_multiple_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

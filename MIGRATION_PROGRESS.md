@@ -296,6 +296,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - The bounded regex VM now uses persistent per-loop counters so nested repetitions restore their enclosing loop state during backtracking. A 200-packet beta-29 corpus covers nested greedy/reluctant and bounded alternative groups, named captures and nullable inner loops; the prior repetition budget tests still pass. The VM retains its 128-group and 262144-state bounds. Multiple repeated groups in patterns without nested alternation and other Java regex constructs remain incomplete. Thirty-four mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally.
 
+- Multiple fixed-width repeated groups now work even without nested alternation, including capturing ancestors and ordered top-level branches. A 250-packet beta-29 corpus covers greedy/reluctant and bounded cases, named captures and rollback. Repeated bodies containing variable-width constructs or nested captures remain conservatively rejected in this path pending GroupCurly comparison. The VM rejects more than 128 repeated groups before expensive validation. Thirty-four mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally.
+
 ## Exact next step
 
-Extend Java-compatible handling of multiple repeated groups when the pattern has no nested alternation, preserving GroupCurly capture behavior and bounded resources; start with differential fixtures for (a)+(b)+ and (?:a)+(?:b)+. Validate official AIR traffic and an extension through the relay when a disposable client session is available.
+Compare Java GroupCurly handling of variable-width repeated bodies and nested captures in patterns without alternation, then extend the VM with differential cases such as (?:a*)+(?:b)+ and (?:(a)b)+(?:c)+. Validate official AIR traffic and an extension through the relay when a disposable client session is available.

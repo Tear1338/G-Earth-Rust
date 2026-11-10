@@ -1,5 +1,7 @@
 # Changelog
 
+- Support multiple fixed-width repeated Java groups without alternation.
+
 - Track independent counters for bounded nested regex loops.
 
 - Support sequential repeated alternative groups and capturing ancestors.

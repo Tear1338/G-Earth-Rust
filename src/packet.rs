@@ -3836,12 +3836,41 @@ impl Packet {
             .iter()
             .skip(1)
             .any(|node| !node.splits.is_empty());
-        if !has_nested_alternation
-            && (group_repeats.len() > 1 || group_repeats.iter().any(|entry| entry.6))
-        {
-            return Err(error(
-                "multiple repeated groups or capturing ancestors are not supported",
-            ));
+        let use_tree_vm = has_nested_alternation
+            || group_repeats.len() > 1
+            || group_repeats.iter().any(|entry| entry.6);
+        if use_tree_vm && group_repeats.len() > 128 {
+            return Err(error("regex repeated group limit exceeded"));
+        }
+        if use_tree_vm && !has_nested_alternation {
+            for &(start, end, _, _, _, node, _) in &group_repeats {
+                if optional.iter().any(|&(a, b, _)| a >= start && b <= end)
+                    || repeated.iter().any(|&(a, ..)| a >= start && a < end)
+                {
+                    return Err(error(
+                        "variable-width repeated groups require Java capture validation",
+                    ));
+                }
+                for &capture_node in &group_nodes {
+                    if capture_node == node {
+                        continue;
+                    }
+                    let mut parent = alternative_nodes[capture_node].parent;
+                    let mut depth = 0;
+                    while let Some(index) = parent {
+                        depth += 1;
+                        if depth > 128 {
+                            return Err(error("regex group nesting limit exceeded"));
+                        }
+                        if index == node {
+                            return Err(error(
+                                "nested repeated captures require Java capture validation",
+                            ));
+                        }
+                        parent = alternative_nodes[index].parent;
+                    }
+                }
+            }
         }
         let needle = latin1_encode(&literal)?;
         let mut repeated_atoms = vec![None; atoms.len()];
@@ -3850,7 +3879,7 @@ impl Packet {
         }
         let mut nested_program = None;
         if let Some((start, end, _, _, _)) =
-            group_repeat.filter(|_| repeated_group_owner.is_none() && !has_nested_alternation)
+            group_repeat.filter(|_| repeated_group_owner.is_none() && !use_tree_vm)
         {
             if (!groups.is_empty() && !alternatives.is_empty())
                 || ranges
@@ -3881,7 +3910,7 @@ impl Packet {
             }
         }
         if let Some((start, end, min, limit, greedy)) =
-            group_repeat.filter(|_| repeated_group_owner.is_some() && !has_nested_alternation)
+            group_repeat.filter(|_| repeated_group_owner.is_some() && !use_tree_vm)
         {
             let owner = repeated_group_owner.unwrap();
             let descendants_only = (0..groups.len()).all(|group| {
@@ -4004,10 +4033,7 @@ impl Packet {
             }
         }
         let mut nested_capture_count = names.len();
-        if has_nested_alternation {
-            if group_repeats.len() > 128 {
-                return Err(error("regex repeated group limit exceeded"));
-            }
+        if use_tree_vm {
             for &(start, end, min, limit, greedy, node, _) in &group_repeats {
                 let mut parent = alternative_nodes[node].parent;
                 let mut depth = 0;
@@ -4061,7 +4087,7 @@ impl Packet {
             nested_program = Some(compiled);
         }
         let mut branch_programs = Vec::new();
-        if !alternatives.is_empty() && !has_nested_alternation {
+        if !alternatives.is_empty() && !use_tree_vm {
             if !groups.is_empty() && group_repeat.is_some() {
                 return Err(error("repeated capturing alternation is not supported"));
             }
@@ -4104,8 +4130,8 @@ impl Packet {
             }
         }
         let capture_repeat = group_repeat.and_then(|(start, end, min, limit, greedy)| {
-            (!has_nested_alternation && !groups.is_empty() && repeated_group_owner.is_none())
-                .then_some(CaptureRepeat {
+            (!use_tree_vm && !groups.is_empty() && repeated_group_owner.is_none()).then_some(
+                CaptureRepeat {
                     start,
                     end,
                     min,
@@ -4113,7 +4139,8 @@ impl Packet {
                     greedy,
                     ranges: &ranges,
                     names: &names,
-                })
+                },
+            )
         });
         let program = if nested_program.is_some() {
             Vec::new()
