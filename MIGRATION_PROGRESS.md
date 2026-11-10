@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- Java oracle confirms unknown stuff-data tags fail at the same cursor position and duplicate map keys retain their last value, including selected high tag bits. The oracle, stuff-data unit test, both Clippy configurations and desktop/web debug build pass. Real client and extension behavior remains unverified.
+
 - Java treats negative map, string-list and integer-list stuff-data counts as empty; Rust now matches, while negative high-score arrays remain errors. The beta-29 oracle, serialized workspace suite (environment-dependent tests ignored), both Clippy configurations and Windows GNU desktop/web release build pass for this change. Live clients, protocols and extensions remain unverified.
 
 - Negative owner-map and item-array counts for floor and wall furniture fail at the same cursor positions as beta-29 in four fixtures. Java oracle, three furniture tests, both Clippy configurations and desktop/web debug build pass; real traffic remains unverified.
@@ -380,4 +382,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Compare unknown stuff-data tags and duplicate map keys against beta-29; add differential fixtures and correct discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
+Inspect the real G-Presets extension workflow and implement a safe offline integration test; compare behavior with beta-29. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.

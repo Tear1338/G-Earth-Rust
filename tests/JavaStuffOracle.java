@@ -407,6 +407,23 @@ public class JavaStuffOracle {
             System.out.println("forum_overview_normalized_" + mode + "=" + HexFormat.of().formatHex(normalized.toBytes()));
         }
 
+        int[] unknownStuffTags = {8, 255, -1, 0x10008, 0x1ff};
+        for (int i = 0; i < unknownStuffTags.length; i++) {
+            HPacket input = new HPacket(1); input.appendInt(unknownStuffTags[i]).appendInt(123);
+            try { IStuffData.read(input); throw new AssertionError("unknown tag accepted"); }
+            catch (RuntimeException expected) { }
+            HPacket cursor = new HPacket(1); cursor.appendInt(input.getReadIndex());
+            System.out.println("stuff_unknown_input_" + i + "=" + HexFormat.of().formatHex(input.toBytes()));
+            System.out.println("stuff_unknown_cursor_" + i + "=" + HexFormat.of().formatHex(cursor.toBytes()));
+        }
+        for (int tag : new int[]{1, 0x10001, 0x20001}) {
+            HPacket input = new HPacket(1); input.appendInt(tag).appendInt(3).appendString("state").appendString("first").appendString("state").appendString("second").appendString("state").appendString("last");
+            MapStuffData data = (MapStuffData) IStuffData.read(input);
+            if (data.size() != 1 || !"last".equals(data.get("state"))) throw new AssertionError("duplicate map key");
+            HPacket output = new HPacket(1); data.appendToPacket(output);
+            System.out.println("stuff_duplicate_input_" + tag + "=" + HexFormat.of().formatHex(input.toBytes()));
+            System.out.println("stuff_duplicate_output_" + tag + "=" + HexFormat.of().formatHex(output.toBytes()));
+        }
         for (int tag : new int[]{1, 2, 5}) {
             HPacket input = new HPacket(1); input.appendInt(tag).appendInt(-1);
             IStuffData data = IStuffData.read(input); HPacket output = new HPacket(1); data.appendToPacket(output);

@@ -1,5 +1,7 @@
 # Continuation state
 
+Unknown stuff-data tags and duplicate map keys match beta-29 for selected cases. Java oracle, stuff-data unit test, both Clippy configurations and desktop/web debug build pass. Next: inspect the real G-Presets extension workflow and identify a safe offline integration test. The dedicated AIR session is being prepared; live relay and extension tests remain outstanding.
+
 Negative stuff-data collection counts now match beta-29 while high-score array lengths reject negatives. Java oracle, serialized workspace suite (environment-dependent tests ignored), both Clippy configurations and Windows GNU desktop/web release build pass. Next: compare unknown tags and duplicate map keys against Java. The dedicated AIR session is being prepared; live relay and extension tests remain outstanding.
 
 Negative floor and wall furniture owner/item count failures and cursor positions match beta-29 in four fixtures. Java oracle, three furniture tests, both Clippy configurations and desktop/web debug build pass. Next: compare malformed and unknown stuff-data formats against Java. The dedicated AIR session is being prepared; live relay and extension tests remain outstanding.

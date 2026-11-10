@@ -602,6 +602,34 @@ fn all_stuff_data_wire_formats_match_original_java() {
             "{key}"
         );
     }
+    for i in 0..5 {
+        let mut input =
+            Packet::from_bytes(observed[format!("stuff_unknown_input_{i}").as_str()].clone())
+                .unwrap();
+        assert!(StuffData::read(&mut input).is_err());
+        let mut cursor = Packet::new(1);
+        cursor.put_i32(input.cursor() as i32).unwrap();
+        assert_eq!(
+            cursor.bytes(),
+            observed[format!("stuff_unknown_cursor_{i}").as_str()]
+        );
+    }
+    for tag in [1, 0x10001, 0x20001] {
+        let mut input =
+            Packet::from_bytes(observed[format!("stuff_duplicate_input_{tag}").as_str()].clone())
+                .unwrap();
+        let data = StuffData::read(&mut input).unwrap();
+        assert_eq!(
+            data.value,
+            StuffValue::Map(BTreeMap::from([("state".into(), "last".into())]))
+        );
+        let mut output = Packet::new(1);
+        data.append(&mut output).unwrap();
+        assert_eq!(
+            output.bytes(),
+            observed[format!("stuff_duplicate_output_{tag}").as_str()]
+        );
+    }
     for tag in [1, 2, 5] {
         let mut input =
             Packet::from_bytes(observed[format!("stuff_negative_input_{tag}").as_str()].clone())

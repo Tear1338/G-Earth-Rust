@@ -1,5 +1,7 @@
 # Migration tasks
 
+Unknown stuff-data tags and duplicate keys have beta-29 fixtures; next inspect the real G-Presets extension workflow and identify a safe offline integration test.
+
 Stuff-data negative collection counts now match Java while high-score arrays reject negatives; next compare unknown tags and duplicate map keys against beta-29.
 
 Negative furniture owner and item counts now have Java cursor fixtures; next compare malformed and unknown stuff-data formats against Java.

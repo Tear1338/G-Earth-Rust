@@ -1,5 +1,7 @@
 # Changelog
 
+- Compare unknown stuff-data tags and duplicate map keys with beta-29.
+
 - Match beta-29 negative stuff-data collection counts while retaining high-score array validation.
 
 - Compare furniture collection count failures and cursors with beta-29.
