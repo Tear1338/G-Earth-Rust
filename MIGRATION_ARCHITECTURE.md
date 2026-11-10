@@ -1,6 +1,6 @@
 # Rust migration architecture
 
-The bounded regex VM evaluates lookaheads atomically with a shared comparison budget and retained positive-assertion captures. Negative assertions with captures are rejected pending Java-compatible failed-search capture retention.
+The bounded regex VM evaluates lookaheads atomically with a shared comparison budget and retains selected positive and negative assertion captures after failed searches, with beta-29 differential coverage. Combinations with repeated groups require further comparison.
 
 Open-group backreferences retain the last closed capture in the bounded matcher, matching 250 beta-29 packet cases. Java regex parity remains partial.
 

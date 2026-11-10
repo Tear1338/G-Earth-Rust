@@ -1,5 +1,7 @@
 # Changelog
 
+- Retain selected Java captures from failed negative lookaheads.
+
 - Add bounded Java positive lookaheads and negative lookaheads without captures.
 
 - Support Java backreferences to groups still open during repeated matches.

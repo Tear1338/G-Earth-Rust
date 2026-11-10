@@ -2348,7 +2348,22 @@ fn run_nested_program(
                     comparisons,
                     depth + 1,
                 )?;
+                // Nested successful assertions can retain captures even when
+                // the enclosing assertion later fails to match.
+                sticky = assertion_sticky;
                 if result.is_some() != positive {
+                    if let Some((_, state)) = &result {
+                        for (group, retained) in sticky
+                            .iter_mut()
+                            .enumerate()
+                            .take(end_group)
+                            .skip(first_group)
+                        {
+                            if state.captures[group].is_some() {
+                                *retained = state.captures[group];
+                            }
+                        }
+                    }
                     continue;
                 }
                 if let Some((_, state)) = result {
@@ -3946,11 +3961,6 @@ impl Packet {
                         .ok_or_else(|| error("unbalanced capture group"))?;
                     alternative_nodes[node].end = atoms.len();
                     alternative_nodes[node].assertion_group_end = groups.len();
-                    if alternative_nodes[node].assertion == Some(false)
-                        && alternative_nodes[node].assertion_group_start != groups.len()
-                    {
-                        return Err(error("captures in negative lookahead are unsupported"));
-                    }
                     let popped_node = node_stack.pop();
                     debug_assert_eq!(popped_node, Some(node));
                     if let Some(group) = frame {
