@@ -1,5 +1,7 @@
 # Changelog
 
+- Support fixed-width, capture-free repeated non-capturing regex groups.
+
 - Support unquantified Java non-capturing regex groups and nested capture numbering.
 
 - Support Java Unicode predefined regex classes and word boundaries over Latin-1.

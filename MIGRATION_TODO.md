@@ -27,6 +27,6 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: implement bounded quantifiers on non-capturing groups with Java capture retention and backtracking fixtures. Full Java regex and live extension validation remain open.
+Next: extend quantified non-capturing groups to nested captures using Java retention and backtracking fixtures. Full Java regex and live extension validation remain open.
 
 CI: serialized G-Python jobs passed on Windows and Linux in run 42723118432; continue monitoring intermittent kernel startup timeouts.

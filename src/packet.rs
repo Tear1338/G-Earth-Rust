@@ -2822,10 +2822,12 @@ impl Packet {
         let mut quantifiable = false;
         let mut last_closed_group = None;
         let mut open: Vec<usize> = Vec::new();
-        let mut group_frames: Vec<Option<usize>> = Vec::new();
+        let mut group_frames: Vec<(Option<usize>, usize)> = Vec::new();
+        let mut last_noncapturing = None;
         let mut chars = pattern_source.chars().peekable();
         let mut quoted = false;
         while let Some(mut c) = chars.next() {
+            let prior_noncapturing = last_noncapturing.take();
             if quoted {
                 if c == '\\' && chars.peek() == Some(&'E') {
                     chars.next();
@@ -2849,7 +2851,7 @@ impl Packet {
                         if lookahead.peek() == Some(&':') {
                             chars.next();
                             chars.next();
-                            group_frames.push(None);
+                            group_frames.push((None, atoms.len()));
                             quantifiable = false;
                             last_closed_group = None;
                             continue;
@@ -2886,14 +2888,14 @@ impl Packet {
                     last_closed_group = None;
                     parents.push(open.last().copied());
                     open.push(groups.len());
-                    group_frames.push(Some(groups.len()));
+                    group_frames.push((Some(groups.len()), atoms.len()));
                     groups.push(String::new());
                     names.push(name);
                     ranges.push((atoms.len(), atoms.len()));
                     continue;
                 }
                 ')' => {
-                    let frame = group_frames
+                    let (frame, start) = group_frames
                         .pop()
                         .ok_or_else(|| error("unbalanced capture group"))?;
                     if let Some(group) = frame {
@@ -2903,6 +2905,7 @@ impl Packet {
                         last_closed_group = Some(group);
                     } else {
                         last_closed_group = None;
+                        last_noncapturing = Some((start, atoms.len()));
                     }
                     quantifiable = false;
                     continue;
@@ -3010,7 +3013,8 @@ impl Packet {
                     continue;
                 }
                 '*' | '+' => {
-                    if !quantifiable && last_closed_group.is_none() {
+                    if !quantifiable && last_closed_group.is_none() && prior_noncapturing.is_none()
+                    {
                         return Err(error("unsupported repetition quantifier"));
                     }
                     let min = usize::from(c == '+');
@@ -3026,9 +3030,13 @@ impl Packet {
                     if quantifiable {
                         repeated.push((atoms.len() - 1, min, None, greedy));
                     } else {
-                        let owner = last_closed_group.unwrap();
-                        repeated_group_owner = Some(owner);
-                        let (start, end) = ranges[owner];
+                        let (start, end) = if let Some(owner) = last_closed_group {
+                            repeated_group_owner = Some(owner);
+                            ranges[owner]
+                        } else {
+                            repeated_group_owner = None;
+                            prior_noncapturing.unwrap()
+                        };
                         if group_repeat
                             .replace((start, end, min, None, greedy))
                             .is_some()
@@ -3042,7 +3050,8 @@ impl Packet {
                     continue;
                 }
                 '{' => {
-                    if !quantifiable && last_closed_group.is_none() {
+                    if !quantifiable && last_closed_group.is_none() && prior_noncapturing.is_none()
+                    {
                         return Err(error("unsupported repetition quantifier"));
                     }
                     let (min, limit) = repetition_bounds(&mut chars)?;
@@ -3058,9 +3067,13 @@ impl Packet {
                     if quantifiable {
                         repeated.push((atoms.len() - 1, min, limit, greedy));
                     } else {
-                        let owner = last_closed_group.unwrap();
-                        repeated_group_owner = Some(owner);
-                        let (start, end) = ranges[owner];
+                        let (start, end) = if let Some(owner) = last_closed_group {
+                            repeated_group_owner = Some(owner);
+                            ranges[owner]
+                        } else {
+                            repeated_group_owner = None;
+                            prior_noncapturing.unwrap()
+                        };
                         if group_repeat
                             .replace((start, end, min, limit, greedy))
                             .is_some()
@@ -3095,7 +3108,33 @@ impl Packet {
             repeated_atoms[index] = Some((min, limit, greedy));
         }
         let mut nested_program = None;
-        if let Some((start, end, min, limit, greedy)) = group_repeat {
+        if let Some((start, end, _, _, _)) = group_repeat.filter(|_| repeated_group_owner.is_none())
+        {
+            if !groups.is_empty()
+                || start == end
+                || !optional.is_empty()
+                || !repeated.is_empty()
+                || atoms[start..end].iter().any(|atom| {
+                    matches!(
+                        atom,
+                        FixedRegexAtom::Start
+                            | FixedRegexAtom::StartLine
+                            | FixedRegexAtom::End
+                            | FixedRegexAtom::EndLine
+                            | FixedRegexAtom::EndStrict
+                            | FixedRegexAtom::WordBoundary
+                            | FixedRegexAtom::NonWordBoundary
+                            | FixedRegexAtom::UnicodeWordBoundary
+                            | FixedRegexAtom::UnicodeNonWordBoundary
+                    )
+                })
+            {
+                return Err(error("unsupported noncapturing repetition structure"));
+            }
+        }
+        if let Some((start, end, min, limit, greedy)) =
+            group_repeat.filter(|_| repeated_group_owner.is_some())
+        {
             let owner = repeated_group_owner.unwrap();
             let descendants_only = (0..groups.len()).all(|group| {
                 let mut current = Some(group);

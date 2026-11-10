@@ -1700,6 +1700,26 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_noncapturing_{i}"), &packet);
     }
+    let noncapturing_repeat_patterns = [
+        "(?:ab)*",
+        "(?:ab)+",
+        "(?:ab){1,3}",
+        "(?:ab)*?b",
+        "a(?:bc)+d",
+        "(?:[a-c]d){0,2}",
+        "(?i)(?:Ab)+",
+    ];
+    for i in 0..140 {
+        let pattern = noncapturing_repeat_patterns[i % noncapturing_repeat_patterns.len()];
+        let value = format!("{pattern} abab abcd abbd AbAB a {}", "ab".repeat(i % 5));
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, "[$0]", Some(1))
+            .unwrap();
+        check(&format!("substring_noncapturing_repeat_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

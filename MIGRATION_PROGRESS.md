@@ -258,6 +258,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Unquantified Java non-capturing groups `(?:...)` now preserve nested captures and numbering, including empty groups. A 180-packet corpus matches the released beta-29 API. Quantifiers on non-capturing groups and unbalanced patterns are rejected transactionally; other regex semantics remain incomplete. Thirty-one mutation tests, ten budget tests, both Clippy configurations and desktop/web debug compilation pass locally. Actions run 42725078692 passed all eight jobs for Unicode case matching.
 
+- Java non-capturing groups support bounded or unbounded greedy/reluctant repetition when the pattern has no captures and the repeated body consists of nonempty fixed-width atoms. A 140-packet corpus matches the released beta-29 API. Optional groups, repeated bodies containing quantifiers or assertions, and repeated non-capturing groups with captures remain rejected. Thirty-one mutation tests, ten budget tests, both Clippy configurations and desktop/web debug compilation pass locally. Windows GNU desktop/web release build and the Java packet oracle in release mode pass for commit c4e75e8; Actions run 42725963585 passed all eight validation jobs.
+
 ## Exact next step
 
-Implement bounded quantifiers on non-capturing groups, including nested capture retention and Java backtracking, using differential fixtures before enabling each structure. Real game sessions and interactive UI validation remain open.
+Extend quantified non-capturing groups to preserve nested captures and backtracking, starting with Java differential fixtures for optional and repeated captures; retain explicit rejection for unsupported structures. Real game sessions and interactive UI validation remain open.
