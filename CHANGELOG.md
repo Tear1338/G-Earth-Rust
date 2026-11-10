@@ -1,5 +1,7 @@
 # Changelog
 
+- Match Java catalog list count handling and compare offers and products.
+
 - Stabilize the local metadata HTTPS fixture when the peer closes after a complete response.
 
 - Add explicit beta-29 friend fragment pagination and parser compatibility.

@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Catalog fixtures compare multiple offers, all product types, limited products and front-page target forms with beta-29. Negative list counts match Java's empty-loop behavior; negative image arrays are rejected. Live catalog compatibility remains unverified.
+
 The local metadata HTTPS fixture now tolerates a peer closing after the complete response. This addresses an intermittent test failure, not real-provider validation.
 
 Friend fragment fixtures compare beta-29 bytes and cursors at sizes around 100 and 200, including Java's original incorrect count and repeated tails. Separate corrected paging is retained for clients; live extensions remain unverified.

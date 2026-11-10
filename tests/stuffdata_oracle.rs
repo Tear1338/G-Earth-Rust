@@ -399,6 +399,52 @@ fn all_stuff_data_wire_formats_match_original_java() {
         page.front_page_items[0].target,
         gearth_rust::parsers::catalog::HFrontPageTarget::Offer(25)
     );
+    use gearth_rust::parsers::catalog::{HCatalogIndex, HCatalogPage, HFrontPageTarget};
+    let full =
+        HCatalogPage::read(&mut Packet::from_bytes(observed["catalog_full"].clone()).unwrap())
+            .unwrap();
+    assert_eq!(full.images, ["image1", "image2"]);
+    assert_eq!(full.texts, ["texte é", "text2"]);
+    assert_eq!(full.offers.len(), 2);
+    assert_eq!(full.offers[0].products.len(), 4);
+    assert_eq!(full.offers[0].products[0].limited, Some((500, 17)));
+    assert_eq!(
+        full.offers[0].products[1].product_type,
+        HProductType::WallItem
+    );
+    assert_eq!(full.offers[0].products[2].product_type, HProductType::Badge);
+    assert_eq!(full.offers[0].products[2].extra_param, "badge-code");
+    assert_eq!(
+        full.offers[0].products[3].product_type,
+        HProductType::Effect
+    );
+    assert!(full.offers[1].products.is_empty());
+    assert_eq!(
+        full.front_page_items
+            .iter()
+            .map(|item| &item.target)
+            .collect::<Vec<_>>(),
+        vec![
+            &HFrontPageTarget::Page("page.path".into()),
+            &HFrontPageTarget::Offer(555),
+            &HFrontPageTarget::Product("product-code".into()),
+            &HFrontPageTarget::Other(99)
+        ]
+    );
+    let negative = HCatalogPage::read(
+        &mut Packet::from_bytes(observed["catalog_negative_lists"].clone()).unwrap(),
+    )
+    .unwrap();
+    assert!(negative.offers.is_empty() && negative.front_page_items.is_empty());
+    assert!(HCatalogPage::read(
+        &mut Packet::from_bytes(observed["catalog_negative_images"].clone()).unwrap()
+    )
+    .is_err());
+    let negative_index = HCatalogIndex::read(
+        &mut Packet::from_bytes(observed["catalog_index_negative_lists"].clone()).unwrap(),
+    )
+    .unwrap();
+    assert!(negative_index.root.offer_ids.is_empty() && negative_index.root.children.is_empty());
     let mut original = Packet::from_bytes(observed["navigator"].clone()).unwrap();
     let navigation =
         gearth_rust::parsers::navigator::NavigatorSearchResult::read(&mut original).unwrap();

@@ -1,6 +1,6 @@
 # G-Earth Rust migration progress
 
-Last updated: 2026-11-10. Baseline: Java 1.5.4-beta-29; current status and changes are tracked in the GitHub main branch.
+Last updated: 2026-11-11. Baseline: Java 1.5.4-beta-29; current status and changes are tracked in the GitHub main branch.
 
 The migration is **not complete**. Implemented code and finite fixtures do not establish live-client compatibility or performance gains. See `docs/PARITY.md` and `docs/CONTINUATION.md` for detailed evidence and limitations.
 
@@ -360,6 +360,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Actions run 42918149724 failed because the local HTTPS fixture panicked when the client closed after receiving its complete response; its second failure was lock poisoning. Run 42918744937 subsequently passed all jobs. The fixture now tolerates shutdown failure after successful response writes; its focused Windows web test, both Clippy configurations and desktop/web debug build pass. This does not establish live Nitro compatibility.
 
+- Compared a beta-29 catalog page with multiple offers, all four product types, limited/non-limited products and all front-page target forms. Java treats negative list counts as empty for offers, products, front-page items and catalog-index children/offers, while negative image arrays are rejected; Rust now follows those distinctions with its positive limits. The Java oracle, two catalog tests, both Clippy configurations and desktop/web debug build pass. Live catalog and extension behavior remains unverified.
+
 ## Exact next step
 
-Compare beta-29 catalog pages containing offers and products, including badge, limited and non-limited product forms and optional front-page sections; add Java differential fixtures and fix discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
+Compare beta-29 catalog index trees with nested children, multiple offers and visibility flags, including cursor behavior and depth limits; add differential fixtures and fix discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.

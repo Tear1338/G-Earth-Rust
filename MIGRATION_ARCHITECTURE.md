@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Catalog parsers distinguish Java list loops, where negative counts produce empty lists, from image/text arrays, where negative lengths fail. Positive counts and tree depth remain bounded.
+
 The local metadata HTTPS test requires response writes to succeed but permits shutdown after the peer has already closed; this fixture does not replace live provider validation.
 
 Friend fragment paging exposes corrected `construct_fragments` for client packets and bounded `construct_java_fragments`/`parse_fragment_java` for beta-29's repeated-tail and exact-boundary count behavior.

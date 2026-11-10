@@ -9,6 +9,13 @@ fn count(packet: &mut Packet) -> Result<usize> {
     }
     Ok(n)
 }
+fn loop_count(packet: &mut Packet) -> Result<usize> {
+    let n = packet.read_i32()?.max(0) as usize;
+    if n > 65_536 {
+        return Err(error("catalog count exceeds limit"));
+    }
+    Ok(n)
+}
 fn strings(packet: &mut Packet) -> Result<Vec<String>> {
     let n = count(packet)?;
     let mut out = Vec::with_capacity(n);
@@ -56,12 +63,12 @@ impl HCatalogPageIndex {
         let page_id = packet.read_i32()?;
         let page_name = packet.read_string()?;
         let localization = packet.read_string()?;
-        let n = count(packet)?;
+        let n = loop_count(packet)?;
         let mut offer_ids = Vec::with_capacity(n);
         for _ in 0..n {
             offer_ids.push(packet.read_i32()?);
         }
-        let n = count(packet)?;
+        let n = loop_count(packet)?;
         if n > *budget {
             return Err(error("catalog tree exceeds limit"));
         }
@@ -145,7 +152,7 @@ impl HOffer {
         let activity_type = packet.read_i32()?;
         let silver = packet.read_i32()?;
         let giftable = packet.read_bool()?;
-        let n = count(packet)?;
+        let n = loop_count(packet)?;
         let mut products = Vec::with_capacity(n);
         for _ in 0..n {
             products.push(HProduct::read(packet)?);
@@ -223,7 +230,7 @@ impl HCatalogPage {
         let layout_code = packet.read_string()?;
         let images = strings(packet)?;
         let texts = strings(packet)?;
-        let n = count(packet)?;
+        let n = loop_count(packet)?;
         let mut offers = Vec::with_capacity(n);
         for _ in 0..n {
             offers.push(HOffer::read(packet)?);
@@ -232,7 +239,7 @@ impl HCatalogPage {
         let accept_season_currency_as_credits = packet.read_bool()?;
         let mut front_page_items = Vec::new();
         if packet.remaining() > 0 {
-            let n = count(packet)?;
+            let n = loop_count(packet)?;
             front_page_items.reserve(n);
             for _ in 0..n {
                 front_page_items.push(HFrontPageItem::read(packet)?);
@@ -255,6 +262,41 @@ impl HCatalogPage {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn negative_list_counts_are_empty_but_negative_arrays_are_rejected() {
+        let mut page = Packet::new(1);
+        page.put_i32(7)
+            .unwrap()
+            .put_string("NORMAL")
+            .unwrap()
+            .put_string("default")
+            .unwrap()
+            .put_i32(0)
+            .unwrap()
+            .put_i32(0)
+            .unwrap()
+            .put_i32(-1)
+            .unwrap()
+            .put_i32(-1)
+            .unwrap()
+            .put_bool(false)
+            .unwrap()
+            .put_i32(-1)
+            .unwrap();
+        let parsed = HCatalogPage::read(&mut page).unwrap();
+        assert!(parsed.offers.is_empty() && parsed.front_page_items.is_empty());
+        let mut invalid = Packet::new(1);
+        invalid
+            .put_i32(7)
+            .unwrap()
+            .put_string("NORMAL")
+            .unwrap()
+            .put_string("default")
+            .unwrap()
+            .put_i32(-1)
+            .unwrap();
+        assert!(HCatalogPage::read(&mut invalid).is_err());
+    }
     #[test]
     fn catalog_index_and_page_decode_optional_sections() {
         let mut index = Packet::new(1);

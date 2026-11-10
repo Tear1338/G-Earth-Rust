@@ -231,6 +231,45 @@ public class JavaStuffOracle {
         HCatalogPage parsedPage = new HCatalogPage(catalogPage);
         if (parsedPage.getFrontPageItems().get(0).getProductOfferId() != 25) throw new AssertionError("catalog page");
         System.out.println("catalog_page=" + HexFormat.of().formatHex(catalogPage.toBytes()));
+        HPacket fullCatalog = new HPacket(1);
+        fullCatalog.appendInt(7).appendString("NORMAL").appendString("catalog_layout").appendInt(2).appendString("image1").appendString("image2")
+            .appendInt(2).appendString("texte é").appendString("text2").appendInt(2);
+        fullCatalog.appendInt(101).appendString("offer").appendBoolean(true).appendInt(10).appendInt(20).appendInt(3).appendInt(40).appendBoolean(true).appendInt(4);
+        fullCatalog.appendString("S").appendInt(1001).appendString("floor").appendInt(2).appendBoolean(true).appendInt(500).appendInt(17);
+        fullCatalog.appendString("I").appendInt(1002).appendString("wall").appendInt(3).appendBoolean(false);
+        fullCatalog.appendString("B").appendString("badge-code");
+        fullCatalog.appendString("E").appendInt(1003).appendString("effect").appendInt(1).appendBoolean(false);
+        fullCatalog.appendInt(2).appendBoolean(true).appendBoolean(false).appendString("preview");
+        fullCatalog.appendInt(102).appendString("empty").appendBoolean(false).appendInt(0).appendInt(0).appendInt(0).appendInt(0).appendBoolean(false).appendInt(-1)
+            .appendInt(0).appendBoolean(false).appendBoolean(true).appendString("");
+        fullCatalog.appendInt(101).appendBoolean(true).appendInt(4);
+        for (int type : new int[]{0, 1, 2, 99}) {
+            fullCatalog.appendInt(type).appendString("promo" + type).appendString("img" + type).appendInt(type);
+            if (type == 0) fullCatalog.appendString("page.path");
+            if (type == 1) fullCatalog.appendInt(555);
+            if (type == 2) fullCatalog.appendString("product-code");
+            fullCatalog.appendInt(60 + type);
+        }
+        HCatalogPage fullPage = new HCatalogPage(fullCatalog);
+        if (fullPage.getOffers().size() != 2 || fullPage.getOffers().get(0).getProducts().size() != 4 || !fullPage.getOffers().get(1).getProducts().isEmpty()
+            || fullPage.getOffers().get(0).getProducts().get(0).getUniqueLimitedItemsLeft() != 17
+            || !"badge-code".equals(fullPage.getOffers().get(0).getProducts().get(2).getExtraParam())
+            || fullPage.getFrontPageItems().size() != 4 || !"product-code".equals(fullPage.getFrontPageItems().get(2).getProductCode())) throw new AssertionError("full catalog page");
+        System.out.println("catalog_full=" + HexFormat.of().formatHex(fullCatalog.toBytes()));
+        HPacket negativeCatalog = new HPacket(1);
+        negativeCatalog.appendInt(7).appendString("NORMAL").appendString("default").appendInt(0).appendInt(0).appendInt(-1).appendInt(-1).appendBoolean(false).appendInt(-1);
+        HCatalogPage negativePage = new HCatalogPage(negativeCatalog);
+        if (!negativePage.getOffers().isEmpty() || !negativePage.getFrontPageItems().isEmpty()) throw new AssertionError("negative catalog lists");
+        System.out.println("catalog_negative_lists=" + HexFormat.of().formatHex(negativeCatalog.toBytes()));
+        HPacket invalidImages = new HPacket(1); invalidImages.appendInt(7).appendString("NORMAL").appendString("default").appendInt(-1);
+        try { new HCatalogPage(invalidImages); throw new AssertionError("expected negative image count rejection"); }
+        catch (NegativeArraySizeException expected) { }
+        System.out.println("catalog_negative_images=" + HexFormat.of().formatHex(invalidImages.toBytes()));
+        HPacket negativeCatalogIndex = new HPacket(1);
+        negativeCatalogIndex.appendBoolean(true).appendInt(2).appendInt(3).appendString("root").appendString("loc").appendInt(-1).appendInt(-1).appendBoolean(false).appendString("NORMAL");
+        HCatalogIndex negativeIndex = new HCatalogIndex(negativeCatalogIndex);
+        if (!negativeIndex.getRoot().getOfferIds().isEmpty() || !negativeIndex.getRoot().getChildren().isEmpty()) throw new AssertionError("negative catalog index lists");
+        System.out.println("catalog_index_negative_lists=" + HexFormat.of().formatHex(negativeCatalogIndex.toBytes()));
 
         HPacket navigatorInput = new HPacket(1);
         navigatorInput.appendString("popular").appendString("").appendInt(1)
