@@ -2050,10 +2050,12 @@ fn match_nested_repeat(
 ) -> Result<Option<(usize, Vec<String>)>> {
     const MAX_STATES: usize = 262_144;
     // Each frame retains the capture trail length before its parent instruction.
-    let mut frames = vec![(0usize, offset, 0usize, 0usize, 0usize, None)];
+    // Immutable linked loop states let nested loops restore outer counts on backtracking.
+    let mut loop_states: Vec<(usize, Option<usize>)> = Vec::new();
+    let mut frames = vec![(0usize, offset, 0usize, 0usize, None::<usize>, None)];
     let mut captures: Vec<Option<(usize, usize)>> = vec![None; capture_count];
     let mut trail: Vec<(usize, Option<(usize, usize)>)> = Vec::new();
-    while let Some((pc, position, choice, checkpoint, iterations, maximum)) = frames.last_mut() {
+    while let Some((pc, position, choice, checkpoint, loop_state, maximum)) = frames.last_mut() {
         if *pc == program.len() {
             let groups = captures
                 .iter()
@@ -2077,7 +2079,8 @@ fn match_nested_repeat(
             NestedInstruction::Loop {
                 group, min, limit, ..
             } => {
-                let completed = *iterations + 1;
+                let state = loop_state.ok_or_else(|| error("invalid regex loop state"))?;
+                let completed = loop_states[state].0 + 1;
                 let progressed = captures[group].is_some_and(|(start, end)| start != end);
                 if completed < min
                     || limit.is_some_and(|limit| completed >= limit)
@@ -2151,14 +2154,14 @@ fn match_nested_repeat(
         consume_regex_budget(comparisons)?;
         let branch = *choice;
         *choice += 1;
-        let (pc, position, iterations, maximum) = (*pc, *position, *iterations, *maximum);
+        let (pc, position, loop_state, maximum) = (*pc, *position, *loop_state, *maximum);
         let checkpoint = trail.len();
         let next = match program[pc] {
             NestedInstruction::Atom(index) => {
                 let Some(width) = atom_width(&atoms[index], input, position) else {
                     continue;
                 };
-                (pc + 1, position + width, iterations)
+                (pc + 1, position + width, loop_state)
             }
             NestedInstruction::Repeat { min, greedy, .. } => {
                 let length = if greedy {
@@ -2166,25 +2169,25 @@ fn match_nested_repeat(
                 } else {
                     min + branch
                 };
-                (pc + 1, position + length, iterations)
+                (pc + 1, position + length, loop_state)
             }
             NestedInstruction::Start(group) => {
                 trail.push((group, captures[group]));
                 captures[group] = Some((position, position));
-                (pc + 1, position, iterations)
+                (pc + 1, position, loop_state)
             }
             NestedInstruction::End(group) => {
                 trail.push((group, captures[group]));
                 let start = captures[group].map_or(position, |capture| capture.0);
                 captures[group] = Some((start, position));
-                (pc + 1, position, iterations)
+                (pc + 1, position, loop_state)
             }
             NestedInstruction::Split(first, second) => (
                 if branch == 0 { first } else { second },
                 position,
-                iterations,
+                loop_state,
             ),
-            NestedInstruction::Jump(target) => (target, position, iterations),
+            NestedInstruction::Jump(target) => (target, position, loop_state),
             NestedInstruction::Initial {
                 body,
                 exit,
@@ -2199,7 +2202,17 @@ fn match_nested_repeat(
                 } else {
                     (branch == 0) == greedy
                 };
-                (if repeat { body } else { exit }, position, 0)
+                let next_state = if repeat {
+                    if loop_states.len() >= MAX_STATES {
+                        return Err(error("regex state limit exceeded"));
+                    }
+                    let state = loop_states.len();
+                    loop_states.push((0, loop_state));
+                    Some(state)
+                } else {
+                    loop_state
+                };
+                (if repeat { body } else { exit }, position, next_state)
             }
             NestedInstruction::Loop {
                 body,
@@ -2209,7 +2222,9 @@ fn match_nested_repeat(
                 greedy,
                 group,
             } => {
-                let completed = iterations + 1;
+                let state = loop_state.ok_or_else(|| error("invalid regex loop state"))?;
+                let (previous_count, parent) = loop_states[state];
+                let completed = previous_count + 1;
                 let progressed = captures[group].is_some_and(|(start, end)| start != end);
                 let repeat = if completed < min {
                     true
@@ -2220,11 +2235,17 @@ fn match_nested_repeat(
                 } else {
                     (branch == 0) == greedy
                 };
-                (
-                    if repeat { body } else { exit },
-                    position,
-                    if repeat { completed } else { 0 },
-                )
+                let next_state = if repeat {
+                    if loop_states.len() >= MAX_STATES {
+                        return Err(error("regex state limit exceeded"));
+                    }
+                    let next = loop_states.len();
+                    loop_states.push((completed, parent));
+                    Some(next)
+                } else {
+                    parent
+                };
+                (if repeat { body } else { exit }, position, next_state)
             }
         };
         if frames.len() >= MAX_STATES || trail.len() >= MAX_STATES {
@@ -3987,10 +4008,6 @@ impl Packet {
             if group_repeats.len() > 128 {
                 return Err(error("regex repeated group limit exceeded"));
             }
-            let mut repeated_nodes = vec![false; alternative_nodes.len()];
-            for &(_, _, _, _, _, node, _) in &group_repeats {
-                repeated_nodes[node] = true;
-            }
             for &(start, end, min, limit, greedy, node, _) in &group_repeats {
                 let mut parent = alternative_nodes[node].parent;
                 let mut depth = 0;
@@ -3998,9 +4015,6 @@ impl Packet {
                     depth += 1;
                     if depth > 128 {
                         return Err(error("regex group nesting limit exceeded"));
-                    }
-                    if repeated_nodes[index] {
-                        return Err(error("nested repeated groups are not supported"));
                     }
                     parent = alternative_nodes[index].parent;
                 }

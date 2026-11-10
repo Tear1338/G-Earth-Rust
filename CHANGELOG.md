@@ -1,5 +1,7 @@
 # Changelog
 
+- Track independent counters for bounded nested regex loops.
+
 - Support sequential repeated alternative groups and capturing ancestors.
 
 - Support a bounded quantified Java alternative group, including nullable branches.

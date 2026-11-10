@@ -1106,6 +1106,23 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_unicode_case_" + i, sample);
         }
+        String[][] nestedRepeatCases = {{"(?:(?:a|b)+|c)+d", "[$0]"}, {"((?:a|b)+|c)+d", "$1/$0"}, {"(?:(a|b)+|c)+d", "$1/$0"}, {"(?:(?:a|b)*|c)+d", "[$0]"}, {"(?:(a|)|c)+?d", "$1/$0"}, {"(?:(?:a|b){1,2}|c){2,3}d", "[$0]"}, {"(?:(?:a|b)+|c)*?(?:d|e)+", "[$0]"}, {"(?<x>(?:a|b)+|c)+d", "${x}/$0"}, {"(?:(a|b)*|(c))+d", "$1/$2/$0"}, {"(?:(?:a|){0,2}|b){1,3}c", "[$0]"}};
+        char[] nestedRepeatAlphabet = {'a', 'A', 'b', 'c', 'd', 'e', ' ', '\n'};
+        for (int i = 0; i < 200; i++) {
+            String[] entry = nestedRepeatCases[i % nestedRepeatCases.length];
+            String pattern = entry[0];
+            StringBuilder value = new StringBuilder(pattern).append(" abcd abcd aaac babd ");
+            for (int j = 0; j < 12; j++) value.append(nestedRepeatAlphabet[(i * 3 + j * 7 + j * j) % nestedRepeatAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, entry[1], 1);
+            } finally { System.setOut(original); }
+            emit("substring_nested_repeat_" + i, sample);
+        }
         String[][] multipleRepeatCases = {{"(?:a|b)+(?:c|d)+", "[$0]"}, {"(a|b)+(c|d)+", "$1/$2/$0"}, {"((?:a|b)+)c", "$1/$0"}, {"((?:a|b){1,3})c", "$1/$0"}, {"(?<x>(?:a|b)+)(c|d)+", "${x}/$2/$0"}, {"(?:a|b)*?(?:c|d)+", "[$0]"}, {"(?:a|)*(?:b|c)+", "[$0]"}, {"(?:a|b){2}(?:c|d){1,2}", "[$0]"}, {"(?:(a)|b)+(c|d)+", "$1/$2/$0"}, {"(a|b)*?(c|d)+?d", "$1/$2/$0"}};
         char[] multipleRepeatAlphabet = {'a', 'A', 'b', 'B', 'c', 'd', ' ', '\n'};
         for (int i = 0; i < 250; i++) {

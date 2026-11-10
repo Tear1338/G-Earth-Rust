@@ -2270,6 +2270,35 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_multiple_repeat_{i}"), &packet);
     }
+    let nested_repeat_cases = [
+        ("(?:(?:a|b)+|c)+d", "[$0]"),
+        ("((?:a|b)+|c)+d", "$1/$0"),
+        ("(?:(a|b)+|c)+d", "$1/$0"),
+        ("(?:(?:a|b)*|c)+d", "[$0]"),
+        ("(?:(a|)|c)+?d", "$1/$0"),
+        ("(?:(?:a|b){1,2}|c){2,3}d", "[$0]"),
+        ("(?:(?:a|b)+|c)*?(?:d|e)+", "[$0]"),
+        ("(?<x>(?:a|b)+|c)+d", "${x}/$0"),
+        ("(?:(a|b)*|(c))+d", "$1/$2/$0"),
+        ("(?:(?:a|){0,2}|b){1,3}c", "[$0]"),
+    ];
+    let nested_repeat_alphabet = ['a', 'A', 'b', 'c', 'd', 'e', ' ', '\n'];
+    for i in 0..200 {
+        let (pattern, replacement) = nested_repeat_cases[i % nested_repeat_cases.len()];
+        let mut value = format!("{pattern} abcd abcd aaac babd ");
+        for j in 0..12 {
+            value.push(
+                nested_repeat_alphabet[(i * 3 + j * 7 + j * j) % nested_repeat_alphabet.len()],
+            );
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, replacement, Some(1))
+            .unwrap();
+        check(&format!("substring_nested_repeat_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")
