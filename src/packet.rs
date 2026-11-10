@@ -2838,7 +2838,9 @@ impl Packet {
         let mut quantifiable = false;
         let mut last_closed_group = None;
         let mut open: Vec<usize> = Vec::new();
-        let mut group_frames: Vec<(Option<usize>, usize)> = Vec::new();
+        // Restore flags when leaving any group, including ordinary captures.
+        type Flags = (bool, bool, bool, bool, bool);
+        let mut group_frames: Vec<(Option<usize>, usize, Flags)> = Vec::new();
         let mut last_noncapturing = None;
         let mut chars = pattern_source.chars().peekable();
         let mut quoted = false;
@@ -2864,10 +2866,46 @@ impl Packet {
                     if chars.peek() == Some(&'?') {
                         let mut lookahead = chars.clone();
                         lookahead.next();
+                        let mut flags = Vec::new();
+                        while lookahead
+                            .peek()
+                            .is_some_and(|c| matches!(c, 'i' | 's' | 'm' | 'u' | 'U' | '-'))
+                        {
+                            flags.push(lookahead.next().unwrap());
+                        }
                         if lookahead.peek() == Some(&':') {
-                            chars.next();
-                            chars.next();
-                            group_frames.push((None, atoms.len()));
+                            let saved = (
+                                case_insensitive,
+                                dot_all,
+                                multiline,
+                                unicode_case,
+                                unicode_class,
+                            );
+                            let mut disable = false;
+                            for flag in flags {
+                                if flag == '-' {
+                                    if disable {
+                                        return Err(error("invalid regex flags"));
+                                    }
+                                    disable = true;
+                                    continue;
+                                }
+                                match flag {
+                                    'i' => case_insensitive = !disable,
+                                    's' => dot_all = !disable,
+                                    'm' => multiline = !disable,
+                                    'u' => unicode_case = !disable,
+                                    'U' => {
+                                        unicode_class = !disable;
+                                        unicode_case = !disable;
+                                    }
+                                    _ => unreachable!(),
+                                }
+                            }
+                            lookahead.next();
+                            chars = lookahead;
+                            group_frames.push((None, atoms.len(), saved));
+                            dynamic = true;
                             quantifiable = false;
                             last_closed_group = None;
                             continue;
@@ -2904,14 +2942,24 @@ impl Packet {
                     last_closed_group = None;
                     parents.push(open.last().copied());
                     open.push(groups.len());
-                    group_frames.push((Some(groups.len()), atoms.len()));
+                    group_frames.push((
+                        Some(groups.len()),
+                        atoms.len(),
+                        (
+                            case_insensitive,
+                            dot_all,
+                            multiline,
+                            unicode_case,
+                            unicode_class,
+                        ),
+                    ));
                     groups.push(String::new());
                     names.push(name);
                     ranges.push((atoms.len(), atoms.len()));
                     continue;
                 }
                 ')' => {
-                    let (frame, start) = group_frames
+                    let (frame, start, flags) = group_frames
                         .pop()
                         .ok_or_else(|| error("unbalanced capture group"))?;
                     if let Some(group) = frame {
@@ -2923,6 +2971,13 @@ impl Packet {
                         last_closed_group = None;
                         last_noncapturing = Some((start, atoms.len()));
                     }
+                    (
+                        case_insensitive,
+                        dot_all,
+                        multiline,
+                        unicode_case,
+                        unicode_class,
+                    ) = flags;
                     quantifiable = false;
                     continue;
                 }

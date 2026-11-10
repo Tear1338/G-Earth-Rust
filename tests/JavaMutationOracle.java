@@ -1106,6 +1106,22 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_unicode_case_" + i, sample);
         }
+        String[] scopedFlagPatterns = {"(?i:(a))b", "(?i)(?-i:(a))B", "(a(?i:b)c)", "(?i:(a)(?-i:b)c)d", "(?s:(.))", "(?m:^(a))", "(?iu:(é))", "(?iU:(é))", "(?iU)(?-U:(é))", "(?iU)(?-u:(é))", "(?U:(\\w+))", "(?U)(?-U:(\\w+))", "(?i-i:(a))", "(?i-:(a))", "(?i:(ab))+", "(?i:(ab))?", "(?i:(?<x>a))b", "(?i:(?-i:(a))b)c", "(?i:(a))(?-i:b)", "(?iU-u:(é))"};
+        char[] scopedFlagAlphabet = {'a', 'A', 'b', 'B', 'c', 'C', 'é', 'É', '\n', '\r', '\u0085', ' '};
+        for (int i = 0; i < 400; i++) {
+            String pattern = scopedFlagPatterns[i % scopedFlagPatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(" aAbBcC éÉ\nAb\r ");
+            for (int j = 0; j < 14; j++) value.append(scopedFlagAlphabet[(i * 7 + j * 3) % scopedFlagAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, "$1/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_scoped_flags_" + i, sample);
+        }
         String[] fixedRepeatCapturePatterns = {"(?:(a)(b))+", "(?:(a)(b)){1,3}", "(?:(a(b)))+", "(?:(?<x>a)b)+", "(?:(a)(b))+ab"};
         for (int i = 0; i < 200; i++) {
             String pattern = fixedRepeatCapturePatterns[i % fixedRepeatCapturePatterns.length];
