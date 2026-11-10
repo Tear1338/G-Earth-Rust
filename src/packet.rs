@@ -2873,7 +2873,9 @@ impl Packet {
                         {
                             flags.push(lookahead.next().unwrap());
                         }
-                        if lookahead.peek() == Some(&':') {
+                        let scoped = lookahead.peek() == Some(&':');
+                        let embedded = lookahead.peek() == Some(&')') && !flags.is_empty();
+                        if scoped || embedded {
                             let saved = (
                                 case_insensitive,
                                 dot_all,
@@ -2904,7 +2906,9 @@ impl Packet {
                             }
                             lookahead.next();
                             chars = lookahead;
-                            group_frames.push((None, atoms.len(), saved));
+                            if scoped {
+                                group_frames.push((None, atoms.len(), saved));
+                            }
                             dynamic = true;
                             quantifiable = false;
                             last_closed_group = None;

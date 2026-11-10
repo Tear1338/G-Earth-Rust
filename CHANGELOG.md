@@ -1,5 +1,7 @@
 # Changelog
 
+- Support Java embedded regex flags with enclosing-group restoration.
+
 - Support scoped Java regex flags and restore their state at group boundaries.
 
 - Document Java failed-search capture retention and preserve explicit rejection for affected patterns.

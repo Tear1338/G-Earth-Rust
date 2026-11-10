@@ -1830,6 +1830,40 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_scoped_flags_{i}"), &packet);
     }
+    let embedded_flag_patterns = [
+        "(a(?i)b)c",
+        "(?i)(a(?-i)b)c",
+        "(?i)(?-i)(a)",
+        "(a)(?i)b",
+        "(?iu)(é(?-u)é)",
+        "(?s)(.(?-s).)",
+        "(a(?i)b(?-i)c)d",
+        "((?i)a)b",
+        "(?i)((?-i)a)b",
+        "(?i)(?-i)(?i)(a)b",
+        "(?U)(?i)(é(?-U)é)",
+        "(?i)(a(?-i)b(?i)c)",
+        "(?i)(a)(?-i)b",
+        "(a)(?s).",
+        "(?m)(a)(?-m)$",
+    ];
+    let embedded_flag_alphabet = [
+        'a', 'A', 'b', 'B', 'c', 'C', 'é', 'É', '\n', '\r', '\u{85}', ' ',
+    ];
+    for i in 0..300 {
+        let pattern = embedded_flag_patterns[i % embedded_flag_patterns.len()];
+        let mut value = format!("{pattern} aAbBcC éÉ\nAb\r ");
+        for j in 0..14 {
+            value.push(embedded_flag_alphabet[(i * 7 + j * 3) % embedded_flag_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, "$1/$0", Some(1))
+            .unwrap();
+        check(&format!("substring_embedded_flags_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")
