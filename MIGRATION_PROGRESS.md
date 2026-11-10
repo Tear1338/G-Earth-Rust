@@ -320,6 +320,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Negative lookaheads may now contain captures; retained captures from failed assertions and nested positive assertions match the expanded 300-packet beta-29 lookahead corpus. Thirty-five mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. Full regex and live compatibility remain unverified.
 
+- Expanded the 300-packet beta-29 lookahead corpus with positive and negative assertions inside repeated groups, captures and backreferences; all comparisons pass. The serialized workspace test suite passed with environment-dependent tests ignored, desktop/web Clippy passed, and the Windows GNU desktop/web release build succeeded locally. Actions run 42839941896 passed all eight jobs for the preceding commit. No official client session was tested through the relay.
+
 ## Exact next step
 
-Compare captures and backreferences inside lookaheads nested in repeated groups with the beta-29 API, including rollback across successive search positions; add differential fixtures and correct any divergence. Validate official AIR traffic and an extension through the relay when a dedicated session is available.
+Compare Java lookbehind assertions, including bounds, alternatives and captures, against the beta-29 API and implement them with bounded differential fixtures. Validate official AIR traffic and an extension through the relay when a dedicated session is available.

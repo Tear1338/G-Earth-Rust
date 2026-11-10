@@ -1,5 +1,7 @@
 # Continuation state
 
+The 300-packet beta-29 lookahead corpus now includes captures and backreferences in repeated groups. The serialized workspace suite passed with environment-dependent tests ignored; desktop/web Clippy and the Windows GNU desktop/web release build passed locally. Actions run 42839941896 passed for the preceding commit. Next: compare Java lookbehinds, bounds and captures. Real clients and extensions have not been validated end-to-end.
+
 Negative lookaheads can contain captures and preserve selected captures after failed searches, including nested positive assertions. The expanded 300-case beta-29 lookahead corpus, 35 mutation tests, 14 budget tests, both Clippy configurations and desktop/web debug build pass. Next: compare assertions inside repeated groups, with backreferences and rollback. Two Unicode oracle tests remain ignored in the ordinary budget run; real AIR and extension relay testing remains outstanding.
 
 Positive lookaheads with captures and negative lookaheads without captures now use the bounded VM and pass 300 beta-29 packet cases, 36 mutation tests, 14 budget tests, both Clippy configurations and desktop/web debug compilation. At that stage, negative assertions with captures were rejected; the later step above addresses selected retention cases. Two Unicode oracle tests remain ignored in the ordinary budget run; live AIR and extension relay testing still requires a suitable session.

@@ -1,6 +1,6 @@
 # Compatibility with 1.5.4-beta-29
 
-Selected positive and negative lookaheads, including captures in failed negative assertions, match 300 beta-29 packet cases. Lookaheads inside repeated groups need more coverage; full Java regex and real-session compatibility remain unverified.
+Selected positive and negative lookaheads, including captures in failed negative assertions and assertions inside repeated groups, match 300 beta-29 packet cases. Full Java regex and real-session compatibility remain unverified.
 
 Open-group backreferences match 250 additional beta-29 packet cases, including named and repeated groups. Full Java regex and real-session compatibility remain unverified.
 

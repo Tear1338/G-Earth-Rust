@@ -1,5 +1,7 @@
 # Changelog
 
+- Extend Java lookahead comparisons to repeated groups and backreferences.
+
 - Retain selected Java captures from failed negative lookaheads.
 
 - Add bounded Java positive lookaheads and negative lookaheads without captures.
