@@ -1,5 +1,7 @@
 # Migration tasks
 
+Stuff-data negative collection counts now match Java while high-score arrays reject negatives; next compare unknown tags and duplicate map keys against beta-29.
+
 Negative furniture owner and item counts now have Java cursor fixtures; next compare malformed and unknown stuff-data formats against Java.
 
 Wall ID number formats and floor direction boundaries have beta-29 fixtures; next compare furniture owner and item count failure behavior and cursor positions.

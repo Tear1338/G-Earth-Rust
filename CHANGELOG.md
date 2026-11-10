@@ -1,5 +1,7 @@
 # Changelog
 
+- Match beta-29 negative stuff-data collection counts while retaining high-score array validation.
+
 - Compare furniture collection count failures and cursors with beta-29.
 
 - Compare wall furniture IDs and floor directions against beta-29.

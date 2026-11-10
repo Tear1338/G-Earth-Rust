@@ -47,6 +47,15 @@ fn count(packet: &mut Packet) -> Result<usize> {
     Ok(n)
 }
 
+// Java collection loops simply skip negative counts; its arrays reject them.
+fn collection_count(packet: &mut Packet) -> Result<usize> {
+    let n = packet.read_i32()?.max(0) as usize;
+    if n > 65_536 {
+        return Err(error("stuff-data count exceeds limit"));
+    }
+    Ok(n)
+}
+
 fn size(n: usize) -> Result<i32> {
     if n > 65_536 {
         return Err(error("stuff-data count exceeds limit"));
@@ -62,14 +71,14 @@ impl StuffData {
             0 => StuffValue::Legacy(packet.read_string()?),
             1 => {
                 let mut map = BTreeMap::new();
-                for _ in 0..count(packet)? {
+                for _ in 0..collection_count(packet)? {
                     map.insert(packet.read_string()?, packet.read_string()?);
                 }
                 StuffValue::Map(map)
             }
             2 => {
                 let mut items = Vec::new();
-                for _ in 0..count(packet)? {
+                for _ in 0..collection_count(packet)? {
                     items.push(packet.read_string()?);
                 }
                 StuffValue::Strings(items)
@@ -81,7 +90,7 @@ impl StuffData {
             4 => StuffValue::Empty,
             5 => {
                 let mut items = Vec::new();
-                for _ in 0..count(packet)? {
+                for _ in 0..collection_count(packet)? {
                     items.push(packet.read_i32()?);
                 }
                 StuffValue::Integers(items)

@@ -1,5 +1,7 @@
 # Continuation state
 
+Negative stuff-data collection counts now match beta-29 while high-score array lengths reject negatives. Java oracle, serialized workspace suite (environment-dependent tests ignored), both Clippy configurations and Windows GNU desktop/web release build pass. Next: compare unknown tags and duplicate map keys against Java. The dedicated AIR session is being prepared; live relay and extension tests remain outstanding.
+
 Negative floor and wall furniture owner/item count failures and cursor positions match beta-29 in four fixtures. Java oracle, three furniture tests, both Clippy configurations and desktop/web debug build pass. Next: compare malformed and unknown stuff-data formats against Java. The dedicated AIR session is being prepared; live relay and extension tests remain outstanding.
 
 Furniture fixtures compare 12 wall ID formats and floor directions -1 through 8 against beta-29. Java oracle, three furniture tests, both Clippy configurations and desktop/web debug build pass. Next: compare furniture owner and item count failure behavior and cursor positions. The dedicated AIR session is being prepared; live relay and extension testing remains outstanding.

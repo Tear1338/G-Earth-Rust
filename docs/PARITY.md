@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Negative map, string-list and integer-list counts normalize to empty as in beta-29; negative high-score array lengths fail with matching cursor positions. Windows GNU desktop/web release builds locally, but real client and extension compatibility remains unverified.
+
 Negative floor and wall furniture owner/item counts fail at the same cursor positions as beta-29 in four fixtures. Real traffic remains unverified.
 
 Furniture fixtures compare 12 wall ID forms and floor directions -1 through 8 against beta-29, including invalid cases. Real furniture traffic and extensions remain unverified.

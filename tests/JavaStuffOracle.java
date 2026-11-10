@@ -407,6 +407,21 @@ public class JavaStuffOracle {
             System.out.println("forum_overview_normalized_" + mode + "=" + HexFormat.of().formatHex(normalized.toBytes()));
         }
 
+        for (int tag : new int[]{1, 2, 5}) {
+            HPacket input = new HPacket(1); input.appendInt(tag).appendInt(-1);
+            IStuffData data = IStuffData.read(input); HPacket output = new HPacket(1); data.appendToPacket(output);
+            System.out.println("stuff_negative_input_" + tag + "=" + HexFormat.of().formatHex(input.toBytes()));
+            System.out.println("stuff_negative_output_" + tag + "=" + HexFormat.of().formatHex(output.toBytes()));
+        }
+        for (int inner = 0; inner < 2; inner++) {
+            HPacket input = new HPacket(1); input.appendInt(6).appendString("state").appendInt(1).appendInt(2);
+            if (inner == 0) input.appendInt(-1); else input.appendInt(1).appendInt(42).appendInt(-1);
+            try { IStuffData.read(input); throw new AssertionError("negative highscore array accepted"); }
+            catch (NegativeArraySizeException expected) { }
+            HPacket cursor = new HPacket(1); cursor.appendInt(input.getReadIndex());
+            System.out.println("stuff_highscore_negative_input_" + inner + "=" + HexFormat.of().formatHex(input.toBytes()));
+            System.out.println("stuff_highscore_negative_cursor_" + inner + "=" + HexFormat.of().formatHex(cursor.toBytes()));
+        }
         for (int which = 0; which < 2; which++) {
             for (int where = 0; where < 2; where++) {
                 HPacket input = new HPacket(1);

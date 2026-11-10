@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- Java treats negative map, string-list and integer-list stuff-data counts as empty; Rust now matches, while negative high-score arrays remain errors. The beta-29 oracle, serialized workspace suite (environment-dependent tests ignored), both Clippy configurations and Windows GNU desktop/web release build pass for this change. Live clients, protocols and extensions remain unverified.
+
 - Negative owner-map and item-array counts for floor and wall furniture fail at the same cursor positions as beta-29 in four fixtures. Java oracle, three furniture tests, both Clippy configurations and desktop/web debug build pass; real traffic remains unverified.
 
 - Compared 12 wall furniture ID representations and floor directions -1 through 8 against beta-29; valid serialized bytes and selected invalid-input failures match. Java oracle, three furniture tests, both Clippy configurations and desktop/web debug build pass; real furniture traffic remains unverified.
@@ -378,4 +380,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Compare malformed and unknown stuff-data formats against beta-29; add differential fixtures and correct discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
+Compare unknown stuff-data tags and duplicate map keys against beta-29; add differential fixtures and correct discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.

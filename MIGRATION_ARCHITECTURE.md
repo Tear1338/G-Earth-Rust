@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Stuff-data map and list loops interpret negative counts as empty, like Java; high-score arrays reject negative lengths and positive counts remain bounded.
+
 Furniture collection fixtures compare error cursor positions for negative owner and item counts against Java.
 
 Furniture fixtures exercise Java numeric wall IDs and floor direction bounds; finite cases do not establish live wire compatibility.

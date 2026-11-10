@@ -602,6 +602,31 @@ fn all_stuff_data_wire_formats_match_original_java() {
             "{key}"
         );
     }
+    for tag in [1, 2, 5] {
+        let mut input =
+            Packet::from_bytes(observed[format!("stuff_negative_input_{tag}").as_str()].clone())
+                .unwrap();
+        let data = StuffData::read(&mut input).unwrap();
+        let mut output = Packet::new(1);
+        data.append(&mut output).unwrap();
+        assert_eq!(
+            output.bytes(),
+            observed[format!("stuff_negative_output_{tag}").as_str()]
+        );
+    }
+    for inner in 0..2 {
+        let mut input = Packet::from_bytes(
+            observed[format!("stuff_highscore_negative_input_{inner}").as_str()].clone(),
+        )
+        .unwrap();
+        assert!(StuffData::read(&mut input).is_err());
+        let mut cursor = Packet::new(1);
+        cursor.put_i32(input.cursor() as i32).unwrap();
+        assert_eq!(
+            cursor.bytes(),
+            observed[format!("stuff_highscore_negative_cursor_{inner}").as_str()]
+        );
+    }
     for which in 0..2 {
         for where_count in 0..2 {
             let key = format!("furniture_count_input_{which}_{where_count}");
