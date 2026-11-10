@@ -2,6 +2,8 @@
 
 Status key: **partial** means implemented for selected cases only; **open** means no evidence of completion. All areas remain open to broader Java comparison and live validation. See `docs/PARITY.md` for details.
 
+The local HTTPS fixture tolerates peers closing after the full response; the previous failed web run and subsequent successful run are recorded in `MIGRATION_PROGRESS.md`.
+
 | Feature | Status | Next evidence or work |
 |---|---|---|
 | EVA framing, fields and mutations | Partial | Signed 8/16-bit operations and UTF-8 offset reads have Java oracle coverage; remaining helpers and regex/charset cases need fixtures. |

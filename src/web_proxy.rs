@@ -1593,7 +1593,9 @@ mod lifecycle_tests {
                         let status = if index == 0 && mode == "fallback" { "503 Service Unavailable" } else { "200 OK" };
                         let body = if index == 0 { format!(r#"[{{"version":"{expected}"}}]"#) } else if mode == "empty" { r#"{"messages":{"incoming":[],"outgoing":[]}}"#.to_owned() } else { r#"{"messages":{"incoming":[],"outgoing":[{"id":900,"name":"KnownComposer"}]}}"#.to_owned() };
                         let headers = format!("HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len());
-                        tls.write_all(headers.as_bytes()).await.unwrap(); tls.write_all(body.as_bytes()).await.unwrap(); tls.shutdown().await.unwrap();
+                        tls.write_all(headers.as_bytes()).await.unwrap(); tls.write_all(body.as_bytes()).await.unwrap();
+                        // The client can close after reading the complete response, before close_notify.
+                        let _ = tls.shutdown().await;
                     }
                 });
                 let agent = agent.clone();

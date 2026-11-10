@@ -1,5 +1,7 @@
 # Changelog
 
+- Stabilize the local metadata HTTPS fixture when the peer closes after a complete response.
+
 - Add explicit beta-29 friend fragment pagination and parser compatibility.
 
 - Add explicit beta-29 friend update cursor and construction compatibility.

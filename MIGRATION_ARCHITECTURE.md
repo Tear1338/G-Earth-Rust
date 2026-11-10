@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+The local metadata HTTPS test requires response writes to succeed but permits shutdown after the peer has already closed; this fixture does not replace live provider validation.
+
 Friend fragment paging exposes corrected `construct_fragments` for client packets and bounded `construct_java_fragments`/`parse_fragment_java` for beta-29's repeated-tail and exact-boundary count behavior.
 
 Friend updates expose `HFriendUpdate::parse_java` and `HFriend::construct_java_update` for beta-29's cursor/count and marker-omission behavior, alongside the valid wire-format constructors. Unknown relationship IDs remain readable as raw values, with `java_relationship_status` returning `None` and serialization rejecting them.

@@ -358,6 +358,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Friend fragments now have bounded `construct_java_fragments` and `parse_fragment_java` compatibility paths alongside corrected client pagination. Beta-29 bytes and parser cursors match for sizes 0, 1, 99, 100, 101, 200 and 201, including Java's incorrect final count and repeated tails. The Java oracle, serialized workspace suite (with environment-dependent tests ignored), both Clippy configurations and the Windows GNU desktop/web release build pass locally. No official client or live extension session has been validated through the relay.
 
+- Actions run 42918149724 failed because the local HTTPS fixture panicked when the client closed after receiving its complete response; its second failure was lock poisoning. Run 42918744937 subsequently passed all jobs. The fixture now tolerates shutdown failure after successful response writes; its focused Windows web test, both Clippy configurations and desktop/web debug build pass. This does not establish live Nitro compatibility.
+
 ## Exact next step
 
 Compare beta-29 catalog pages containing offers and products, including badge, limited and non-limited product forms and optional front-page sections; add Java differential fixtures and fix discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.

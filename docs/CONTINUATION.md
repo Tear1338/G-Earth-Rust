@@ -1,5 +1,7 @@
 # Continuation state
 
+Actions run 42918149724 failed in a local HTTPS fixture on TLS shutdown after response writes; 42918744937 subsequently passed. The fixture now tolerates that close race and its focused Windows web test, both Clippy configurations and desktop/web debug build pass. Next: complete the catalog offer/product comparison. Live relay and extension testing still awaits the dedicated AIR session.
+
 Friend fragments now provide bounded beta-29-compatible construction and parsing separately from corrected client paging. Java byte/cursor fixtures cover 0, 1, 99, 100, 101, 200 and 201 entries. The serialized workspace suite passed with environment-dependent tests ignored; both Clippy configurations and the Windows GNU desktop/web release build passed locally. Next: compare catalog offers and product forms. The dedicated AIR session is being prepared; real relay and extension validation remains outstanding.
 
 Friend updates now offer beta-29-compatible cursor/count parsing and a separate constructor reproducing Java's omitted change markers. Unknown relationship IDs remain readable with Java-null semantics via an accessor; serialization rejects them. The beta-29 oracle covers category duplicates/missing entries, removals and unknown status; Java oracle, social test, both Clippy configurations and desktop/web debug build pass. Next: compare friend fragment boundaries. The dedicated AIR session is being prepared; real relay and extension testing remains outstanding.
