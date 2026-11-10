@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+The pinned G-Presets 1.6.5 binary parsed a one-item inventory in two isolated Windows relay sessions, as confirmed by its debug log. Linux CI is pending; real hotel and preset workflows remain unverified.
+
 Unknown stuff-data tags and duplicate keys match beta-29 in selected failure, cursor and serialization fixtures; live behavior remains unverified.
 
 Negative map, string-list and integer-list counts normalize to empty as in beta-29; negative high-score array lengths fail with matching cursor positions. Windows GNU desktop/web release builds locally, but real client and extension compatibility remains unverified.

@@ -2,7 +2,11 @@
 use gearth_rust::{
     extension_host::{ConnectionDetails, ExtensionHost, HostEvent},
     packet::{read_frame, write_frame, Direction, Message, Packet},
-    packet_info::PacketInfoManager,
+    packet_info::{PacketInfo, PacketInfoManager},
+    parsers::{
+        furniture::{HInventoryItem, HProductType},
+        stuffdata::{StuffData, StuffValue},
+    },
     relay::{Config, Event, Relay, RelayOptions},
 };
 use std::{
@@ -68,6 +72,7 @@ fn released_gpresets_authenticates_to_the_rust_host() {
             .arg("-jar")
             .arg(jar)
             .args([
+                "--debug",
                 "-p",
                 &host.address.port().to_string(),
                 "-f",
@@ -133,7 +138,17 @@ fn released_gpresets_authenticates_to_the_rust_host() {
         version: "FIXTURE".into(),
         identifier: "fixture".into(),
         client_type: "FLASH".into(),
-        packets: PacketInfoManager::new("FIXTURE", Vec::new()),
+        packets: PacketInfoManager::new(
+            "FIXTURE",
+            vec![PacketInfo {
+                header: 78,
+                hash: None,
+                name: Some("FurniList".into()),
+                structure: None,
+                direction: Direction::ToClient,
+                source: "fixture".into(),
+            }],
+        ),
     };
     let (mut relay, relay_events) = Relay::start_with_options(
         Config {
@@ -181,6 +196,54 @@ fn released_gpresets_authenticates_to_the_rust_host() {
                     stderr.chars().take(8000).collect::<String>(), stdout.chars().take(8000).collect::<String>());
             });
             assert_eq!(received.bytes(), packet.bytes());
+        }
+        // Exercise a named packet that the released extension actually parses.
+        let item = HInventoryItem {
+            placement_id: 1200 + session,
+            product_type: HProductType::FloorItem,
+            id: 1400 + session,
+            type_id: 1500,
+            special_type: 1,
+            stuff: StuffData {
+                flags: 0,
+                serial: None,
+                value: StuffValue::Legacy("0".into()),
+            },
+            recyclable: true,
+            tradeable: true,
+            groupable: true,
+            sellable: true,
+            seconds_to_expiration: -1,
+            rent_period_started: false,
+            room_id: 0,
+            floor_details: Some(("".into(), 0)),
+        };
+        let mut inventory = Packet::new(78);
+        inventory
+            .put_i32(1)
+            .unwrap()
+            .put_i32(0)
+            .unwrap()
+            .put_i32(1)
+            .unwrap();
+        item.append(&mut inventory).unwrap();
+        write_frame(&mut server, &inventory).unwrap();
+        assert_eq!(read_frame(&mut client).unwrap().bytes(), inventory.bytes());
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let log = fs::read_to_string(directory.0.join("app.log")).unwrap_or_default();
+            if log.matches("Inventory loaded: found 1 items.").count() > session as usize {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "G-Presets did not parse inventory in session {session}: {}",
+                log.replace(&token, "[token]")
+                    .chars()
+                    .take(8000)
+                    .collect::<String>()
+            );
+            std::thread::sleep(Duration::from_millis(50));
         }
         drop(client);
         let deadline = Instant::now() + Duration::from_secs(10);

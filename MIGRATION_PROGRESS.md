@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- Executed the pinned G-Presets 1.6.5 binary locally on Windows with JavaFX and loopback-only networking. Its debug log confirms it parsed a named one-item FurniList in each of two relay sessions, with bidirectional forwarding and reconnect; the test, both Clippy configurations and desktop/web debug build pass. GitHub Linux verification is pending. No real hotel, room or preset import/export was tested.
+
 - Java oracle confirms unknown stuff-data tags fail at the same cursor position and duplicate map keys retain their last value, including selected high tag bits. The oracle, stuff-data unit test, both Clippy configurations and desktop/web debug build pass. Real client and extension behavior remains unverified.
 
 - Java treats negative map, string-list and integer-list stuff-data counts as empty; Rust now matches, while negative high-score arrays remain errors. The beta-29 oracle, serialized workspace suite (environment-dependent tests ignored), both Clippy configurations and Windows GNU desktop/web release build pass for this change. Live clients, protocols and extensions remain unverified.
@@ -382,4 +384,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect the real G-Presets extension workflow and implement a safe offline integration test; compare behavior with beta-29. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
+Exercise named floor and wall room data through the released G-Presets loopback fixture and verify its observed state; check Linux CI. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.

@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+The pinned G-Presets loopback fixture supplies named packet metadata and verifies actual inventory parsing using the extension debug log; HTTPS is isolated on loopback.
+
 Stuff-data maps retain the final value for duplicate keys; unsupported low-byte tags fail after reading the tag, matching selected Java cases.
 
 Stuff-data map and list loops interpret negative counts as empty, like Java; high-score arrays reject negative lengths and positive counts remain bounded.

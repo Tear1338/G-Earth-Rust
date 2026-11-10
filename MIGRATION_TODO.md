@@ -1,5 +1,7 @@
 # Migration tasks
 
+The released G-Presets binary parses a one-item inventory across two isolated Windows relay sessions; next exercise floor and wall room data through the same fixture. Real hotel and preset workflows remain open.
+
 Unknown stuff-data tags and duplicate keys have beta-29 fixtures; next inspect the real G-Presets extension workflow and identify a safe offline integration test.
 
 Stuff-data negative collection counts now match Java while high-score arrays reject negatives; next compare unknown tags and duplicate map keys against beta-29.
