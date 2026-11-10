@@ -430,7 +430,9 @@ fn java_property_class(
         loop {
             match chars.next() {
                 Some('}') if !name.is_empty() => break,
-                Some(c) if c.is_ascii_alphanumeric() || c == '_' || c == '=' => name.push(c),
+                Some(c) if c.is_ascii_alphanumeric() || matches!(c, '_' | '=' | '-' | ' ') => {
+                    name.push(c)
+                }
                 _ => return Err(error("invalid regex character property")),
             }
             if name.len() > 128 {
@@ -448,9 +450,45 @@ fn java_property_class(
     let flags = usize::from(case_insensitive)
         | (usize::from(unicode_case) << 1)
         | (usize::from(unicode_class) << 2);
+    let canonical = if let Some((key, value)) = name.split_once('=') {
+        if key.eq_ignore_ascii_case("gc") || key.eq_ignore_ascii_case("general_category") {
+            if value.starts_with("Is") || value.starts_with("In") || value.starts_with("java") {
+                return Err(error("unsupported regex character property"));
+            }
+            value.to_owned()
+        } else if key.eq_ignore_ascii_case("sc") || key.eq_ignore_ascii_case("script") {
+            match value.to_ascii_uppercase().as_str() {
+                "LATIN" | "LATN" => "IsLatin".into(),
+                "COMMON" | "ZYYY" => "IsCommon".into(),
+                "INHERITED" | "ZINH" => "IsInherited".into(),
+                _ => return Err(error("unsupported regex character property")),
+            }
+        } else if key.eq_ignore_ascii_case("blk") || key.eq_ignore_ascii_case("block") {
+            java_property_block(value)?.to_owned()
+        } else {
+            return Err(error("unsupported regex character property"));
+        }
+    } else if let Some(value) = name.strip_prefix("In") {
+        java_property_block(value)?.to_owned()
+    } else if let Some(value) = name.strip_prefix("Is") {
+        match value.to_ascii_uppercase().as_str() {
+            "LATN" => "IsLatin".into(),
+            "ZYYY" => "IsCommon".into(),
+            "ZINH" => "IsInherited".into(),
+            _ => crate::java_regex_properties::JAVA_REGEX_PROPERTIES
+                .iter()
+                .find(|(candidate, _)| {
+                    candidate.starts_with("Is") && candidate[2..].eq_ignore_ascii_case(value)
+                })
+                .map(|(candidate, _)| (*candidate).to_owned())
+                .ok_or_else(|| error("unsupported regex character property"))?,
+        }
+    } else {
+        name
+    };
     let bits = crate::java_regex_properties::JAVA_REGEX_PROPERTIES
         .iter()
-        .find(|(candidate, _)| *candidate == name)
+        .find(|(candidate, _)| *candidate == canonical)
         .map(|(_, variants)| &variants[flags])
         .ok_or_else(|| error("unsupported regex character property"))?;
     let mut class = Box::new([false; 256]);
@@ -458,6 +496,16 @@ fn java_property_class(
         *included = (bits[value / 8] & (1 << (value % 8)) != 0) == (kind == 'p');
     }
     Ok(class)
+}
+
+fn java_property_block(value: &str) -> Result<&'static str> {
+    match value.to_ascii_uppercase().as_str() {
+        "BASIC_LATIN" | "BASIC LATIN" | "BASICLATIN" => Ok("InBasic_Latin"),
+        "LATIN_1_SUPPLEMENT" | "LATIN-1 SUPPLEMENT" | "LATIN-1SUPPLEMENT" => {
+            Ok("InLatin_1_Supplement")
+        }
+        _ => Err(error("unsupported regex character property")),
+    }
 }
 
 fn control_escape(

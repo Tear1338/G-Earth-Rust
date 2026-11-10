@@ -1181,6 +1181,18 @@ public class JavaMutationOracle {
             finally { System.setOut(original); }
             emit("substring_property_" + i, sample);
         }
+        String[] propertyAliases = {"gc=Lu", "GC=Lu", "general_category=Lu", "General_Category=Ll", "gc=Lower", "gc=ASCII", "gc=L1", "sc=Latin", "script=latin", "sc=Latn", "script=LATIN", "sc=Zyyy", "script=Inherited", "sc=Zinh", "blk=Basic_Latin", "block=Basic Latin", "block=BasicLatin", "block=Latin_1_Supplement", "block=Latin-1Supplement", "IsLATN", "IsLATIN", "Islowercase", "Iswhite_space", "InBASIC_LATIN", "InBasicLatin", "InLatin-1Supplement"};
+        char[] aliasAlphabet = {'a', 'A', 'b', 'B', '0', '9', ' ', '\t', '\n', 'é', 'É', 'ö', 'Ö', 'ß', '\u00a0', '\u0085'};
+        for (int i = 0; i < 520; i++) {
+            String pattern = "(\\p{" + propertyAliases[i % propertyAliases.length] + "}+)";
+            StringBuilder value = new StringBuilder(pattern).append(" abc ABC 012 éÉöÖ ß ");
+            for (int j = 0; j < 16; j++) value.append(aliasAlphabet[(i * 5 + j * 3 + j * j) % aliasAlphabet.length]);
+            HPacket sample = new HPacket(9); sample.appendString(value.toString()); sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try { System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream())); sample.replaceXSubstrings(pattern, "$1/$0", 1); }
+            finally { System.setOut(original); }
+            emit("substring_property_alias_" + i, sample);
+        }
         String[][] selfBackrefCases = {{"(a\\1)", "$1/$0"}, {"(a\\1?)+b", "$1/$0"}, {"(?<x>a\\k<x>?)+b", "${x}/$0"}, {"(a\\1?){1,3}b", "$1/$0"}, {"(a\\1?)*?b", "$1/$0"}, {"(a\\1?)+(b)+", "$1/$2/$0"}, {"((a)\\1?)+b", "$1/$2/$0"}, {"((a)\\1?)+\\1", "$1/$2/$0"}, {"(?i)(a\\1?)+B", "$1/$0"}, {"(a\\1?)?b", "$1/$0"}};
         char[] selfBackrefAlphabet = {'a', 'A', 'b', 'B', ' ', '\n'};
         for (int i = 0; i < 250; i++) {

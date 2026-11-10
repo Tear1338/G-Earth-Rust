@@ -1,5 +1,7 @@
 # Changelog
 
+- Resolve selected Java regex category, script and block property aliases.
+
 - Add 89 Java Unicode, POSIX and character properties for Latin-1 regex input.
 
 - Match selected recursive Java character-class intersection parsing cases.

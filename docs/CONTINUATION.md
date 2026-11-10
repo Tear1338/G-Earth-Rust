@@ -1,5 +1,7 @@
 # Continuation state
 
+Selected `gc=`, `script=`, `sc=`, `block=` and `blk=` aliases match 520 beta-29 packet cases and invalid-name tests. Thirty-eight mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. Next: expand Unicode script and block names and aliases. Real AIR and extension relay validation awaits the dedicated session.
+
 Eighty-nine Java Unicode, POSIX and Java character properties now use Java 21-generated Latin-1 bitmaps. Exhaustive 256-byte, eight-flag and negation comparisons and 450 beta-29 packet cases pass, as do 38 mutation tests, 14 budget tests, both Clippy configurations and desktop/web debug compilation. The exhaustive oracle was added to CI. Next: compare and implement `gc=`, `script=` and `block=` aliases. Real AIR and extension relay validation awaits the dedicated session.
 
 Java's recursive intersection parsing now matches selected consecutive-ampersand cases after an existing intersection. The 540-packet beta-29 corpus, thirty-seven mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. Next: compare Java Unicode and POSIX character properties on Latin-1 input. The dedicated AIR session is being prepared; live relay and extension validation is outstanding.

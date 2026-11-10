@@ -2870,6 +2870,51 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
         check(&format!("substring_property_{i}"), &packet);
     }
+    let property_aliases = [
+        "gc=Lu",
+        "GC=Lu",
+        "general_category=Lu",
+        "General_Category=Ll",
+        "gc=Lower",
+        "gc=ASCII",
+        "gc=L1",
+        "sc=Latin",
+        "script=latin",
+        "sc=Latn",
+        "script=LATIN",
+        "sc=Zyyy",
+        "script=Inherited",
+        "sc=Zinh",
+        "blk=Basic_Latin",
+        "block=Basic Latin",
+        "block=BasicLatin",
+        "block=Latin_1_Supplement",
+        "block=Latin-1Supplement",
+        "IsLATN",
+        "IsLATIN",
+        "Islowercase",
+        "Iswhite_space",
+        "InBASIC_LATIN",
+        "InBasicLatin",
+        "InLatin-1Supplement",
+    ];
+    let alias_alphabet = [
+        'a', 'A', 'b', 'B', '0', '9', ' ', '\t', '\n', 'é', 'É', 'ö', 'Ö', 'ß', '\u{a0}', '\u{85}',
+    ];
+    for i in 0..520 {
+        let pattern = format!("(\\p{{{}}}+)", property_aliases[i % property_aliases.len()]);
+        let mut value = format!("{pattern} abc ABC 012 éÉöÖ ß ");
+        for j in 0..16 {
+            value.push(alias_alphabet[(i * 5 + j * 3 + j * j) % alias_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(&pattern, "$1/$0", Some(1))
+            .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
+        check(&format!("substring_property_alias_{i}"), &packet);
+    }
     let self_backref_cases = [
         ("(a\\1)", "$1/$0"),
         ("(a\\1?)+b", "$1/$0"),

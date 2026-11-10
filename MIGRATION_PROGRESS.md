@@ -340,6 +340,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Added 89 Java Unicode, POSIX, script, block and Java character properties for the Latin-1 packet domain. Java 21-generated bitmaps match exhaustively for all 256 bytes and eight flag combinations, including negation; 450 beta-29 packet cases also pass. Thirty-eight mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass; the new Java oracle check was added to CI. Property aliases and other Java properties remain incomplete, as do full regex and live-client parity.
 
+- Added selected Java `gc=`, `script=`, `sc=`, `block=` and `blk=` property aliases and case rules for the currently supported Latin, Common, Inherited, Basic Latin and Latin-1 Supplement tables. A 520-packet beta-29 corpus and invalid-name tests pass. Thirty-eight mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. Other scripts, blocks and properties remain unsupported; full regex and live-client parity remain unverified.
+
 ## Exact next step
 
-Compare and implement Java character-property aliases such as `gc=Lu`, `script=Latin` and `block=Basic_Latin`, with case and invalid-name fixtures against Java 21. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
+Expand Java Unicode script and block property names and aliases beyond Latin/Common/Inherited and the first two blocks, comparing all Latin-1 values with Java 21. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
