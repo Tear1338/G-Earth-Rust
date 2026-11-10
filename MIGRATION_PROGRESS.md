@@ -290,6 +290,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Nested Java regex alternation now supports ordinary capture groups with bounded GroupHead/GroupTail-style rollback, including named, empty and optional captures. A 240-packet beta-29 corpus checks branch choice and multiple replacement references. Quantified groups containing alternatives remain explicitly unsupported. Thirty-four mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally.
 
+- A single quantified nested Java alternation group now supports greedy/reluctant and bounded repetitions with capture retention and zero-width-loop protection. The beta-29 oracle passes 280 packet cases plus 120 cases with nullable branches; internal progress captures cannot be referenced by replacement strings. Multiple repeated groups and some capturing-ancestor structures remain explicitly unsupported. Thirty-four mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally.
+
 ## Exact next step
 
-Implement quantified nested alternative groups with bounded repetition and Java capture retention, using fixtures for (?:a|b)+, (a|b)*, empty branches and greedy/reluctant backtracking. Validate official AIR traffic and an extension through the relay when a disposable client session is available.
+Extend the bounded alternation matcher to support multiple independently quantified groups and capturing ancestors, with Java differential cases for nested loops, rollback and zero-width progress. Validate official AIR traffic and an extension through the relay when a disposable client session is available.

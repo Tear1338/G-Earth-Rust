@@ -2182,6 +2182,65 @@ fn mutations_match_original_java_packets_and_cursor() {
             &packet,
         );
     }
+    let repeated_alternation_patterns = [
+        "(?:a|b)+",
+        "(?:a|b)*c",
+        "(?:a|ab)+b",
+        "(?:a||b)*c",
+        "(a|b)*c",
+        "(a|ab)+b",
+        "(?:(a)|b)+c",
+        "(?:a|(b))*c",
+        "(?:(a)|(b))*?c",
+        "(a|b){1,3}?c",
+        "(?:a|b){0,2}",
+        "(?:|a)*b",
+        "(a|b){0}c",
+        "(?:a|bc){2}d",
+    ];
+    let repeated_alternation_alphabet = ['a', 'A', 'b', 'B', 'c', 'd', ' ', '\n'];
+    for i in 0..280 {
+        let pattern = repeated_alternation_patterns[i % repeated_alternation_patterns.len()];
+        let mut value = format!("{pattern} ac bc abc aaab abd babc ");
+        for j in 0..14 {
+            value.push(
+                repeated_alternation_alphabet
+                    [(i * 3 + j * 7 + j * j) % repeated_alternation_alphabet.len()],
+            );
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        let replacement = match i % 14 {
+            8 => "$1/$2/$0",
+            4 | 5 | 6 | 7 | 9 | 12 => "$1/$0",
+            _ => "[$0]",
+        };
+        packet
+            .replace_substrings_java(pattern, replacement, Some(1))
+            .unwrap();
+        check(&format!("substring_repeated_alternation_{i}"), &packet);
+    }
+    let nullable_alternation_cases = [
+        ("(?:|a){2,4}a", "[$0]"),
+        ("(a|){2,4}a", "$1/$0"),
+        ("(?:|a)+a", "[$0]"),
+        ("(a|)+?a", "$1/$0"),
+        ("(?:a|){0,2}a", "[$0]"),
+        ("(?:|a){2}b", "[$0]"),
+    ];
+    for i in 0..120 {
+        let (pattern, replacement) =
+            nullable_alternation_cases[i % nullable_alternation_cases.len()];
+        let value = format!("{pattern} aaab aab ab b a {}", "ab".repeat(i % 5));
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, replacement, Some(1))
+            .unwrap();
+        check(&format!("substring_nullable_alternation_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

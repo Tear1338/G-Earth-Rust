@@ -1,5 +1,7 @@
 # Changelog
 
+- Support a bounded quantified Java alternative group, including nullable branches.
+
 - Preserve ordinary captures in nested Java regex alternation.
 
 - Support bounded nested Java alternation without capture groups.

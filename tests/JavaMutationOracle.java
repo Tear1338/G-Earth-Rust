@@ -1106,6 +1106,39 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_unicode_case_" + i, sample);
         }
+        String[][] nullableAlternationCases = {{"(?:|a){2,4}a", "[$0]"}, {"(a|){2,4}a", "$1/$0"}, {"(?:|a)+a", "[$0]"}, {"(a|)+?a", "$1/$0"}, {"(?:a|){0,2}a", "[$0]"}, {"(?:|a){2}b", "[$0]"}};
+        for (int i = 0; i < 120; i++) {
+            String[] entry = nullableAlternationCases[i % nullableAlternationCases.length];
+            String pattern = entry[0];
+            String value = pattern + " aaab aab ab b a " + "ab".repeat(i % 5);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value);
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, entry[1], 1);
+            } finally { System.setOut(original); }
+            emit("substring_nullable_alternation_" + i, sample);
+        }
+        String[] repeatedAlternationPatterns = {"(?:a|b)+", "(?:a|b)*c", "(?:a|ab)+b", "(?:a||b)*c", "(a|b)*c", "(a|ab)+b", "(?:(a)|b)+c", "(?:a|(b))*c", "(?:(a)|(b))*?c", "(a|b){1,3}?c", "(?:a|b){0,2}", "(?:|a)*b", "(a|b){0}c", "(?:a|bc){2}d"};
+        char[] repeatedAlternationAlphabet = {'a', 'A', 'b', 'B', 'c', 'd', ' ', '\n'};
+        for (int i = 0; i < 280; i++) {
+            String pattern = repeatedAlternationPatterns[i % repeatedAlternationPatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(" ac bc abc aaab abd babc ");
+            for (int j = 0; j < 14; j++) value.append(repeatedAlternationAlphabet[(i * 3 + j * 7 + j * j) % repeatedAlternationAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                int n = i % 14;
+                String replacement = n == 8 ? "$1/$2/$0" : (n == 4 || n == 5 || n == 6 || n == 7 || n == 9 || n == 12) ? "$1/$0" : "[$0]";
+                sample.replaceXSubstrings(pattern, replacement, 1);
+            } finally { System.setOut(original); }
+            emit("substring_repeated_alternation_" + i, sample);
+        }
         String[] nestedCapturePatterns = {"(a|b)c", "(a|(b))c", "((a)|(b))c", "(?:(a)|b)c", "(a|b)(c)", "(a|b)?c", "a*(a|b)b", "(?<x>a|b)c", "(a|(?:b|c))d", "(?:()|a)b", "(?:a|(b?))c", "(a|b)|(c)", "(?:(a)|b)?"};
         char[] nestedCaptureAlphabet = {'a', 'A', 'b', 'B', 'c', 'd', ' ', '\n'};
         for (int i = 0; i < 240; i++) {
