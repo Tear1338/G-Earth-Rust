@@ -443,6 +443,24 @@ public class JavaStuffOracle {
             }
             System.out.println("entity_gender_input_" + i + "=" + HexFormat.of().formatHex(input.toBytes()));
         }
+        for (int flags = 0; flags < 64; flags++) {
+            HPacket input = new HPacket(1); appendEntityBase(input, 2);
+            input.appendInt(-2).appendInt(17).appendString("owner é").appendInt(-4);
+            for (int bit = 0; bit < 6; bit++) input.appendBoolean((flags & (1 << bit)) != 0);
+            input.appendInt(99).appendString("posture");
+            HEntity pet = new HEntity(input); HPacket output = new HPacket(1); pet.appendToPacket(output);
+            System.out.println("entity_pet_input_" + flags + "=" + HexFormat.of().formatHex(input.toBytes()));
+            System.out.println("entity_pet_output_" + flags + "=" + HexFormat.of().formatHex(output.toBytes()));
+        }
+        for (int count : new int[]{0, 1, 4}) {
+            HPacket input = new HPacket(1); appendEntityBase(input, 4);
+            input.appendString("raw gender").appendInt(-8).appendString("owner é").appendInt(count);
+            short[] values = {0, -1, Short.MIN_VALUE, Short.MAX_VALUE};
+            for (int i = 0; i < count; i++) input.appendShort(values[i]);
+            HEntity botCase = new HEntity(input); HPacket output = new HPacket(1); botCase.appendToPacket(output);
+            System.out.println("entity_bot_input_" + count + "=" + HexFormat.of().formatHex(input.toBytes()));
+            System.out.println("entity_bot_output_" + count + "=" + HexFormat.of().formatHex(output.toBytes()));
+        }
         HPacket botNegative = new HPacket(1); appendEntityBase(botNegative, 4);
         botNegative.appendString("b").appendInt(8).appendString("owner").appendInt(-1);
         HEntity bot = new HEntity(botNegative); HPacket botNormalized = new HPacket(1); bot.appendToPacket(botNormalized);

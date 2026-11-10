@@ -651,6 +651,37 @@ fn all_stuff_data_wire_formats_match_original_java() {
             assert!(entity.append_java(&mut output).is_err(), "{key}");
         }
     }
+    for flags in 0..64 {
+        let key = format!("entity_pet_input_{flags}");
+        let mut packet = Packet::from_bytes(observed[key.as_str()].clone()).unwrap();
+        let pet = HEntity::read(&mut packet).unwrap();
+        assert_eq!(packet.cursor(), packet.bytes().len());
+        assert!(
+            matches!(&pet.details, HEntityDetails::Pet { flags: parsed, .. }
+            if parsed.iter().enumerate().all(|(bit, value)| *value == (flags & (1 << bit) != 0)))
+        );
+        let mut output = Packet::new(1);
+        pet.append_java(&mut output).unwrap();
+        assert_eq!(
+            output.bytes(),
+            observed[format!("entity_pet_output_{flags}").as_str()]
+        );
+    }
+    for count in [0, 1, 4] {
+        let key = format!("entity_bot_input_{count}");
+        let mut packet = Packet::from_bytes(observed[key.as_str()].clone()).unwrap();
+        let bot = HEntity::read(&mut packet).unwrap();
+        assert_eq!(packet.cursor(), packet.bytes().len());
+        assert!(
+            matches!(&bot.details, HEntityDetails::Bot { skills, .. } if skills.len() == count)
+        );
+        let mut output = Packet::new(1);
+        bot.append_java(&mut output).unwrap();
+        assert_eq!(
+            output.bytes(),
+            observed[format!("entity_bot_output_{count}").as_str()]
+        );
+    }
     let bot = HEntity::read(
         &mut Packet::from_bytes(observed["entity_bot_negative_skills"].clone()).unwrap(),
     )

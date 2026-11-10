@@ -1,5 +1,7 @@
 # Changelog
 
+- Compare pet flags and bot skills with beta-29 entity serialization.
+
 - Expand Java entity-update action and cursor comparisons.
 
 - Match beta-29 entity edge cases and expose its serialization separately from complete client wire records.

@@ -1,5 +1,7 @@
 # Continuation state
 
+Pet and bot entity fixtures compare 64 pet flag combinations and bot skill boundaries against beta-29. Java oracle, five entity tests, both Clippy configurations and desktop/web debug build pass. Next: compare remaining room furniture placement and state formats against Java. The dedicated AIR session is being prepared; live relay and extension tests remain outstanding.
+
 Entity-update fixtures compare 27 ordered, repeated and malformed action strings plus cursor positions against beta-29. Java oracle, five entity tests, both Clippy configurations and desktop/web debug build pass. Next: compare pet and bot entity fields and serialization. The dedicated AIR session is being prepared; live relay and extension tests remain outstanding.
 
 Entity edge cases and beta-29 serialization now have Java oracle coverage; five entity unit tests, both Clippy configurations and the desktop/web debug build pass. Next: compare entity-update action ordering, malformed numeric values and cursor behavior against beta-29. The dedicated AIR session is being prepared; live relay and extension testing remains outstanding.

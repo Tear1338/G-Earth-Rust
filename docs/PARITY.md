@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Pet entity fixtures cover 64 flag combinations, while bot fixtures cover skill counts and signed-short boundaries; normalized bytes match beta-29 for these cases. Live client and extension behavior remains unverified.
+
 Entity-update fixtures now compare 27 action strings and cursor positions against beta-29, including repeated and malformed actions. This finite corpus does not establish live compatibility.
 
 Entity fixtures compare unknown types, gender cases, negative bot skill counts, invalid directions and entity/update counts against beta-29. The Java-compatible serializer reproduces its omitted Habbo integer; the client serializer keeps it. Real client and extension behavior remains unverified.

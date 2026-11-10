@@ -1,5 +1,7 @@
 # Migration tasks
 
+Pet flags and bot skill boundary values have beta-29 fixtures; next compare remaining room furniture placement and state formats against Java.
+
 Entity-update fixtures now compare action ordering, malformed values and cursor positions; next compare pet and bot entity fields and serialization against beta-29.
 
 Entity edge cases and Java serialization have differential fixtures; next compare entity-update action ordering, malformed values and cursor behavior against beta-29. Live client and extension tests remain open.
