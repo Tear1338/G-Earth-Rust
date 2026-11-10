@@ -11,6 +11,9 @@ import gearth.extensions.parsers.catalog.HCatalogIndex;
 import gearth.extensions.parsers.navigator.HNavigatorSearchResult;
 import gearth.extensions.parsers.forums.HCommentOverview;
 import gearth.extensions.parsers.forums.HThreadState;
+import gearth.extensions.parsers.forums.HThread;
+import gearth.extensions.parsers.forums.HThreadOverview;
+import gearth.extensions.parsers.forums.HForumOverview;
 import java.util.HashMap;
 import java.util.HexFormat;
 
@@ -162,6 +165,38 @@ public class JavaStuffOracle {
         HCommentOverview parsedComments = new HCommentOverview(comments);
         if (parsedComments.getComments().get(0).getState() != HThreadState.HIDDEN_BY_ADMIN) throw new AssertionError("comment state");
         System.out.println("comments=" + HexFormat.of().formatHex(comments.toBytes()));
+
+        HPacket threads = new HPacket(1);
+        threads.appendInt(42).appendInt(3).appendInt(5);
+        int[] states = {0, 10, 20, 42, 255};
+        for (int i = 0; i < states.length; i++) {
+            threads.appendInt(100 + i).appendInt(200 + i).appendString("Author" + i).appendString("Sujet é" + i)
+                .appendBoolean(i % 2 == 0).appendBoolean(i % 2 != 0).appendInt(-i).appendInt(i + 3)
+                .appendInt(i + 4).appendInt(i + 5).appendInt(i + 6).appendString("Last" + i)
+                .appendInt(i + 7).appendByte((byte)states[i]).appendInt(i + 8).appendString("Admin" + i).appendInt(i + 9);
+        }
+        HThreadOverview threadOverview = new HThreadOverview(threads);
+        HPacket normalizedThreads = new HPacket(1);
+        normalizedThreads.appendInt(threadOverview.getGuildId()).appendInt(threadOverview.getStartIndex()).appendInt(threadOverview.getThreads().size());
+        for (HThread t : threadOverview.getThreads()) {
+            normalizedThreads.appendInt(t.getThreadId()).appendInt(t.getAuthorId()).appendString(t.getAuthorName()).appendString(t.getSubject())
+                .appendBoolean(t.isPinned()).appendBoolean(t.isLocked()).appendInt(t.getPassedTime()).appendInt(t.getAmmountComments())
+                .appendInt(t.getUnreadComments()).appendInt(t.getLastCommentIndexInForum()).appendInt(t.getLastCommentAuthorId())
+                .appendString(t.getLastCommentAuthorName()).appendInt(t.getLastCommentPassedTime()).appendByte((byte)t.getState().state)
+                .appendInt(t.getAdminId()).appendString(t.getAdminName()).appendInt(t.getUnknownThreadId());
+        }
+        if (threadOverview.getThreads().size() != 5 || threadOverview.getThreads().get(3).getState() != HThreadState.OPEN) throw new AssertionError("forum thread state");
+        System.out.println("forum_threads=" + HexFormat.of().formatHex(threads.toBytes()));
+        System.out.println("forum_threads_normalized=" + HexFormat.of().formatHex(normalizedThreads.toBytes()));
+        HPacket negativeThreads = new HPacket(1); negativeThreads.appendInt(42).appendInt(3).appendInt(-1);
+        if (!new HThreadOverview(negativeThreads).getThreads().isEmpty()) throw new AssertionError("negative thread count");
+        System.out.println("forum_threads_negative=" + HexFormat.of().formatHex(negativeThreads.toBytes()));
+        HPacket negativeForums = new HPacket(1); negativeForums.appendInt(0).appendInt(5).appendInt(3).appendInt(-1);
+        if (!new HForumOverview(negativeForums).getForums().isEmpty()) throw new AssertionError("negative forum count");
+        System.out.println("forum_overview_negative=" + HexFormat.of().formatHex(negativeForums.toBytes()));
+        HPacket negativeComments = new HPacket(1); negativeComments.appendInt(1).appendInt(2).appendInt(3).appendInt(-1);
+        if (!new HCommentOverview(negativeComments).getComments().isEmpty()) throw new AssertionError("negative comment count");
+        System.out.println("forum_comments_negative=" + HexFormat.of().formatHex(negativeComments.toBytes()));
 
         HPacket entities = new HPacket(1);
         entities.appendInt(4);

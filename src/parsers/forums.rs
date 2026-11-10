@@ -1,7 +1,9 @@
 //! Forum overview, thread and comment parsers from beta-29.
 use crate::packet::{error, Packet, Result};
 fn count(packet: &mut Packet) -> Result<usize> {
-    let n = usize::try_from(packet.read_i32()?).map_err(|_| error("negative forum count"))?;
+    // Java's overview constructors use `for (i = 0; i < count; i++)`,
+    // so negative counts produce an empty list while still consuming the field.
+    let n = packet.read_i32()?.max(0) as usize;
     if n > 65_536 {
         return Err(error("forum count exceeds limit"));
     }
@@ -335,6 +337,49 @@ impl ThreadOverview {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn negative_overview_counts_match_java_empty_lists() {
+        let mut threads = Packet::new(1);
+        threads
+            .put_i32(1)
+            .unwrap()
+            .put_i32(2)
+            .unwrap()
+            .put_i32(-1)
+            .unwrap();
+        assert!(ThreadOverview::read(&mut threads)
+            .unwrap()
+            .threads
+            .is_empty());
+        assert_eq!(threads.cursor(), threads.bytes().len());
+        let mut forums = Packet::new(1);
+        forums
+            .put_i32(0)
+            .unwrap()
+            .put_i32(1)
+            .unwrap()
+            .put_i32(2)
+            .unwrap()
+            .put_i32(-1)
+            .unwrap();
+        assert!(ForumOverview::read(&mut forums).unwrap().forums.is_empty());
+        assert_eq!(forums.cursor(), forums.bytes().len());
+        let mut comments = Packet::new(1);
+        comments
+            .put_i32(1)
+            .unwrap()
+            .put_i32(2)
+            .unwrap()
+            .put_i32(3)
+            .unwrap()
+            .put_i32(-1)
+            .unwrap();
+        assert!(CommentOverview::read(&mut comments)
+            .unwrap()
+            .comments
+            .is_empty());
+        assert_eq!(comments.cursor(), comments.bytes().len());
+    }
     #[test]
     fn comment_overview_reads_state_and_metadata() {
         let mut p = Packet::new(1);

@@ -27,6 +27,6 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Open-group backreferences, selected lookarounds, atomic groups, possessive quantifiers, nested classes and Java character properties have oracle coverage; full regex parity remains open. Inventory and furniture owner cases have Java comparisons; next compare forum thread collections.
+Open-group backreferences, selected lookarounds, atomic groups, possessive quantifiers, nested classes and Java character properties have oracle coverage; full regex parity remains open. Inventory, furniture owners and forum threads have Java comparisons; next compare forum overview rows.
 
 CI: serialized G-Python jobs passed on Windows and Linux in run 42723118432; continue monitoring intermittent kernel startup timeouts.

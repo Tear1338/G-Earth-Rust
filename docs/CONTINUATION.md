@@ -1,5 +1,7 @@
 # Continuation state
 
+Forum thread overviews now match beta-29 fixtures for multiple rows, flags and state fallback; negative counts in all three overview parsers produce empty lists as in Java, with positive counts still bounded. Java oracle, three forum tests, both Clippy configurations and desktop/web debug compilation pass. Next: compare forum overview rows and view modes. The dedicated AIR session is being prepared; real relay and extension testing is outstanding.
+
 Floor and wall owner maps now resolve duplicate IDs before checking for a missing final name. Beta-29 fixtures cover multiple, duplicate and absent owners; Java `HashMap` and Rust sorted owner order can differ, so parsed semantics were compared. Java oracle, three furniture tests, both Clippy configurations and desktop/web debug build pass. Next: compare forum thread collections. The dedicated AIR session is being prepared; real relay and extension validation remains outstanding.
 
 Inventory paging now offers bounded beta-29-compatible construction and static parsing separately from corrected client paging. Byte/cursor comparisons cover all product and special types and page sizes 0, 1, 599, 600, 601, 1200 and 1201, including Java's original count/content defects. The oracle, inventory unit test, both Clippy configurations and desktop/web debug build pass. Next: compare floor/wall collection owner mapping. The dedicated AIR session is being prepared; real relay and extension validation remains outstanding.

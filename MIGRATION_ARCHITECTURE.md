@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Forum overview parsers follow Java's empty-list behavior for negative counts while retaining a bounded limit for positive counts. Unknown thread states normalize to the Java default when serialized.
+
 Floor and wall collection construction resolves duplicate owners before rejecting a missing final owner name, as in beta-29. Rust sorts owner IDs while Java uses `HashMap`; parsed collection semantics are compared independently of ordering.
 
 Inventory exposes corrected `construct_pages` for client-ready pages and bounded `construct_java_packets`/`parse_java` for the released Java API's distinct pagination and cursor behavior. Java's original emits incorrect counts at exact 600-item boundaries and includes subsequent items in earlier pages.

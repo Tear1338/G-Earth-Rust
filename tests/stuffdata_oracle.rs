@@ -301,6 +301,52 @@ fn all_stuff_data_wire_formats_match_original_java() {
     let mut encoded_comments = Packet::new(1);
     comments.append(&mut encoded_comments).unwrap();
     assert_eq!(encoded_comments.bytes(), observed["comments"]);
+    use gearth_rust::parsers::forums::{
+        CommentOverview, ForumOverview, ThreadOverview, ThreadState,
+    };
+    let threads =
+        ThreadOverview::read(&mut Packet::from_bytes(observed["forum_threads"].clone()).unwrap())
+            .unwrap();
+    assert_eq!(
+        (threads.guild_id, threads.start_index, threads.threads.len()),
+        (42, 3, 5)
+    );
+    assert_eq!(
+        threads.threads.iter().map(|t| t.state).collect::<Vec<_>>(),
+        vec![
+            ThreadState::Open,
+            ThreadState::HiddenByAdmin,
+            ThreadState::HiddenByStaff,
+            ThreadState::Open,
+            ThreadState::Open
+        ]
+    );
+    assert!(threads.threads[0].pinned && !threads.threads[0].locked);
+    assert!(!threads.threads[1].pinned && threads.threads[1].locked);
+    let mut normalized_threads = Packet::new(1);
+    threads.append(&mut normalized_threads).unwrap();
+    assert_eq!(
+        normalized_threads.bytes(),
+        observed["forum_threads_normalized"]
+    );
+    assert!(ThreadOverview::read(
+        &mut Packet::from_bytes(observed["forum_threads_negative"].clone()).unwrap()
+    )
+    .unwrap()
+    .threads
+    .is_empty());
+    assert!(ForumOverview::read(
+        &mut Packet::from_bytes(observed["forum_overview_negative"].clone()).unwrap()
+    )
+    .unwrap()
+    .forums
+    .is_empty());
+    assert!(CommentOverview::read(
+        &mut Packet::from_bytes(observed["forum_comments_negative"].clone()).unwrap()
+    )
+    .unwrap()
+    .comments
+    .is_empty());
     let entities = gearth_rust::parsers::entity::HEntity::parse(
         &mut Packet::from_bytes(observed["entities"].clone()).unwrap(),
     )

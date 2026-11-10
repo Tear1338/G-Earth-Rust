@@ -348,6 +348,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Compared beta-29 floor and wall furniture collections with multiple owners, duplicate IDs and missing owner names. Rust now lets the final duplicate owner entry replace an earlier missing name, matching Java; missing final names still fail. Oracle fixtures compare parsed structures rather than byte order because Java uses `HashMap` and Rust sorts owner IDs. The Java oracle, three furniture unit tests, both Clippy configurations and desktop/web debug build pass. Live-client and extension behavior remains unverified.
 
+- Compared beta-29 forum thread overviews with five rows, flags and known/unknown states; parsed data and normalized serialization match. Java treats negative list counts as empty in thread, forum and comment overviews; Rust now does the same while retaining its positive count limit. The Java oracle, three forum tests, both Clippy configurations and desktop/web debug build pass. Actions run 42916029988 passed all eight jobs for the earlier inventory commit. Live forum and extension behavior remains unverified.
+
 ## Exact next step
 
-Compare Java forum `HThread` and `HThreadOverview` parsing and serialization across thread states, flags and multiple rows; add beta-29 differential fixtures and correct discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
+Compare Java `HForum` and `HForumOverview` fields, multiple rows and unknown view modes against beta-29, then add differential fixtures and correct discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.

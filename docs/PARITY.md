@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Forum thread overview fixtures cover flags, multiple rows, known and unknown states, and Java's empty-list interpretation of negative overview counts. Positive counts remain bounded; live forum and extension behavior remains unverified.
+
 Floor and wall collection fixtures cover multiple, duplicate and missing owners against beta-29. Java uses `HashMap` owner order while Rust sorts IDs, so comparisons verify parsed semantics rather than identical ordering.
 
 Inventory has separate corrected paging and bounded beta-29-compatible construction/parsing. Java oracle comparisons cover all four product types, all 23 special types, cursor positions and sizes around 600 and 1,200; Java's original page counts and contents contain defects at those boundaries. Live extensions remain unverified.
