@@ -312,6 +312,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Java numbered and named regex backreferences now use capture-aware bounded matching, including unmatched versus empty captures, Latin-1 case folding, optional and repeated references, and ordered alternatives. A 360-packet beta-29 oracle corpus passes. References to currently open groups and patterns combining backreferences with repeated groups remain explicitly unsupported. Thirty-five mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally. Actions run 42834244254 passed all eight validation jobs.
 
+- Java backreferences can now be combined with repeated groups, including references inside deterministic bodies and capture retention across backtracking. A 240-packet beta-29 corpus covers named/numbered references, repeated references and changing captures between iterations. References to a currently open group remain explicitly unsupported; full Java regex behavior is not established. Thirty-five mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally. Actions run 42835307260 passed all eight validation jobs.
+
 ## Exact next step
 
-Compare backreferences combined with repeated groups and capture retention against beta-29 Java, including (a)+\1 and repeated references inside/outside nested groups; extend the bounded VM only after differential coverage. Validate official AIR traffic and an extension through the relay when a dedicated session is available.
+Compare Java self/forward backreferences to currently open groups, including retained values from prior iterations, and implement them only with capture-state-aware differential fixtures. Validate official AIR traffic and an extension through the relay when a dedicated session is available.

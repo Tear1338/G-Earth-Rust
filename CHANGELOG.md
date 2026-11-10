@@ -1,5 +1,7 @@
 # Changelog
 
+- Combine Java regex backreferences with repeated groups and capture retention.
+
 - Support bounded numbered and named Java regex backreferences.
 
 - Support nested repeated Java groups with capture-aware rollback.

@@ -2541,6 +2541,44 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
         check(&format!("substring_backreference_{i}"), &packet);
     }
+    let repeated_backref_cases = [
+        ("(a)+\\1", "$1/$0"),
+        ("([ab])+\\1", "$1/$0"),
+        ("(?<x>a)+\\k<x>", "${x}/$0"),
+        ("(a)+\\1+", "$1/$0"),
+        ("(a|b)+\\1", "$1/$0"),
+        ("(?:(a)\\1)+b", "$1/$0"),
+        ("(?:(a|b)\\1)+c", "$1/$0"),
+        ("(?:(a)b)+\\1", "$1/$0"),
+        ("(?:(?<x>a)b)+\\k<x>", "${x}/$0"),
+        ("(?:(a)?b)+\\1", "$1/$0"),
+        ("((a)\\2)+\\1", "$1/$2/$0"),
+        ("(?:(a)\\1){0,3}\\1", "$1/$0"),
+        ("(?:([ab])\\1)+c", "$1/$0"),
+        ("(?:([ab])\\1)+\\1", "$1/$0"),
+        ("(?:([ab])\\1){2,3}c", "$1/$0"),
+        ("(?i)(?:([ab])\\1)+C", "$1/$0"),
+        ("(?:([ab])\\1{2})+c", "$1/$0"),
+        ("(?:([ab]{2})\\1)+c", "$1/$0"),
+    ];
+    let repeated_backref_alphabet = ['a', 'A', 'b', 'B', 'c', ' ', '\n'];
+    for i in 0..240 {
+        let (pattern, replacement) = repeated_backref_cases[i % repeated_backref_cases.len()];
+        let mut value = format!("{pattern} aaaa aabb aab abaabab abc ");
+        for j in 0..12 {
+            value.push(
+                repeated_backref_alphabet
+                    [(i * 5 + j * 3 + j * j) % repeated_backref_alphabet.len()],
+            );
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, replacement, Some(1))
+            .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
+        check(&format!("substring_repeated_backref_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

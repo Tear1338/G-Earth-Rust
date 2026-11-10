@@ -730,7 +730,7 @@ fn java_nested_alternation_rejects_unimplemented_structures_and_limits_depth() {
 
 #[test]
 fn java_backreferences_reject_unsupported_cases_transactionally() {
-    for pattern in ["(?<x>a)\\k<missing>", "(?<x>\\k<x>)", "(a)+\\1"] {
+    for pattern in ["(?<x>a)\\k<missing>", "(?<x>\\k<x>)"] {
         let mut packet = Packet::new(9);
         packet.put_string(pattern).unwrap();
         let before = packet.bytes().to_vec();

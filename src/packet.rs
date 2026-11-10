@@ -359,6 +359,7 @@ enum FixedRegexAtom {
         group: usize,
         case_insensitive: bool,
         unicode_case: bool,
+        prefer_current: bool,
     },
     Dot,
     DotUnix,
@@ -2051,6 +2052,21 @@ fn compile_deep_nested_repeat(
     program
 }
 
+fn vm_capture(
+    group: usize,
+    prefer_current: bool,
+    captures: &[Option<(usize, usize)>],
+    sticky: &[Option<(usize, usize)>],
+) -> Option<(usize, usize)> {
+    let current = captures.get(group).copied().flatten();
+    let retained = sticky.get(group).copied().flatten();
+    if prefer_current {
+        current.or(retained)
+    } else {
+        retained.or(current)
+    }
+}
+
 fn vm_atom_width(
     atom: &FixedRegexAtom,
     input: &[u8],
@@ -2063,15 +2079,12 @@ fn vm_atom_width(
         group,
         case_insensitive,
         unicode_case,
+        prefer_current,
     } = atom
     else {
         return Ok(atom_width(atom, input, position));
     };
-    let capture = sticky
-        .get(*group)
-        .copied()
-        .flatten()
-        .or_else(|| captures.get(*group).copied().flatten());
+    let capture = vm_capture(*group, *prefer_current, captures, sticky);
     let Some((start, end)) = capture else {
         return Ok(None);
     };
@@ -2103,13 +2116,13 @@ fn vm_repeat_width(
     captures: &[Option<(usize, usize)>],
     sticky: &[Option<(usize, usize)>],
 ) -> Option<usize> {
-    if let FixedRegexAtom::Backref { group, .. } = atom {
-        sticky
-            .get(*group)
-            .copied()
-            .flatten()
-            .or_else(|| captures.get(*group).copied().flatten())
-            .map(|(start, end)| end - start)
+    if let FixedRegexAtom::Backref {
+        group,
+        prefer_current,
+        ..
+    } = atom
+    {
+        vm_capture(*group, *prefer_current, captures, sticky).map(|(start, end)| end - start)
     } else {
         Some(1)
     }
@@ -3822,6 +3835,7 @@ impl Packet {
                             group,
                             case_insensitive,
                             unicode_case,
+                            prefer_current: false,
                         });
                         has_backreferences = true;
                         dynamic = true;
@@ -4055,11 +4069,6 @@ impl Packet {
                     optional.iter().any(|&(a, b, _)| a >= start && b <= end)
                         || repeated.iter().any(|&(a, ..)| a >= start && a < end)
                 }));
-        if has_backreferences && !group_repeats.is_empty() {
-            return Err(error(
-                "backreferences within repeated groups are not yet supported",
-            ));
-        }
         if use_tree_vm && group_repeats.len() > 128 {
             return Err(error("regex repeated group limit exceeded"));
         }
@@ -4144,6 +4153,48 @@ impl Packet {
                         return Err(error("non-contiguous repeated captures are unsupported"));
                     }
                     alternative_nodes[node].sticky_captures = Some((first, end));
+                }
+            }
+        }
+        // Inside a deterministic GroupCurly body, a mandatory capture closed
+        // earlier in the same iteration supersedes the retained prior iteration.
+        if has_backreferences && use_tree_vm && !has_nested_alternation {
+            let mut zero_repeat = vec![false; alternative_nodes.len()];
+            for &(_, _, min, _, _, node, _) in &group_repeats {
+                zero_repeat[node] = min == 0;
+            }
+            for (node, spec) in alternative_nodes.iter().enumerate() {
+                let Some((first, end)) = spec.sticky_captures else {
+                    continue;
+                };
+                let mut mandatory = vec![false; groups.len()];
+                for group in first..end {
+                    let mut current = group_nodes[group];
+                    let mut required = true;
+                    while current != node {
+                        if zero_repeat[current] {
+                            required = false;
+                            break;
+                        }
+                        current = alternative_nodes[current]
+                            .parent
+                            .ok_or_else(|| error("invalid capture hierarchy"))?;
+                    }
+                    mandatory[group] = required;
+                }
+                for (index, atom) in atoms.iter_mut().enumerate().take(spec.end).skip(spec.start) {
+                    if let FixedRegexAtom::Backref {
+                        group,
+                        prefer_current,
+                        ..
+                    } = atom
+                    {
+                        if mandatory.get(*group).copied().unwrap_or(false)
+                            && ranges[*group].1 <= index
+                        {
+                            *prefer_current = true;
+                        }
+                    }
                 }
             }
         }

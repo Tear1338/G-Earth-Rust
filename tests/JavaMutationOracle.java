@@ -1106,6 +1106,23 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_unicode_case_" + i, sample);
         }
+        String[][] repeatedBackrefCases = {{"(a)+\\1", "$1/$0"}, {"([ab])+\\1", "$1/$0"}, {"(?<x>a)+\\k<x>", "${x}/$0"}, {"(a)+\\1+", "$1/$0"}, {"(a|b)+\\1", "$1/$0"}, {"(?:(a)\\1)+b", "$1/$0"}, {"(?:(a|b)\\1)+c", "$1/$0"}, {"(?:(a)b)+\\1", "$1/$0"}, {"(?:(?<x>a)b)+\\k<x>", "${x}/$0"}, {"(?:(a)?b)+\\1", "$1/$0"}, {"((a)\\2)+\\1", "$1/$2/$0"}, {"(?:(a)\\1){0,3}\\1", "$1/$0"}, {"(?:([ab])\\1)+c", "$1/$0"}, {"(?:([ab])\\1)+\\1", "$1/$0"}, {"(?:([ab])\\1){2,3}c", "$1/$0"}, {"(?i)(?:([ab])\\1)+C", "$1/$0"}, {"(?:([ab])\\1{2})+c", "$1/$0"}, {"(?:([ab]{2})\\1)+c", "$1/$0"}};
+        char[] repeatedBackrefAlphabet = {'a', 'A', 'b', 'B', 'c', ' ', '\n'};
+        for (int i = 0; i < 240; i++) {
+            String[] entry = repeatedBackrefCases[i % repeatedBackrefCases.length];
+            String pattern = entry[0];
+            StringBuilder value = new StringBuilder(pattern).append(" aaaa aabb aab abaabab abc ");
+            for (int j = 0; j < 12; j++) value.append(repeatedBackrefAlphabet[(i * 5 + j * 3 + j * j) % repeatedBackrefAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, entry[1], 1);
+            } finally { System.setOut(original); }
+            emit("substring_repeated_backref_" + i, sample);
+        }
         String[][] backreferenceCases = {{"(a)\\1", "$1/$0"}, {"(ab)\\1", "$1/$0"}, {"(a)?\\1b", "$1/$0"}, {"(a*)\\1b", "$1/$0"}, {"(?i)([ab])\\1", "$1/$0"}, {"(?iu)(é)\\1", "$1/$0"}, {"(?i)(a)(?-i)\\1", "$1/$0"}, {"(?<x>ab)\\k<x>", "${x}/$0"}, {"(a)\\10", "$1/$0"}, {"(a)(b)\\2\\1", "$1/$2/$0"}, {"(\\d)\\1+", "$1/$0"}, {"(a*)\\1*", "$1/$0"}, {"(a?)\\1{2}", "$1/$0"}, {"(a)?\\1*", "$1/$0"}, {"(a|b)\\1", "$1/$0"}, {"(a)|(b)\\2", "$1/$2/$0"}, {"\\1(a)", "$1/$0"}, {"(?x)(a)\\1 0", "$1/$0"}};
         char[] backreferenceAlphabet = {'a', 'A', 'b', 'B', 'é', 'É', '0', '1', ' ', '\n'};
         for (int i = 0; i < 360; i++) {
