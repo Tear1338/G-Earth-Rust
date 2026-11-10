@@ -2040,6 +2040,40 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_lazy_capture_repeat_{i}"), &packet);
     }
+    let greedy_capture_patterns = [
+        "(?:(.)(.))+ab",
+        "(?:(.)(.))*ab",
+        "(?:(.)(.)){0,3}ab",
+        "(?:(a)b)*b",
+        "(?:(?<x>.)b)*b",
+        "(?:(a)(.)){1,3}ab",
+        "(?i)(?:(.)(.))*AB",
+        "x(?:(.)(.))*ab",
+    ];
+    let greedy_capture_alphabet = ['a', 'A', 'b', 'B', 'c', 'd', 'e', 'f', 'x', ' '];
+    for i in 0..240 {
+        let pattern = greedy_capture_patterns[i % greedy_capture_patterns.len()];
+        let mut value = format!("{pattern} cdefab abab aabb xab ");
+        for j in 0..14 {
+            value.push(
+                greedy_capture_alphabet[(i * 3 + j * 7 + j * j) % greedy_capture_alphabet.len()],
+            );
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        let replacement = if i % 8 == 3 {
+            "$1/$0"
+        } else if i % 8 == 4 {
+            "${x}/$0"
+        } else {
+            "$1/$2/$0"
+        };
+        packet
+            .replace_substrings_java(pattern, replacement, Some(1))
+            .unwrap();
+        check(&format!("substring_greedy_capture_repeat_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

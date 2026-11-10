@@ -1106,6 +1106,22 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_unicode_case_" + i, sample);
         }
+        String[] greedyCapturePatterns = {"(?:(.)(.))+ab", "(?:(.)(.))*ab", "(?:(.)(.)){0,3}ab", "(?:(a)b)*b", "(?:(?<x>.)b)*b", "(?:(a)(.)){1,3}ab", "(?i)(?:(.)(.))*AB", "x(?:(.)(.))*ab"};
+        char[] greedyCaptureAlphabet = {'a', 'A', 'b', 'B', 'c', 'd', 'e', 'f', 'x', ' '};
+        for (int i = 0; i < 240; i++) {
+            String pattern = greedyCapturePatterns[i % greedyCapturePatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(" cdefab abab aabb xab ");
+            for (int j = 0; j < 14; j++) value.append(greedyCaptureAlphabet[(i * 3 + j * 7 + j * j) % greedyCaptureAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, (i % 8 == 3) ? "$1/$0" : (i % 8 == 4 ? "${x}/$0" : "$1/$2/$0"), 1);
+            } finally { System.setOut(original); }
+            emit("substring_greedy_capture_repeat_" + i, sample);
+        }
         String[] lazyCapturePatterns = {"(?:(a)b)*?b", "(?:(a)(b))*?c", "(?:(a)b)+?b", "(?:(?<x>a)b){0,3}?b", "(?:(a(b)))*?c", "x(?:(a)b)*?b", "(?i)(?:(a)b)*?B", "(?:(a)b){1,2}?a", "(?:(()a)b)*?b"};
         char[] lazyCaptureAlphabet = {'a', 'A', 'b', 'B', 'c', 'x', ' '};
         for (int i = 0; i < 240; i++) {

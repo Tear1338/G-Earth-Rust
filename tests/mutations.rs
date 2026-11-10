@@ -661,7 +661,6 @@ fn java_latin1_replacement_is_explicit_and_short_length_counts_scalars() {
 fn java_noncapturing_groups_reject_repetition_and_unbalanced_patterns_transactionally() {
     for pattern in [
         "(?:a(b)?)*",
-        "(?:(a)b)*",
         "(?:(a)|b)?",
         "(?:a*)+",
         "((?:(a)b)+)",

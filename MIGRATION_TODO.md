@@ -27,6 +27,6 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Next: extend Java capture restoration to greedy zero-minimum repetitions and fallible alternation suffixes; the reluctant fixed-width case now has differential coverage.
+Next: reproduce Java capture rollback for fallible alternation suffixes and support nested alternation; greedy and reluctant fixed-width repeat captures now have differential coverage.
 
 CI: serialized G-Python jobs passed on Windows and Linux in run 42723118432; continue monitoring intermittent kernel startup timeouts.

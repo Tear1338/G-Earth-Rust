@@ -1143,11 +1143,12 @@ fn replace_fixed_pattern(
     Ok(latin1_decode(&output))
 }
 
-struct LazyCaptureRepeat<'a> {
+struct CaptureRepeat<'a> {
     start: usize,
     end: usize,
     min: usize,
     limit: Option<usize>,
+    greedy: bool,
     ranges: &'a [(usize, usize)],
     names: &'a [Option<String>],
 }
@@ -1170,10 +1171,10 @@ fn match_atom_sequence(
 
 // Java's GroupCurly can retain captures from a complete iteration even if the
 // current search start later fails. Matcher.search clears them only on the next find.
-fn replace_lazy_capture_repeat(
+fn replace_capture_repeat(
     text: &str,
     atoms: &[FixedRegexAtom],
-    plan: &LazyCaptureRepeat<'_>,
+    plan: &CaptureRepeat<'_>,
     replacement: &str,
     comparisons: &mut usize,
 ) -> Result<String> {
@@ -1188,17 +1189,9 @@ fn replace_lazy_capture_repeat(
             match_atom_sequence(&input, &atoms[..plan.start], offset, comparisons)?
         {
             let mut count = 0;
-            loop {
-                if count >= plan.min {
-                    if let Some(end) =
-                        match_atom_sequence(&input, &atoms[plan.end..], position, comparisons)?
-                    {
-                        matched_end = Some(end);
-                        break;
-                    }
-                }
-                if plan.limit.is_some_and(|limit| count >= limit)
-                    || !repetition_unit_matches(
+            if plan.greedy {
+                while plan.limit.is_none_or(|limit| count < limit)
+                    && repetition_unit_matches(
                         &input,
                         position,
                         atoms,
@@ -1207,13 +1200,53 @@ fn replace_lazy_capture_repeat(
                         comparisons,
                     )?
                 {
-                    break;
+                    for (slot, &(start, end)) in captures.iter_mut().zip(plan.ranges) {
+                        *slot = Some((position + start - plan.start, position + end - plan.start));
+                    }
+                    position += plan.end - plan.start;
+                    count += 1;
                 }
-                for (slot, &(start, end)) in captures.iter_mut().zip(plan.ranges) {
-                    *slot = Some((position + start - plan.start, position + end - plan.start));
+                while count >= plan.min {
+                    if let Some(end) =
+                        match_atom_sequence(&input, &atoms[plan.end..], position, comparisons)?
+                    {
+                        matched_end = Some(end);
+                        break;
+                    }
+                    if count == plan.min {
+                        break;
+                    }
+                    position -= plan.end - plan.start;
+                    count -= 1;
                 }
-                position += plan.end - plan.start;
-                count += 1;
+            } else {
+                loop {
+                    if count >= plan.min {
+                        if let Some(end) =
+                            match_atom_sequence(&input, &atoms[plan.end..], position, comparisons)?
+                        {
+                            matched_end = Some(end);
+                            break;
+                        }
+                    }
+                    if plan.limit.is_some_and(|limit| count >= limit)
+                        || !repetition_unit_matches(
+                            &input,
+                            position,
+                            atoms,
+                            plan.start,
+                            plan.end,
+                            comparisons,
+                        )?
+                    {
+                        break;
+                    }
+                    for (slot, &(start, end)) in captures.iter_mut().zip(plan.ranges) {
+                        *slot = Some((position + start - plan.start, position + end - plan.start));
+                    }
+                    position += plan.end - plan.start;
+                    count += 1;
+                }
             }
         }
         if let Some(end) = matched_end {
@@ -1398,23 +1431,48 @@ mod regex_budget_tests {
     }
 
     #[test]
+    fn java_greedy_repeat_retains_furthest_captures_after_backtracking() {
+        let atoms = [
+            FixedRegexAtom::Dot,
+            FixedRegexAtom::Dot,
+            FixedRegexAtom::Literal(b'a'),
+            FixedRegexAtom::Literal(b'b'),
+        ];
+        let plan = CaptureRepeat {
+            start: 0,
+            end: 2,
+            min: 1,
+            limit: None,
+            greedy: true,
+            ranges: &[(0, 1), (1, 2)],
+            names: &[None, None],
+        };
+        let mut comparisons = 0;
+        assert_eq!(
+            replace_capture_repeat("cdefab", &atoms, &plan, "$1/$2/$0", &mut comparisons).unwrap(),
+            "a/b/cdefab"
+        );
+    }
+
+    #[test]
     fn java_lazy_repeat_keeps_captures_from_failed_search_starts() {
         let atoms = [
             FixedRegexAtom::Literal(b'a'),
             FixedRegexAtom::Literal(b'b'),
             FixedRegexAtom::Literal(b'b'),
         ];
-        let plan = LazyCaptureRepeat {
+        let plan = CaptureRepeat {
             start: 0,
             end: 2,
             min: 0,
             limit: None,
+            greedy: false,
             ranges: &[(0, 1)],
             names: &[None],
         };
         let mut comparisons = 0;
         assert_eq!(
-            replace_lazy_capture_repeat("abab", &atoms, &plan, "$1/$0", &mut comparisons).unwrap(),
+            replace_capture_repeat("abab", &atoms, &plan, "$1/$0", &mut comparisons).unwrap(),
             "aa/baa/b"
         );
     }
@@ -3590,11 +3648,9 @@ impl Packet {
             repeated_atoms[index] = Some((min, limit, greedy));
         }
         let mut nested_program = None;
-        if let Some((start, end, min, _, greedy)) =
-            group_repeat.filter(|_| repeated_group_owner.is_none())
+        if let Some((start, end, _, _, _)) = group_repeat.filter(|_| repeated_group_owner.is_none())
         {
-            if (!groups.is_empty() && greedy && min == 0)
-                || (!groups.is_empty() && !greedy && !alternatives.is_empty())
+            if (!groups.is_empty() && !alternatives.is_empty())
                 || ranges
                     .iter()
                     .any(|&(group_start, group_end)| group_start < start || group_end > end)
@@ -3792,17 +3848,16 @@ impl Packet {
                 });
             }
         }
-        let lazy_capture_repeat = group_repeat.and_then(|(start, end, min, limit, greedy)| {
-            (!greedy && !groups.is_empty() && repeated_group_owner.is_none()).then_some(
-                LazyCaptureRepeat {
-                    start,
-                    end,
-                    min,
-                    limit,
-                    ranges: &ranges,
-                    names: &names,
-                },
-            )
+        let capture_repeat = group_repeat.and_then(|(start, end, min, limit, greedy)| {
+            (!groups.is_empty() && repeated_group_owner.is_none()).then_some(CaptureRepeat {
+                start,
+                end,
+                min,
+                limit,
+                greedy,
+                ranges: &ranges,
+                names: &names,
+            })
         });
         let program = if nested_program.is_some() {
             Vec::new()
@@ -3828,8 +3883,8 @@ impl Packet {
                         .ok_or_else(|| error("substring scan limit exceeded"))?;
                     let text = latin1_decode(&candidate.bytes[i + 2..end]);
                     if text.contains(pattern) {
-                        let result = if let Some(plan) = &lazy_capture_repeat {
-                            replace_lazy_capture_repeat(
+                        let result = if let Some(plan) = &capture_repeat {
+                            replace_capture_repeat(
                                 &text,
                                 &atoms,
                                 plan,

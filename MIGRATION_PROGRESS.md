@@ -282,6 +282,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Fixed-width reluctant non-capturing repetitions now retain captures from failed search starts like Java GroupCurly, and reset them between successful finds. The previously failing (?:(a)b)*?b case and 240 varied beta-29 packet comparisons pass, including nested/named/empty captures and bounded repetition. Greedy zero-minimum cases, nested repetition, alternatives with fallible capture suffixes and general capture restoration remain unsupported. Thirty-three mutation tests, thirteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally.
 
+- Fixed-width greedy non-capturing repetitions now retain captures from the furthest explored iteration when backtracking, including zero-minimum repetition. A Java 21 probe exposed an earlier mismatch with different captures per iteration; a 240-packet beta-29 differential corpus and a focused regression test now cover it. Nested repetitions and alternatives with fallible capture suffixes remain unsupported. Thirty-three mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally. Actions runs 42730872603 and 42731250278 passed all eight validation jobs.
+
 ## Exact next step
 
-Extend capture-state restoration to greedy zero-minimum non-capturing repetitions and alternation branches with fallible capture suffixes, using focused Java GroupCurly/GroupTail differential fixtures before enabling them. Validate official AIR traffic and an extension through the relay when a disposable client session is available.
+Compare Java capture rollback for fallible alternation suffixes, e.g. (a)c|b, against the beta-29 API and implement it with branch-aware capture state. Then address nested alternation and variable-width repeated bodies. Validate official AIR traffic and an extension through the relay when a disposable client session is available.
