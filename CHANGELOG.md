@@ -1,5 +1,7 @@
 # Changelog
 
+- Add opt-in read-only official AIR process, TCP ownership and scan diagnostics.
+
 - Match Java UNIX_LINES regex dot and anchor behavior.
 
 - Support Java embedded regex flags with enclosing-group restoration.

@@ -9,7 +9,7 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | Packet expressions and prediction | Partial | Broaden Java comparisons and metadata/client coverage. |
 | Injection, packet tools and safety | Partial | CLI revision detection and real connection behavior. |
 | TCP relay and reconnect | Partial | Real client, firewall and lifecycle tests. |
-| RC4 and Flash attachment | Partial | Real AIR traffic, memory layouts and multi-instance testing. |
+| RC4 and Flash attachment | Partial | Read-only process/socket and memory scan checked on an official AIR session; real encrypted traffic, key recovery, relay and multi-instance testing remain. |
 | Origins encryption and attachment | Partial | Official client end-to-end testing. |
 | Nitro proxy, crypto and assets | Partial | Real hotel and SOCKS servers, TLS fingerprint, interactive desktop controls and platform cleanup. |
 | Unity communicator and WASM hooks | Partial | Real client revisions and extensions. |

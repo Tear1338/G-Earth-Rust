@@ -272,6 +272,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Java UNIX_LINES (?d) now applies to dot, multiline anchors, dollar and \Z, including scoped and embedded flag changes. Java 21 checks and 240 beta-29 packet comparisons cover LF, CR, CRLF, NEL, empty input and combinations with dotall/multiline. Thirty-one mutation tests, twelve budget tests, both Clippy configurations and desktop/web debug compilation pass locally. Complete Java regex and live client compatibility remain open.
 
+- Read-only Windows diagnostics were run against an already connected official AIR client on 2026-11-10: process enumeration and TCP owner matched the client, and an optimized scan read about 639 MB, completed and found one shuffled-table candidate. A debug scan hit its five-second limit after about 474 MB and found one candidate. No process memory or candidate values were logged. This does not prove that the candidate is an RC4 key, successful decryption, relay attachment or extension compatibility. An opt-in Windows test reproduces the process/socket/scan diagnostics without changing routing or the client.
+
 ## Exact next step
 
 Compare Java COMMENTS regex flag (?x) with the beta-29 API for whitespace, comments, escapes, character classes, and scoped/embedded changes; build differential fixtures before implementation. Separately, Java retains captures from failed searches in (?:(a)b)*?b on abab, unlike the Rust matcher; fix that lifecycle before enabling rejected zero-minimum or reluctant repeated captures. Real game sessions and interactive UI validation remain open.
