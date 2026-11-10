@@ -2579,6 +2579,34 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
         check(&format!("substring_repeated_backref_{i}"), &packet);
     }
+    let self_backref_cases = [
+        ("(a\\1)", "$1/$0"),
+        ("(a\\1?)+b", "$1/$0"),
+        ("(?<x>a\\k<x>?)+b", "${x}/$0"),
+        ("(a\\1?){1,3}b", "$1/$0"),
+        ("(a\\1?)*?b", "$1/$0"),
+        ("(a\\1?)+(b)+", "$1/$2/$0"),
+        ("((a)\\1?)+b", "$1/$2/$0"),
+        ("((a)\\1?)+\\1", "$1/$2/$0"),
+        ("(?i)(a\\1?)+B", "$1/$0"),
+        ("(a\\1?)?b", "$1/$0"),
+    ];
+    let self_backref_alphabet = ['a', 'A', 'b', 'B', ' ', '\n'];
+    for i in 0..250 {
+        let (pattern, replacement) = self_backref_cases[i % self_backref_cases.len()];
+        let mut value = format!("{pattern} aaab aaaaab abab ab ");
+        for j in 0..12 {
+            value
+                .push(self_backref_alphabet[(i * 5 + j * 3 + j * j) % self_backref_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, replacement, Some(1))
+            .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
+        check(&format!("substring_self_backref_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

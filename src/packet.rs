@@ -2143,7 +2143,13 @@ fn match_nested_repeat_with_sticky(
     let mut loop_states: Vec<(usize, Option<usize>)> = Vec::new();
     let mut frames = vec![(0usize, offset, 0usize, 0usize, None::<usize>, None)];
     let mut captures: Vec<Option<(usize, usize)>> = vec![None; capture_count];
-    let mut trail: Vec<(usize, Option<(usize, usize)>)> = Vec::new();
+    let mut starts: Vec<Option<usize>> = vec![None; capture_count];
+    struct CaptureUndo {
+        group: usize,
+        capture: Option<(usize, usize)>,
+        start: Option<usize>,
+    }
+    let mut trail: Vec<CaptureUndo> = Vec::new();
     while let Some((pc, position, choice, checkpoint, loop_state, maximum)) = frames.last_mut() {
         if *pc == program.len() {
             let groups = captures
@@ -2273,8 +2279,9 @@ fn match_nested_repeat_with_sticky(
             let checkpoint = *checkpoint;
             frames.pop();
             while trail.len() > checkpoint {
-                let (group, previous) = trail.pop().unwrap();
-                captures[group] = previous;
+                let undo = trail.pop().unwrap();
+                captures[undo.group] = undo.capture;
+                starts[undo.group] = undo.start;
             }
             continue;
         }
@@ -2314,13 +2321,21 @@ fn match_nested_repeat_with_sticky(
                 (pc + 1, end, loop_state)
             }
             NestedInstruction::Start(group) => {
-                trail.push((group, captures[group]));
-                captures[group] = Some((position, position));
+                trail.push(CaptureUndo {
+                    group,
+                    capture: captures[group],
+                    start: starts[group],
+                });
+                starts[group] = Some(position);
                 (pc + 1, position, loop_state)
             }
             NestedInstruction::End(group) => {
-                trail.push((group, captures[group]));
-                let start = captures[group].map_or(position, |capture| capture.0);
+                trail.push(CaptureUndo {
+                    group,
+                    capture: captures[group],
+                    start: starts[group],
+                });
+                let start = starts[group].unwrap_or(position);
                 captures[group] = Some((start, position));
                 (pc + 1, position, loop_state)
             }
@@ -3828,9 +3843,6 @@ impl Packet {
                             }
                             number - 1
                         };
-                        if open.contains(&group) {
-                            return Err(error("references to an open group are not yet supported"));
-                        }
                         atoms.push(FixedRegexAtom::Backref {
                             group,
                             case_insensitive,

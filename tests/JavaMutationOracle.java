@@ -1106,6 +1106,23 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_unicode_case_" + i, sample);
         }
+        String[][] selfBackrefCases = {{"(a\\1)", "$1/$0"}, {"(a\\1?)+b", "$1/$0"}, {"(?<x>a\\k<x>?)+b", "${x}/$0"}, {"(a\\1?){1,3}b", "$1/$0"}, {"(a\\1?)*?b", "$1/$0"}, {"(a\\1?)+(b)+", "$1/$2/$0"}, {"((a)\\1?)+b", "$1/$2/$0"}, {"((a)\\1?)+\\1", "$1/$2/$0"}, {"(?i)(a\\1?)+B", "$1/$0"}, {"(a\\1?)?b", "$1/$0"}};
+        char[] selfBackrefAlphabet = {'a', 'A', 'b', 'B', ' ', '\n'};
+        for (int i = 0; i < 250; i++) {
+            String[] entry = selfBackrefCases[i % selfBackrefCases.length];
+            String pattern = entry[0];
+            StringBuilder value = new StringBuilder(pattern).append(" aaab aaaaab abab ab ");
+            for (int j = 0; j < 12; j++) value.append(selfBackrefAlphabet[(i * 5 + j * 3 + j * j) % selfBackrefAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, entry[1], 1);
+            } finally { System.setOut(original); }
+            emit("substring_self_backref_" + i, sample);
+        }
         String[][] repeatedBackrefCases = {{"(a)+\\1", "$1/$0"}, {"([ab])+\\1", "$1/$0"}, {"(?<x>a)+\\k<x>", "${x}/$0"}, {"(a)+\\1+", "$1/$0"}, {"(a|b)+\\1", "$1/$0"}, {"(?:(a)\\1)+b", "$1/$0"}, {"(?:(a|b)\\1)+c", "$1/$0"}, {"(?:(a)b)+\\1", "$1/$0"}, {"(?:(?<x>a)b)+\\k<x>", "${x}/$0"}, {"(?:(a)?b)+\\1", "$1/$0"}, {"((a)\\2)+\\1", "$1/$2/$0"}, {"(?:(a)\\1){0,3}\\1", "$1/$0"}, {"(?:([ab])\\1)+c", "$1/$0"}, {"(?:([ab])\\1)+\\1", "$1/$0"}, {"(?:([ab])\\1){2,3}c", "$1/$0"}, {"(?i)(?:([ab])\\1)+C", "$1/$0"}, {"(?:([ab])\\1{2})+c", "$1/$0"}, {"(?:([ab]{2})\\1)+c", "$1/$0"}};
         char[] repeatedBackrefAlphabet = {'a', 'A', 'b', 'B', 'c', ' ', '\n'};
         for (int i = 0; i < 240; i++) {

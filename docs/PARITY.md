@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Open-group backreferences match 250 additional beta-29 packet cases, including named and repeated groups. Full Java regex and real-session compatibility remain unverified.
+
 Status describes source implementation and finite tests, not successful production use. No official Habbo client or G-Presets game session has been tested end-to-end through this port.
 
 | Area | Rust status | Remaining work |
@@ -262,6 +264,6 @@ Fixed-count inner atom repetitions in deterministic GroupCurly-style groups now 
 
 Nested repeated groups with captures now distinguish deterministic fixed-count bodies from non-deterministic bodies when selecting Java GroupCurly-style retention or Loop rollback. A 250-packet beta-29 corpus covers nested greedy/reluctant loops, exact counts, nullable bodies, named captures and capturing ancestors. Other regex constructs, performance limits and live relay behavior remain incomplete. Thirty-four mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally.
 
-Java numbered and named regex backreferences now use capture-aware bounded matching, including unmatched versus empty captures, Latin-1 case folding, optional and repeated references, and ordered alternatives. A 360-packet beta-29 oracle corpus passes. References to currently open groups and patterns combining backreferences with repeated groups remain explicitly unsupported. Thirty-five mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally.
+Java numbered and named regex backreferences now use capture-aware bounded matching, including unmatched versus empty captures, Latin-1 case folding, optional and repeated references, and ordered alternatives. A 360-packet beta-29 oracle corpus passes. At that stage, open-group references and combinations with repeated groups were unsupported; subsequent work below addresses selected cases. Thirty-five mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally.
 
-Java backreferences can now be combined with repeated groups, including references inside deterministic bodies and capture retention across backtracking. A 240-packet beta-29 corpus covers named/numbered references, repeated references and changing captures between iterations. References to a currently open group remain explicitly unsupported; full Java regex behavior is not established. Thirty-five mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally.
+Java backreferences can now be combined with repeated groups, including references inside deterministic bodies and capture retention across backtracking. A 240-packet beta-29 corpus covers named/numbered references, repeated references and changing captures between iterations. At that stage, references to a currently open group remained unsupported; subsequent work addresses selected cases; full Java regex behavior is not established. Thirty-five mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally.

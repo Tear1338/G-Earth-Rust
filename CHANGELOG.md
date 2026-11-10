@@ -1,5 +1,7 @@
 # Changelog
 
+- Support Java backreferences to groups still open during repeated matches.
+
 - Combine Java regex backreferences with repeated groups and capture retention.
 
 - Support bounded numbered and named Java regex backreferences.
