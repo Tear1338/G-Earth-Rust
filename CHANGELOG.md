@@ -1,5 +1,7 @@
 # Changelog
 
+- Support nested repeated Java groups with capture-aware rollback.
+
 - Preserve Java captures for deterministic fixed-count inner repetitions.
 
 - Support nested captures in nondeterministic repeated Java groups.

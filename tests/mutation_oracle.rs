@@ -2474,6 +2474,36 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
         check(&format!("substring_fixed_inner_{i}"), &packet);
     }
+    let nested_group_curly_cases = [
+        ("(?:(a+)+b)+(?:c)+", "$1/$0"),
+        ("(?:(a*)+b)+(?:c)+", "$1/$0"),
+        ("(?:(a{2}){2}b)+(?:c)+", "$1/$0"),
+        ("(?:(a){2}b)+(?:c)+", "$1/$0"),
+        ("(?:(a){2}?b)+(?:c)+", "$1/$0"),
+        ("((a{2}){2}b)+(c)+", "$1/$2/$3/$0"),
+        ("(?:(a+){2}b)+(?:c)+", "$1/$0"),
+        ("(?:(?<x>a+)+b)+(?:c)+", "${x}/$0"),
+        ("(?:(a+)+b)+?(?:c)+", "$1/$0"),
+        ("(?:(a*){1,2}b){0,2}(?:c)+", "$1/$0"),
+    ];
+    let nested_group_curly_alphabet = ['a', 'A', 'b', 'c', 'd', ' ', '\n'];
+    for i in 0..250 {
+        let (pattern, replacement) = nested_group_curly_cases[i % nested_group_curly_cases.len()];
+        let mut value = format!("{pattern} aaaabcc aaabcc aabb abc ");
+        for j in 0..10 {
+            value.push(
+                nested_group_curly_alphabet
+                    [(i * 5 + j * 3 + j * j) % nested_group_curly_alphabet.len()],
+            );
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, replacement, Some(1))
+            .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
+        check(&format!("substring_nested_group_curly_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

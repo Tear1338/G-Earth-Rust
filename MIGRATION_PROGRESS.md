@@ -308,6 +308,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Fixed-count inner atom repetitions in deterministic GroupCurly-style groups now preserve nested captures during backtracking. A 250-packet beta-29 corpus covers zero/exact counts, named captures, reluctant repeats and optional ancestors. Nested repeated groups in this deterministic capture path remain conservatively rejected. Thirty-four mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally. Actions run 42832162345 passed all eight validation jobs.
 
+- Nested repeated groups with captures now distinguish deterministic fixed-count bodies from non-deterministic bodies when selecting Java GroupCurly-style retention or Loop rollback. A 250-packet beta-29 corpus covers nested greedy/reluctant loops, exact counts, nullable bodies, named captures and capturing ancestors. Other regex constructs, performance limits and live relay behavior remain incomplete. Thirty-four mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally. Actions run 42833154248 passed all eight validation jobs.
+
 ## Exact next step
 
-Compare Java GroupCurly behavior for genuinely nested repeated groups containing captures, such as (?:(a+)+b)+(?:c)+, then implement only after differential coverage of rollback and nullable loops. Validate official AIR traffic and an extension through the relay when a dedicated session is available.
+Compare Java regex backreferences (numbered and named) with beta-29 HPacket replacement, including optional/unmatched groups and scoped case flags; design bounded capture-aware matching and differential fixtures. Validate official AIR traffic and an extension through the relay when a dedicated session is available.

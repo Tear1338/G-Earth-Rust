@@ -3948,14 +3948,12 @@ impl Packet {
                     }
                 }
                 if !descendants.is_empty() {
-                    let nested_repeat = group_repeats.iter().any(|&(_, _, _, _, _, other, _)| {
-                        other > node && other < subtree_end[node]
-                    });
-                    if nested_repeat {
-                        return Err(error(
-                            "nested GroupCurly loops require Java capture validation",
-                        ));
-                    }
+                    let variable_group =
+                        group_repeats
+                            .iter()
+                            .any(|&(_, _, min, limit, _, other, _)| {
+                                other > node && other < subtree_end[node] && limit != Some(min)
+                            });
                     let optional_inside = optional.iter().enumerate().any(|(index, &(a, b, _))| {
                         if let Some(owner) = optional_node_owners[index] {
                             owner > node && owner < subtree_end[node]
@@ -3966,7 +3964,7 @@ impl Packet {
                     let variable_atom = repeated
                         .iter()
                         .any(|&(a, min, limit, _)| a >= start && a < end && limit != Some(min));
-                    if optional_inside || variable_atom {
+                    if optional_inside || variable_atom || variable_group {
                         // Java uses Loop rather than GroupCurly for non-deterministic bodies.
                         continue;
                     }

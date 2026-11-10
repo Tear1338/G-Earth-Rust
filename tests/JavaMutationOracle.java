@@ -1106,6 +1106,23 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_unicode_case_" + i, sample);
         }
+        String[][] nestedGroupCurlyCases = {{"(?:(a+)+b)+(?:c)+", "$1/$0"}, {"(?:(a*)+b)+(?:c)+", "$1/$0"}, {"(?:(a{2}){2}b)+(?:c)+", "$1/$0"}, {"(?:(a){2}b)+(?:c)+", "$1/$0"}, {"(?:(a){2}?b)+(?:c)+", "$1/$0"}, {"((a{2}){2}b)+(c)+", "$1/$2/$3/$0"}, {"(?:(a+){2}b)+(?:c)+", "$1/$0"}, {"(?:(?<x>a+)+b)+(?:c)+", "${x}/$0"}, {"(?:(a+)+b)+?(?:c)+", "$1/$0"}, {"(?:(a*){1,2}b){0,2}(?:c)+", "$1/$0"}};
+        char[] nestedGroupCurlyAlphabet = {'a', 'A', 'b', 'c', 'd', ' ', '\n'};
+        for (int i = 0; i < 250; i++) {
+            String[] entry = nestedGroupCurlyCases[i % nestedGroupCurlyCases.length];
+            String pattern = entry[0];
+            StringBuilder value = new StringBuilder(pattern).append(" aaaabcc aaabcc aabb abc ");
+            for (int j = 0; j < 10; j++) value.append(nestedGroupCurlyAlphabet[(i * 5 + j * 3 + j * j) % nestedGroupCurlyAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, entry[1], 1);
+            } finally { System.setOut(original); }
+            emit("substring_nested_group_curly_" + i, sample);
+        }
         String[][] fixedInnerCases = {{"(?:(a{2})b)+(?:c)+", "$1/$0"}, {"(?:(a{0})b)+(?:c)+", "$1/$0"}, {"(?:(?<x>[ab]{2})b){1,3}(?:c)+", "${x}/$0"}, {"((a{2})b)+(c)+", "$1/$2/$3/$0"}, {"(?:(a{2})b)+(?:c)*|d", "$1/$0"}, {"(?:(a{2})b)+?(?:c)+", "$1/$0"}, {"(?:(a{2})b){0,3}(?:c)+", "$1/$0"}, {"(?:(a{2})b)+(?:c){2}", "$1/$0"}, {"(?:(a{2}?)b)+(?:c)+", "$1/$0"}, {"((?:(a{2})b)+)?(?:c)+", "$1/$2/$0"}};
         char[] fixedInnerAlphabet = {'a', 'A', 'b', 'c', 'd', ' ', '\n'};
         for (int i = 0; i < 250; i++) {
