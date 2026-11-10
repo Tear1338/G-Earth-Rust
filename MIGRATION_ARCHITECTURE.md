@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+The bounded regex VM evaluates lookaheads atomically with a shared comparison budget and retained positive-assertion captures. Negative assertions with captures are rejected pending Java-compatible failed-search capture retention.
+
 Open-group backreferences retain the last closed capture in the bounded matcher, matching 250 beta-29 packet cases. Java regex parity remains partial.
 
 The baseline is G-Earth 1.5.4-beta-29, upstream commit `242155c291b1109d6c9a02370f6a2af1ead41ea8`. This document describes the existing port, not a claim of complete equivalence.

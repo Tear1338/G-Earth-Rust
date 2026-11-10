@@ -741,3 +741,13 @@ fn java_backreferences_reject_unsupported_cases_transactionally() {
         assert_eq!(packet.bytes(), before);
     }
 }
+#[test]
+fn negative_lookahead_with_capture_is_rejected_without_mutation() {
+    let mut packet = Packet::new(9);
+    packet.put_string("(?!(a)b)a abc ac").unwrap();
+    let before = packet.bytes().to_vec();
+    assert!(packet
+        .replace_substrings_java("(?!(a)b)a", "$1/$0", Some(1))
+        .is_err());
+    assert_eq!(packet.bytes(), before);
+}

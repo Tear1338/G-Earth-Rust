@@ -2579,6 +2579,42 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
         check(&format!("substring_repeated_backref_{i}"), &packet);
     }
+    let lookahead_cases = [
+        ("(?=a)a", "$0"),
+        ("(?!b)a", "$0"),
+        ("(?=(a|ab))\\1c", "$1/$0"),
+        ("(?=(ab|a))\\1c", "$1/$0"),
+        ("(?!ab)a", "$0"),
+        ("(?=(a+))a*b\\1", "$1/$0"),
+        ("(?=(a))a|b", "$1/$0"),
+        ("(?=(?<x>a+))a+b\\k<x>", "${x}/$0"),
+        ("(?=(a(?=b)))ab", "$1/$0"),
+        ("(?!(?:a|b)c)[ab]", "$0"),
+        ("(?i)(?=a)a", "$0"),
+        ("(?=(a?))a*", "$1/$0"),
+        ("(?=(a))b|c", "$1/$0"),
+        ("(?=(a))b|a", "$1/$0"),
+        ("(?=(a))b|(?=(c))c", "$1/$2/$0"),
+        ("(?=([ab])\\1)..", "$1/$0"),
+        ("(?=([ab])\\1)..|c", "$1/$0"),
+        ("(?=(a+))a+b\\1", "$1/$0"),
+        ("(?=(a|b))\\1", "$1/$0"),
+    ];
+    let lookahead_alphabet = ['a', 'A', 'b', 'B', 'c', ' ', '\n'];
+    for i in 0..300 {
+        let (pattern, replacement) = lookahead_cases[i % lookahead_cases.len()];
+        let mut value = format!("{pattern} aa bb abc ac aaabaaa ab aaabaaa ");
+        for j in 0..12 {
+            value.push(lookahead_alphabet[(i * 5 + j * 3 + j * j) % lookahead_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, replacement, Some(1))
+            .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
+        check(&format!("substring_lookahead_{i}"), &packet);
+    }
     let self_backref_cases = [
         ("(a\\1)", "$1/$0"),
         ("(a\\1?)+b", "$1/$0"),

@@ -316,6 +316,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Open-group Java backreferences now retain the previous closed capture during a new iteration. The beta-29 oracle passes 250 additional packet cases, including named groups and repetition. Thirty-five mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. Actions run 42836548344 passed all eight jobs for the preceding commit. Full regex and live compatibility remain unverified.
 
+- Positive lookaheads with captures and negative lookaheads without captures now use the bounded regex VM. A 300-packet beta-29 corpus covers assertions, alternatives, nested assertions and backreferences, including captures retained after failed search branches. Captures inside negative lookaheads are rejected: Java can retain such captures when the assertion fails at an earlier search position. Thirty-six mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. Actions run 42837659714 passed all eight jobs for the preceding commit. Full regex and live compatibility remain unverified.
+
 ## Exact next step
 
-Compare Java lookahead assertions and their captures against the beta-29 API, then implement a bounded subset with differential fixtures. Validate official AIR traffic and an extension through the relay when a dedicated session is available.
+Implement capture retention for negative lookaheads, including captures from an assertion that failed at an earlier search position, and verify against beta-29 differential fixtures. Validate official AIR traffic and an extension through the relay when a dedicated session is available.

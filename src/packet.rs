@@ -1703,6 +1703,9 @@ struct AlternationNode {
     start: usize,
     end: usize,
     capture: Option<usize>,
+    assertion: Option<bool>,
+    assertion_group_start: usize,
+    assertion_group_end: usize,
     sticky_captures: Option<(usize, usize)>,
     repeat: Option<(usize, Option<usize>, bool, usize, bool)>,
     splits: Vec<usize>,
@@ -1730,6 +1733,12 @@ fn push_alternation_node(
 
 #[derive(Clone, Copy)]
 enum NestedInstruction {
+    Assert {
+        end: usize,
+        positive: bool,
+        first_group: usize,
+        end_group: usize,
+    },
     Atom(usize),
     Repeat {
         index: usize,
@@ -1805,6 +1814,11 @@ fn emit_alternation_node(
         return Err(error("regex group nesting limit exceeded"));
     }
     let node = &nodes[id];
+    let assertion_pc = node.assertion.map(|_| {
+        let pc = program.len();
+        program.push(NestedInstruction::Jump(0));
+        pc
+    });
     let optional_split = optional_nodes[id].map(|_| {
         let pc = program.len();
         program.push(NestedInstruction::Split(0, 0));
@@ -1899,6 +1913,14 @@ fn emit_alternation_node(
             NestedInstruction::Split(body, after)
         } else {
             NestedInstruction::Split(after, body)
+        };
+    }
+    if let Some(pc) = assertion_pc {
+        program[pc] = NestedInstruction::Assert {
+            end: program.len(),
+            positive: node.assertion.unwrap(),
+            first_group: node.assertion_group_start,
+            end_group: node.assertion_group_end,
         };
     }
     Ok(())
@@ -2128,22 +2150,37 @@ fn vm_repeat_width(
     }
 }
 
-fn match_nested_repeat_with_sticky(
+#[derive(Clone)]
+struct NestedMatchState {
+    captures: Vec<Option<(usize, usize)>>,
+    starts: Vec<Option<usize>>,
+    sticky: Vec<Option<(usize, usize)>>,
+}
+
+#[allow(clippy::too_many_arguments)]
+fn run_nested_program(
     input: &[u8],
     offset: usize,
     atoms: &[FixedRegexAtom],
     program: &[NestedInstruction],
-    capture_count: usize,
-    sticky: &mut [Option<(usize, usize)>],
+    entry: usize,
+    stop: usize,
+    initial: NestedMatchState,
+    sticky_out: &mut [Option<(usize, usize)>],
     comparisons: &mut usize,
-) -> Result<Option<(usize, Vec<String>)>> {
+    depth: usize,
+) -> Result<Option<(usize, NestedMatchState)>> {
     const MAX_STATES: usize = 262_144;
+    if depth > 128 {
+        return Err(error("regex assertion nesting limit exceeded"));
+    }
     // Each frame retains the capture trail length before its parent instruction.
     // Immutable linked loop states let nested loops restore outer counts on backtracking.
     let mut loop_states: Vec<(usize, Option<usize>)> = Vec::new();
-    let mut frames = vec![(0usize, offset, 0usize, 0usize, None::<usize>, None)];
-    let mut captures: Vec<Option<(usize, usize)>> = vec![None; capture_count];
-    let mut starts: Vec<Option<usize>> = vec![None; capture_count];
+    let mut frames = vec![(entry, offset, 0usize, 0usize, None::<usize>, None)];
+    let mut captures = initial.captures;
+    let mut starts = initial.starts;
+    let mut sticky = initial.sticky;
     struct CaptureUndo {
         group: usize,
         capture: Option<(usize, usize)>,
@@ -2151,19 +2188,16 @@ fn match_nested_repeat_with_sticky(
     }
     let mut trail: Vec<CaptureUndo> = Vec::new();
     while let Some((pc, position, choice, checkpoint, loop_state, maximum)) = frames.last_mut() {
-        if *pc == program.len() {
-            let groups = captures
-                .iter()
-                .enumerate()
-                .map(|(index, capture)| {
-                    sticky[index]
-                        .or(*capture)
-                        .map_or_else(String::new, |(start, end)| {
-                            latin1_decode(&input[start..end])
-                        })
-                })
-                .collect();
-            return Ok(Some((*position, groups)));
+        if *pc == stop {
+            sticky_out.copy_from_slice(&sticky);
+            return Ok(Some((
+                *position,
+                NestedMatchState {
+                    captures,
+                    starts,
+                    sticky,
+                },
+            )));
         }
         let choices = match program[*pc] {
             NestedInstruction::Split(..) => 2,
@@ -2195,7 +2229,7 @@ fn match_nested_repeat_with_sticky(
                 limit,
                 greedy,
             } => {
-                let unit_width = vm_repeat_width(&atoms[index], &captures, sticky);
+                let unit_width = vm_repeat_width(&atoms[index], &captures, &sticky);
                 if unit_width.is_none() && min > 0 {
                     0
                 } else if unit_width.is_none() || unit_width == Some(0) {
@@ -2220,7 +2254,7 @@ fn match_nested_repeat_with_sticky(
                                 input,
                                 next,
                                 &captures,
-                                sticky,
+                                &sticky,
                                 comparisons,
                             )?
                             .is_none()
@@ -2256,7 +2290,7 @@ fn match_nested_repeat_with_sticky(
                                 input,
                                 next,
                                 &captures,
-                                sticky,
+                                &sticky,
                                 comparisons,
                             )?
                             .is_none()
@@ -2291,13 +2325,62 @@ fn match_nested_repeat_with_sticky(
         let (pc, position, loop_state, maximum) = (*pc, *position, *loop_state, *maximum);
         let checkpoint = trail.len();
         let next = match program[pc] {
+            NestedInstruction::Assert {
+                end,
+                positive,
+                first_group,
+                end_group,
+            } => {
+                let mut assertion_sticky = sticky.clone();
+                let result = run_nested_program(
+                    input,
+                    position,
+                    atoms,
+                    program,
+                    pc + 1,
+                    end,
+                    NestedMatchState {
+                        captures: captures.clone(),
+                        starts: starts.clone(),
+                        sticky: sticky.clone(),
+                    },
+                    &mut assertion_sticky,
+                    comparisons,
+                    depth + 1,
+                )?;
+                if result.is_some() != positive {
+                    continue;
+                }
+                if let Some((_, state)) = result {
+                    for group in 0..captures.len() {
+                        if captures[group] != state.captures[group]
+                            || starts[group] != state.starts[group]
+                        {
+                            trail.push(CaptureUndo {
+                                group,
+                                capture: captures[group],
+                                start: starts[group],
+                            });
+                            captures[group] = state.captures[group];
+                            starts[group] = state.starts[group];
+                        }
+                    }
+                    sticky = state.sticky;
+                    for group in first_group..end_group {
+                        if captures[group].is_some() {
+                            sticky[group] = captures[group];
+                        }
+                    }
+                }
+                (end, position, loop_state)
+            }
             NestedInstruction::Atom(index) => {
                 let Some(width) = vm_atom_width(
                     &atoms[index],
                     input,
                     position,
                     &captures,
-                    sticky,
+                    &sticky,
                     comparisons,
                 )?
                 else {
@@ -2313,7 +2396,7 @@ fn match_nested_repeat_with_sticky(
                 } else {
                     min + branch
                 };
-                let width = vm_repeat_width(&atoms[index], &captures, sticky).unwrap_or(0);
+                let width = vm_repeat_width(&atoms[index], &captures, &sticky).unwrap_or(0);
                 let end = length
                     .checked_mul(width)
                     .and_then(|n| position.checked_add(n))
@@ -2418,7 +2501,53 @@ fn match_nested_repeat_with_sticky(
         }
         frames.push((next.0, next.1, 0, checkpoint, next.2, None));
     }
+    sticky_out.copy_from_slice(&sticky);
     Ok(None)
+}
+
+fn match_nested_repeat_with_sticky(
+    input: &[u8],
+    offset: usize,
+    atoms: &[FixedRegexAtom],
+    program: &[NestedInstruction],
+    capture_count: usize,
+    sticky: &mut [Option<(usize, usize)>],
+    comparisons: &mut usize,
+) -> Result<Option<(usize, Vec<String>)>> {
+    let state = NestedMatchState {
+        captures: vec![None; capture_count],
+        starts: vec![None; capture_count],
+        sticky: sticky.to_vec(),
+    };
+    let Some((end, state)) = run_nested_program(
+        input,
+        offset,
+        atoms,
+        program,
+        0,
+        program.len(),
+        state,
+        sticky,
+        comparisons,
+        0,
+    )?
+    else {
+        return Ok(None);
+    };
+    sticky.copy_from_slice(&state.sticky);
+    let groups = state
+        .captures
+        .iter()
+        .enumerate()
+        .map(|(index, capture)| {
+            state.sticky[index]
+                .or(*capture)
+                .map_or_else(String::new, |(start, end)| {
+                    latin1_decode(&input[start..end])
+                })
+        })
+        .collect();
+    Ok(Some((end, groups)))
 }
 
 #[cfg(test)]
@@ -3626,6 +3755,7 @@ impl Packet {
         let mut ranges: Vec<(usize, usize)> = Vec::new();
         let mut dynamic = case_insensitive;
         let mut has_backreferences = false;
+        let mut has_assertions = false;
         let mut alternatives = Vec::new();
         let mut group_branches = Vec::new();
         let mut group_nodes = Vec::new();
@@ -3666,6 +3796,37 @@ impl Packet {
             }
             match c {
                 '(' => {
+                    let mut assertion_prefix = chars.clone();
+                    if assertion_prefix.next() == Some('?') {
+                        if let Some(kind @ ('=' | '!')) = assertion_prefix.next() {
+                            chars = assertion_prefix;
+                            let node = push_alternation_node(
+                                &mut alternative_nodes,
+                                &mut node_stack,
+                                atoms.len(),
+                            );
+                            alternative_nodes[node].assertion = Some(kind == '=');
+                            alternative_nodes[node].assertion_group_start = groups.len();
+                            group_frames.push((
+                                None,
+                                atoms.len(),
+                                (
+                                    case_insensitive,
+                                    dot_all,
+                                    multiline,
+                                    unix_lines,
+                                    unicode_case,
+                                    unicode_class,
+                                ),
+                                node,
+                            ));
+                            has_assertions = true;
+                            dynamic = true;
+                            quantifiable = false;
+                            last_closed_group = None;
+                            continue;
+                        }
+                    }
                     if chars.peek() == Some(&'?') {
                         let mut lookahead = chars.clone();
                         lookahead.next();
@@ -3784,6 +3945,12 @@ impl Packet {
                         .pop()
                         .ok_or_else(|| error("unbalanced capture group"))?;
                     alternative_nodes[node].end = atoms.len();
+                    alternative_nodes[node].assertion_group_end = groups.len();
+                    if alternative_nodes[node].assertion == Some(false)
+                        && alternative_nodes[node].assertion_group_start != groups.len()
+                    {
+                        return Err(error("captures in negative lookahead are unsupported"));
+                    }
                     let popped_node = node_stack.pop();
                     debug_assert_eq!(popped_node, Some(node));
                     if let Some(group) = frame {
@@ -3793,7 +3960,9 @@ impl Packet {
                         last_closed_group = Some(group);
                     } else {
                         last_closed_group = None;
-                        last_noncapturing = Some((start, atoms.len(), node));
+                        if alternative_nodes[node].assertion.is_none() {
+                            last_noncapturing = Some((start, atoms.len(), node));
+                        }
                     }
                     (
                         case_insensitive,
@@ -4072,7 +4241,8 @@ impl Packet {
             .iter()
             .skip(1)
             .any(|node| !node.splits.is_empty());
-        let use_tree_vm = has_backreferences
+        let use_tree_vm = has_assertions
+            || has_backreferences
             || has_nested_alternation
             || group_repeats.len() > 1
             || group_repeats.iter().any(|entry| entry.6)

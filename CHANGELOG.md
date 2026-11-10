@@ -1,5 +1,7 @@
 # Changelog
 
+- Add bounded Java positive lookaheads and negative lookaheads without captures.
+
 - Support Java backreferences to groups still open during repeated matches.
 
 - Combine Java regex backreferences with repeated groups and capture retention.

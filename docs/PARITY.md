@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Selected positive and negative lookaheads match 300 additional beta-29 packet cases. Negative lookaheads containing captures are currently rejected; full Java regex and real-session compatibility remain unverified.
+
 Open-group backreferences match 250 additional beta-29 packet cases, including named and repeated groups. Full Java regex and real-session compatibility remain unverified.
 
 Status describes source implementation and finite tests, not successful production use. No official Habbo client or G-Presets game session has been tested end-to-end through this port.
