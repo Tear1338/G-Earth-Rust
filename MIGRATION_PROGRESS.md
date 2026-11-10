@@ -330,6 +330,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Atomic groups `(?>...)` now execute as bounded, non-backtracking subprograms, preserving selected captures as in Java. The 300-packet beta-29 corpus includes alternatives, repeated atomic groups, assertions and backreferences. Thirty-six mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. Actions run 42843377108 passed all eight jobs for the prior implementation commit. Full regex parity and live compatibility remain unverified.
 
+- Possessive quantifiers `?+`, `*+`, `++` and `{m,n}+` now commit their bounded matches for atoms and groups. A 600-packet beta-29 corpus covers captures, empty and nested repetitions, alternatives, backreferences and lookbehinds. Thirty-six mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. Actions run 42844459556 passed all eight jobs for the previous commit. Full regex and live client compatibility remain unverified.
+
 ## Exact next step
 
-Compare Java possessive quantifiers (`?+`, `*+`, `++`, `{m,n}+`) and capture retention against beta-29, then implement them with bounded differential fixtures. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
+Compare Java nested character classes and intersections (`[a-z&&[^...]]`) with beta-29, then implement them with differential fixtures. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.

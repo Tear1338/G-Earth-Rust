@@ -1145,6 +1145,18 @@ public class JavaMutationOracle {
             finally { System.setOut(original); }
             emit("substring_atomic_" + i, sample);
         }
+        String[][] possessiveCases = {{"a++a", "$0"}, {"a?+a", "$0"}, {"a*+a", "$0"}, {"a{1,3}+a", "$0"}, {"(a|ab)++c", "$1/$0"}, {"(ab|a)++c", "$1/$0"}, {"(a?)++b", "$1/$0"}, {"(a)?+a", "$1/$0"}, {"(a){1,3}+a", "$1/$0"}, {"(a|b)++c", "$1/$0"}, {"(a?)++b|c", "$1/$0"}, {"(?<x>a)++b", "${x}/$0"}, {"(?:ab)++c", "$0"}, {"([ab])++\\1", "$1/$0"}, {"a{0,2}+b", "$0"}, {"a++b|c", "$0"}, {"(?:a?){1,3}+b", "$0"}, {"(a?){1,3}+b", "$1/$0"}, {"(a|b)?+c", "$1/$0"}, {"(?:ab)?+c", "$0"}, {"()?+b", "$1/$0"}, {"()++b", "$1/$0"}, {"(a?)*+b", "$1/$0"}, {"(?:(a++)b)+(?:c)+", "$1/$0"}, {"(?:(a*)++b)+(?:c)+", "$1/$0"}, {"(?:(a|b)++)+c", "$1/$0"}, {"((a)?b)++c", "$1/$2/$0"}, {"(?=(a?+))a", "$1/$0"}, {"(a{0,2}+)b", "$1/$0"}, {"(a|b){2,3}+c", "$1/$0"}, {"(?<=(a|b)++)c", "$1/$0"}, {"(?<=(a|b){1}+)c", "$1/$0"}, {"(?<=(a?){1,2}+)b", "$1/$0"}, {"(?<=a++b)c", "$0"}, {"(?<=(a?)++)b", "$1/$0"}};
+        char[] possessiveAlphabet = {'a', 'A', 'b', 'B', 'c', ' ', '\n'};
+        for (int i = 0; i < 600; i++) {
+            String[] entry = possessiveCases[i % possessiveCases.length]; String pattern = entry[0];
+            StringBuilder value = new StringBuilder(pattern).append(" aaa abc ac aaab abac aabbc b ");
+            for (int j = 0; j < 12; j++) value.append(possessiveAlphabet[(i * 5 + j * 3 + j * j) % possessiveAlphabet.length]);
+            HPacket sample = new HPacket(9); sample.appendString(value.toString()); sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try { System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream())); sample.replaceXSubstrings(pattern, entry[1], 1); }
+            finally { System.setOut(original); }
+            emit("substring_possessive_" + i, sample);
+        }
         String[][] selfBackrefCases = {{"(a\\1)", "$1/$0"}, {"(a\\1?)+b", "$1/$0"}, {"(?<x>a\\k<x>?)+b", "${x}/$0"}, {"(a\\1?){1,3}b", "$1/$0"}, {"(a\\1?)*?b", "$1/$0"}, {"(a\\1?)+(b)+", "$1/$2/$0"}, {"((a)\\1?)+b", "$1/$2/$0"}, {"((a)\\1?)+\\1", "$1/$2/$0"}, {"(?i)(a\\1?)+B", "$1/$0"}, {"(a\\1?)?b", "$1/$0"}};
         char[] selfBackrefAlphabet = {'a', 'A', 'b', 'B', ' ', '\n'};
         for (int i = 0; i < 250; i++) {

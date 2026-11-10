@@ -1,5 +1,7 @@
 # Changelog
 
+- Add bounded Java possessive quantifiers for atoms and groups.
+
 - Add bounded Java atomic regex groups.
 
 - Expand Java lookbehind width and overflow comparison fixtures.

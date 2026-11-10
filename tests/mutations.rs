@@ -518,7 +518,7 @@ fn java_optional_regex_quantifier_is_bounded_and_rejects_unsupported_forms() {
     packet.put_string("(a?) a").unwrap();
     let before = packet.clone();
     assert!(packet
-        .replace_substrings_java_groups("(a?+)", "x", None)
+        .replace_substrings_java_groups("(a??+)", "x", None)
         .is_err());
     assert_eq!(packet, before);
     let mut large = Packet::new(9);
@@ -533,12 +533,12 @@ fn java_optional_regex_quantifier_is_bounded_and_rejects_unsupported_forms() {
 }
 
 #[test]
-fn java_regex_repetition_bounds_growth_and_rejects_possessive_forms() {
+fn java_regex_repetition_bounds_growth_and_rejects_invalid_forms() {
     let mut packet = Packet::new(9);
     packet.put_string("(a*) aaa").unwrap();
     let before = packet.clone();
     assert!(packet
-        .replace_substrings_java_groups("(a*+)", "x", None)
+        .replace_substrings_java_groups("(a*?+)", "x", None)
         .is_err());
     assert_eq!(packet, before);
     let mut large = Packet::new(9);
@@ -572,7 +572,7 @@ fn java_bounded_regex_repetition_rejects_invalid_bounds_transactionally() {
     let mut packet = Packet::new(9);
     packet.put_string("(a{2}) aaa").unwrap();
     let before = packet.clone();
-    for pattern in ["(a{2,1})", "(a{2147483648})", "(a{,2})", "(a{2,3}+)"] {
+    for pattern in ["(a{2,1})", "(a{2147483648})", "(a{,2})", "(a{2,3}?+)"] {
         assert!(packet
             .replace_substrings_java_groups(pattern, "x", None)
             .is_err());
@@ -701,7 +701,7 @@ fn java_alternation_rejects_unsupported_captures_and_invalid_references_transact
 
 #[test]
 fn java_nested_alternation_rejects_unimplemented_structures_and_limits_depth() {
-    for pattern in ["(?:(a++)b)+(?:c)+", "(?:(a*)++b)+(?:c)+"] {
+    for pattern in ["(?:(a+++)b)+(?:c)+", "(?:(a*)+++)b"] {
         let mut packet = Packet::new(9);
         packet.put_string(pattern).unwrap();
         let before = packet.bytes().to_vec();

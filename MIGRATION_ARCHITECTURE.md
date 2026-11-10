@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Possessive quantifiers use bounded atomic subprograms around their atom or group repetition. Width analysis distinguishes possessive group repetitions inside lookbehinds; beta-29 comparison remains finite.
+
 Atomic groups reuse the bounded assertion subprogram mechanism but advance to the committed match endpoint. Their captures and rollback have finite beta-29 coverage.
 
 Lookbehinds use minimum and maximum widths calculated from the regex tree, and run their bodies with a shared comparison budget and an expected end position. Width analysis detects selected nondeterministic repetitions and overflowing group bounds, following Java's study step. The 840-case beta-29 corpus exercises selected bounds and captures; wider combinations remain unverified.

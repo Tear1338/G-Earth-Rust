@@ -2732,6 +2732,58 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
         check(&format!("substring_atomic_{i}"), &packet);
     }
+    let possessive_cases = [
+        ("a++a", "$0"),
+        ("a?+a", "$0"),
+        ("a*+a", "$0"),
+        ("a{1,3}+a", "$0"),
+        ("(a|ab)++c", "$1/$0"),
+        ("(ab|a)++c", "$1/$0"),
+        ("(a?)++b", "$1/$0"),
+        ("(a)?+a", "$1/$0"),
+        ("(a){1,3}+a", "$1/$0"),
+        ("(a|b)++c", "$1/$0"),
+        ("(a?)++b|c", "$1/$0"),
+        ("(?<x>a)++b", "${x}/$0"),
+        ("(?:ab)++c", "$0"),
+        ("([ab])++\\1", "$1/$0"),
+        ("a{0,2}+b", "$0"),
+        ("a++b|c", "$0"),
+        ("(?:a?){1,3}+b", "$0"),
+        ("(a?){1,3}+b", "$1/$0"),
+        ("(a|b)?+c", "$1/$0"),
+        ("(?:ab)?+c", "$0"),
+        ("()?+b", "$1/$0"),
+        ("()++b", "$1/$0"),
+        ("(a?)*+b", "$1/$0"),
+        ("(?:(a++)b)+(?:c)+", "$1/$0"),
+        ("(?:(a*)++b)+(?:c)+", "$1/$0"),
+        ("(?:(a|b)++)+c", "$1/$0"),
+        ("((a)?b)++c", "$1/$2/$0"),
+        ("(?=(a?+))a", "$1/$0"),
+        ("(a{0,2}+)b", "$1/$0"),
+        ("(a|b){2,3}+c", "$1/$0"),
+        ("(?<=(a|b)++)c", "$1/$0"),
+        ("(?<=(a|b){1}+)c", "$1/$0"),
+        ("(?<=(a?){1,2}+)b", "$1/$0"),
+        ("(?<=a++b)c", "$0"),
+        ("(?<=(a?)++)b", "$1/$0"),
+    ];
+    let possessive_alphabet = ['a', 'A', 'b', 'B', 'c', ' ', '\n'];
+    for i in 0..600 {
+        let (pattern, replacement) = possessive_cases[i % possessive_cases.len()];
+        let mut value = format!("{pattern} aaa abc ac aaab abac aabbc b ");
+        for j in 0..12 {
+            value.push(possessive_alphabet[(i * 5 + j * 3 + j * j) % possessive_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, replacement, Some(1))
+            .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
+        check(&format!("substring_possessive_{i}"), &packet);
+    }
     let self_backref_cases = [
         ("(a\\1)", "$1/$0"),
         ("(a\\1?)+b", "$1/$0"),

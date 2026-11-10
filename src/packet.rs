@@ -1705,6 +1705,7 @@ struct AlternationNode {
     capture: Option<usize>,
     assertion: Option<(bool, bool)>, // (positive, behind)
     atomic: bool,
+    possessive: bool,
     assertion_group_start: usize,
     assertion_group_end: usize,
     sticky_captures: Option<(usize, usize)>,
@@ -1788,7 +1789,7 @@ fn alternation_widths(
                         widths[child]
                     };
                     if let Some((min, max, _, _, _)) = spec.repeat {
-                        part.repeat(min, max, true);
+                        part.repeat(min, max, !spec.possessive);
                     }
                     if optional_nodes[child].is_some() {
                         part.min = 0;
@@ -1942,6 +1943,35 @@ fn emit_nested_atoms(
     }
 }
 
+fn emit_tree_atoms(
+    program: &mut Vec<NestedInstruction>,
+    range: std::ops::Range<usize>,
+    repeated: &[Option<(usize, Option<usize>, bool)>],
+    optional: &[Option<bool>],
+    possessive: &[bool],
+) {
+    for index in range {
+        let start = possessive[index].then(|| {
+            let pc = program.len();
+            program.push(NestedInstruction::Jump(0));
+            pc
+        });
+        emit_nested_atoms(program, index..index + 1, repeated, optional);
+        if let Some(pc) = start {
+            program[pc] = NestedInstruction::Assert {
+                end: program.len(),
+                positive: true,
+                behind: false,
+                atomic: true,
+                min_width: 0,
+                max_width: 0,
+                first_group: 0,
+                end_group: 0,
+            };
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn emit_alternation_node(
     program: &mut Vec<NestedInstruction>,
@@ -1950,6 +1980,7 @@ fn emit_alternation_node(
     optional_nodes: &[Option<bool>],
     repeated: &[Option<(usize, Option<usize>, bool)>],
     optional_atoms: &[Option<bool>],
+    possessive_atoms: &[bool],
     widths: &[RegexWidth],
     depth: usize,
 ) -> Result<()> {
@@ -1957,6 +1988,11 @@ fn emit_alternation_node(
         return Err(error("regex group nesting limit exceeded"));
     }
     let node = &nodes[id];
+    let possessive_pc = node.possessive.then(|| {
+        let pc = program.len();
+        program.push(NestedInstruction::Jump(0));
+        pc
+    });
     let optional_split = optional_nodes[id].map(|_| {
         let pc = program.len();
         program.push(NestedInstruction::Split(0, 0));
@@ -1996,7 +2032,13 @@ fn emit_alternation_node(
         while children.peek().is_some_and(|(owner, _)| *owner == branch) {
             let &(_, child) = children.next().unwrap();
             let child_node = &nodes[child];
-            emit_nested_atoms(program, cursor..child_node.start, repeated, optional_atoms);
+            emit_tree_atoms(
+                program,
+                cursor..child_node.start,
+                repeated,
+                optional_atoms,
+                possessive_atoms,
+            );
             emit_alternation_node(
                 program,
                 nodes,
@@ -2004,12 +2046,19 @@ fn emit_alternation_node(
                 optional_nodes,
                 repeated,
                 optional_atoms,
+                possessive_atoms,
                 widths,
                 depth + 1,
             )?;
             cursor = child_node.end;
         }
-        emit_nested_atoms(program, cursor..pair[1], repeated, optional_atoms);
+        emit_tree_atoms(
+            program,
+            cursor..pair[1],
+            repeated,
+            optional_atoms,
+            possessive_atoms,
+        );
         if let Some(split) = split {
             let jump = program.len();
             program.push(NestedInstruction::Jump(0));
@@ -2070,6 +2119,18 @@ fn emit_alternation_node(
             NestedInstruction::Split(body, after)
         } else {
             NestedInstruction::Split(after, body)
+        };
+    }
+    if let Some(pc) = possessive_pc {
+        program[pc] = NestedInstruction::Assert {
+            end: program.len(),
+            positive: true,
+            behind: false,
+            atomic: true,
+            min_width: 0,
+            max_width: 0,
+            first_group: node.assertion_group_start,
+            end_group: node.assertion_group_end,
         };
     }
     Ok(())
@@ -3970,6 +4031,8 @@ impl Packet {
         let mut optional = Vec::new();
         let mut optional_group_owners = Vec::new();
         let mut repeated = Vec::new();
+        let mut possessive_atom_indices = Vec::new();
+        let mut possessive_group_nodes = Vec::new();
         let mut group_repeat = None;
         let mut repeated_group_owner = None;
         let mut group_repeats = Vec::new();
@@ -4318,8 +4381,12 @@ impl Packet {
                     } else {
                         true
                     };
-                    if chars.peek() == Some(&'+') {
-                        return Err(error("unsupported possessive quantifier"));
+                    let possessive = chars.peek() == Some(&'+');
+                    if possessive {
+                        if !greedy {
+                            return Err(error("invalid regex quantifier"));
+                        }
+                        chars.next();
                     }
                     let (start, end) = if quantifiable {
                         (atoms.len() - 1, atoms.len())
@@ -4329,7 +4396,10 @@ impl Packet {
                         let (start, end, _) = prior_noncapturing.unwrap();
                         (start, end)
                     };
-                    if start != end {
+                    if possessive && quantifiable {
+                        possessive_atom_indices.push(start);
+                    }
+                    if start != end || (!quantifiable && possessive) {
                         if !quantifiable {
                             let node = if let Some(group) = last_closed_group {
                                 group_nodes[group]
@@ -4337,6 +4407,9 @@ impl Packet {
                                 let (_, _, node) = prior_noncapturing.unwrap();
                                 node
                             };
+                            if possessive {
+                                possessive_group_nodes.push((node, groups.len()));
+                            }
                             optional_node_entries.push((optional.len(), node, greedy));
                         }
                         optional.push((start, end, greedy));
@@ -4363,10 +4436,17 @@ impl Packet {
                     } else {
                         true
                     };
-                    if chars.peek() == Some(&'+') {
-                        return Err(error("unsupported possessive quantifier"));
+                    let possessive = chars.peek() == Some(&'+');
+                    if possessive {
+                        if !greedy {
+                            return Err(error("invalid regex quantifier"));
+                        }
+                        chars.next();
                     }
                     if quantifiable {
+                        if possessive {
+                            possessive_atom_indices.push(atoms.len() - 1);
+                        }
                         repeated.push((atoms.len() - 1, min, None, greedy));
                     } else {
                         let ancestor = last_closed_group.is_none() && !open.is_empty();
@@ -4376,6 +4456,9 @@ impl Packet {
                         } else {
                             prior_noncapturing.unwrap()
                         };
+                        if possessive {
+                            possessive_group_nodes.push((node, groups.len()));
+                        }
                         group_repeats.push((start, end, min, None, greedy, node, ancestor));
                         if group_repeat.is_none() {
                             group_repeat = Some((start, end, min, None, greedy));
@@ -4399,10 +4482,17 @@ impl Packet {
                     } else {
                         true
                     };
-                    if chars.peek() == Some(&'+') {
-                        return Err(error("unsupported possessive quantifier"));
+                    let possessive = chars.peek() == Some(&'+');
+                    if possessive {
+                        if !greedy {
+                            return Err(error("invalid regex quantifier"));
+                        }
+                        chars.next();
                     }
                     if quantifiable {
+                        if possessive {
+                            possessive_atom_indices.push(atoms.len() - 1);
+                        }
                         repeated.push((atoms.len() - 1, min, limit, greedy));
                     } else {
                         let ancestor = last_closed_group.is_none() && !open.is_empty();
@@ -4412,6 +4502,9 @@ impl Packet {
                         } else {
                             prior_noncapturing.unwrap()
                         };
+                        if possessive {
+                            possessive_group_nodes.push((node, groups.len()));
+                        }
                         group_repeats.push((start, end, min, limit, greedy, node, ancestor));
                         if group_repeat.is_none() {
                             group_repeat = Some((start, end, min, limit, greedy));
@@ -4455,7 +4548,15 @@ impl Packet {
             .iter()
             .skip(1)
             .any(|node| !node.splits.is_empty());
-        let use_tree_vm = has_assertions
+        for &(node, end) in &possessive_group_nodes {
+            alternative_nodes[node].possessive = true;
+            alternative_nodes[node].assertion_group_start =
+                group_nodes.partition_point(|&id| id < node);
+            alternative_nodes[node].assertion_group_end = end;
+        }
+        let use_tree_vm = !possessive_atom_indices.is_empty()
+            || !possessive_group_nodes.is_empty()
+            || has_assertions
             || has_backreferences
             || has_nested_alternation
             || group_repeats.len() > 1
@@ -4797,6 +4898,10 @@ impl Packet {
                 }
             }
             let mut compiled = Vec::new();
+            let mut possessive_atoms = vec![false; atoms.len()];
+            for &index in &possessive_atom_indices {
+                possessive_atoms[index] = true;
+            }
             let widths = alternation_widths(
                 &alternative_nodes,
                 &atoms,
@@ -4816,6 +4921,7 @@ impl Packet {
                 &node_optional,
                 &repeated_atoms,
                 &atom_optional,
+                &possessive_atoms,
                 &widths,
                 0,
             )?;
