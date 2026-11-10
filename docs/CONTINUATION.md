@@ -1,5 +1,7 @@
 # Continuation state
 
+The real G-Presets loopback fixture now forwards one named floor and wall item and observes both parse logs across two Windows sessions. The fixture, both Clippy configurations and desktop/web debug build pass; the earlier inventory fixture passed the Linux G-Presets job (42923554869). Next: inspect incremental inventory updates and observable extension state. Dedicated AIR and live hotel/preset testing remain outstanding.
+
 The released G-Presets binary parsed a named one-item inventory in two isolated Windows relay sessions, confirmed by its debug log. The real extension test, both Clippy configurations and desktop/web debug build pass; Linux CI is pending. Next: exercise named floor and wall room data through the same fixture. Dedicated AIR preparation and live hotel/preset testing remain outstanding.
 
 Unknown stuff-data tags and duplicate map keys match beta-29 for selected cases. Java oracle, stuff-data unit test, both Clippy configurations and desktop/web debug build pass. Next: inspect the real G-Presets extension workflow and identify a safe offline integration test. The dedicated AIR session is being prepared; live relay and extension tests remain outstanding.

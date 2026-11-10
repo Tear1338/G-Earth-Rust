@@ -4,7 +4,8 @@ use gearth_rust::{
     packet::{read_frame, write_frame, Direction, Message, Packet},
     packet_info::{PacketInfo, PacketInfoManager},
     parsers::{
-        furniture::{HInventoryItem, HProductType},
+        entity::{HDirection, HPoint},
+        furniture::{HFloorItem, HInventoryItem, HProductType, HWallItem},
         stuffdata::{StuffData, StuffValue},
     },
     relay::{Config, Event, Relay, RelayOptions},
@@ -140,14 +141,17 @@ fn released_gpresets_authenticates_to_the_rust_host() {
         client_type: "FLASH".into(),
         packets: PacketInfoManager::new(
             "FIXTURE",
-            vec![PacketInfo {
-                header: 78,
-                hash: None,
-                name: Some("FurniList".into()),
-                structure: None,
-                direction: Direction::ToClient,
-                source: "fixture".into(),
-            }],
+            [(78, "FurniList"), (79, "Objects"), (80, "Items")]
+                .into_iter()
+                .map(|(header, name)| PacketInfo {
+                    header,
+                    hash: None,
+                    name: Some(name.into()),
+                    structure: None,
+                    direction: Direction::ToClient,
+                    source: "fixture".into(),
+                })
+                .collect(),
         ),
     };
     let (mut relay, relay_events) = Relay::start_with_options(
@@ -238,6 +242,60 @@ fn released_gpresets_authenticates_to_the_rust_host() {
             assert!(
                 Instant::now() < deadline,
                 "G-Presets did not parse inventory in session {session}: {}",
+                log.replace(&token, "[token]")
+                    .chars()
+                    .take(8000)
+                    .collect::<String>()
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let floor = HFloorItem {
+            id: 1600 + session,
+            type_id: 1500,
+            tile: HPoint::new(2, 3),
+            facing: HDirection::North,
+            size_z: "1.0".into(),
+            extra: 0,
+            stuff: StuffData {
+                flags: 0,
+                serial: None,
+                value: StuffValue::Legacy("0".into()),
+            },
+            seconds_to_expiration: -1,
+            usage_policy: 0,
+            owner_id: 42,
+            owner_name: Some("Fixture".into()),
+            static_class: None,
+        };
+        let wall = HWallItem {
+            id: 1700 + session,
+            type_id: 1800,
+            location: ":w=1,2 l=3,4 r".into(),
+            state: "0".into(),
+            seconds_to_expiration: -1,
+            usage_policy: 0,
+            owner_id: 42,
+            owner_name: Some("Fixture".into()),
+        };
+        for packet in [
+            HFloorItem::construct(&[floor], 79).unwrap(),
+            HWallItem::construct(&[wall], 80).unwrap(),
+        ] {
+            write_frame(&mut server, &packet).unwrap();
+            assert_eq!(read_frame(&mut client).unwrap().bytes(), packet.bytes());
+        }
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let log = fs::read_to_string(directory.0.join("app.log")).unwrap_or_default();
+            if ["Parsed floor items", "Parsed wall items"]
+                .iter()
+                .all(|event| log.matches(event).count() > session as usize)
+            {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "G-Presets did not parse room items in session {session}: {}",
                 log.replace(&token, "[token]")
                     .chars()
                     .take(8000)

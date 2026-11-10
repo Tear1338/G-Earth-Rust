@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+The released G-Presets loopback fixture also supplies named floor and wall packets and verifies the extension reports parsing them on each reconnect.
+
 The pinned G-Presets loopback fixture supplies named packet metadata and verifies actual inventory parsing using the extension debug log; HTTPS is isolated on loopback.
 
 Stuff-data maps retain the final value for duplicate keys; unsupported low-byte tags fail after reading the tag, matching selected Java cases.

@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Released G-Presets 1.6.5 logged parsing one floor and one wall item in each of two isolated Windows relay sessions. The prior inventory fixture passed Linux CI; Linux CI for the extended fixture and real hotel/preset workflows remain unverified.
+
 The pinned G-Presets 1.6.5 binary parsed a one-item inventory in two isolated Windows relay sessions, as confirmed by its debug log. Linux CI is pending; real hotel and preset workflows remain unverified.
 
 Unknown stuff-data tags and duplicate keys match beta-29 in selected failure, cursor and serialization fixtures; live behavior remains unverified.

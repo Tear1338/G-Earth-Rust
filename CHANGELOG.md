@@ -1,5 +1,7 @@
 # Changelog
 
+- Exercise real G-Presets floor and wall parsing over isolated relay sessions.
+
 - Exercise actual G-Presets inventory parsing across isolated relay reconnects.
 
 - Compare unknown stuff-data tags and duplicate map keys with beta-29.
