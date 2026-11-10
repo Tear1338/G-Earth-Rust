@@ -1,6 +1,6 @@
 # Rust migration architecture
 
-Lookbehinds use minimum and maximum widths calculated from the regex tree, and run their bodies with a shared comparison budget and an expected end position. Width analysis detects selected nondeterministic repetitions and overflowing group bounds, following Java's study step. The beta-29 corpus exercises selected bounds and captures; wider combinations remain unverified.
+Lookbehinds use minimum and maximum widths calculated from the regex tree, and run their bodies with a shared comparison budget and an expected end position. Width analysis detects selected nondeterministic repetitions and overflowing group bounds, following Java's study step. The 840-case beta-29 corpus exercises selected bounds and captures; wider combinations remain unverified.
 
 The bounded regex VM evaluates lookaheads atomically with a shared comparison budget and retains selected positive and negative assertion captures after failed searches. Beta-29 differential fixtures include lookaheads inside repeated groups; wider combinations require further comparison.
 

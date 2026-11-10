@@ -2666,9 +2666,17 @@ fn mutations_match_original_java_packets_and_cursor() {
         ("(?<=(?:a(b)){1,3})c", "$1/$0"),
         ("(?<=((a)b){1,3})c", "$1/$2/$0"),
         ("(?<=((a|b)))c", "$1/$2/$0"),
+        ("(?<=a*b)c", "$0"),
+        ("(?<=a+b)c", "$0"),
+        ("(?<=(abc)+)d", "$1/$0"),
+        ("(?<=(a{3})+)b", "$1/$0"),
+        ("(?<=a*b|b)c", "$0"),
+        ("(?<=^a*b)c", "$0"),
+        ("(?<!a*b)c", "$0"),
+        ("(?<=a*bc|b)c", "$0"),
     ];
     let behind_alphabet = ['a', 'A', 'b', 'B', 'c', ' ', '\n'];
-    for i in 0..360 {
+    for i in 0..840 {
         let (pattern, replacement) = lookbehind_cases[i % lookbehind_cases.len()];
         let mut value = format!("{pattern} aaab aabaa bac abc ac ab b c ");
         for j in 0..12 {

@@ -326,6 +326,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Expanded the 360-packet beta-29 lookbehind corpus with repeated groups and nested captures. Width analysis now rejects selected nondeterministic repetitions and overflowing group bounds rejected by Java. Thirty-six mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. Actions run 42842373921 passed all eight jobs for the preceding commit. Wider regex combinations and live compatibility remain unverified.
 
+- The beta-29 lookbehind corpus now contains 840 cases, including unbounded repetitions, overflowing group widths, alternatives and anchors; all packet comparisons pass. Desktop/web Clippy and debug compilation also pass. These finite cases do not establish full regex parity.
+
 ## Exact next step
 
-Compare Java lookbehind width analysis and overflow behavior for combinations of unbounded repetitions, alternatives and anchors; add differential fixtures and correct divergences. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
+Compare Java atomic groups `(?>...)`, especially capture retention and backtracking, against beta-29 and implement them with bounded differential fixtures. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.

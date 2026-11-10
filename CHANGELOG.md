@@ -1,5 +1,7 @@
 # Changelog
 
+- Expand Java lookbehind width and overflow comparison fixtures.
+
 - Match selected Java lookbehind width rejection cases for repeated groups.
 
 - Add bounded Java lookbehind assertions with capture and width handling.
