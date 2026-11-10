@@ -1,5 +1,7 @@
 # Changelog
 
+- Support nested captures in nondeterministic repeated Java groups.
+
 - Preserve GroupCurly nested captures across fixed repeated bodies and failed searches.
 
 - Support variable-width captures in repeated Java groups.

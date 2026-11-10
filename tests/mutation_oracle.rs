@@ -2418,6 +2418,35 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
         check(&format!("substring_sticky_capture_{i}"), &packet);
     }
+    let variable_nested_cases = [
+        ("(?:(a)?b)+(?:c)+", "$1/$0"),
+        ("(?:(a+)b)+(?:c)+", "$1/$0"),
+        ("(?:(a*)b)*?(?:c)+", "$1/$0"),
+        ("(?:(a{1,3})b)+(?:c)+", "$1/$0"),
+        ("(?:(a)?b){0,3}(?:c)+", "$1/$0"),
+        ("((a?)b)+(c)+", "$1/$2/$3/$0"),
+        ("(?:(?<x>a+)b)+(?:c)+", "${x}/$0"),
+        ("(?:(a+)b)+?b(?:c)+", "$1/$0"),
+        ("((?:(a)?b)+)", "$1/$2/$0"),
+        ("(?:a(b)?)*", "$1/$0"),
+    ];
+    let variable_nested_alphabet = ['a', 'A', 'b', 'c', 'd', ' ', '\n'];
+    for i in 0..250 {
+        let (pattern, replacement) = variable_nested_cases[i % variable_nested_cases.len()];
+        let mut value = format!("{pattern} abababc cdefab aabb abc ");
+        for j in 0..12 {
+            value.push(
+                variable_nested_alphabet[(i * 5 + j * 3 + j * j) % variable_nested_alphabet.len()],
+            );
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, replacement, Some(1))
+            .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
+        check(&format!("substring_variable_nested_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

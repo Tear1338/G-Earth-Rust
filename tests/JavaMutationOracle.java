@@ -1106,6 +1106,23 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_unicode_case_" + i, sample);
         }
+        String[][] variableNestedCases = {{"(?:(a)?b)+(?:c)+", "$1/$0"}, {"(?:(a+)b)+(?:c)+", "$1/$0"}, {"(?:(a*)b)*?(?:c)+", "$1/$0"}, {"(?:(a{1,3})b)+(?:c)+", "$1/$0"}, {"(?:(a)?b){0,3}(?:c)+", "$1/$0"}, {"((a?)b)+(c)+", "$1/$2/$3/$0"}, {"(?:(?<x>a+)b)+(?:c)+", "${x}/$0"}, {"(?:(a+)b)+?b(?:c)+", "$1/$0"}, {"((?:(a)?b)+)", "$1/$2/$0"}, {"(?:a(b)?)*", "$1/$0"}};
+        char[] variableNestedAlphabet = {'a', 'A', 'b', 'c', 'd', ' ', '\n'};
+        for (int i = 0; i < 250; i++) {
+            String[] entry = variableNestedCases[i % variableNestedCases.length];
+            String pattern = entry[0];
+            StringBuilder value = new StringBuilder(pattern).append(" abababc cdefab aabb abc ");
+            for (int j = 0; j < 12; j++) value.append(variableNestedAlphabet[(i * 5 + j * 3 + j * j) % variableNestedAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, entry[1], 1);
+            } finally { System.setOut(original); }
+            emit("substring_variable_nested_" + i, sample);
+        }
         String[][] stickyCaptureCases = {{"(?:(a)b)+(?:c)+", "$1/$0"}, {"(?:(.)(.))+(?:ab)+", "$1/$2/$0"}, {"(?:(a)b)*?(?:c)+", "$1/$0"}, {"(?:(?<x>a)b)+(?:c)+", "${x}/$0"}, {"(?:([ab])b)+(?:c)+", "$1/$0"}, {"(?:(a)b){0,3}(?:c)+", "$1/$0"}, {"((a)b)+(c)+", "$1/$2/$3/$0"}, {"(?:(a)b)+?b(?:c)+", "$1/$0"}, {"(?:(a)b)*(?:c)+", "$1/$0"}, {"(?:(a)b)+(?:c)*", "$1/$0"}, {"(?:(a)b)+(?:(c)d)+e", "$1/$2/$0"}, {"(?:(a)b)+(?:c)+|d", "$1/$0"}, {"((?:(a)b)+)", "$1/$2/$0"}, {"(?<x>(?:(a)b)+)", "${x}/$2/$0"}};
         char[] stickyCaptureAlphabet = {'a', 'A', 'b', 'c', 'd', ' ', '\n'};
         for (int i = 0; i < 250; i++) {

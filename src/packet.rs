@@ -3885,7 +3885,7 @@ impl Packet {
         let use_tree_vm = has_nested_alternation
             || group_repeats.len() > 1
             || group_repeats.iter().any(|entry| entry.6)
-            || (groups.is_empty()
+            || (repeated_group_owner.is_none()
                 && group_repeats.iter().any(|&(start, end, ..)| {
                     optional.iter().any(|&(a, b, _)| a >= start && b <= end)
                         || repeated.iter().any(|&(a, ..)| a >= start && a < end)
@@ -3907,6 +3907,26 @@ impl Packet {
             }
         }
         if use_tree_vm && !has_nested_alternation {
+            // Nodes are created in preorder; each subtree is a contiguous index range.
+            let mut subtree_end: Vec<usize> = (1..=alternative_nodes.len()).collect();
+            for child in (1..alternative_nodes.len()).rev() {
+                if let Some(parent) = alternative_nodes[child].parent {
+                    subtree_end[parent] = subtree_end[parent].max(subtree_end[child]);
+                }
+            }
+            let mut optional_node_owners = vec![None; optional.len()];
+            for &(index, node, _) in &optional_node_entries {
+                optional_node_owners[index] = Some(node);
+                let mut parent = alternative_nodes[node].parent;
+                let mut depth = 0;
+                while let Some(ancestor) = parent {
+                    depth += 1;
+                    if depth > 128 {
+                        return Err(error("regex group nesting limit exceeded"));
+                    }
+                    parent = alternative_nodes[ancestor].parent;
+                }
+            }
             for &(start, end, _, _, _, node, _) in &group_repeats {
                 let mut descendants = Vec::new();
                 for (group, &capture_node) in group_nodes.iter().enumerate() {
@@ -3928,21 +3948,31 @@ impl Packet {
                     }
                 }
                 if !descendants.is_empty() {
-                    let variable = optional.iter().any(|&(a, b, _)| a >= start && b <= end)
-                        || repeated.iter().any(|&(a, ..)| a >= start && a < end)
-                        || group_repeats.iter().any(|&(_, _, _, _, _, other, _)| {
-                            let mut parent = alternative_nodes[other].parent;
-                            while let Some(index) = parent {
-                                if index == node {
-                                    return true;
-                                }
-                                parent = alternative_nodes[index].parent;
-                            }
-                            false
-                        });
-                    if variable {
+                    let nested_repeat = group_repeats.iter().any(|&(_, _, _, _, _, other, _)| {
+                        other > node && other < subtree_end[node]
+                    });
+                    if nested_repeat {
                         return Err(error(
-                            "variable nested repeated captures require Java capture validation",
+                            "nested GroupCurly loops require Java capture validation",
+                        ));
+                    }
+                    let optional_inside = optional.iter().enumerate().any(|(index, &(a, b, _))| {
+                        if let Some(owner) = optional_node_owners[index] {
+                            owner > node && owner < subtree_end[node]
+                        } else {
+                            a >= start && b <= end
+                        }
+                    });
+                    let variable_atom = repeated
+                        .iter()
+                        .any(|&(a, min, limit, _)| a >= start && a < end && limit != Some(min));
+                    if optional_inside || variable_atom {
+                        // Java uses Loop rather than GroupCurly for non-deterministic bodies.
+                        continue;
+                    }
+                    if repeated.iter().any(|&(a, ..)| a >= start && a < end) {
+                        return Err(error(
+                            "fixed-count nested captures require Java capture validation",
                         ));
                     }
                     let first = descendants[0];
