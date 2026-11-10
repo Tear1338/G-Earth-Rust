@@ -1,5 +1,7 @@
 # Changelog
 
+- Match Java duplicate-owner resolution for floor and wall furniture collections.
+
 - Add explicit beta-29 inventory pagination and parser compatibility, including original boundary defects.
 
 - Expand Java regex Unicode script and block names and aliases.

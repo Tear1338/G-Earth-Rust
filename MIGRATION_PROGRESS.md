@@ -346,6 +346,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Compared `HInventoryItem` with the actual beta-29 API for four product types, all 23 special types, lowercase floor codes and page sizes 0, 1, 599, 600, 601, 1200 and 1201. Java's `constructPackets` writes zero as the final count at exact multiples of 600 and includes later items in earlier pages. New bounded `construct_java_packets` and `parse_java` reproduce the tested bytes and Java parser cursor; `construct_pages` retains correctly bounded client pages. The Java oracle, inventory unit test, both Clippy configurations and desktop/web debug build pass. Live extension compatibility remains unverified.
 
+- Compared beta-29 floor and wall furniture collections with multiple owners, duplicate IDs and missing owner names. Rust now lets the final duplicate owner entry replace an earlier missing name, matching Java; missing final names still fail. Oracle fixtures compare parsed structures rather than byte order because Java uses `HashMap` and Rust sorts owner IDs. The Java oracle, three furniture unit tests, both Clippy configurations and desktop/web debug build pass. Live-client and extension behavior remains unverified.
+
 ## Exact next step
 
-Compare Java `HFloorItem` and `HWallItem` collection construction and parsing with multiple, duplicate and missing owners against beta-29; add differential fixtures and address discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
+Compare Java forum `HThread` and `HThreadOverview` parsing and serialization across thread states, flags and multiple rows; add beta-29 differential fixtures and correct discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.

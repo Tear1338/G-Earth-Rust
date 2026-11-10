@@ -135,6 +135,53 @@ fn all_stuff_data_wire_formats_match_original_java() {
         HWallItem::read(&mut Packet::from_bytes(observed["wall"].clone()).unwrap()).unwrap(),
         wall
     );
+    let owners = [
+        (17, None),
+        (1, Some("Bob")),
+        (17, Some("Final")),
+        (2, Some("Carol")),
+    ];
+    let floor_items: Vec<_> = owners
+        .iter()
+        .map(|(id, name)| {
+            let mut item = floor.clone();
+            item.owner_id = *id;
+            item.owner_name = name.map(str::to_owned);
+            item
+        })
+        .collect();
+    let wall_items: Vec<_> = owners
+        .iter()
+        .map(|(id, name)| {
+            let mut item = wall.clone();
+            item.owner_id = *id;
+            item.owner_name = name.map(str::to_owned);
+            item
+        })
+        .collect();
+    let java_floors =
+        HFloorItem::parse(&mut Packet::from_bytes(observed["floor_collection"].clone()).unwrap())
+            .unwrap();
+    let java_walls =
+        HWallItem::parse(&mut Packet::from_bytes(observed["wall_collection"].clone()).unwrap())
+            .unwrap();
+    let mut rust_floors = HFloorItem::construct(&floor_items, 1).unwrap();
+    let mut rust_walls = HWallItem::construct(&wall_items, 1).unwrap();
+    assert_eq!(HFloorItem::parse(&mut rust_floors).unwrap(), java_floors);
+    assert_eq!(HWallItem::parse(&mut rust_walls).unwrap(), java_walls);
+    assert_eq!(java_floors[0].owner_name.as_deref(), Some("Final"));
+    assert_eq!(java_walls[0].owner_name.as_deref(), Some("Final"));
+    let missing_floor = HFloorItem::parse(
+        &mut Packet::from_bytes(observed["floor_missing_owner"].clone()).unwrap(),
+    )
+    .unwrap();
+    let missing_wall =
+        HWallItem::parse(&mut Packet::from_bytes(observed["wall_missing_owner"].clone()).unwrap())
+            .unwrap();
+    assert_eq!(missing_floor[0].owner_name, None);
+    assert_eq!(missing_wall[0].owner_name, None);
+    assert!(HFloorItem::construct(&missing_floor, 1).is_err());
+    assert!(HWallItem::construct(&missing_wall, 1).is_err());
     let mut packet = Packet::new(1);
     inventory.append(&mut packet).unwrap();
     assert_eq!(packet.bytes(), observed["inventory"]);

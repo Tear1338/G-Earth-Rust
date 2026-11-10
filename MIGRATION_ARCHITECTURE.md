@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Floor and wall collection construction resolves duplicate owners before rejecting a missing final owner name, as in beta-29. Rust sorts owner IDs while Java uses `HashMap`; parsed collection semantics are compared independently of ordering.
+
 Inventory exposes corrected `construct_pages` for client-ready pages and bounded `construct_java_packets`/`parse_java` for the released Java API's distinct pagination and cursor behavior. Java's original emits incorrect counts at exact 600-item boundaries and includes subsequent items in earlier pages.
 
 Java regex properties use generated Java 21 Latin-1 bitmaps for eight flag combinations. The generator and exhaustive oracle live in `tests/JavaRegexPropertyGenerator.java`; generated script and block name tables and their reproducible source generator are in `src/java_unicode_names.rs` and `tests/generate_java_unicode_names.py`.

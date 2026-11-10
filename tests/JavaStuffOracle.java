@@ -49,6 +49,41 @@ public class JavaStuffOracle {
         new HWallItem(wallInput).appendToPacket(wallOutput);
         System.out.println("wall=" + HexFormat.of().formatHex(wallOutput.toBytes()));
 
+        int[] ownerIds = {17, 1, 17, 2};
+        String[] ownerNames = {null, "Bob", "Final", "Carol"};
+        HFloorItem[] floorCollection = new HFloorItem[ownerIds.length];
+        HWallItem[] wallCollection = new HWallItem[ownerIds.length];
+        for (int i = 0; i < ownerIds.length; i++) {
+            floorCollection[i] = new HFloorItem(new HPacket(floorOutput.toBytes()));
+            floorCollection[i].setOwnerId(ownerIds[i]);
+            floorCollection[i].setOwnerName(ownerNames[i]);
+            wallCollection[i] = new HWallItem(new HPacket(wallOutput.toBytes()));
+            wallCollection[i].setOwnerId(ownerIds[i]);
+            wallCollection[i].setOwnerName(ownerNames[i]);
+        }
+        HPacket floors = HFloorItem.constructPacket(floorCollection, 1);
+        HPacket walls = HWallItem.constructPacket(wallCollection, 1);
+        HFloorItem[] parsedFloors = HFloorItem.parse(floors);
+        HWallItem[] parsedWalls = HWallItem.parse(walls);
+        if (parsedFloors.length != 4 || parsedWalls.length != 4 || !parsedFloors[0].getOwnerName().equals("Final") || !parsedWalls[0].getOwnerName().equals("Final")) throw new AssertionError("furniture owner mapping");
+        System.out.println("floor_collection=" + HexFormat.of().formatHex(floors.toBytes()));
+        System.out.println("wall_collection=" + HexFormat.of().formatHex(walls.toBytes()));
+        HPacket floorMissing = new HPacket(1);
+        floorMissing.appendInt(0).appendInt(1);
+        floorCollection[0].appendToPacket(floorMissing);
+        HPacket wallMissing = new HPacket(1);
+        wallMissing.appendInt(0).appendInt(1);
+        wallCollection[0].appendToPacket(wallMissing);
+        HFloorItem floorNoOwner = HFloorItem.parse(floorMissing)[0];
+        HWallItem wallNoOwner = HWallItem.parse(wallMissing)[0];
+        if (floorNoOwner.getOwnerName() != null || wallNoOwner.getOwnerName() != null) throw new AssertionError("missing furniture owner");
+        try { HFloorItem.constructPacket(new HFloorItem[]{floorNoOwner}, 1); throw new AssertionError("expected null owner rejection"); }
+        catch (NullPointerException expected) { }
+        try { HWallItem.constructPacket(new HWallItem[]{wallNoOwner}, 1); throw new AssertionError("expected null owner rejection"); }
+        catch (NullPointerException expected) { }
+        System.out.println("floor_missing_owner=" + HexFormat.of().formatHex(floorMissing.toBytes()));
+        System.out.println("wall_missing_owner=" + HexFormat.of().formatHex(wallMissing.toBytes()));
+
         HPacket inventoryInput = new HPacket(1);
         inventoryInput.appendInt(1).appendString("S").appendInt(2).appendInt(3).appendInt(1);
         new EmptyStuffData().appendToPacket(inventoryInput);

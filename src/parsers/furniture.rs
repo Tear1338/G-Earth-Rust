@@ -297,16 +297,12 @@ impl HFloorItem {
         }
         let mut owners = BTreeMap::new();
         for item in items {
-            owners.insert(
-                item.owner_id,
-                item.owner_name
-                    .as_deref()
-                    .ok_or_else(|| error("furniture owner name missing"))?,
-            );
+            owners.insert(item.owner_id, item.owner_name.as_deref());
         }
         let mut packet = Packet::new(header);
         packet.put_i32(owners.len() as i32)?;
         for (id, name) in owners {
+            let name = name.ok_or_else(|| error("furniture owner name missing"))?;
             packet.put_i32(id)?.put_string(name)?;
         }
         packet.put_i32(items.len() as i32)?;
@@ -374,16 +370,12 @@ impl HWallItem {
         }
         let mut owners = BTreeMap::new();
         for item in items {
-            owners.insert(
-                item.owner_id,
-                item.owner_name
-                    .as_deref()
-                    .ok_or_else(|| error("furniture owner name missing"))?,
-            );
+            owners.insert(item.owner_id, item.owner_name.as_deref());
         }
         let mut packet = Packet::new(header);
         packet.put_i32(owners.len() as i32)?;
         for (id, name) in owners {
+            let name = name.ok_or_else(|| error("furniture owner name missing"))?;
             packet.put_i32(id)?.put_string(name)?;
         }
         packet.put_i32(items.len() as i32)?;
