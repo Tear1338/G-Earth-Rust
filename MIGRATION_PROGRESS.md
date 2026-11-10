@@ -280,6 +280,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Top-level Java regex alternation now supports captures that end with their branch, including nested and named captures. A 200-packet beta-29 corpus checks branch order, unset groups, multiple references and named replacements. Branches with a fallible suffix after a capture, repeated capturing groups and nested alternation remain rejected because Java can retain captures from failed searches. Thirty-three mutation tests, twelve budget tests, both Clippy configurations and desktop/web debug compilation pass locally.
 
+- Fixed-width reluctant non-capturing repetitions now retain captures from failed search starts like Java GroupCurly, and reset them between successful finds. The previously failing (?:(a)b)*?b case and 240 varied beta-29 packet comparisons pass, including nested/named/empty captures and bounded repetition. Greedy zero-minimum cases, nested repetition, alternatives with fallible capture suffixes and general capture restoration remain unsupported. Thirty-three mutation tests, thirteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally.
+
 ## Exact next step
 
-Extend the regex matcher to preserve Java capture state across failed searches and branches, using (?:(a)b)*?b and (a)c|b differential fixtures; then support fallible capture suffixes and nested alternation. Validate official AIR traffic and an extension through the relay when a disposable client session is available.
+Extend capture-state restoration to greedy zero-minimum non-capturing repetitions and alternation branches with fallible capture suffixes, using focused Java GroupCurly/GroupTail differential fixtures before enabling them. Validate official AIR traffic and an extension through the relay when a disposable client session is available.

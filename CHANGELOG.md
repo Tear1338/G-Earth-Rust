@@ -1,5 +1,7 @@
 # Changelog
 
+- Preserve Java failed-search captures in fixed reluctant group repetitions.
+
 - Support branch-ending captures in top-level Java regex alternation.
 
 - Support ordered top-level Java regex alternation without captures.

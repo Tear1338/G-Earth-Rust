@@ -1106,6 +1106,22 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_unicode_case_" + i, sample);
         }
+        String[] lazyCapturePatterns = {"(?:(a)b)*?b", "(?:(a)(b))*?c", "(?:(a)b)+?b", "(?:(?<x>a)b){0,3}?b", "(?:(a(b)))*?c", "x(?:(a)b)*?b", "(?i)(?:(a)b)*?B", "(?:(a)b){1,2}?a", "(?:(()a)b)*?b"};
+        char[] lazyCaptureAlphabet = {'a', 'A', 'b', 'B', 'c', 'x', ' '};
+        for (int i = 0; i < 240; i++) {
+            String pattern = lazyCapturePatterns[i % lazyCapturePatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(" abab abc abbc xabab aabbb ");
+            for (int j = 0; j < 14; j++) value.append(lazyCaptureAlphabet[(i * 5 + j * 3 + j * j) % lazyCaptureAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, (i % 9 == 1 || i % 9 == 4 || i % 9 == 8) ? "$1/$2/$0" : (i % 9 == 3 ? "${x}/$0" : "$1/$0"), 1);
+            } finally { System.setOut(original); }
+            emit("substring_lazy_capture_repeat_" + i, sample);
+        }
         String[] captureAlternationPatterns = {"(a)|b", "a|(b)", "((ab))|c", "(a?)|b", "(?<x>a)|b", "(a+)|b", "(ab)|c", "a|(b)|(c)", "(?:ab)|(a)", "(?i)(a)|B"};
         char[] captureAlternationAlphabet = {'a', 'A', 'b', 'B', 'c', ' ', '\n'};
         for (int i = 0; i < 200; i++) {

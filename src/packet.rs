@@ -1143,6 +1143,122 @@ fn replace_fixed_pattern(
     Ok(latin1_decode(&output))
 }
 
+struct LazyCaptureRepeat<'a> {
+    start: usize,
+    end: usize,
+    min: usize,
+    limit: Option<usize>,
+    ranges: &'a [(usize, usize)],
+    names: &'a [Option<String>],
+}
+
+fn match_atom_sequence(
+    input: &[u8],
+    atoms: &[FixedRegexAtom],
+    mut position: usize,
+    comparisons: &mut usize,
+) -> Result<Option<usize>> {
+    for atom in atoms {
+        consume_regex_budget(comparisons)?;
+        let Some(width) = atom_width(atom, input, position) else {
+            return Ok(None);
+        };
+        position += width;
+    }
+    Ok(Some(position))
+}
+
+// Java's GroupCurly can retain captures from a complete iteration even if the
+// current search start later fails. Matcher.search clears them only on the next find.
+fn replace_lazy_capture_repeat(
+    text: &str,
+    atoms: &[FixedRegexAtom],
+    plan: &LazyCaptureRepeat<'_>,
+    replacement: &str,
+    comparisons: &mut usize,
+) -> Result<String> {
+    let input = latin1_encode(text)?;
+    let mut output = Vec::new();
+    let mut captures = vec![None; plan.ranges.len()];
+    let mut copied = 0;
+    let mut offset = 0;
+    while offset <= input.len() {
+        let mut matched_end = None;
+        if let Some(mut position) =
+            match_atom_sequence(&input, &atoms[..plan.start], offset, comparisons)?
+        {
+            let mut count = 0;
+            loop {
+                if count >= plan.min {
+                    if let Some(end) =
+                        match_atom_sequence(&input, &atoms[plan.end..], position, comparisons)?
+                    {
+                        matched_end = Some(end);
+                        break;
+                    }
+                }
+                if plan.limit.is_some_and(|limit| count >= limit)
+                    || !repetition_unit_matches(
+                        &input,
+                        position,
+                        atoms,
+                        plan.start,
+                        plan.end,
+                        comparisons,
+                    )?
+                {
+                    break;
+                }
+                for (slot, &(start, end)) in captures.iter_mut().zip(plan.ranges) {
+                    *slot = Some((position + start - plan.start, position + end - plan.start));
+                }
+                position += plan.end - plan.start;
+                count += 1;
+            }
+        }
+        if let Some(end) = matched_end {
+            let whole = latin1_decode(&input[offset..end]);
+            let groups = captures
+                .iter()
+                .map(|capture| {
+                    capture.map_or_else(String::new, |(a, b)| latin1_decode(&input[a..b]))
+                })
+                .collect::<Vec<_>>();
+            let expanded = latin1_encode(&expand_literal_groups(
+                replacement,
+                &whole,
+                &groups,
+                plan.names,
+            )?)?;
+            let prefix = offset - copied;
+            if output
+                .len()
+                .checked_add(prefix)
+                .and_then(|n| n.checked_add(expanded.len()))
+                .is_none_or(|n| n > usize::from(u16::MAX))
+            {
+                return Err(error("short string too long"));
+            }
+            output.extend_from_slice(&input[copied..offset]);
+            output.extend_from_slice(&expanded);
+            copied = end;
+            captures.fill(None);
+            offset = if end == offset { offset + 1 } else { end };
+        } else {
+            offset += 1;
+        }
+    }
+    if output
+        .len()
+        .checked_add(input.len() - copied)
+        .is_none_or(|n| n > usize::from(u16::MAX))
+    {
+        return Err(error("short string too long"));
+    }
+    output.extend_from_slice(&input[copied..]);
+    Ok(latin1_decode(&output))
+}
+
 struct RegexBranch {
     start: usize,
     end: usize,
@@ -1279,6 +1395,28 @@ mod regex_budget_tests {
             count += 1;
         }
         assert_eq!(count, 8);
+    }
+
+    #[test]
+    fn java_lazy_repeat_keeps_captures_from_failed_search_starts() {
+        let atoms = [
+            FixedRegexAtom::Literal(b'a'),
+            FixedRegexAtom::Literal(b'b'),
+            FixedRegexAtom::Literal(b'b'),
+        ];
+        let plan = LazyCaptureRepeat {
+            start: 0,
+            end: 2,
+            min: 0,
+            limit: None,
+            ranges: &[(0, 1)],
+            names: &[None],
+        };
+        let mut comparisons = 0;
+        assert_eq!(
+            replace_lazy_capture_repeat("abab", &atoms, &plan, "$1/$0", &mut comparisons).unwrap(),
+            "aa/baa/b"
+        );
     }
 
     #[test]
@@ -3455,7 +3593,8 @@ impl Packet {
         if let Some((start, end, min, _, greedy)) =
             group_repeat.filter(|_| repeated_group_owner.is_none())
         {
-            if (!groups.is_empty() && (min == 0 || !greedy))
+            if (!groups.is_empty() && greedy && min == 0)
+                || (!groups.is_empty() && !greedy && !alternatives.is_empty())
                 || ranges
                     .iter()
                     .any(|&(group_start, group_end)| group_start < start || group_end > end)
@@ -3653,6 +3792,18 @@ impl Packet {
                 });
             }
         }
+        let lazy_capture_repeat = group_repeat.and_then(|(start, end, min, limit, greedy)| {
+            (!greedy && !groups.is_empty() && repeated_group_owner.is_none()).then_some(
+                LazyCaptureRepeat {
+                    start,
+                    end,
+                    min,
+                    limit,
+                    ranges: &ranges,
+                    names: &names,
+                },
+            )
+        });
         let program = if nested_program.is_some() {
             Vec::new()
         } else {
@@ -3677,7 +3828,15 @@ impl Packet {
                         .ok_or_else(|| error("substring scan limit exceeded"))?;
                     let text = latin1_decode(&candidate.bytes[i + 2..end]);
                     if text.contains(pattern) {
-                        let result = if !branch_programs.is_empty() {
+                        let result = if let Some(plan) = &lazy_capture_repeat {
+                            replace_lazy_capture_repeat(
+                                &text,
+                                &atoms,
+                                plan,
+                                replacement,
+                                &mut comparisons,
+                            )?
+                        } else if !branch_programs.is_empty() {
                             replace_alternatives(
                                 &text,
                                 &atoms,

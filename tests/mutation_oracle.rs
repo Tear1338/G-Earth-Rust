@@ -2006,6 +2006,40 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_capture_alternation_{i}"), &packet);
     }
+    let lazy_capture_patterns = [
+        "(?:(a)b)*?b",
+        "(?:(a)(b))*?c",
+        "(?:(a)b)+?b",
+        "(?:(?<x>a)b){0,3}?b",
+        "(?:(a(b)))*?c",
+        "x(?:(a)b)*?b",
+        "(?i)(?:(a)b)*?B",
+        "(?:(a)b){1,2}?a",
+        "(?:(()a)b)*?b",
+    ];
+    let lazy_capture_alphabet = ['a', 'A', 'b', 'B', 'c', 'x', ' '];
+    for i in 0..240 {
+        let pattern = lazy_capture_patterns[i % lazy_capture_patterns.len()];
+        let mut value = format!("{pattern} abab abc abbc xabab aabbb ");
+        for j in 0..14 {
+            value
+                .push(lazy_capture_alphabet[(i * 5 + j * 3 + j * j) % lazy_capture_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        let replacement = if matches!(i % 9, 1 | 4 | 8) {
+            "$1/$2/$0"
+        } else if i % 9 == 3 {
+            "${x}/$0"
+        } else {
+            "$1/$0"
+        };
+        packet
+            .replace_substrings_java(pattern, replacement, Some(1))
+            .unwrap();
+        check(&format!("substring_lazy_capture_repeat_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")
