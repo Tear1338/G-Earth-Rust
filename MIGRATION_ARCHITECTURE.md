@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Catalog index parsing has a 64-level depth limit, deliberately stricter than the observed beta-29 Java parser, and a shared node budget. A nested Java fixture verifies selected fields and cursor positions.
+
 Catalog parsers distinguish Java list loops, where negative counts produce empty lists, from image/text arrays, where negative lengths fail. Positive counts and tree depth remain bounded.
 
 The local metadata HTTPS test requires response writes to succeed but permits shutdown after the peer has already closed; this fixture does not replace live provider validation.

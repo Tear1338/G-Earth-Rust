@@ -445,6 +445,45 @@ fn all_stuff_data_wire_formats_match_original_java() {
     )
     .unwrap();
     assert!(negative_index.root.offer_ids.is_empty() && negative_index.root.children.is_empty());
+    let mut tree_packet = Packet::from_bytes(observed["catalog_tree"].clone()).unwrap();
+    let tree = HCatalogIndex::read(&mut tree_packet).unwrap();
+    let root = &tree.root;
+    let first = &root.children[0];
+    let grandchild = &first.children[0];
+    let mut tree_summary = Packet::new(1);
+    tree_summary
+        .put_i32(tree_packet.cursor() as i32)
+        .unwrap()
+        .put_bool(root.visible)
+        .unwrap()
+        .put_i32(root.offer_ids.len() as i32)
+        .unwrap()
+        .put_i32(root.children.len() as i32)
+        .unwrap()
+        .put_bool(first.visible)
+        .unwrap()
+        .put_i32(first.page_id)
+        .unwrap()
+        .put_i32(first.offer_ids[0])
+        .unwrap()
+        .put_i32(grandchild.page_id)
+        .unwrap()
+        .put_string(&grandchild.page_name)
+        .unwrap()
+        .put_i32(grandchild.offer_ids[1])
+        .unwrap()
+        .put_i32(root.children[1].page_id)
+        .unwrap();
+    assert_eq!(tree_summary.bytes(), observed["catalog_tree_summary"]);
+    let depth64 = HCatalogIndex::read(
+        &mut Packet::from_bytes(observed["catalog_tree_depth_64"].clone()).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(depth64.root.page_id, 164);
+    assert!(HCatalogIndex::read(
+        &mut Packet::from_bytes(observed["catalog_tree_depth_65"].clone()).unwrap()
+    )
+    .is_err());
     let mut original = Packet::from_bytes(observed["navigator"].clone()).unwrap();
     let navigation =
         gearth_rust::parsers::navigator::NavigatorSearchResult::read(&mut original).unwrap();

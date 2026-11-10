@@ -362,6 +362,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Compared a beta-29 catalog page with multiple offers, all four product types, limited/non-limited products and all front-page target forms. Java treats negative list counts as empty for offers, products, front-page items and catalog-index children/offers, while negative image arrays are rejected; Rust now follows those distinctions with its positive limits. The Java oracle, two catalog tests, both Clippy configurations and desktop/web debug build pass. Live catalog and extension behavior remains unverified.
 
+- Compared a three-level beta-29 catalog index with multiple children, offer IDs, visibility flags and parser cursor; Rust matches Java's observed values. Java accepted a chain at depth 65, while Rust deliberately rejects depth above 64; depth 64 passes. The Java oracle, two catalog tests, both Clippy configurations and desktop/web debug build pass. Live catalog behavior remains unverified.
+
 ## Exact next step
 
-Compare beta-29 catalog index trees with nested children, multiple offers and visibility flags, including cursor behavior and depth limits; add differential fixtures and fix discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
+Compare beta-29 navigator search results with multiple blocks, room option flags, tags and negative list versus array counts; add differential fixtures and correct discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.

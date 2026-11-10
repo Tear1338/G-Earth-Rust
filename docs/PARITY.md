@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Catalog index fixtures compare nested children, offer IDs, visibility and cursor position. Java accepted a 65-level chain that Rust deliberately rejects beyond its 64-level depth bound.
+
 Catalog fixtures compare multiple offers, all product types, limited products and front-page target forms with beta-29. Negative list counts match Java's empty-loop behavior; negative image arrays are rejected. Live catalog compatibility remains unverified.
 
 The local metadata HTTPS fixture now tolerates a peer closing after the complete response. This addresses an intermittent test failure, not real-provider validation.

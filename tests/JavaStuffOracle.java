@@ -32,6 +32,11 @@ public class JavaStuffOracle {
             .appendString("figure").appendInt(category).appendString("motto").appendString("").appendString("")
             .appendBoolean(false).appendBoolean(true).appendBoolean(false).appendShort((short)relationship);
     }
+    static void appendCatalogChain(HPacket p, int depth) {
+        p.appendBoolean(depth % 2 == 0).appendInt(depth).appendInt(100 + depth).appendString("Node" + depth).appendString("loc" + depth)
+            .appendInt(1).appendInt(1000 + depth).appendInt(depth == 0 ? 0 : 1);
+        if (depth > 0) appendCatalogChain(p, depth - 1);
+    }
     public static void main(String[] args) {
         HashMap<String, String> map = new HashMap<>();
         map.put("state", "2");
@@ -270,6 +275,30 @@ public class JavaStuffOracle {
         HCatalogIndex negativeIndex = new HCatalogIndex(negativeCatalogIndex);
         if (!negativeIndex.getRoot().getOfferIds().isEmpty() || !negativeIndex.getRoot().getChildren().isEmpty()) throw new AssertionError("negative catalog index lists");
         System.out.println("catalog_index_negative_lists=" + HexFormat.of().formatHex(negativeCatalogIndex.toBytes()));
+        HPacket catalogTree = new HPacket(1);
+        catalogTree.appendBoolean(true).appendInt(10).appendInt(1).appendString("root").appendString("root.loc")
+            .appendInt(2).appendInt(11).appendInt(12).appendInt(2);
+        catalogTree.appendBoolean(false).appendInt(20).appendInt(2).appendString("child1").appendString("child1.loc")
+            .appendInt(1).appendInt(21).appendInt(1);
+        catalogTree.appendBoolean(true).appendInt(30).appendInt(3).appendString("grandchild").appendString("grand.loc")
+            .appendInt(2).appendInt(31).appendInt(32).appendInt(0);
+        catalogTree.appendBoolean(true).appendInt(40).appendInt(4).appendString("child2").appendString("child2.loc")
+            .appendInt(0).appendInt(0).appendBoolean(true).appendString("NORMAL");
+        HCatalogIndex parsedTree = new HCatalogIndex(catalogTree);
+        var root = parsedTree.getRoot(); var first = root.getChildren().get(0); var grandchild = first.getChildren().get(0);
+        HPacket treeSummary = new HPacket(1);
+        treeSummary.appendInt(catalogTree.getReadIndex()).appendBoolean(root.isVisible()).appendInt(root.getOfferIds().size()).appendInt(root.getChildren().size())
+            .appendBoolean(first.isVisible()).appendInt(first.getPageId()).appendInt(first.getOfferIds().get(0)).appendInt(grandchild.getPageId())
+            .appendString(grandchild.getPageName()).appendInt(grandchild.getOfferIds().get(1)).appendInt(root.getChildren().get(1).getPageId());
+        if (!parsedTree.isNewAdditionsAvailable() || grandchild.getPageId() != 3) throw new AssertionError("catalog tree");
+        System.out.println("catalog_tree=" + HexFormat.of().formatHex(catalogTree.toBytes()));
+        System.out.println("catalog_tree_summary=" + HexFormat.of().formatHex(treeSummary.toBytes()));
+        for (int depth : new int[]{64, 65}) {
+            HPacket chain = new HPacket(1); appendCatalogChain(chain, depth); chain.appendBoolean(false).appendString("NORMAL");
+            HCatalogIndex parsed = new HCatalogIndex(chain);
+            if (parsed.getRoot().getPageId() != 100 + depth) throw new AssertionError("catalog chain");
+            System.out.println("catalog_tree_depth_" + depth + "=" + HexFormat.of().formatHex(chain.toBytes()));
+        }
 
         HPacket navigatorInput = new HPacket(1);
         navigatorInput.appendString("popular").appendString("").appendInt(1)

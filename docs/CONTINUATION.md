@@ -1,5 +1,7 @@
 # Continuation state
 
+Nested catalog index fields and cursor match beta-29 for selected trees. Java accepted depth 65, while Rust deliberately limits depth to 64; the boundary is covered. Java oracle, two catalog tests, both Clippy configurations and desktop/web debug build pass. Next: compare navigator blocks, room flags and count handling. The dedicated AIR session is being prepared; live relay and extension testing remains outstanding.
+
 Catalog pages now match selected beta-29 multi-offer/product and front-page fixtures, including Java's negative-list versus negative-array distinction. Java oracle, two catalog tests, both Clippy configurations and desktop/web debug build pass. Next: compare nested catalog index trees. The dedicated AIR session is being prepared; real relay and extension testing remains outstanding.
 
 Actions run 42918149724 failed in a local HTTPS fixture on TLS shutdown after response writes; 42918744937 subsequently passed. The fixture now tolerates that close race and its focused Windows web test, both Clippy configurations and desktop/web debug build pass. Next: complete the catalog offer/product comparison. Live relay and extension testing still awaits the dedicated AIR session.
