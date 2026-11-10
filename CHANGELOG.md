@@ -1,5 +1,7 @@
 # Changelog
 
+- Preserve ordinary captures in nested Java regex alternation.
+
 - Support bounded nested Java alternation without capture groups.
 
 - Support Java alternation branches with captures before fallible suffixes.

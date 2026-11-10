@@ -1106,6 +1106,24 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_unicode_case_" + i, sample);
         }
+        String[] nestedCapturePatterns = {"(a|b)c", "(a|(b))c", "((a)|(b))c", "(?:(a)|b)c", "(a|b)(c)", "(a|b)?c", "a*(a|b)b", "(?<x>a|b)c", "(a|(?:b|c))d", "(?:()|a)b", "(?:a|(b?))c", "(a|b)|(c)", "(?:(a)|b)?"};
+        char[] nestedCaptureAlphabet = {'a', 'A', 'b', 'B', 'c', 'd', ' ', '\n'};
+        for (int i = 0; i < 240; i++) {
+            String pattern = nestedCapturePatterns[i % nestedCapturePatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(" ac bc abc aaab abd cd ");
+            for (int j = 0; j < 14; j++) value.append(nestedCaptureAlphabet[(i * 3 + j * 7 + j * j) % nestedCaptureAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                int n = i % 13;
+                String replacement = n == 2 ? "$1/$2/$3/$0" : (n == 1 || n == 4 || n == 11) ? "$1/$2/$0" : n == 7 ? "${x}/$0" : "$1/$0";
+                sample.replaceXSubstrings(pattern, replacement, 1);
+            } finally { System.setOut(original); }
+            emit("substring_nested_capture_alternation_" + i, sample);
+        }
         String[] nestedAlternationPatterns = {"(?:a|b)c", "a(?:b|c)d", "(?:a|ab)b", "a*(?:a|b)", "(?:a|b)?c", "a(?:b|(?:c|d)e)f", "(?i:a|b)c", "(?:a||b)c", "(?:|a)b", "(?:a?|bc)d", "(?:a|b)|c"};
         char[] nestedAlternationAlphabet = {'a', 'A', 'b', 'B', 'c', 'd', 'e', 'f', ' ', '\n'};
         for (int i = 0; i < 240; i++) {

@@ -2141,6 +2141,47 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_nested_alternation_{i}"), &packet);
     }
+    let nested_capture_patterns = [
+        "(a|b)c",
+        "(a|(b))c",
+        "((a)|(b))c",
+        "(?:(a)|b)c",
+        "(a|b)(c)",
+        "(a|b)?c",
+        "a*(a|b)b",
+        "(?<x>a|b)c",
+        "(a|(?:b|c))d",
+        "(?:()|a)b",
+        "(?:a|(b?))c",
+        "(a|b)|(c)",
+        "(?:(a)|b)?",
+    ];
+    let nested_capture_alphabet = ['a', 'A', 'b', 'B', 'c', 'd', ' ', '\n'];
+    for i in 0..240 {
+        let pattern = nested_capture_patterns[i % nested_capture_patterns.len()];
+        let mut value = format!("{pattern} ac bc abc aaab abd cd ");
+        for j in 0..14 {
+            value.push(
+                nested_capture_alphabet[(i * 3 + j * 7 + j * j) % nested_capture_alphabet.len()],
+            );
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        let replacement = match i % 13 {
+            2 => "$1/$2/$3/$0",
+            1 | 4 | 11 => "$1/$2/$0",
+            7 => "${x}/$0",
+            _ => "$1/$0",
+        };
+        packet
+            .replace_substrings_java(pattern, replacement, Some(1))
+            .unwrap();
+        check(
+            &format!("substring_nested_capture_alternation_{i}"),
+            &packet,
+        );
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

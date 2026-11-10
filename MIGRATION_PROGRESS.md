@@ -288,6 +288,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Nested Java regex alternation without captures now uses a bounded branch-aware matcher, preserving ordered choices and backtracking through surrounding atom quantifiers. A 240-packet beta-29 corpus covers empty/nested branches, scoped flags and optional groups. Captures and repeated groups containing nested alternatives remain rejected; group nesting is capped at 128 for this matcher. Thirty-four mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally. Actions runs 42732151018 and 42732399257 passed all eight validation jobs.
 
+- Nested Java regex alternation now supports ordinary capture groups with bounded GroupHead/GroupTail-style rollback, including named, empty and optional captures. A 240-packet beta-29 corpus checks branch choice and multiple replacement references. Quantified groups containing alternatives remain explicitly unsupported. Thirty-four mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally.
+
 ## Exact next step
 
-Extend nested regex alternation to ordinary capturing groups with Java GroupHead/GroupTail rollback and branch-specific capture fixtures, then support quantified alternative groups. Validate official AIR traffic and an extension through the relay when a disposable client session is available.
+Implement quantified nested alternative groups with bounded repetition and Java capture retention, using fixtures for (?:a|b)+, (a|b)*, empty branches and greedy/reluctant backtracking. Validate official AIR traffic and an extension through the relay when a disposable client session is available.

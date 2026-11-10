@@ -1694,6 +1694,7 @@ mod regex_budget_tests {
 struct AlternationNode {
     start: usize,
     end: usize,
+    capture: Option<usize>,
     splits: Vec<usize>,
     // The branch index records ownership even for zero-width child groups.
     children: Vec<(usize, usize)>,
@@ -1798,6 +1799,9 @@ fn emit_alternation_node(
         pc
     });
     let body = program.len();
+    if let Some(group) = node.capture {
+        program.push(NestedInstruction::Start(group));
+    }
     let mut boundaries = Vec::with_capacity(node.splits.len() + 2);
     boundaries.push(node.start);
     boundaries.extend_from_slice(&node.splits);
@@ -1836,10 +1840,14 @@ fn emit_alternation_node(
             program[split] = NestedInstruction::Split(branch_start, next);
         }
     }
-    let after = program.len();
+    let branch_end = program.len();
     for pc in exits {
-        program[pc] = NestedInstruction::Jump(after);
+        program[pc] = NestedInstruction::Jump(branch_end);
     }
+    if let Some(group) = node.capture {
+        program.push(NestedInstruction::End(group));
+    }
+    let after = program.len();
     if let Some(split) = optional_split {
         program[split] = if optional_nodes[id].unwrap() {
             NestedInstruction::Split(body, after)
@@ -3364,6 +3372,7 @@ impl Packet {
         let mut dynamic = case_insensitive;
         let mut alternatives = Vec::new();
         let mut group_branches = Vec::new();
+        let mut group_nodes = Vec::new();
         let mut alternative_nodes = vec![AlternationNode::default()];
         let mut node_stack = vec![0usize];
         let mut optional_node_entries = Vec::new();
@@ -3493,6 +3502,8 @@ impl Packet {
                     open.push(groups.len());
                     let node =
                         push_alternation_node(&mut alternative_nodes, &mut node_stack, atoms.len());
+                    alternative_nodes[node].capture = Some(groups.len());
+                    group_nodes.push(node);
                     group_frames.push((
                         Some(groups.len()),
                         atoms.len(),
@@ -3638,8 +3649,13 @@ impl Packet {
                         (start, end)
                     };
                     if start != end {
-                        if !quantifiable && last_closed_group.is_none() {
-                            let (_, _, node) = prior_noncapturing.unwrap();
+                        if !quantifiable {
+                            let node = if let Some(group) = last_closed_group {
+                                group_nodes[group]
+                            } else {
+                                let (_, _, node) = prior_noncapturing.unwrap();
+                                node
+                            };
                             optional_node_entries.push((optional.len(), node, greedy));
                         }
                         optional.push((start, end, greedy));
@@ -3768,9 +3784,9 @@ impl Packet {
             .iter()
             .skip(1)
             .any(|node| !node.splits.is_empty());
-        if has_nested_alternation && (!groups.is_empty() || group_repeat.is_some()) {
+        if has_nested_alternation && group_repeat.is_some() {
             return Err(error(
-                "nested alternation with captures or repeated groups is not supported",
+                "nested alternation with repeated groups is not supported",
             ));
         }
         let needle = latin1_encode(&literal)?;
