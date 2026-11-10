@@ -1090,6 +1090,31 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_multiline_" + i, sample);
         }
+        String[] unicodePatterns = {"(?iu)(é)", "(?iu)([é])", "(?iu)([^é])", "(?ui)([À-Ö]+)", "(?i)(?u)([ø-þ]+)", "(?iu)([a-z]+)", "(?u)(é)"};
+        char[] unicodeAlphabet = {'é', 'É', 'à', 'À', 'ß', 'ÿ', '×', 'Ø', 'ø', 'Ð', 'ð', 'a', 'A'};
+        for (int i = 0; i < 210; i++) {
+            String pattern = unicodePatterns[i % unicodePatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(" éÉàÀ Øø Ðð ");
+            for (int j = 0; j < 16; j++) value.append(unicodeAlphabet[(i * 7 + j * 3) % unicodeAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, "$1/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_unicode_case_" + i, sample);
+        }
+        for (int first = 0; first < 256; first++) {
+            var pattern = java.util.regex.Pattern.compile(java.util.regex.Pattern.quote(Character.toString((char) first)),
+                java.util.regex.Pattern.CASE_INSENSITIVE | java.util.regex.Pattern.UNICODE_CASE);
+            byte[] matches = new byte[32];
+            for (int second = 0; second < 256; second++) {
+                if (pattern.matcher(Character.toString((char) second)).matches()) matches[second / 8] |= (byte) (1 << (second % 8));
+            }
+            System.out.println("unicode_case_" + first + "=" + java.util.HexFormat.of().formatHex(matches));
+        }
         HPacket emptyGrowth = new HPacket(5);
         emptyGrowth.appendString("").appendString("a");
         emptyGrowth.setReadIndex(7);

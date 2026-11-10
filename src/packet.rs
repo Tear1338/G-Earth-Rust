@@ -354,6 +354,7 @@ fn expand_literal_groups(
 enum FixedRegexAtom {
     Literal(u8),
     CaseInsensitive(u8),
+    UnicodeCaseInsensitive(u8),
     Dot,
     DotAll,
     Start,
@@ -425,6 +426,7 @@ enum CharacterClassElement {
 fn parse_character_class(
     chars: &mut std::iter::Peekable<std::str::Chars<'_>>,
     case_insensitive: bool,
+    unicode_case: bool,
 ) -> Result<Box<[bool; 256]>> {
     let negated = if chars.peek() == Some(&'^') {
         chars.next();
@@ -506,6 +508,14 @@ fn parse_character_class(
             let included = class[usize::from(lower)] || class[usize::from(upper)];
             class[usize::from(lower)] = included;
             class[usize::from(upper)] = included;
+        }
+        if unicode_case {
+            for upper in (0xc0u8..=0xd6).chain(0xd8..=0xde) {
+                let lower = upper + 0x20;
+                let included = class[usize::from(lower)] || class[usize::from(upper)];
+                class[usize::from(lower)] = included;
+                class[usize::from(upper)] = included;
+            }
         }
     }
     if negated {
@@ -634,9 +644,19 @@ fn compile_optional_program(
     program
 }
 
-fn literal_regex_atom(c: char, case_insensitive: bool) -> FixedRegexAtom {
+fn fold_latin1(byte: u8) -> u8 {
+    if byte.is_ascii_uppercase() || (0xc0..=0xd6).contains(&byte) || (0xd8..=0xde).contains(&byte) {
+        byte + 0x20
+    } else {
+        byte
+    }
+}
+
+fn literal_regex_atom(c: char, case_insensitive: bool, unicode_case: bool) -> FixedRegexAtom {
     let byte = c as u8;
-    if case_insensitive && byte.is_ascii_alphabetic() {
+    if case_insensitive && unicode_case {
+        FixedRegexAtom::UnicodeCaseInsensitive(byte)
+    } else if case_insensitive && byte.is_ascii_alphabetic() {
         FixedRegexAtom::CaseInsensitive(byte)
     } else {
         FixedRegexAtom::Literal(byte)
@@ -647,6 +667,9 @@ fn atom_accepts(atom: &FixedRegexAtom, byte: u8) -> bool {
     match atom {
         FixedRegexAtom::Literal(expected) => *expected == byte,
         FixedRegexAtom::CaseInsensitive(expected) => expected.eq_ignore_ascii_case(&byte),
+        FixedRegexAtom::UnicodeCaseInsensitive(expected) => {
+            fold_latin1(*expected) == fold_latin1(byte)
+        }
         FixedRegexAtom::Dot => !matches!(byte, b'\n' | b'\r' | 0x85),
         FixedRegexAtom::DotAll => true,
         FixedRegexAtom::Start
@@ -936,6 +959,36 @@ fn replace_fixed_pattern(
 #[cfg(test)]
 mod regex_budget_tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requires Java 21 Unicode case-pair vectors"]
+    fn unicode_latin1_case_pairs_match_java() {
+        let path = std::env::var("GEARTH_MUTATION_ORACLE").unwrap();
+        let oracle = std::fs::read_to_string(path).unwrap();
+        let mut count = 0;
+        for line in oracle.lines() {
+            let Some(line) = line.strip_prefix("unicode_case_") else {
+                continue;
+            };
+            let (first, hex) = line.split_once('=').unwrap();
+            let first: u8 = first.parse().unwrap();
+            let bytes: Vec<u8> = (0..hex.len())
+                .step_by(2)
+                .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).unwrap())
+                .collect();
+            assert_eq!(bytes.len(), 32);
+            for second in 0u8..=255 {
+                let expected = bytes[usize::from(second) / 8] & (1 << (second % 8)) != 0;
+                assert_eq!(
+                    atom_accepts(&FixedRegexAtom::UnicodeCaseInsensitive(first), second),
+                    expected,
+                    "{first:02x} {second:02x}"
+                );
+            }
+            count += 1;
+        }
+        assert_eq!(count, 256);
+    }
 
     #[test]
     fn java_21_word_boundaries_handle_empty_and_latin1() {
@@ -2662,16 +2715,23 @@ impl Packet {
         let mut case_insensitive = false;
         let mut dot_all = false;
         let mut multiline = false;
+        let mut unicode_case = false;
         while let Some(flags) = pattern_source
             .strip_prefix("(?")
             .and_then(|source| source.split_once(')'))
         {
-            if flags.0.is_empty() || !flags.0.chars().all(|flag| matches!(flag, 'i' | 's' | 'm')) {
+            if flags.0.is_empty()
+                || !flags
+                    .0
+                    .chars()
+                    .all(|flag| matches!(flag, 'i' | 's' | 'm' | 'u'))
+            {
                 break;
             }
             case_insensitive |= flags.0.contains('i');
             dot_all |= flags.0.contains('s');
             multiline |= flags.0.contains('m');
+            unicode_case |= flags.0.contains('u');
             pattern_source = flags.1;
         }
         let mut literal = String::new();
@@ -2699,7 +2759,7 @@ impl Packet {
                     continue;
                 }
                 literal.push(c);
-                atoms.push(literal_regex_atom(c, case_insensitive));
+                atoms.push(literal_regex_atom(c, case_insensitive, unicode_case));
                 quantifiable = true;
                 last_closed_group = None;
                 for &index in &open {
@@ -2815,6 +2875,7 @@ impl Packet {
                     atoms.push(FixedRegexAtom::Class(parse_character_class(
                         &mut chars,
                         case_insensitive,
+                        unicode_case,
                     )?));
                     dynamic = true;
                     quantifiable = true;
@@ -2922,7 +2983,7 @@ impl Packet {
                 _ => {}
             }
             literal.push(c);
-            atoms.push(literal_regex_atom(c, case_insensitive));
+            atoms.push(literal_regex_atom(c, case_insensitive, unicode_case));
             quantifiable = true;
             last_closed_group = None;
             for &index in &open {

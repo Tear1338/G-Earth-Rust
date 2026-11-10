@@ -252,6 +252,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Java global multiline `(?m)` and leading combinations with `(?i)`/`(?s)` now distinguish line anchors from strict `\A`, `\Z` and `\z`, including empty input and CRLF. A 200-packet corpus matches the released beta-29 API; ten budget/state tests, 30 mutation tests, both Clippy configurations and desktop/web build pass. Anchors within repeated groups, embedded flags and general Java regex remain open. Actions run 42723871382 passed all eight jobs for no-capture replacement.
 
+- Java global `(?u)` combined with `(?i)` now matches Latin-1 case pairs in literals and positive/negated classes; `(?u)` alone leaves case sensitive matching unchanged. All 65,536 Latin-1 pairs match Java 21 and 210 packet mutations match the released beta-29 API, including captures and flag combinations. The pair oracle also runs in CI. Thirty mutation tests, ten budget tests, both Clippy configurations and the desktop/web debug build pass locally. Full Java regex, embedded flags and live clients/extensions remain unverified. Actions run 42724130488 passed all eight jobs for dotall.
+
 ## Exact next step
 
-Compare Java Unicode case-insensitive regex mode `(?iu)` over all Latin-1 case pairs, classes and negation against the released beta-29 API; extend bounded matching only after differential fixtures. Unity static metadata can still be stale by design; real game sessions, full Java regex replacement and visual logger interaction remain open.
+Compare Java 21 `(?U)` Unicode predefined classes and word boundaries over all Latin-1 bytes with exhaustive differential fixtures, then implement only the evidenced subset. Real game sessions and visual UI validation remain open.

@@ -33,3 +33,5 @@ With SOCKS configured, the session-opted-in Nitro City helper also uses authenti
 The desktop Nitro panel shares validated SOCKS settings with the relay, applies them to manual Nitro metadata retrieval and the browser proxy, and retains session-only City Helper opt-in. Unity still rejects SOCKS.
 
 Flash and Origins metadata fetching uses the same SOCKS HTTPS path when `web` is enabled. A minimal no-web build refuses SOCKS metadata lookup rather than connecting directly; the relay continues without names.
+
+Java global `(?u)` combined with `(?i)` now matches Latin-1 case pairs in literals and positive/negated classes; `(?u)` alone leaves case sensitive matching unchanged. All 65,536 Latin-1 pairs match Java 21 and 210 packet mutations match the released beta-29 API, including captures and flag combinations. The pair oracle also runs in CI. Thirty mutation tests, ten budget tests, both Clippy configurations and the desktop/web debug build pass locally. Full Java regex, embedded flags and live clients/extensions remain unverified.

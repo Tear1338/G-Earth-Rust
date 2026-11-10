@@ -1,5 +1,7 @@
 # Changelog
 
+- Support Java Unicode case-insensitive Latin-1 literals and classes with exhaustive Java 21 pair comparisons.
+
 - Route Flash and Origins metadata lookups through configured SOCKS when the web feature is present; no-web builds fail closed for that lookup.
 
 - Enable authenticated SOCKS5 in desktop Nitro settings, including metadata and explicitly opted-in City helper requests.
