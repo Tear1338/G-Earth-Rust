@@ -2074,6 +2074,42 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_greedy_capture_repeat_{i}"), &packet);
     }
+    let branch_rollback_patterns = [
+        "(a)c|b",
+        "(a)b|b",
+        "(a)?c|b",
+        "((a)b)c|b",
+        "(a)(b)c|b",
+        "(?<x>a)c|b",
+        "(a+)b|c",
+        "a|(b)c",
+        "([ab]+)a|b",
+        "(a)(?:b)?c|b",
+    ];
+    let branch_rollback_alphabet = ['a', 'A', 'b', 'B', 'c', ' ', '\n'];
+    for i in 0..250 {
+        let pattern = branch_rollback_patterns[i % branch_rollback_patterns.len()];
+        let mut value = format!("{pattern} ab abc aaab bc cab ");
+        for j in 0..14 {
+            value.push(
+                branch_rollback_alphabet[(i * 5 + j * 3 + j * j) % branch_rollback_alphabet.len()],
+            );
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        let replacement = if matches!(i % 10, 3 | 4) {
+            "$1/$2/$0"
+        } else if i % 10 == 5 {
+            "${x}/$0"
+        } else {
+            "$1/$0"
+        };
+        packet
+            .replace_substrings_java(pattern, replacement, Some(1))
+            .unwrap();
+        check(&format!("substring_branch_capture_rollback_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

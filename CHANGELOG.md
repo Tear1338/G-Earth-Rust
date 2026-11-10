@@ -1,5 +1,7 @@
 # Changelog
 
+- Support Java alternation branches with captures before fallible suffixes.
+
 - Fix greedy repeated-group capture retention during Java-style backtracking.
 
 - Preserve Java failed-search captures in fixed reluctant group repetitions.

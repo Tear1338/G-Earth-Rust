@@ -1106,6 +1106,22 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_unicode_case_" + i, sample);
         }
+        String[] branchRollbackPatterns = {"(a)c|b", "(a)b|b", "(a)?c|b", "((a)b)c|b", "(a)(b)c|b", "(?<x>a)c|b", "(a+)b|c", "a|(b)c", "([ab]+)a|b", "(a)(?:b)?c|b"};
+        char[] branchRollbackAlphabet = {'a', 'A', 'b', 'B', 'c', ' ', '\n'};
+        for (int i = 0; i < 250; i++) {
+            String pattern = branchRollbackPatterns[i % branchRollbackPatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(" ab abc aaab bc cab ");
+            for (int j = 0; j < 14; j++) value.append(branchRollbackAlphabet[(i * 5 + j * 3 + j * j) % branchRollbackAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, (i % 10 == 3 || i % 10 == 4) ? "$1/$2/$0" : (i % 10 == 5 ? "${x}/$0" : "$1/$0"), 1);
+            } finally { System.setOut(original); }
+            emit("substring_branch_capture_rollback_" + i, sample);
+        }
         String[] greedyCapturePatterns = {"(?:(.)(.))+ab", "(?:(.)(.))*ab", "(?:(.)(.)){0,3}ab", "(?:(a)b)*b", "(?:(?<x>.)b)*b", "(?:(a)(.)){1,3}ab", "(?i)(?:(.)(.))*AB", "x(?:(.)(.))*ab"};
         char[] greedyCaptureAlphabet = {'a', 'A', 'b', 'B', 'c', 'd', 'e', 'f', 'x', ' '};
         for (int i = 0; i < 240; i++) {

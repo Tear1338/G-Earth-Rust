@@ -3817,12 +3817,8 @@ impl Packet {
                     if group_branches[group] != branch_index {
                         continue;
                     }
-                    // A capture followed by another atom can survive a failed Java search;
-                    // do not claim parity until the matcher preserves that state.
-                    if group_start < start || group_end != end {
-                        return Err(error(
-                            "alternation with a fallible capture suffix is not supported",
-                        ));
+                    if group_start < start || group_end > end {
+                        return Err(error("capture spans multiple alternatives"));
                     }
                     branch_groups.push((group, group_start - start, group_end - start));
                 }
