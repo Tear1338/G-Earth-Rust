@@ -4,6 +4,8 @@ import gearth.extensions.parsers.HFloorItem;
 import gearth.extensions.parsers.HWallItem;
 import gearth.extensions.parsers.HInventoryItem;
 import gearth.extensions.parsers.HFriend;
+import gearth.extensions.parsers.HUserProfile;
+import gearth.extensions.parsers.HGroup;
 import gearth.extensions.parsers.HEntity;
 import gearth.extensions.parsers.HEntityType;
 import gearth.extensions.parsers.catalog.HCatalogPage;
@@ -132,6 +134,36 @@ public class JavaStuffOracle {
         HPacket friendOutput = new HPacket(1);
         new HFriend(friendInput).appendToPacket(friendOutput);
         System.out.println("friend=" + HexFormat.of().formatHex(friendOutput.toBytes()));
+
+        for (int flags = 0; flags < 8; flags++) {
+            int groups = flags % 3;
+            HPacket input = new HPacket(1);
+            input.appendInt(123).appendString("Alice").appendString("Salut é").appendString("figure").appendString("2020-01-02")
+                .appendInt(456).appendInt(78).appendBoolean((flags & 1) != 0).appendBoolean((flags & 2) != 0).appendBoolean((flags & 4) != 0).appendInt(groups);
+            for (int i = 0; i < groups; i++) {
+                input.appendInt(100 + i).appendString("Groupe" + i).appendString("Badge" + i).appendString("A" + i).appendString("B" + i)
+                    .appendBoolean(i % 2 == 0).appendInt(200 + i).appendBoolean(i % 2 != 0);
+            }
+            input.appendInt(-7).appendBoolean((flags & 1) != 0);
+            HUserProfile profile = new HUserProfile(input);
+            HPacket normalized = new HPacket(1);
+            normalized.appendInt(profile.getId()).appendString(profile.getUsername()).appendString(profile.getMotto()).appendString(profile.getFigure()).appendString(profile.getCreationDate())
+                .appendInt(profile.getAchievementScore()).appendInt(profile.getFriendCount()).appendBoolean(profile.isFriend()).appendBoolean(profile.isRequestedFriend()).appendBoolean(profile.isOnline()).appendInt(profile.getGroups().length);
+            for (HGroup group : profile.getGroups()) {
+                normalized.appendInt(group.getId()).appendString(group.getName()).appendString(group.getBadgeCode()).appendString(group.getPrimaryColor()).appendString(group.getSecondaryColor())
+                    .appendBoolean(group.isFavorite()).appendInt(group.getOwnerId()).appendBoolean(group.isHasForum());
+            }
+            normalized.appendInt(profile.getLastAccessSince()).appendBoolean(profile.isOpenProfile());
+            if (profile.getGroups().length != groups || profile.isFriend() != ((flags & 1) != 0)) throw new AssertionError("profile flags");
+            System.out.println("profile_" + flags + "=" + HexFormat.of().formatHex(input.toBytes()));
+            System.out.println("profile_normalized_" + flags + "=" + HexFormat.of().formatHex(normalized.toBytes()));
+        }
+        HPacket invalidProfile = new HPacket(1);
+        invalidProfile.appendInt(123).appendString("Alice").appendString("").appendString("").appendString("")
+            .appendInt(0).appendInt(0).appendBoolean(false).appendBoolean(false).appendBoolean(false).appendInt(-1);
+        try { new HUserProfile(invalidProfile); throw new AssertionError("expected negative group count rejection"); }
+        catch (NegativeArraySizeException expected) { }
+        System.out.println("profile_negative_groups=" + HexFormat.of().formatHex(invalidProfile.toBytes()));
 
         HPacket catalogIndex = new HPacket(1);
         catalogIndex.appendBoolean(true).appendInt(2).appendInt(3).appendString("root").appendString("loc")

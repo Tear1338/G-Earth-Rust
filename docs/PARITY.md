@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Profile and group fixtures compare eight flag combinations, varying group counts and negative-count rejection with the beta-29 Java API. Live profile and extension compatibility remains unverified.
+
 Forum overview fixtures compare three rows across all known view modes and an unknown-mode fallback with beta-29 getters and normalized output. Live forum and extension behavior remains unverified.
 
 Forum thread overview fixtures cover flags, multiple rows, known and unknown states, and Java's empty-list interpretation of negative overview counts. Positive counts remain bounded; live forum and extension behavior remains unverified.

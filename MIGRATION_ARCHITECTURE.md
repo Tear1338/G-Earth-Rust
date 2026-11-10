@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Profile and group parsers have beta-29 getter and normalized-byte fixtures covering flags, group collections and negative group counts; live behavior remains unverified.
+
 Forum overview parsing has beta-29 getter and normalized-output fixtures for known and unknown view modes and multiple rows; these finite fixtures do not establish live parity.
 
 Forum overview parsers follow Java's empty-list behavior for negative counts while retaining a bounded limit for positive counts. Unknown thread states normalize to the Java default when serialized.

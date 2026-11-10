@@ -1,5 +1,7 @@
 # Continuation state
 
+Profile and group fixtures compare all eight combinations of the three profile flags, group fields/counts and negative-count rejection against beta-29; parsed values and normalized bytes match. Java oracle, social unit test, both Clippy configurations and desktop/web debug build pass. Next: compare friend update categories, change types and relationship statuses. The dedicated AIR session is being prepared; real relay and extension testing remains outstanding.
+
 Forum overview rows and known/unknown view modes now have beta-29 getter and normalized-output fixtures. Java oracle, three forum tests, both Clippy configurations and desktop/web debug build pass. Next: compare user profiles and groups. The dedicated AIR session is being prepared; real relay and extension testing remains outstanding.
 
 Forum thread overviews now match beta-29 fixtures for multiple rows, flags and state fallback; negative counts in all three overview parsers produce empty lists as in Java, with positive counts still bounded. Java oracle, three forum tests, both Clippy configurations and desktop/web debug compilation pass. Next: compare forum overview rows and view modes. The dedicated AIR session is being prepared; real relay and extension testing is outstanding.

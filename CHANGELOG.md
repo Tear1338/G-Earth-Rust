@@ -1,5 +1,7 @@
 # Changelog
 
+- Compare beta-29 profiles and groups across flags and group counts.
+
 - Expand beta-29 forum overview and view-mode comparisons.
 
 - Match Java negative forum overview counts and expand thread comparisons.

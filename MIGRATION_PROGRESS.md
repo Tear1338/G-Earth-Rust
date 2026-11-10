@@ -352,6 +352,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Compared beta-29 forum overview collections with three rows in each known view mode and an unknown mode. Parsed fields and normalized serialized bytes match Java's getter values and fallback; the Java oracle, three forum tests, both Clippy configurations and desktop/web debug build pass. Live forum and extension compatibility remains unverified.
 
+- Compared beta-29 user profiles for all eight combinations of three relationship/online flags, varying group counts and group flags. Parsed values and normalized bytes match Java; negative group counts are rejected by both implementations. The Java oracle, social unit test, both Clippy configurations and desktop/web debug build pass. Live profile and extension behavior remains unverified.
+
 ## Exact next step
 
-Compare Java `HUserProfile` and `HGroup` fields, multiple groups, flags and negative group counts against beta-29; add differential fixtures and correct discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
+Compare Java `HFriend` update parsing with duplicate and missing categories, mixed update types and relationship statuses against beta-29; add differential fixtures and correct discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.

@@ -190,6 +190,36 @@ fn all_stuff_data_wire_formats_match_original_java() {
             .unwrap(),
         inventory
     );
+    for flags in 0..8 {
+        let key = format!("profile_{flags}");
+        let profile = gearth_rust::parsers::social::HUserProfile::read(
+            &mut Packet::from_bytes(observed[key.as_str()].clone()).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(profile.username, "Alice");
+        assert_eq!(profile.motto, "Salut é");
+        assert_eq!(profile.groups.len(), flags % 3);
+        assert_eq!(
+            (
+                profile.is_friend,
+                profile.is_requested_friend,
+                profile.is_online
+            ),
+            (flags & 1 != 0, flags & 2 != 0, flags & 4 != 0)
+        );
+        let mut normalized = Packet::new(1);
+        profile.append(&mut normalized).unwrap();
+        let normalized_key = format!("profile_normalized_{flags}");
+        assert_eq!(
+            normalized.bytes(),
+            observed[normalized_key.as_str()],
+            "{key}"
+        );
+    }
+    assert!(gearth_rust::parsers::social::HUserProfile::read(
+        &mut Packet::from_bytes(observed["profile_negative_groups"].clone()).unwrap()
+    )
+    .is_err());
     for (code, product) in [
         ("I", HProductType::WallItem),
         ("S", HProductType::FloorItem),
