@@ -278,6 +278,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Top-level Java regex alternation without captures now evaluates branches in source order, including empty alternatives, flags, anchors, optional atoms and supported repetitions. A 240-packet corpus matches the beta-29 API; nested alternatives and captures remain explicitly rejected. Thirty-three mutation tests, twelve budget tests, both Clippy configurations and desktop/web debug compilation pass locally. The full workspace suite and Windows GNU desktop/web release build passed for commit 68c5425; this does not establish live relay compatibility. Actions run 42730219745 passed all eight validation jobs.
 
+- Top-level Java regex alternation now supports captures that end with their branch, including nested and named captures. A 200-packet beta-29 corpus checks branch order, unset groups, multiple references and named replacements. Branches with a fallible suffix after a capture, repeated capturing groups and nested alternation remain rejected because Java can retain captures from failed searches. Thirty-three mutation tests, twelve budget tests, both Clippy configurations and desktop/web debug compilation pass locally.
+
 ## Exact next step
 
-Extend Java regex alternation to branches with captures and nested groups, preserving branch order, capture restoration and Java backtracking; build differential fixtures first. Separately, Java retains captures from failed searches in (?:(a)b)*?b on abab, unlike the Rust matcher. Validate official AIR traffic and an extension through the relay when a disposable client session is available.
+Extend the regex matcher to preserve Java capture state across failed searches and branches, using (?:(a)b)*?b and (a)c|b differential fixtures; then support fallible capture suffixes and nested alternation. Validate official AIR traffic and an extension through the relay when a disposable client session is available.

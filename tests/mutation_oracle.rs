@@ -1967,6 +1967,45 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_alternation_{i}"), &packet);
     }
+    let capture_alternation_patterns = [
+        "(a)|b",
+        "a|(b)",
+        "((ab))|c",
+        "(a?)|b",
+        "(?<x>a)|b",
+        "(a+)|b",
+        "(ab)|c",
+        "a|(b)|(c)",
+        "(?:ab)|(a)",
+        "(?i)(a)|B",
+    ];
+    let capture_alternation_alphabet = ['a', 'A', 'b', 'B', 'c', ' ', '\n'];
+    for i in 0..200 {
+        let pattern = capture_alternation_patterns[i % capture_alternation_patterns.len()];
+        let mut value = format!("{pattern} ab abc ba aB ");
+        for j in 0..14 {
+            value.push(
+                capture_alternation_alphabet[(i * 7 + j * 3) % capture_alternation_alphabet.len()],
+            );
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(
+                pattern,
+                if matches!(i % 10, 2 | 7) {
+                    "$1/$2/$0"
+                } else if i % 10 == 4 {
+                    "${x}/$0"
+                } else {
+                    "$1/$0"
+                },
+                Some(1),
+            )
+            .unwrap();
+        check(&format!("substring_capture_alternation_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

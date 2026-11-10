@@ -1106,6 +1106,22 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_unicode_case_" + i, sample);
         }
+        String[] captureAlternationPatterns = {"(a)|b", "a|(b)", "((ab))|c", "(a?)|b", "(?<x>a)|b", "(a+)|b", "(ab)|c", "a|(b)|(c)", "(?:ab)|(a)", "(?i)(a)|B"};
+        char[] captureAlternationAlphabet = {'a', 'A', 'b', 'B', 'c', ' ', '\n'};
+        for (int i = 0; i < 200; i++) {
+            String pattern = captureAlternationPatterns[i % captureAlternationPatterns.length];
+            StringBuilder value = new StringBuilder(pattern).append(" ab abc ba aB ");
+            for (int j = 0; j < 14; j++) value.append(captureAlternationAlphabet[(i * 7 + j * 3) % captureAlternationAlphabet.length]);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value.toString());
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, (i % 10 == 2 || i % 10 == 7) ? "$1/$2/$0" : (i % 10 == 4 ? "${x}/$0" : "$1/$0"), 1);
+            } finally { System.setOut(original); }
+            emit("substring_capture_alternation_" + i, sample);
+        }
         String[] alternationPatterns = {"a|ab", "ab|a", "a|", "|b", "(?i)a|B", "a+|b*", "(?:ab)|bc", "\\w+|x", "a?|b", "(?x)a #comment\n | b", "(?s).|a", "^a|b$", "(?:ab)+|cd", "a|(?:bc){2}|d", "a|(?i)b|c", "a||b"};
         char[] alternationAlphabet = {'a', 'A', 'b', 'B', 'c', 'x', ' ', '\n', '\r', '\u0085'};
         for (int i = 0; i < 240; i++) {

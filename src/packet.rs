@@ -1143,11 +1143,19 @@ fn replace_fixed_pattern(
     Ok(latin1_decode(&output))
 }
 
+struct RegexBranch {
+    start: usize,
+    end: usize,
+    program: Vec<RegexInstruction>,
+    groups: Vec<(usize, usize, usize)>,
+}
+
 // Alternation branches are evaluated in source order at every input offset, as in Java.
 fn replace_alternatives(
     text: &str,
     atoms: &[FixedRegexAtom],
-    branches: &[(usize, usize, Vec<RegexInstruction>)],
+    branches: &[RegexBranch],
+    names: &[Option<String>],
     replacement: &str,
     comparisons: &mut usize,
 ) -> Result<String> {
@@ -1156,18 +1164,28 @@ fn replace_alternatives(
     let mut copied = 0;
     let mut offset = 0;
     while offset <= input.len() {
-        let mut matched_end = None;
-        for (start, end, program) in branches {
-            if let Some(positions) =
-                match_fixed_at(&input, offset, &atoms[*start..*end], program, comparisons)?
-            {
-                matched_end = positions.last().copied();
+        let mut matched = None;
+        for branch in branches {
+            if let Some(positions) = match_fixed_at(
+                &input,
+                offset,
+                &atoms[branch.start..branch.end],
+                &branch.program,
+                comparisons,
+            )? {
+                matched = Some((branch, positions));
                 break;
             }
         }
-        if let Some(end) = matched_end {
+        if let Some((branch, positions)) = matched {
+            let end = *positions.last().unwrap();
+            let mut groups = vec![String::new(); names.len()];
+            for &(index, start, end) in &branch.groups {
+                groups[index] = latin1_decode(&input[positions[start]..positions[end]]);
+            }
             let whole = latin1_decode(&input[offset..end]);
-            let expanded = latin1_encode(&expand_literal_groups(replacement, &whole, &[], &[])?)?;
+            let expanded =
+                latin1_encode(&expand_literal_groups(replacement, &whole, &groups, names)?)?;
             let prefix = offset - copied;
             if output
                 .len()
@@ -3050,6 +3068,7 @@ impl Packet {
         let mut ranges: Vec<(usize, usize)> = Vec::new();
         let mut dynamic = case_insensitive;
         let mut alternatives = Vec::new();
+        let mut group_branches = Vec::new();
         let mut optional = Vec::new();
         let mut optional_group_owners = Vec::new();
         let mut repeated = Vec::new();
@@ -3167,6 +3186,7 @@ impl Packet {
                     quantifiable = false;
                     last_closed_group = None;
                     parents.push(open.last().copied());
+                    group_branches.push(alternatives.len());
                     open.push(groups.len());
                     group_frames.push((
                         Some(groups.len()),
@@ -3588,15 +3608,29 @@ impl Packet {
         }
         let mut branch_programs = Vec::new();
         if !alternatives.is_empty() {
-            if !groups.is_empty() {
-                return Err(error("alternation with capture groups is not supported"));
+            if !groups.is_empty() && group_repeat.is_some() {
+                return Err(error("repeated capturing alternation is not supported"));
             }
             let mut boundaries = Vec::with_capacity(alternatives.len() + 2);
             boundaries.push(0);
             boundaries.extend(alternatives);
             boundaries.push(atoms.len());
-            for pair in boundaries.windows(2) {
+            for (branch_index, pair) in boundaries.windows(2).enumerate() {
                 let (start, end) = (pair[0], pair[1]);
+                let mut branch_groups = Vec::new();
+                for (group, &(group_start, group_end)) in ranges.iter().enumerate() {
+                    if group_branches[group] != branch_index {
+                        continue;
+                    }
+                    // A capture followed by another atom can survive a failed Java search;
+                    // do not claim parity until the matcher preserves that state.
+                    if group_start < start || group_end != end {
+                        return Err(error(
+                            "alternation with a fallible capture suffix is not supported",
+                        ));
+                    }
+                    branch_groups.push((group, group_start - start, group_end - start));
+                }
                 let branch_optional = optional
                     .iter()
                     .filter(|(a, b, _)| *a >= start && *b <= end)
@@ -3611,7 +3645,12 @@ impl Packet {
                     &repeated_atoms[start..end],
                     branch_repeat,
                 );
-                branch_programs.push((start, end, program));
+                branch_programs.push(RegexBranch {
+                    start,
+                    end,
+                    program,
+                    groups: branch_groups,
+                });
             }
         }
         let program = if nested_program.is_some() {
@@ -3643,6 +3682,7 @@ impl Packet {
                                 &text,
                                 &atoms,
                                 &branch_programs,
+                                &names,
                                 replacement,
                                 &mut comparisons,
                             )?

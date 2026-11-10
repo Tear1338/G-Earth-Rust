@@ -1,5 +1,7 @@
 # Changelog
 
+- Support branch-ending captures in top-level Java regex alternation.
+
 - Support ordered top-level Java regex alternation without captures.
 
 - Support Java COMMENTS regex whitespace, comments and scoped changes.
