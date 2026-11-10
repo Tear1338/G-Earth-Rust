@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Entity fixtures compare unknown types, gender cases, negative bot skill counts, invalid directions and entity/update counts against beta-29. The Java-compatible serializer reproduces its omitted Habbo integer; the client serializer keeps it. Real client and extension behavior remains unverified.
+
 Navigator fixtures compare 256 room flag/sentinel combinations and negative list versus tag-array counts with beta-29. Live navigator and extension behavior remains unverified.
 
 Catalog index fixtures compare nested children, offer IDs, visibility and cursor position. Java accepted a 65-level chain that Rust deliberately rejects beyond its 64-level depth bound.

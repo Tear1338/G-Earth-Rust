@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- Beta-29 entity fixtures now cover unknown type IDs, gender normalization and invalid genders, negative bot skill counts, invalid directions and negative entity/update counts. Java omits the final Habbo integer when serializing; Rust provides separate `append_java`/`construct_java` methods while retaining complete client wire output. The original Java oracle, five entity unit tests, both Clippy configurations and desktop/web debug build pass. Real clients and extensions remain unverified.
+
 Last updated: 2026-11-11. Baseline: Java 1.5.4-beta-29; current status and changes are tracked in the GitHub main branch.
 
 The migration is **not complete**. Implemented code and finite fixtures do not establish live-client compatibility or performance gains. See `docs/PARITY.md` and `docs/CONTINUATION.md` for detailed evidence and limitations.
@@ -368,4 +370,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Compare beta-29 room entity and entity-update parsing for unknown types, direction/stance values, negative counts and cursor behavior; add differential fixtures and correct discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
+Compare beta-29 entity-update action ordering, malformed numeric values and cursor behavior; add differential fixtures and correct discrepancies. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.

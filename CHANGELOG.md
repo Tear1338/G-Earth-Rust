@@ -1,5 +1,7 @@
 # Changelog
 
+- Match beta-29 entity edge cases and expose its serialization separately from complete client wire records.
+
 - Match Java navigator room sentinel flags and negative list counts.
 
 - Compare nested beta-29 catalog index trees and document the Rust depth limit.

@@ -620,4 +620,62 @@ fn all_stuff_data_wire_formats_match_original_java() {
         gearth_rust::parsers::entity::HEntityDetails::Bot { .. }
     ));
     assert_eq!(entities[1].tile.z, 3.5);
+    use gearth_rust::parsers::entity::{HEntity, HEntityDetails, HEntityUpdate};
+    for kind in [0, -1, 5, i32::MAX] {
+        let key = format!("entity_unknown_{kind}");
+        let mut packet = Packet::from_bytes(observed[key.as_str()].clone()).unwrap();
+        let entity = HEntity::read(&mut packet).unwrap();
+        assert_eq!(entity.details, HEntityDetails::Unknown(kind));
+        assert_eq!(packet.cursor(), packet.bytes().len());
+        assert!(entity.append_java(&mut Packet::new(1)).is_err());
+    }
+    for i in 0..8 {
+        let key = format!("entity_gender_input_{i}");
+        let entity =
+            HEntity::read(&mut Packet::from_bytes(observed[key.as_str()].clone()).unwrap())
+                .unwrap();
+        let mut output = Packet::new(1);
+        if i < 6 {
+            entity.append_java(&mut output).unwrap();
+            let output_key = format!("entity_gender_output_{i}");
+            assert_eq!(output.bytes(), observed[output_key.as_str()], "{key}");
+            if i == 0 {
+                assert_eq!(
+                    HEntity::construct_java(std::slice::from_ref(&entity), 1)
+                        .unwrap()
+                        .bytes(),
+                    observed["entity_habbo_construct"]
+                );
+            }
+        } else {
+            assert!(entity.append_java(&mut output).is_err(), "{key}");
+        }
+    }
+    let bot = HEntity::read(
+        &mut Packet::from_bytes(observed["entity_bot_negative_skills"].clone()).unwrap(),
+    )
+    .unwrap();
+    assert!(matches!(&bot.details, HEntityDetails::Bot { skills, .. } if skills.is_empty()));
+    let mut normalized_bot = Packet::new(1);
+    bot.append_java(&mut normalized_bot).unwrap();
+    assert_eq!(
+        normalized_bot.bytes(),
+        observed["entity_bot_negative_skills_normalized"]
+    );
+    assert!(HEntity::parse(
+        &mut Packet::from_bytes(observed["entity_negative_count"].clone()).unwrap()
+    )
+    .is_err());
+    assert!(HEntityUpdate::parse(
+        &mut Packet::from_bytes(observed["entity_update_negative_count"].clone()).unwrap()
+    )
+    .is_err());
+    for direction in [-1, 8] {
+        let key = format!("entity_update_direction_{direction}");
+        assert!(
+            HEntityUpdate::parse(&mut Packet::from_bytes(observed[key.as_str()].clone()).unwrap())
+                .is_err(),
+            "{key}"
+        );
+    }
 }

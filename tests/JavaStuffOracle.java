@@ -8,6 +8,7 @@ import gearth.extensions.parsers.HUserProfile;
 import gearth.extensions.parsers.HGroup;
 import gearth.extensions.parsers.HEntity;
 import gearth.extensions.parsers.HEntityType;
+import gearth.extensions.parsers.HEntityUpdate;
 import gearth.extensions.parsers.catalog.HCatalogPage;
 import gearth.extensions.parsers.catalog.HCatalogIndex;
 import gearth.extensions.parsers.navigator.HNavigatorSearchResult;
@@ -37,6 +38,10 @@ public class JavaStuffOracle {
         p.appendBoolean(depth % 2 == 0).appendInt(depth).appendInt(100 + depth).appendString("Node" + depth).appendString("loc" + depth)
             .appendInt(1).appendInt(1000 + depth).appendInt(depth == 0 ? 0 : 1);
         if (depth > 0) appendCatalogChain(p, depth - 1);
+    }
+    static void appendEntityBase(HPacket p, int type) {
+        p.appendInt(123).appendString("Name").appendString("Motto").appendString("Figure")
+            .appendInt(7).appendInt(1).appendInt(2).appendString("3.5").appendInt(5).appendInt(type);
     }
     public static void main(String[] args) {
         HashMap<String, String> map = new HashMap<>();
@@ -414,5 +419,48 @@ public class JavaStuffOracle {
         HEntity[] parsedEntities = HEntity.parse(entities);
         if (parsedEntities.length != 4 || parsedEntities[0].getEntityType() != HEntityType.HABBO || parsedEntities[3].getEntityType() != HEntityType.BOT || parsedEntities[1].getTile().getZ() != 3.5) throw new AssertionError("entities");
         System.out.println("entities=" + HexFormat.of().formatHex(entities.toBytes()));
+        for (int type : new int[]{0, -1, 5, Integer.MAX_VALUE}) {
+            HPacket input = new HPacket(1); appendEntityBase(input, type);
+            HEntity entity = new HEntity(input);
+            if (entity.getEntityType() != null || input.getReadIndex() != input.getBytesLength()) throw new AssertionError("unknown entity type");
+            try { entity.appendToPacket(new HPacket(1)); throw new AssertionError("expected unknown type failure"); }
+            catch (NullPointerException expected) { }
+            System.out.println("entity_unknown_" + type + "=" + HexFormat.of().formatHex(input.toBytes()));
+        }
+        String[] genders = {"M", "m", "F", "f", "U", "u", "?", ""};
+        for (int i = 0; i < genders.length; i++) {
+            HPacket input = new HPacket(1); appendEntityBase(input, 1);
+            input.appendString(genders[i]).appendInt(1).appendInt(2).appendString("group").appendString("extra").appendInt(3).appendBoolean(true).appendInt(4);
+            HEntity entity = new HEntity(input);
+            if (i < 6) {
+                HPacket output = new HPacket(1); entity.appendToPacket(output);
+                System.out.println("entity_gender_output_" + i + "=" + HexFormat.of().formatHex(output.toBytes()));
+                if (i == 0) System.out.println("entity_habbo_construct=" + HexFormat.of().formatHex(HEntity.constructPacket(new HEntity[]{entity}, 1).toBytes()));
+            } else {
+                if (entity.getGender() != null) throw new AssertionError("unknown gender");
+                try { entity.appendToPacket(new HPacket(1)); throw new AssertionError("expected unknown gender failure"); }
+                catch (NullPointerException expected) { }
+            }
+            System.out.println("entity_gender_input_" + i + "=" + HexFormat.of().formatHex(input.toBytes()));
+        }
+        HPacket botNegative = new HPacket(1); appendEntityBase(botNegative, 4);
+        botNegative.appendString("b").appendInt(8).appendString("owner").appendInt(-1);
+        HEntity bot = new HEntity(botNegative); HPacket botNormalized = new HPacket(1); bot.appendToPacket(botNormalized);
+        System.out.println("entity_bot_negative_skills=" + HexFormat.of().formatHex(botNegative.toBytes()));
+        System.out.println("entity_bot_negative_skills_normalized=" + HexFormat.of().formatHex(botNormalized.toBytes()));
+        HPacket negativeEntities = new HPacket(1); negativeEntities.appendInt(-1);
+        try { HEntity.parse(negativeEntities); throw new AssertionError("expected negative entity count failure"); }
+        catch (NegativeArraySizeException expected) { }
+        System.out.println("entity_negative_count=" + HexFormat.of().formatHex(negativeEntities.toBytes()));
+        HPacket negativeEntityUpdates = new HPacket(1); negativeEntityUpdates.appendInt(-1);
+        try { HEntityUpdate.parse(negativeEntityUpdates); throw new AssertionError("expected negative update count failure"); }
+        catch (NegativeArraySizeException expected) { }
+        System.out.println("entity_update_negative_count=" + HexFormat.of().formatHex(negativeEntityUpdates.toBytes()));
+        for (int direction : new int[]{-1, 8}) {
+            HPacket input = new HPacket(1); input.appendInt(1).appendInt(7).appendInt(1).appendInt(2).appendString("3.5").appendInt(direction).appendInt(0).appendString("");
+            try { HEntityUpdate.parse(input); throw new AssertionError("expected invalid direction failure"); }
+            catch (ArrayIndexOutOfBoundsException expected) { }
+            System.out.println("entity_update_direction_" + direction + "=" + HexFormat.of().formatHex(input.toBytes()));
+        }
     }
 }

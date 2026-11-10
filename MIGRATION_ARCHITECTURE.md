@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Entity parsing preserves unknown type IDs and normalizes known Habbo gender values. Java-compatible entity constructors reproduce beta-29's omitted final Habbo integer separately from complete client wire serialization; invalid types and genders cannot be serialized. Negative bot skill counts produce an empty list, with positive counts bounded.
+
 Navigator room serialization follows Java's sentinel omission for group ID and advertisement expiry `-1`; list counts and tag-array counts use different negative-count semantics. Fixtures cover 256 flag/sentinel combinations.
 
 Catalog index parsing has a 64-level depth limit, deliberately stricter than the observed beta-29 Java parser, and a shared node budget. A nested Java fixture verifies selected fields and cursor positions.

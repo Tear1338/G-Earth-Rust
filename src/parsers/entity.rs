@@ -92,6 +92,8 @@ pub enum HEntityDetails {
         posture: String,
     },
     OldBot,
+    /// Java parses unrecognized type IDs with a null entity type and no extra fields.
+    Unknown(i32),
     Bot {
         gender: String,
         owner_id: i32,
@@ -127,7 +129,14 @@ impl HEntity {
         let unknown = packet.read_i32()?;
         let details = match packet.read_i32()? {
             1 => HEntityDetails::Habbo {
-                gender: packet.read_string()?,
+                gender: {
+                    let value = packet.read_string()?;
+                    if matches!(value.to_ascii_uppercase().as_str(), "U" | "M" | "F") {
+                        value.to_ascii_uppercase()
+                    } else {
+                        value
+                    }
+                },
                 group_id: packet.read_i32()?,
                 group_status: packet.read_i32()?,
                 favorite_group: packet.read_string()?,
@@ -157,8 +166,8 @@ impl HEntity {
                 let gender = packet.read_string()?;
                 let owner_id = packet.read_i32()?;
                 let owner_name = packet.read_string()?;
-                let count = usize::try_from(packet.read_i32()?)
-                    .map_err(|_| error("negative bot skill count"))?;
+                // Java's loop treats a negative count as an empty skill list.
+                let count = packet.read_i32()?.max(0) as usize;
                 if count > 65_536 {
                     return Err(error("too many bot skills"));
                 }
@@ -173,7 +182,7 @@ impl HEntity {
                     skills,
                 }
             }
-            _ => return Err(error("unknown room entity type")),
+            other => HEntityDetails::Unknown(other),
         };
         Ok(Self {
             id,
@@ -188,6 +197,14 @@ impl HEntity {
         })
     }
     pub fn append(&self, packet: &mut Packet) -> Result<()> {
+        self.append_inner(packet, false)
+    }
+    /// Match beta-29's serialization, including its omission of the final
+    /// Habbo-specific integer. `append` retains the complete wire field.
+    pub fn append_java(&self, packet: &mut Packet) -> Result<()> {
+        self.append_inner(packet, true)
+    }
+    fn append_inner(&self, packet: &mut Packet, java: bool) -> Result<()> {
         packet
             .put_i32(self.id)?
             .put_string(&self.name)?
@@ -209,6 +226,9 @@ impl HEntity {
                 moderator,
                 unknown,
             } => {
+                if !matches!(gender.as_str(), "U" | "M" | "F") {
+                    return Err(error("unknown entity gender"));
+                }
                 packet
                     .put_i32(1)?
                     .put_string(gender)?
@@ -217,8 +237,10 @@ impl HEntity {
                     .put_string(favorite_group)?
                     .put_string(extra_text)?
                     .put_i32(*achievement)?
-                    .put_bool(*moderator)?
-                    .put_i32(*unknown)?;
+                    .put_bool(*moderator)?;
+                if !java {
+                    packet.put_i32(*unknown)?;
+                }
             }
             HEntityDetails::Pet {
                 pet_type,
@@ -243,6 +265,7 @@ impl HEntity {
             HEntityDetails::OldBot => {
                 packet.put_i32(3)?;
             }
+            HEntityDetails::Unknown(_) => return Err(error("unknown room entity type")),
             HEntityDetails::Bot {
                 gender,
                 owner_id,
@@ -285,6 +308,19 @@ impl HEntity {
         packet.put_i32(entities.len() as i32)?;
         for entity in entities {
             entity.append(&mut packet)?;
+        }
+        Ok(packet)
+    }
+    /// Match beta-29's `constructPacket`, including `append_java`'s omitted
+    /// Habbo field. Use `construct` for complete client wire records.
+    pub fn construct_java(entities: &[Self], header: u16) -> Result<Packet> {
+        if entities.len() > 65_536 {
+            return Err(error("too many room entities"));
+        }
+        let mut packet = Packet::new(header);
+        packet.put_i32(entities.len() as i32)?;
+        for entity in entities {
+            entity.append_java(&mut packet)?;
         }
         Ok(packet)
     }
