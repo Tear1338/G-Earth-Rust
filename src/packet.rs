@@ -1703,7 +1703,7 @@ struct AlternationNode {
     start: usize,
     end: usize,
     capture: Option<usize>,
-    assertion: Option<bool>,
+    assertion: Option<(bool, bool)>, // (positive, behind)
     assertion_group_start: usize,
     assertion_group_end: usize,
     sticky_captures: Option<(usize, usize)>,
@@ -1711,6 +1711,120 @@ struct AlternationNode {
     splits: Vec<usize>,
     // The branch index records ownership even for zero-width child groups.
     children: Vec<(usize, usize)>,
+}
+
+#[derive(Clone, Copy, Default)]
+struct RegexWidth {
+    min: usize,
+    max: usize,
+    unknown: bool,
+}
+
+impl RegexWidth {
+    fn append(&mut self, other: Self) {
+        self.min = self.min.saturating_add(other.min);
+        self.max = self.max.saturating_add(other.max);
+        self.unknown |= other.unknown;
+    }
+}
+
+fn alternation_widths(
+    nodes: &[AlternationNode],
+    atoms: &[FixedRegexAtom],
+    optional_nodes: &[Option<bool>],
+    repeated: &[Option<(usize, Option<usize>, bool)>],
+    optional_atoms: &[Option<bool>],
+) -> Vec<RegexWidth> {
+    let mut widths = vec![RegexWidth::default(); nodes.len()];
+    for id in (0..nodes.len()).rev() {
+        let node = &nodes[id];
+        let mut boundaries = Vec::with_capacity(node.splits.len() + 2);
+        boundaries.push(node.start);
+        boundaries.extend_from_slice(&node.splits);
+        boundaries.push(node.end);
+        let mut children = node.children.iter().peekable();
+        let mut combined: Option<RegexWidth> = None;
+        for (branch, pair) in boundaries.windows(2).enumerate() {
+            let mut width = RegexWidth::default();
+            let mut cursor = pair[0];
+            while cursor < pair[1] || children.peek().is_some_and(|(owner, _)| *owner == branch) {
+                if children
+                    .peek()
+                    .is_some_and(|(owner, child)| *owner == branch && nodes[*child].start == cursor)
+                {
+                    let &(_, child) = children.next().unwrap();
+                    let spec = &nodes[child];
+                    let mut part = if spec.assertion.is_some() {
+                        RegexWidth::default()
+                    } else {
+                        widths[child]
+                    };
+                    if let Some((min, max, _, _, _)) = spec.repeat {
+                        part.min = part.min.saturating_mul(min);
+                        part.max = if part.max == 0 {
+                            0
+                        } else {
+                            part.max.saturating_mul(max.unwrap_or(usize::MAX))
+                        };
+                    }
+                    if optional_nodes[child].is_some() {
+                        part.min = 0;
+                    }
+                    width.append(part);
+                    cursor = spec.end;
+                } else {
+                    let atom = &atoms[cursor];
+                    let mut part = match atom {
+                        FixedRegexAtom::Backref { .. } => RegexWidth {
+                            min: 0,
+                            max: usize::MAX,
+                            unknown: true,
+                        },
+                        FixedRegexAtom::Start
+                        | FixedRegexAtom::StartLine
+                        | FixedRegexAtom::StartLineUnix
+                        | FixedRegexAtom::End
+                        | FixedRegexAtom::EndUnix
+                        | FixedRegexAtom::EndLine
+                        | FixedRegexAtom::EndLineUnix
+                        | FixedRegexAtom::EndStrict
+                        | FixedRegexAtom::WordBoundary
+                        | FixedRegexAtom::NonWordBoundary
+                        | FixedRegexAtom::UnicodeWordBoundary
+                        | FixedRegexAtom::UnicodeNonWordBoundary => RegexWidth::default(),
+                        _ => RegexWidth {
+                            min: 1,
+                            max: 1,
+                            unknown: false,
+                        },
+                    };
+                    if let Some((min, max, _)) = repeated[cursor] {
+                        part.min = part.min.saturating_mul(min);
+                        part.max = if part.max == 0 {
+                            0
+                        } else {
+                            part.max.saturating_mul(max.unwrap_or(usize::MAX))
+                        };
+                    }
+                    if optional_atoms[cursor].is_some() {
+                        part.min = 0;
+                    }
+                    width.append(part);
+                    cursor += 1;
+                }
+            }
+            combined = Some(match combined {
+                None => width,
+                Some(prior) => RegexWidth {
+                    min: prior.min.min(width.min),
+                    max: prior.max.max(width.max),
+                    unknown: prior.unknown || width.unknown,
+                },
+            });
+        }
+        widths[id] = combined.unwrap_or_default();
+    }
+    widths
 }
 
 fn push_alternation_node(
@@ -1736,6 +1850,9 @@ enum NestedInstruction {
     Assert {
         end: usize,
         positive: bool,
+        behind: bool,
+        min_width: usize,
+        max_width: usize,
         first_group: usize,
         end_group: usize,
     },
@@ -1801,6 +1918,7 @@ fn emit_nested_atoms(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn emit_alternation_node(
     program: &mut Vec<NestedInstruction>,
     nodes: &[AlternationNode],
@@ -1808,6 +1926,7 @@ fn emit_alternation_node(
     optional_nodes: &[Option<bool>],
     repeated: &[Option<(usize, Option<usize>, bool)>],
     optional_atoms: &[Option<bool>],
+    widths: &[RegexWidth],
     depth: usize,
 ) -> Result<()> {
     if depth > 128 {
@@ -1861,6 +1980,7 @@ fn emit_alternation_node(
                 optional_nodes,
                 repeated,
                 optional_atoms,
+                widths,
                 depth + 1,
             )?;
             cursor = child_node.end;
@@ -1918,7 +2038,10 @@ fn emit_alternation_node(
     if let Some(pc) = assertion_pc {
         program[pc] = NestedInstruction::Assert {
             end: program.len(),
-            positive: node.assertion.unwrap(),
+            positive: node.assertion.unwrap().0,
+            behind: node.assertion.unwrap().1,
+            min_width: widths[id].min,
+            max_width: widths[id].max,
             first_group: node.assertion_group_start,
             end_group: node.assertion_group_end,
         };
@@ -2165,6 +2288,7 @@ fn run_nested_program(
     program: &[NestedInstruction],
     entry: usize,
     stop: usize,
+    expected_end: Option<usize>,
     initial: NestedMatchState,
     sticky_out: &mut [Option<(usize, usize)>],
     comparisons: &mut usize,
@@ -2189,6 +2313,16 @@ fn run_nested_program(
     let mut trail: Vec<CaptureUndo> = Vec::new();
     while let Some((pc, position, choice, checkpoint, loop_state, maximum)) = frames.last_mut() {
         if *pc == stop {
+            if expected_end.is_some_and(|end| end != *position) {
+                let checkpoint = *checkpoint;
+                frames.pop();
+                while trail.len() > checkpoint {
+                    let undo = trail.pop().unwrap();
+                    captures[undo.group] = undo.capture;
+                    starts[undo.group] = undo.start;
+                }
+                continue;
+            }
             sticky_out.copy_from_slice(&sticky);
             return Ok(Some((
                 *position,
@@ -2328,26 +2462,50 @@ fn run_nested_program(
             NestedInstruction::Assert {
                 end,
                 positive,
+                behind,
+                min_width,
+                max_width,
                 first_group,
                 end_group,
             } => {
                 let mut assertion_sticky = sticky.clone();
-                let result = run_nested_program(
-                    input,
-                    position,
-                    atoms,
-                    program,
-                    pc + 1,
-                    end,
-                    NestedMatchState {
-                        captures: captures.clone(),
-                        starts: starts.clone(),
-                        sticky: sticky.clone(),
-                    },
-                    &mut assertion_sticky,
-                    comparisons,
-                    depth + 1,
-                )?;
+                let mut result = None;
+                let earliest = if behind {
+                    position.saturating_sub(max_width)
+                } else {
+                    position
+                };
+                let latest = if behind {
+                    position.checked_sub(min_width)
+                } else {
+                    Some(position)
+                };
+                for candidate in latest
+                    .into_iter()
+                    .flat_map(|latest| (earliest..=latest).rev())
+                {
+                    consume_regex_budget(comparisons)?;
+                    result = run_nested_program(
+                        input,
+                        candidate,
+                        atoms,
+                        program,
+                        pc + 1,
+                        end,
+                        behind.then_some(position),
+                        NestedMatchState {
+                            captures: captures.clone(),
+                            starts: starts.clone(),
+                            sticky: assertion_sticky.clone(),
+                        },
+                        &mut assertion_sticky,
+                        comparisons,
+                        depth + 1,
+                    )?;
+                    if result.is_some() {
+                        break;
+                    }
+                }
                 // Nested successful assertions can retain captures even when
                 // the enclosing assertion later fails to match.
                 sticky = assertion_sticky;
@@ -2541,6 +2699,7 @@ fn match_nested_repeat_with_sticky(
         program,
         0,
         program.len(),
+        None,
         state,
         sticky,
         comparisons,
@@ -3813,14 +3972,21 @@ impl Packet {
                 '(' => {
                     let mut assertion_prefix = chars.clone();
                     if assertion_prefix.next() == Some('?') {
-                        if let Some(kind @ ('=' | '!')) = assertion_prefix.next() {
+                        let first = assertion_prefix.next();
+                        let behind = first == Some('<');
+                        let kind = if behind {
+                            assertion_prefix.next()
+                        } else {
+                            first
+                        };
+                        if let Some(kind @ ('=' | '!')) = kind {
                             chars = assertion_prefix;
                             let node = push_alternation_node(
                                 &mut alternative_nodes,
                                 &mut node_stack,
                                 atoms.len(),
                             );
-                            alternative_nodes[node].assertion = Some(kind == '=');
+                            alternative_nodes[node].assertion = Some((kind == '=', behind));
                             alternative_nodes[node].assertion_group_start = groups.len();
                             group_frames.push((
                                 None,
@@ -4593,6 +4759,18 @@ impl Packet {
                 }
             }
             let mut compiled = Vec::new();
+            let widths = alternation_widths(
+                &alternative_nodes,
+                &atoms,
+                &node_optional,
+                &repeated_atoms,
+                &atom_optional,
+            );
+            for (node, width) in alternative_nodes.iter().zip(&widths) {
+                if node.assertion.is_some_and(|(_, behind)| behind) && width.unknown {
+                    return Err(error("lookbehind has no obvious maximum length"));
+                }
+            }
             emit_alternation_node(
                 &mut compiled,
                 &alternative_nodes,
@@ -4600,6 +4778,7 @@ impl Packet {
                 &node_optional,
                 &repeated_atoms,
                 &atom_optional,
+                &widths,
                 0,
             )?;
             nested_program = Some(compiled);

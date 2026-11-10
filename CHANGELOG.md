@@ -1,5 +1,7 @@
 # Changelog
 
+- Add bounded Java lookbehind assertions with capture and width handling.
+
 - Extend Java lookahead comparisons to repeated groups and backreferences.
 
 - Retain selected Java captures from failed negative lookaheads.

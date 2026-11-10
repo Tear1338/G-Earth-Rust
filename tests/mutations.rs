@@ -425,7 +425,7 @@ fn java_named_group_rejects_invalid_names_and_references_transactionally() {
     let mut packet = Packet::new(9);
     packet.put_string("(?<pet>cat) cat").unwrap();
     let before = packet.clone();
-    for pattern in ["(?<1pet>cat)", "(?<x>a)(?<x>b)", "(?<=cat)"] {
+    for pattern in ["(?<1pet>cat)", "(?<x>a)(?<x>b)"] {
         assert!(packet
             .replace_substrings_java_groups(pattern, "x", None)
             .is_err());
@@ -740,4 +740,15 @@ fn java_backreferences_reject_unsupported_cases_transactionally() {
             .is_err());
         assert_eq!(packet.bytes(), before);
     }
+}
+#[test]
+fn lookbehind_with_unknown_maximum_rejects_without_mutation() {
+    let pattern = "(a)(?<=\\1)b";
+    let mut packet = Packet::new(9);
+    packet.put_string(pattern).unwrap();
+    let before = packet.bytes().to_vec();
+    assert!(packet
+        .replace_substrings_java(pattern, "$0", Some(1))
+        .is_err());
+    assert_eq!(packet.bytes(), before);
 }

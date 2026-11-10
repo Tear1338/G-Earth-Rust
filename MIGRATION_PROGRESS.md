@@ -322,6 +322,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Expanded the 300-packet beta-29 lookahead corpus with positive and negative assertions inside repeated groups, captures and backreferences; all comparisons pass. The serialized workspace test suite passed with environment-dependent tests ignored, desktop/web Clippy passed, and the Windows GNU desktop/web release build succeeded locally. Actions run 42839941896 passed all eight jobs for the preceding commit. No official client session was tested through the relay.
 
+- Positive and negative Java lookbehinds now run in the bounded VM with calculated minimum and maximum candidate widths, captures and alternatives. A 360-packet beta-29 corpus includes nested assertions, variable lengths and capture retention; backreferences with no obvious maximum width are rejected as by Java. Thirty-six mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. Actions run 42840825469 passed all eight jobs for the preceding commit. Complete regex parity and live compatibility remain unverified.
+
 ## Exact next step
 
-Compare Java lookbehind assertions, including bounds, alternatives and captures, against the beta-29 API and implement them with bounded differential fixtures. Validate official AIR traffic and an extension through the relay when a dedicated session is available.
+Compare lookbehinds inside repeated groups and lookbehind bodies with repeated nested captures against the beta-29 API; extend differential fixtures and correct any divergence. Validate official AIR traffic and an extension through the relay when the dedicated session is ready.
