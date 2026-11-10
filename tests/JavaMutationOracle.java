@@ -1106,6 +1106,20 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_unicode_case_" + i, sample);
         }
+        String[] fixedRepeatCapturePatterns = {"(?:(a)(b))+", "(?:(a)(b)){1,3}", "(?:(a(b)))+", "(?:(?<x>a)b)+", "(?:(a)(b))+ab"};
+        for (int i = 0; i < 200; i++) {
+            String pattern = fixedRepeatCapturePatterns[i % fixedRepeatCapturePatterns.length];
+            String value = pattern + " abab ab aab abc bb " + "ab".repeat(i % 5);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value);
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, (i % 5 != 3) ? "$1/$2/$0" : "$1/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_fixed_repeat_capture_" + i, sample);
+        }
         String[] noncaptureWithCapturePatterns = {"(?:(a))?b", "(?:(a))??b", "(a)(?:b)?(c)", "(a(?:b)?c)", "(?:(a)(b))?(c)", "(?:(a)?b)?(c)", "(?:()a)?(b)", "(?<x>a)(?:b)?"};
         for (int i = 0; i < 200; i++) {
             String pattern = noncaptureWithCapturePatterns[i % noncaptureWithCapturePatterns.length];

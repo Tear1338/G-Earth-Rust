@@ -1,5 +1,7 @@
 # Changelog
 
+- Support fixed-width captures in greedy non-capturing repetitions with a positive minimum.
+
 - Preserve captures around optional non-capturing regex groups.
 
 - Support optional non-capturing regex groups in capture-free patterns.

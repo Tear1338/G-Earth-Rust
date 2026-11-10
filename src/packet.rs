@@ -3037,6 +3037,9 @@ impl Packet {
                             repeated_group_owner = Some(owner);
                             ranges[owner]
                         } else {
+                            if !open.is_empty() {
+                                return Err(error("capturing ancestors of repeated noncapturing groups are not supported"));
+                            }
                             repeated_group_owner = None;
                             prior_noncapturing.unwrap()
                         };
@@ -3074,6 +3077,9 @@ impl Packet {
                             repeated_group_owner = Some(owner);
                             ranges[owner]
                         } else {
+                            if !open.is_empty() {
+                                return Err(error("capturing ancestors of repeated noncapturing groups are not supported"));
+                            }
                             repeated_group_owner = None;
                             prior_noncapturing.unwrap()
                         };
@@ -3111,9 +3117,13 @@ impl Packet {
             repeated_atoms[index] = Some((min, limit, greedy));
         }
         let mut nested_program = None;
-        if let Some((start, end, _, _, _)) = group_repeat.filter(|_| repeated_group_owner.is_none())
+        if let Some((start, end, min, _, greedy)) =
+            group_repeat.filter(|_| repeated_group_owner.is_none())
         {
-            if !groups.is_empty()
+            if (!groups.is_empty() && (min == 0 || !greedy))
+                || ranges
+                    .iter()
+                    .any(|&(group_start, group_end)| group_start < start || group_end > end)
                 || start == end
                 || !optional.is_empty()
                 || !repeated.is_empty()
