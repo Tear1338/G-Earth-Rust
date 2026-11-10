@@ -656,3 +656,19 @@ fn java_latin1_replacement_is_explicit_and_short_length_counts_scalars() {
     let mut wedgie = Packet::new_with_format(PacketFormat::WedgieOutgoing, 1).unwrap();
     assert!(wedgie.put_string_java("雪").is_err());
 }
+
+#[test]
+fn java_noncapturing_groups_reject_repetition_and_unbalanced_patterns_transactionally() {
+    for pattern in ["(?:ab)*", "(?:a)?", "(?:ab){2}", "(?:ab", "a)"] {
+        let mut packet = Packet::new(9);
+        packet.put_string(pattern).unwrap();
+        let original = packet.clone();
+        assert!(
+            packet
+                .replace_substrings_java(pattern, "$0", Some(1))
+                .is_err(),
+            "{pattern}"
+        );
+        assert_eq!(packet.bytes(), original.bytes(), "{pattern}");
+    }
+}

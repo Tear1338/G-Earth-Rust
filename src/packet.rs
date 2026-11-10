@@ -2822,6 +2822,7 @@ impl Packet {
         let mut quantifiable = false;
         let mut last_closed_group = None;
         let mut open: Vec<usize> = Vec::new();
+        let mut group_frames: Vec<Option<usize>> = Vec::new();
         let mut chars = pattern_source.chars().peekable();
         let mut quoted = false;
         while let Some(mut c) = chars.next() {
@@ -2842,6 +2843,18 @@ impl Packet {
             }
             match c {
                 '(' => {
+                    if chars.peek() == Some(&'?') {
+                        let mut lookahead = chars.clone();
+                        lookahead.next();
+                        if lookahead.peek() == Some(&':') {
+                            chars.next();
+                            chars.next();
+                            group_frames.push(None);
+                            quantifiable = false;
+                            last_closed_group = None;
+                            continue;
+                        }
+                    }
                     if groups.len() == 99 {
                         return Err(error("too many capture groups"));
                     }
@@ -2873,18 +2886,25 @@ impl Packet {
                     last_closed_group = None;
                     parents.push(open.last().copied());
                     open.push(groups.len());
+                    group_frames.push(Some(groups.len()));
                     groups.push(String::new());
                     names.push(name);
                     ranges.push((atoms.len(), atoms.len()));
                     continue;
                 }
                 ')' => {
-                    let group = open
+                    let frame = group_frames
                         .pop()
                         .ok_or_else(|| error("unbalanced capture group"))?;
-                    ranges[group].1 = atoms.len();
+                    if let Some(group) = frame {
+                        let popped = open.pop();
+                        debug_assert_eq!(popped, Some(group));
+                        ranges[group].1 = atoms.len();
+                        last_closed_group = Some(group);
+                    } else {
+                        last_closed_group = None;
+                    }
                     quantifiable = false;
-                    last_closed_group = Some(group);
                     continue;
                 }
                 '\\' => {
@@ -3066,7 +3086,7 @@ impl Packet {
                 groups[index].push(c);
             }
         }
-        if !open.is_empty() {
+        if !group_frames.is_empty() {
             return Err(error("invalid capture pattern"));
         }
         let needle = latin1_encode(&literal)?;

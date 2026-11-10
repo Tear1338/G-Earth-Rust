@@ -256,6 +256,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Java global `(?U)` now enables Unicode predefined digit, word and whitespace classes, their complements, and word boundaries over Latin-1, and implies Unicode case folding when combined with `(?i)`. Java 21 comparisons cover all 256 bytes for each class and boundary, plus 200 packet mutations against the beta-29 API; both oracle checks run in CI. Thirty mutation tests, ten budget tests, both Clippy configurations and desktop/web debug compilation pass locally. Full Java regex and live clients/extensions remain unverified. Windows GNU desktop/web release compilation succeeded for commit a41e862; it does not establish live compatibility.
 
+- Unquantified Java non-capturing groups `(?:...)` now preserve nested captures and numbering, including empty groups. A 180-packet corpus matches the released beta-29 API. Quantifiers on non-capturing groups and unbalanced patterns are rejected transactionally; other regex semantics remain incomplete. Thirty-one mutation tests, ten budget tests, both Clippy configurations and desktop/web debug compilation pass locally. Actions run 42725078692 passed all eight jobs for Unicode case matching.
+
 ## Exact next step
 
-Compare non-capturing groups `(?:...)`, nesting and quantifiers against the released Java API, starting with bounded differential fixtures; implement only structures that retain capture and backtracking semantics. Real game sessions and interactive UI validation remain open.
+Implement bounded quantifiers on non-capturing groups, including nested capture retention and Java backtracking, using differential fixtures before enabling each structure. Real game sessions and interactive UI validation remain open.

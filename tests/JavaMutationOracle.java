@@ -1106,6 +1106,20 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_unicode_case_" + i, sample);
         }
+        String[] noncapturingPatterns = {"(?:ab)", "(?:a(b)c)", "(a(?:b)c)", "(?:(a)(b))", "(?:(?:a)b)(c)", "(?:[a-c]+)(a)", "(?i)(?:É(a))", "(?:(a)?b)(c)", "(?:)(a)"};
+        for (int i = 0; i < 180; i++) {
+            String pattern = noncapturingPatterns[i % noncapturingPatterns.length];
+            String value = pattern + " abc abbc Éa eA aac " + "abc".repeat(i % 5);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value);
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, pattern.equals("(?:ab)") ? "$0" : "$1/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_noncapturing_" + i, sample);
+        }
         String[] unicodeClassPatterns = {"(?U)(\\w+)", "(?U)(\\W+)", "(?U)(\\s+)", "(?U)(\\S+)", "(?U)(\\d+)", "(?U)([\\w]+)", "(?U)([^\\w]+)", "(?U)(\\b)", "(?U)(\\B)", "(?iU)(é)"};
         char[] unicodeClassAlphabet = {'é', 'É', 'µ', 'ª', 'º', '×', '9', ' ', '\u0085', '\u00a0', 'a', '_'};
         for (int i = 0; i < 200; i++) {

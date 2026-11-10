@@ -1,5 +1,7 @@
 # Changelog
 
+- Support unquantified Java non-capturing regex groups and nested capture numbering.
+
 - Support Java Unicode predefined regex classes and word boundaries over Latin-1.
 
 - Support Java Unicode case-insensitive Latin-1 literals and classes with exhaustive Java 21 pair comparisons.
