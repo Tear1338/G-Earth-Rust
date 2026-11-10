@@ -659,7 +659,7 @@ fn java_latin1_replacement_is_explicit_and_short_length_counts_scalars() {
 
 #[test]
 fn java_noncapturing_groups_reject_repetition_and_unbalanced_patterns_transactionally() {
-    for pattern in ["(?:a(b))*", "(?:(a))?", "(?:a*)+", "(?:ab", "a)"] {
+    for pattern in ["(?:a(b))*", "(?:(a)|b)?", "(?:a*)+", "(?:ab", "a)"] {
         let mut packet = Packet::new(9);
         packet.put_string(pattern).unwrap();
         let original = packet.clone();

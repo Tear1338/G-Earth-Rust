@@ -262,6 +262,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Optional `(?:...)?` and reluctant `(?:...)??` groups now work in patterns without capture groups, including nesting and empty groups. A 140-packet corpus matches the released beta-29 API. Patterns combining optional non-capturing groups and captures are still rejected; full Java regex remains incomplete. Thirty-one mutation tests, ten budget tests, both Clippy configurations and desktop/web debug compilation pass locally.
 
+- Optional non-capturing groups can now contain or coexist with capture groups, including nested, named and empty groups. A 200-packet differential corpus checks Java beta-29 replacement bytes and cursor, including multiple capture references and greedy/reluctant forms. Thirty-one mutation tests, ten budget tests, both Clippy configurations and desktop/web debug compilation pass locally. Repeated non-capturing groups containing captures remain unsupported. Actions run 42726682621 passed all eight validation jobs for fixed non-capturing repetition.
+
 ## Exact next step
 
-Extend quantified non-capturing groups to preserve nested captures and backtracking, starting with Java differential fixtures for optional and repeated captures; retain explicit rejection for unsupported structures. Real game sessions and interactive UI validation remain open.
+Extend repeated non-capturing groups to nested captures with Java differential fixtures for capture retention across iterations and backtracking; retain explicit rejection for unsupported structures. Real game sessions and interactive UI validation remain open.

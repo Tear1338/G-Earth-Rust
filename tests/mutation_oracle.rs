@@ -1740,6 +1740,35 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap();
         check(&format!("substring_noncapturing_optional_{i}"), &packet);
     }
+    let optional_capture_patterns = [
+        "(?:(a))?b",
+        "(?:(a))??b",
+        "(a)(?:b)?(c)",
+        "(a(?:b)?c)",
+        "(?:(a)(b))?(c)",
+        "(?:(a)?b)?(c)",
+        "(?:()a)?(b)",
+        "(?<x>a)(?:b)?",
+    ];
+    for i in 0..200 {
+        let pattern = optional_capture_patterns[i % optional_capture_patterns.len()];
+        let value = format!("{pattern} ab abc ac bc aabb abb {}", "abc".repeat(i % 5));
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(
+                pattern,
+                if matches!(i % 8, 2 | 4 | 5 | 6) {
+                    "$1/$2/$0"
+                } else {
+                    "$1/$0"
+                },
+                Some(1),
+            )
+            .unwrap();
+        check(&format!("substring_noncapture_with_capture_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

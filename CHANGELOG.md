@@ -1,5 +1,7 @@
 # Changelog
 
+- Preserve captures around optional non-capturing regex groups.
+
 - Support optional non-capturing regex groups in capture-free patterns.
 
 - Support fixed-width, capture-free repeated non-capturing regex groups.

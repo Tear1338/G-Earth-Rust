@@ -1106,6 +1106,20 @@ public class JavaMutationOracle {
             } finally { System.setOut(original); }
             emit("substring_unicode_case_" + i, sample);
         }
+        String[] noncaptureWithCapturePatterns = {"(?:(a))?b", "(?:(a))??b", "(a)(?:b)?(c)", "(a(?:b)?c)", "(?:(a)(b))?(c)", "(?:(a)?b)?(c)", "(?:()a)?(b)", "(?<x>a)(?:b)?"};
+        for (int i = 0; i < 200; i++) {
+            String pattern = noncaptureWithCapturePatterns[i % noncaptureWithCapturePatterns.length];
+            String value = pattern + " ab abc ac bc aabb abb " + "abc".repeat(i % 5);
+            HPacket sample = new HPacket(9);
+            sample.appendString(value);
+            sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try {
+                System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream()));
+                sample.replaceXSubstrings(pattern, (i % 8 == 2 || i % 8 == 4 || i % 8 == 5 || i % 8 == 6) ? "$1/$2/$0" : "$1/$0", 1);
+            } finally { System.setOut(original); }
+            emit("substring_noncapture_with_capture_" + i, sample);
+        }
         String[] noncapturingOptionalPatterns = {"(?:ab)?c", "(?:ab)??c", "(?:ab)?(?:cd)?", "a(?:[a-c]d)?b", "(?i)(?:Ab)?b", "(?:)?a", "(?:(?:a)?b)?c"};
         for (int i = 0; i < 140; i++) {
             String pattern = noncapturingOptionalPatterns[i % noncapturingOptionalPatterns.length];
