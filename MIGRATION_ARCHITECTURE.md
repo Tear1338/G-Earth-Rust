@@ -1,6 +1,6 @@
 # Rust migration architecture
 
-Character classes support bounded nesting, union and intersection over Latin-1 sets, with per-operand case folding. Unusual consecutive ampersand syntax remains unsupported pending Java comparison.
+Character classes support bounded nesting, union and intersection over Latin-1 sets, with per-operand case folding. Selected consecutive ampersands are supported; combinations after an existing intersection remain incomplete.
 
 Possessive quantifiers use bounded atomic subprograms around their atom or group repetition. Width analysis distinguishes possessive group repetitions inside lookbehinds; beta-29 comparison remains finite.
 

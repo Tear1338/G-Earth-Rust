@@ -1,5 +1,7 @@
 # Changelog
 
+- Match selected Java character-class syntax with consecutive ampersands.
+
 - Support bounded nested Java regex character classes and intersections.
 
 - Add bounded Java possessive quantifiers for atoms and groups.

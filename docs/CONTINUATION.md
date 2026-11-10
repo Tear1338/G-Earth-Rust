@@ -1,6 +1,8 @@
 # Continuation state
 
-Nested character classes, unions and intersections match 540 beta-29 packet cases, including COMMENTS mode; nesting is bounded. Existing mutation and budget tests, the new nesting-limit test, both Clippy configurations and desktop/web debug compilation pass. Consecutive ampersand cases such as `[a&&&b]` remain rejected and are the next task. The dedicated AIR session is being prepared; live relay and extension validation remains outstanding.
+Selected consecutive ampersands in character classes now match the expanded 540-case beta-29 corpus; patterns such as `[ab&&bc&&&a]` are still rejected. Thirty-seven mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass. Next: model the JDK's accumulated intersection behavior. The dedicated AIR session is being prepared; live relay and extension validation remains outstanding.
+
+Nested character classes, unions and intersections match 540 beta-29 packet cases, including COMMENTS mode; nesting is bounded. Existing mutation and budget tests, the new nesting-limit test, both Clippy configurations and desktop/web debug compilation pass. At that stage, consecutive ampersand cases such as `[a&&&b]` were rejected; the later step above adds selected cases. The dedicated AIR session is being prepared; live relay and extension validation remains outstanding.
 
 Possessive atom and group quantifiers now match a 600-packet beta-29 corpus, including empty repetitions, captures and lookbehinds. Thirty-six mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass; Actions run 42844459556 passed for the preceding implementation. Next: compare nested character classes and intersections. The dedicated AIR session is being prepared; live relay and extension validation remains outstanding.
 

@@ -27,6 +27,6 @@ Status key: **partial** means implemented for selected cases only; **open** mean
 | End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
 | Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
 
-Open-group backreferences, selected lookarounds, atomic groups, possessive quantifiers and nested character-class intersections have beta-29 oracle coverage; full regex parity remains open. Next: compare consecutive ampersands in character classes.
+Open-group backreferences, selected lookarounds, atomic groups, possessive quantifiers and nested character-class intersections have beta-29 oracle coverage; full regex parity remains open. Next: consecutive ampersands after an existing character-class intersection.
 
 CI: serialized G-Python jobs passed on Windows and Linux in run 42723118432; continue monitoring intermittent kernel startup timeouts.

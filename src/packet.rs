@@ -645,8 +645,19 @@ fn parse_character_class_inner(
         }
         if c == '&' && chars.peek() == Some(&'&') {
             chars.next();
-            if chars.peek() == Some(&'&') {
-                return Err(error("unsupported character class intersection"));
+            let mut next = chars.clone();
+            let single_ampersand = next.next() == Some('&') && next.peek() != Some(&'&');
+            if single_ampersand {
+                if intersection.is_some() && !elements.is_empty() {
+                    return Err(error("unsupported character class intersection"));
+                }
+                if elements.is_empty() {
+                    let previous = intersection
+                        .take()
+                        .ok_or_else(|| error("invalid character class intersection"))?;
+                    elements.push(CharacterClassElement::Predefined(previous));
+                }
+                continue;
             }
             if !elements.is_empty() {
                 let part = build_character_class(&elements, case_insensitive, unicode_case)?;
