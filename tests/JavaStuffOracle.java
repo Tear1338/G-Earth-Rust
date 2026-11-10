@@ -174,6 +174,18 @@ public class JavaStuffOracle {
         normalFriend.setCategoryName("Friends");
         HPacket javaUpdate = HFriend.constructUpdatePacket(new HFriend[]{normalFriend}, 3);
         System.out.println("friend_construct_java=" + HexFormat.of().formatHex(javaUpdate.toBytes()));
+        for (int size : new int[]{0, 1, 99, 100, 101, 200, 201}) {
+            HFriend[] friends = new HFriend[size];
+            java.util.Arrays.fill(friends, normalFriend);
+            HPacket[] pages = HFriend.constructFragmentPackets(friends, 44);
+            for (int page = 0; page < pages.length; page++) {
+                System.out.println("friend_fragment_" + size + "_" + page + "=" + HexFormat.of().formatHex(pages[page].toBytes()));
+                pages[page].setReadIndex(6);
+                HFriend[] parsed = HFriend.parseFromFragment(pages[page]);
+                HPacket result = new HPacket(1); result.appendInt(parsed.length).appendInt(pages[page].getReadIndex());
+                System.out.println("friend_fragment_parse_" + size + "_" + page + "=" + HexFormat.of().formatHex(result.toBytes()));
+            }
+        }
 
         for (int flags = 0; flags < 8; flags++) {
             int groups = flags % 3;

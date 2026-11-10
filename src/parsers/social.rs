@@ -346,6 +346,38 @@ impl HFriend {
         }
         Ok(packets)
     }
+    /// Reproduce beta-29's fragment constructor, including its page count and
+    /// repeated-tail bugs, within bounded item and aggregate-size limits.
+    /// Use `construct_fragments` for correctly bounded client packets.
+    pub fn construct_java_fragments(friends: &[Self], header: u16) -> Result<Vec<Packet>> {
+        if friends.len() > 65_536 {
+            return Err(error("too many friends"));
+        }
+        let pages = friends.len().div_ceil(100);
+        let mut packets = Vec::with_capacity(pages);
+        let mut total_bytes = 0usize;
+        for index in 0..pages {
+            let mut packet = Packet::new(header);
+            let count = if index + 1 == pages {
+                friends.len() % 100
+            } else {
+                100
+            };
+            packet
+                .put_i32(pages as i32)?
+                .put_i32(index as i32)?
+                .put_i32(count as i32)?;
+            for friend in &friends[index * 100..] {
+                friend.append(&mut packet)?;
+                if total_bytes.saturating_add(packet.bytes().len()) > crate::packet::MAX_FRAME * 4 {
+                    return Err(error("friend fragments exceed aggregate size limit"));
+                }
+            }
+            total_bytes += packet.bytes().len();
+            packets.push(packet);
+        }
+        Ok(packets)
+    }
     pub fn parse_update(packet: &mut Packet) -> Result<(Vec<Self>, Vec<i32>)> {
         let mut friends = Vec::new();
         let mut removed = Vec::new();
@@ -469,6 +501,25 @@ mod tests {
         assert_eq!((pages, index, first.len()), (2, 0, 100));
         let (_, _, last) = HFriend::parse_fragment(&mut packets[1]).unwrap();
         assert_eq!(last[0], friends[100]);
+        let mut java_fragments = HFriend::construct_java_fragments(&friends, 2).unwrap();
+        assert_eq!(
+            HFriend::parse_fragment_java(&mut java_fragments[0])
+                .unwrap()
+                .len(),
+            100
+        );
+        assert!(java_fragments[0].cursor() < java_fragments[0].bytes().len());
+        assert_eq!(
+            HFriend::parse_fragment_java(&mut java_fragments[1])
+                .unwrap()
+                .len(),
+            1
+        );
+        let mut exact = HFriend::construct_java_fragments(&friends[..100], 2).unwrap();
+        assert!(HFriend::parse_fragment_java(&mut exact[0])
+            .unwrap()
+            .is_empty());
+        assert!(exact[0].cursor() < exact[0].bytes().len());
         let mut update = Packet::new(3);
         update
             .put_i32(1)

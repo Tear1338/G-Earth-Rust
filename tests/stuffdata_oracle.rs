@@ -359,6 +359,32 @@ fn all_stuff_data_wire_formats_match_original_java() {
             .bytes(),
         observed["friend_construct_java"]
     );
+    for size in [0usize, 1, 99, 100, 101, 200, 201] {
+        let items = vec![friend.clone(); size];
+        let pages = HFriend::construct_java_fragments(&items, 44).unwrap();
+        assert_eq!(pages.len(), size.div_ceil(100));
+        for (index, page) in pages.iter().enumerate() {
+            let key = format!("friend_fragment_{size}_{index}");
+            assert_eq!(page.bytes(), observed[key.as_str()], "{key}");
+            let mut java_page = Packet::from_bytes(observed[key.as_str()].clone()).unwrap();
+            java_page.set_cursor(6).unwrap();
+            let parsed = HFriend::parse_fragment_java(&mut java_page).unwrap();
+            let expected = if index + 1 == pages.len() {
+                size % 100
+            } else {
+                100
+            };
+            assert_eq!(parsed, vec![friend.clone(); expected], "{key}");
+            let mut summary = Packet::new(1);
+            summary
+                .put_i32(parsed.len() as i32)
+                .unwrap()
+                .put_i32(java_page.cursor() as i32)
+                .unwrap();
+            let parse_key = format!("friend_fragment_parse_{size}_{index}");
+            assert_eq!(summary.bytes(), observed[parse_key.as_str()], "{parse_key}");
+        }
+    }
     let index = gearth_rust::parsers::catalog::HCatalogIndex::read(
         &mut Packet::from_bytes(observed["catalog_index"].clone()).unwrap(),
     )

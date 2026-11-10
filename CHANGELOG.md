@@ -1,5 +1,7 @@
 # Changelog
 
+- Add explicit beta-29 friend fragment pagination and parser compatibility.
+
 - Add explicit beta-29 friend update cursor and construction compatibility.
 
 - Compare beta-29 profiles and groups across flags and group counts.
