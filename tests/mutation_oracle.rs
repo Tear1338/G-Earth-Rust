@@ -2385,6 +2385,39 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
         check(&format!("substring_group_curly_{i}"), &packet);
     }
+    let sticky_capture_cases = [
+        ("(?:(a)b)+(?:c)+", "$1/$0"),
+        ("(?:(.)(.))+(?:ab)+", "$1/$2/$0"),
+        ("(?:(a)b)*?(?:c)+", "$1/$0"),
+        ("(?:(?<x>a)b)+(?:c)+", "${x}/$0"),
+        ("(?:([ab])b)+(?:c)+", "$1/$0"),
+        ("(?:(a)b){0,3}(?:c)+", "$1/$0"),
+        ("((a)b)+(c)+", "$1/$2/$3/$0"),
+        ("(?:(a)b)+?b(?:c)+", "$1/$0"),
+        ("(?:(a)b)*(?:c)+", "$1/$0"),
+        ("(?:(a)b)+(?:c)*", "$1/$0"),
+        ("(?:(a)b)+(?:(c)d)+e", "$1/$2/$0"),
+        ("(?:(a)b)+(?:c)+|d", "$1/$0"),
+        ("((?:(a)b)+)", "$1/$2/$0"),
+        ("(?<x>(?:(a)b)+)", "${x}/$2/$0"),
+    ];
+    let sticky_capture_alphabet = ['a', 'A', 'b', 'c', 'd', ' ', '\n'];
+    for i in 0..250 {
+        let (pattern, replacement) = sticky_capture_cases[i % sticky_capture_cases.len()];
+        let mut value = format!("{pattern} abababc cdefab aabb abc ");
+        for j in 0..12 {
+            value.push(
+                sticky_capture_alphabet[(i * 5 + j * 3 + j * j) % sticky_capture_alphabet.len()],
+            );
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, replacement, Some(1))
+            .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
+        check(&format!("substring_sticky_capture_{i}"), &packet);
+    }
     let mut empty_growth = Packet::new(5);
     empty_growth
         .put_string("")

@@ -302,6 +302,8 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 - Variable-width repeated Java groups can now capture their own match in the bounded multi-group VM. A 250-packet beta-29 corpus covers greedy/reluctant repeats, nullable bodies, named captures, capturing ancestors and changing captures during backtracking. An attempted generic implementation of captures nested inside a repeated noncapturing group diverged from Java GroupCurly and remains explicitly rejected. Thirty-four mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally.
 
+- For fixed-width deterministic repeated groups, the bounded VM now preserves nested captures using Java GroupCurly-style state across failed searches and backtracking, even alongside other repeated groups or capturing ancestors. A 250-packet beta-29 corpus covers varying captured bytes, greedy/reluctant bounds, named captures and branch changes; previous divergent cases now match. Variable-width bodies containing nested captures remain explicitly rejected. Thirty-four mutation tests, fourteen budget tests, both Clippy configurations and desktop/web debug compilation pass locally. Actions run 42831098408 passed all eight validation jobs.
+
 ## Exact next step
 
-Implement Java GroupCurly retention for captures nested inside repeated noncapturing groups when multiple groups repeat; use a branch-aware differential corpus including (?:(.)(.))+(?:ab)+ and failed searches. Validate official AIR traffic and an extension through the relay when a dedicated session is available.
+Compare variable-width repeated groups containing nested captures against Java GroupCurly and Loop, then implement the corresponding rollback/retention semantics with differential fixtures including (?:(a)?b)+(?:c)+ and (?:(a+)b)+(?:c)+. Validate official AIR traffic and an extension through the relay when a dedicated session is available.

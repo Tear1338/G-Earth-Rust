@@ -1696,6 +1696,7 @@ struct AlternationNode {
     start: usize,
     end: usize,
     capture: Option<usize>,
+    sticky_captures: Option<(usize, usize)>,
     repeat: Option<(usize, Option<usize>, bool, usize, bool)>,
     splits: Vec<usize>,
     // The branch index records ownership even for zero-width child groups.
@@ -1731,6 +1732,7 @@ enum NestedInstruction {
     },
     Start(usize),
     End(usize),
+    StickyCommit(usize, usize),
     Split(usize, usize),
     Jump(usize),
     Initial {
@@ -1857,6 +1859,9 @@ fn emit_alternation_node(
     }
     if let Some(group) = node.capture {
         program.push(NestedInstruction::End(group));
+    }
+    if let Some((first, end)) = node.sticky_captures {
+        program.push(NestedInstruction::StickyCommit(first, end));
     }
     if let Some((min, limit, greedy, group, hidden)) = node.repeat {
         if hidden {
@@ -2040,12 +2045,13 @@ fn compile_deep_nested_repeat(
     program
 }
 
-fn match_nested_repeat(
+fn match_nested_repeat_with_sticky(
     input: &[u8],
     offset: usize,
     atoms: &[FixedRegexAtom],
     program: &[NestedInstruction],
     capture_count: usize,
+    sticky: &mut [Option<(usize, usize)>],
     comparisons: &mut usize,
 ) -> Result<Option<(usize, Vec<String>)>> {
     const MAX_STATES: usize = 262_144;
@@ -2059,10 +2065,13 @@ fn match_nested_repeat(
         if *pc == program.len() {
             let groups = captures
                 .iter()
-                .map(|capture| {
-                    capture.map_or_else(String::new, |(start, end)| {
-                        latin1_decode(&input[start..end])
-                    })
+                .enumerate()
+                .map(|(index, capture)| {
+                    sticky[index]
+                        .or(*capture)
+                        .map_or_else(String::new, |(start, end)| {
+                            latin1_decode(&input[start..end])
+                        })
                 })
                 .collect();
             return Ok(Some((*position, groups)));
@@ -2182,6 +2191,14 @@ fn match_nested_repeat(
                 captures[group] = Some((start, position));
                 (pc + 1, position, loop_state)
             }
+            NestedInstruction::StickyCommit(first, end) => {
+                for index in first..end {
+                    if captures[index].is_some() {
+                        sticky[index] = captures[index];
+                    }
+                }
+                (pc + 1, position, loop_state)
+            }
             NestedInstruction::Split(first, second) => (
                 if branch == 0 { first } else { second },
                 position,
@@ -2256,6 +2273,27 @@ fn match_nested_repeat(
     Ok(None)
 }
 
+#[cfg(test)]
+fn match_nested_repeat(
+    input: &[u8],
+    offset: usize,
+    atoms: &[FixedRegexAtom],
+    program: &[NestedInstruction],
+    capture_count: usize,
+    comparisons: &mut usize,
+) -> Result<Option<(usize, Vec<String>)>> {
+    let mut sticky = vec![None; capture_count];
+    match_nested_repeat_with_sticky(
+        input,
+        offset,
+        atoms,
+        program,
+        capture_count,
+        &mut sticky,
+        comparisons,
+    )
+}
+
 fn replace_nested_pattern(
     text: &str,
     atoms: &[FixedRegexAtom],
@@ -2269,10 +2307,17 @@ fn replace_nested_pattern(
     let mut output = Vec::new();
     let mut copied = 0;
     let mut offset = 0;
+    let mut sticky = vec![None; capture_count];
     while offset <= input.len() {
-        if let Some((end, mut groups)) =
-            match_nested_repeat(&input, offset, atoms, program, capture_count, comparisons)?
-        {
+        if let Some((end, mut groups)) = match_nested_repeat_with_sticky(
+            &input,
+            offset,
+            atoms,
+            program,
+            capture_count,
+            &mut sticky,
+            comparisons,
+        )? {
             groups.truncate(names.len());
             let whole = latin1_decode(&input[offset..end]);
             let expanded =
@@ -2289,6 +2334,7 @@ fn replace_nested_pattern(
             output.extend_from_slice(&input[copied..offset]);
             output.extend_from_slice(&expanded);
             copied = end;
+            sticky.fill(None);
             offset = if end == offset { offset + 1 } else { end };
         } else {
             offset += 1;
@@ -3847,9 +3893,23 @@ impl Packet {
         if use_tree_vm && group_repeats.len() > 128 {
             return Err(error("regex repeated group limit exceeded"));
         }
-        if use_tree_vm && !has_nested_alternation {
+        if use_tree_vm {
             for &(_, _, _, _, _, node, _) in &group_repeats {
-                for &capture_node in &group_nodes {
+                let mut parent = alternative_nodes[node].parent;
+                let mut depth = 0;
+                while let Some(index) = parent {
+                    depth += 1;
+                    if depth > 128 {
+                        return Err(error("regex group nesting limit exceeded"));
+                    }
+                    parent = alternative_nodes[index].parent;
+                }
+            }
+        }
+        if use_tree_vm && !has_nested_alternation {
+            for &(start, end, _, _, _, node, _) in &group_repeats {
+                let mut descendants = Vec::new();
+                for (group, &capture_node) in group_nodes.iter().enumerate() {
                     if capture_node == node {
                         continue;
                     }
@@ -3861,12 +3921,36 @@ impl Packet {
                             return Err(error("regex group nesting limit exceeded"));
                         }
                         if index == node {
-                            return Err(error(
-                                "nested repeated captures require Java capture validation",
-                            ));
+                            descendants.push(group);
+                            break;
                         }
                         parent = alternative_nodes[index].parent;
                     }
+                }
+                if !descendants.is_empty() {
+                    let variable = optional.iter().any(|&(a, b, _)| a >= start && b <= end)
+                        || repeated.iter().any(|&(a, ..)| a >= start && a < end)
+                        || group_repeats.iter().any(|&(_, _, _, _, _, other, _)| {
+                            let mut parent = alternative_nodes[other].parent;
+                            while let Some(index) = parent {
+                                if index == node {
+                                    return true;
+                                }
+                                parent = alternative_nodes[index].parent;
+                            }
+                            false
+                        });
+                    if variable {
+                        return Err(error(
+                            "variable nested repeated captures require Java capture validation",
+                        ));
+                    }
+                    let first = descendants[0];
+                    let end = descendants[descendants.len() - 1] + 1;
+                    if end - first != descendants.len() {
+                        return Err(error("non-contiguous repeated captures are unsupported"));
+                    }
+                    alternative_nodes[node].sticky_captures = Some((first, end));
                 }
             }
         }

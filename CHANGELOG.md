@@ -1,5 +1,7 @@
 # Changelog
 
+- Preserve GroupCurly nested captures across fixed repeated bodies and failed searches.
+
 - Support variable-width captures in repeated Java groups.
 
 - Support repeated Java groups with variable-width capture-free bodies.

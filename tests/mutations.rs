@@ -659,7 +659,7 @@ fn java_latin1_replacement_is_explicit_and_short_length_counts_scalars() {
 
 #[test]
 fn java_noncapturing_groups_reject_repetition_and_unbalanced_patterns_transactionally() {
-    for pattern in ["(?:a(b)?)*", "((?:(a)b)+)", "(?:ab", "a)"] {
+    for pattern in ["(?:a(b)?)*", "((?:(a)?b)+)", "(?:ab", "a)"] {
         let mut packet = Packet::new(9);
         packet.put_string(pattern).unwrap();
         let original = packet.clone();
@@ -689,7 +689,6 @@ fn java_comments_mode_rejects_invalid_counted_closure_transactionally() {
 #[test]
 fn java_alternation_rejects_unsupported_captures_and_invalid_references_transactionally() {
     for (pattern, replacement) in [
-        ("(?:(a)b)+(?:c)+", "$0"),
         ("(?:(a)?b)+(?:c)+", "$0"),
         ("a|b", "$1"),
         ("(?:a|b)+", "$1"),
@@ -706,7 +705,7 @@ fn java_alternation_rejects_unsupported_captures_and_invalid_references_transact
 
 #[test]
 fn java_nested_alternation_rejects_unimplemented_structures_and_limits_depth() {
-    for pattern in ["(?:(a)b)+(?:c)+", "(?:(a)?b)+(?:c)+"] {
+    for pattern in ["(?:(a)?b)+(?:c)+", "(?:(a+)b)+(?:c)+"] {
         let mut packet = Packet::new(9);
         packet.put_string(pattern).unwrap();
         let before = packet.bytes().to_vec();
