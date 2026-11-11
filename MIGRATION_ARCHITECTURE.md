@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+The G-Presets loopback observer loads the exported test file through the released extension parser and checks its furniture fields.
+
 A live COM AIR session established client-to-Rust and Rust-to-server TCP sockets, and its hosts entry was removed on acceptance. This evidence does not demonstrate successful decryption.
 
 The offline G-Presets export fixture supplies synthetic furnidata via a test observer and a simulated empty variable response; it validates the generated preset JSON without a hotel.

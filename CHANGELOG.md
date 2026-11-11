@@ -1,5 +1,7 @@
 # Changelog
 
+- Verify G-Presets reload of the simulated exported preset.
+
 - Record live COM AIR socket routing and automatic hosts-entry cleanup.
 
 - Exercise G-Presets preset export with synthetic room and furnidata.

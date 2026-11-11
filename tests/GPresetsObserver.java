@@ -46,6 +46,18 @@ public class GPresetsObserver extends GPresetsLauncher {
                             }
                         });
                     }
+                    Path loadTrigger = state.resolveSibling("load-preset.trigger");
+                    if (Files.exists(loadTrigger)) {
+                        String presetName = Files.readString(loadTrigger);
+                        Files.delete(loadTrigger);
+                        var preset = extension.tools.presetconfig.PresetConfigUtils.loadPreset(presetName);
+                        if (preset == null) throw new IllegalStateException("fixture preset could not be loaded");
+                        String loaded = preset.getFurniture().stream()
+                            .map(item -> item.getClassName() + ":" + item.getFurniId() + ":" +
+                                item.getLocation().getX() + ":" + item.getLocation().getY() + ":" + item.getRotation())
+                            .sorted().collect(Collectors.joining(","));
+                        Files.writeString(state.resolveSibling("loaded-preset.txt"), loaded);
+                    }
                     if (Files.deleteIfExists(state.resolveSibling("request-inventory.trigger"))) {
                         javafx.application.Platform.runLater(() -> presets.loadInventoryClick(null));
                     }

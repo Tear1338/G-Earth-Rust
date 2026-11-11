@@ -1,5 +1,7 @@
 # Continuation state
 
+G-Presets reloaded its own simulated exported preset and exposed expected furniture fields in two isolated Windows sessions. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI pending. Next independent step: inspect prerequisites for an isolated preset import fixture. Computer Use was stopped; do not resume without the user.
+
 A dedicated COM AIR client is connected through Rust at the last read-only check, with its hosts redirect already removed; the separate FR/QX connection remained established. User stopped Computer Use, so do not resume window control without explicit instruction. Next independent step: extend the isolated G-Presets fixture to reload the exported preset and verify its contents. Live decryption, extension and disconnect cleanup remain unverified.
 
 The manually opened Rust process was not elevated and COM attachment failed with Windows error 5. No COM hosts redirect or listener remained; the separate FR/QX socket was still established. The user was asked to relaunch Rust elevated; verify the token before retrying. G-Presets simulated export passed the Linux G-Presets job in run 43035212875; full CI pending.

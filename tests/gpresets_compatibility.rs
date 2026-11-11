@@ -814,6 +814,13 @@ fn released_gpresets_authenticates_to_the_rust_host() {
             }),
             "export did not include the moved simulated item: {json}"
         );
+        // Reload the actual exported file through the extension's own parser.
+        let loaded = directory.0.join("loaded-preset.txt");
+        let _ = fs::remove_file(&loaded);
+        let pending = directory.0.join("load-preset.pending");
+        fs::write(&pending, &preset_name).unwrap();
+        fs::rename(&pending, directory.0.join("load-preset.trigger")).unwrap();
+        wait_room("loaded-preset.txt", "fixture_floor:1:3:1:0");
         drop(client);
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
