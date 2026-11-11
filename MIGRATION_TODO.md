@@ -1,5 +1,7 @@
 # Migration tasks
 
+G-Presets starts a simulated preset import and requests a staging location; next simulate the selected tile and placement acknowledgement.
+
 G-Presets import readiness now changes after simulated catalog and controller rights; next exercise a controlled import and placement acknowledgement.
 
 G-Presets refuses the simulated import when catalog prerequisites are absent; next investigate catalog setup and a controlled placement acknowledgement fixture.

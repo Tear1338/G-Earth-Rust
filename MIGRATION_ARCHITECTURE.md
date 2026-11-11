@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+The offline G-Presets fixture reaches import staging using synthetic furnidata and server state; it does not access a hotel.
+
 The G-Presets fixture simulates an empty Builders Club catalog and controller rights and observes the importer readiness transition; prerequisites reset between sessions.
 
 The G-Presets fixture checks import refusal and feedback when a selected preset lacks required catalog initialization.

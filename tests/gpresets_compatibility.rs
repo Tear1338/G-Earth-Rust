@@ -902,6 +902,26 @@ fn released_gpresets_authenticates_to_the_rust_host() {
         write_frame(&mut server, &index).unwrap();
         assert_eq!(read_frame(&mut client).unwrap().bytes(), index.bytes());
         wait_room("readiness.txt", "COLLECTED:true:true");
+        // Begin the simulated import and verify its staging-location prompt state.
+        let mut import = Packet::new(92);
+        import.put_string(":ip 0,0").unwrap();
+        write_frame(&mut client, &import).unwrap();
+        let mut marker = Packet::new(77);
+        marker.put_i32(60000 + session).unwrap();
+        write_frame(&mut client, &marker).unwrap();
+        loop {
+            let packet = read_frame(&mut server).unwrap();
+            assert_ne!(
+                packet.header(),
+                92,
+                "import command reached the simulated server"
+            );
+            if packet.header() == 77 {
+                assert_eq!(packet.bytes(), marker.bytes());
+                break;
+            }
+        }
+        wait_room("import-state-live.txt", "AWAITING_UNOCCUPIED_SPACE");
         drop(client);
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {

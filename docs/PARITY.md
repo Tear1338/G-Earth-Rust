@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+G-Presets accepted a synthetic preset import and reached staging-location selection in two Windows loopback sessions. No placement, complete import or live hotel behavior was verified.
+
 The released G-Presets importer became ready after simulated catalog and controller messages in two Windows loopback sessions. No placement or actual hotel import was verified.
 
 The released G-Presets binary refused a selected simulated preset import without catalog initialization and returned feedback in two Windows loopback sessions. This does not verify a successful import or live hotel behavior.

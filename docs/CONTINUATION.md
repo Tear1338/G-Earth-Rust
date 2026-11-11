@@ -1,5 +1,7 @@
 # Continuation state
 
+G-Presets accepted a synthetic preset import and reached staging-location selection in two isolated Windows sessions; both extension tests, both Clippy configurations and desktop/web debug build pass, Linux CI pending. Next independent step: simulate the selected tile and placement acknowledgement. Computer Use remains stopped pending the user.
+
 G-Presets importer readiness changed from false to true after simulated catalog and controller messages in two Windows loopback sessions. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI pending. Next independent step: exercise a controlled import and placement acknowledgement. Computer Use remains stopped pending the user.
 
 G-Presets refused a selected synthetic preset import with no catalog, produced the expected feedback and sent no placement before a marker in two Windows loopback sessions. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI pending. Next independent step: investigate catalog setup and controlled placement acknowledgement. Computer Use remains stopped pending the user.

@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- With synthetic furnidata, inventory, catalog, controller rights and an exported preset, the released G-Presets binary accepted `:ip 0,0`, blocked the command and reached its staging-location selection state in two isolated Windows sessions. No placement or completed import was tested. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI and live import remain unverified.
+
 - In two isolated Windows sessions, the released G-Presets extension requested a simulated empty Builders Club catalog, consumed its index and received simulated controller rights; its public importer readiness changed from false to true. No import or placement was attempted in this step. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI and live import remain unverified.
 
 - In the isolated G-Presets fixture, the released extension selected the reloaded synthetic preset and refused an import without its catalog, injected the expected explanation, and allowed a following marker through without an intervening placement packet. Both extension tests, both Clippy configurations and desktop/web debug build pass on Windows; Linux CI and actual import remain unverified.
@@ -420,4 +422,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Do not resume stopped Computer Use without the user. Independently exercise a controlled G-Presets import and placement acknowledgement; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.
+Do not resume stopped Computer Use without the user. Independently simulate G-Presets staging-tile selection and a placement acknowledgement; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.

@@ -12,7 +12,7 @@ import java.util.stream.Collectors;
 public class GPresetsObserver extends GPresetsLauncher {
     private static final class FixtureFurniData extends furnidata.FurniDataTools {
         @Override public boolean isReady() { return true; }
-        @Override public Integer getFloorTypeId(String name) { return -1; }
+        @Override public Integer getFloorTypeId(String name) { return "fixture_floor".equals(name) ? 1500 : -1; }
         @Override public Integer getWallTypeId(String name) { return -1; }
         @Override public String getFloorItemName(int id) { return "fixture_floor"; }
         @Override public String getWallItemName(int id) { return "fixture_wall"; }
@@ -40,6 +40,8 @@ public class GPresetsObserver extends GPresetsLauncher {
                                 presets.noExportWiredCbx.setSelected(true);
                                 presets.noExportFurniVariablesCbx.setSelected(true);
                                 presets.noExportWallItemsCbx.setSelected(true);
+                                presets.previewBeforeImportCbx.setSelected(false);
+                                presets.useRoomFurniCbx.setSelected(false);
                                 Files.writeString(state.resolveSibling("fixture-furnidata.ready"), "ready");
                             } catch (Exception error) {
                                 throw new IllegalStateException("fixture furnidata setup failed", error);
@@ -79,6 +81,7 @@ public class GPresetsObserver extends GPresetsLauncher {
                     if (presets.getCatalog() != null && presets.getPermissions() != null && presets.getImporter() != null) {
                         Files.writeString(state.resolveSibling("readiness.txt"),
                             presets.getCatalog().getState() + ":" + presets.getPermissions().canMoveFurni() + ":" + presets.getImporter().isReady());
+                        Files.writeString(state.resolveSibling("import-state-live.txt"), presets.getImporter().getState().toString());
                     }
                     if (presets.getFloorState() != null) {
                         String floorIds = presets.getFloorState().getItems().stream()
