@@ -281,6 +281,7 @@ fn released_gpresets_authenticates_to_the_rust_host() {
                 (90, "ObjectUpdate"),
                 (91, "ItemUpdate"),
                 (93, "Whisper"),
+                (95, "WiredAllVariablesDiffs"),
             ]
             .into_iter()
             .map(|(header, name)| PacketInfo {
@@ -291,6 +292,14 @@ fn released_gpresets_authenticates_to_the_rust_host() {
                 direction: Direction::ToClient,
                 source: "fixture".into(),
             })
+            .chain(std::iter::once(PacketInfo {
+                header: 96,
+                hash: None,
+                name: Some("WiredGetAllVariablesDiffs".into()),
+                structure: None,
+                direction: Direction::ToServer,
+                source: "fixture".into(),
+            }))
             .chain(std::iter::once(PacketInfo {
                 header: 94,
                 hash: None,
@@ -702,6 +711,109 @@ fn released_gpresets_authenticates_to_the_rust_host() {
             .collect::<Vec<_>>()
             .join(",");
         wait_state(&expected);
+        // Use synthetic furnidata, isolated from real Habbo assets, to exercise an export.
+        let ready = directory.0.join("fixture-furnidata.ready");
+        let _ = fs::remove_file(&ready);
+        fs::write(directory.0.join("fixture-furnidata.trigger"), "").unwrap();
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !ready.exists() {
+            assert!(
+                Instant::now() < deadline,
+                "fixture furnidata was not installed"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let mut export_command = Packet::new(92);
+        export_command.put_string(":ep all").unwrap();
+        write_frame(&mut client, &export_command).unwrap();
+        let mut marker = Packet::new(77);
+        marker.put_i32(30000 + session).unwrap();
+        write_frame(&mut client, &marker).unwrap();
+        loop {
+            let packet = read_frame(&mut server).unwrap();
+            assert_ne!(
+                packet.header(),
+                92,
+                "export command reached the simulated server"
+            );
+            if packet.header() == 77 {
+                assert_eq!(packet.bytes(), marker.bytes());
+                break;
+            }
+        }
+        let mut prompt = read_frame(&mut client).unwrap();
+        assert_eq!(prompt.header(), 93);
+        assert_eq!(prompt.read_i32().unwrap(), -1);
+        assert_eq!(
+            prompt.read_string().unwrap(),
+            "Enter the name of the preset"
+        );
+        let preset_name = format!("fixture_{session}");
+        let mut name_packet = Packet::new(92);
+        name_packet.put_string(&preset_name).unwrap();
+        write_frame(&mut client, &name_packet).unwrap();
+        let mut marker = Packet::new(77);
+        marker.put_i32(40000 + session).unwrap();
+        write_frame(&mut client, &marker).unwrap();
+        let mut saw_marker = false;
+        let mut saw_request = false;
+        while !saw_marker || !saw_request {
+            let packet = read_frame(&mut server).unwrap();
+            assert_ne!(
+                packet.header(),
+                92,
+                "preset name reached the simulated server"
+            );
+            if packet.header() == 77 {
+                assert_eq!(packet.bytes(), marker.bytes());
+                saw_marker = true;
+            }
+            if packet.header() == 96 {
+                saw_request = true;
+            }
+        }
+        let mut variables = Packet::new(95);
+        variables
+            .put_i32(0)
+            .unwrap()
+            .put_bool(true)
+            .unwrap()
+            .put_i32(0)
+            .unwrap()
+            .put_i32(0)
+            .unwrap();
+        write_frame(&mut server, &variables).unwrap();
+        assert_eq!(read_frame(&mut client).unwrap().bytes(), variables.bytes());
+        let preset_path = directory
+            .0
+            .join("data")
+            .join("presets")
+            .join(format!("{preset_name}.json"));
+        let deadline = Instant::now() + Duration::from_secs(20);
+        while !preset_path.exists() {
+            let log = fs::read_to_string(directory.0.join("app.log")).unwrap_or_default();
+            assert!(
+                Instant::now() < deadline,
+                "preset not exported: {}; stderr: {}",
+                log.replace(&token, "[token]"),
+                fs::read_to_string(directory.0.join("stderr.log"))
+                    .unwrap_or_default()
+                    .replace(&token, "[token]")
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        let preset = fs::read_to_string(&preset_path).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&preset).unwrap();
+        let furni = json["furni"].as_array().expect("preset furni array");
+        assert!(
+            furni.iter().any(|entry| {
+                entry["id"] == 1
+                    && entry["className"] == "fixture_floor"
+                    && entry["location"]["x"] == 3
+                    && entry["location"]["y"] == 1
+            }),
+            "export did not include the moved simulated item: {json}"
+        );
         drop(client);
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {

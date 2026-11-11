@@ -1,5 +1,7 @@
 # Changelog
 
+- Exercise G-Presets preset export with synthetic room and furnidata.
+
 - Isolate the G-Presets JAR path from legacy preset discovery during tests.
 
 - Isolate G-Presets fixture data explicitly instead of relying on user.home on Windows.

@@ -10,6 +10,14 @@ import java.util.stream.Collectors;
 
 /** Test-only launcher: observe the released extension without modifying it. */
 public class GPresetsObserver extends GPresetsLauncher {
+    private static final class FixtureFurniData extends furnidata.FurniDataTools {
+        @Override public boolean isReady() { return true; }
+        @Override public Integer getFloorTypeId(String name) { return -1; }
+        @Override public Integer getWallTypeId(String name) { return -1; }
+        @Override public String getFloorItemName(int id) { return "fixture_floor"; }
+        @Override public String getWallItemName(int id) { return "fixture_wall"; }
+    }
+
     @Override
     protected java.net.URL getFormResource() {
         return GPresetsLauncher.class.getResource("ui/gpresets.fxml");
@@ -23,6 +31,21 @@ public class GPresetsObserver extends GPresetsLauncher {
         Thread observer = new Thread(() -> {
             while (!Thread.currentThread().isInterrupted()) {
                 try {
+                    if (Files.deleteIfExists(state.resolveSibling("fixture-furnidata.trigger"))) {
+                        javafx.application.Platform.runLater(() -> {
+                            try {
+                                java.lang.reflect.Field field = GPresets.class.getDeclaredField("furniDataTools");
+                                field.setAccessible(true);
+                                field.set(presets, new FixtureFurniData());
+                                presets.noExportWiredCbx.setSelected(true);
+                                presets.noExportFurniVariablesCbx.setSelected(true);
+                                presets.noExportWallItemsCbx.setSelected(true);
+                                Files.writeString(state.resolveSibling("fixture-furnidata.ready"), "ready");
+                            } catch (Exception error) {
+                                throw new IllegalStateException("fixture furnidata setup failed", error);
+                            }
+                        });
+                    }
                     if (Files.deleteIfExists(state.resolveSibling("request-inventory.trigger"))) {
                         javafx.application.Platform.runLater(() -> presets.loadInventoryClick(null));
                     }

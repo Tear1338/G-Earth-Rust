@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+The offline G-Presets export fixture supplies synthetic furnidata via a test observer and a simulated empty variable response; it validates the generated preset JSON without a hotel.
+
 Each G-Presets fixture uses a private copy of the JAR because the extension also searches beside its executable for legacy presets.
 
 G-Presets test launches explicitly set `gpresets.dataDir` in a per-test temporary directory; `user.home` alone is insufficient on Windows because the extension prefers APPDATA.

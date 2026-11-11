@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- In two isolated Windows loopback sessions, the released G-Presets binary exported a preset JSON containing the simulated moved floor item with expected normalized ID, class and coordinates. The test uses synthetic furnidata injected by a test observer, disables WIRED/variable/wall export and supplies a simulated empty variable response. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI and live hotel export remain unverified. The user reported the earlier elevation prompt was not visible and has now opened the Rust window manually as administrator.
+
 - G-Presets can also look for legacy presets beside its JAR. Each loopback test now runs a private copy in its own temporary directory in addition to its isolated data directory, preventing access to presets beside the source JAR. Both extension tests, both Clippy configurations and desktop/web debug build pass locally; Linux CI pending.
 
 - Fixed G-Presets test isolation on Windows: `user.home` alone did not override APPDATA, so earlier local fixture runs could access and write the existing G-Presets cache. An existing cache file had a modification timestamp during those runs; its previous contents are unavailable, so any preference change cannot be determined or restored. Both launch paths now explicitly set `gpresets.dataDir` inside their temporary directories and assert it exists; both extension tests, both Clippy configurations and desktop/web debug build pass. The existing cache timestamp stayed unchanged during the fixed rerun. Linux CI pending.
@@ -408,4 +410,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-When the user is ready to complete Windows elevation, launch the Rust desktop as administrator; attach only the confirmed Habbo COM client without disrupting the separate Habbo FR/G-Earth Java/QX session, then verify encrypted relay, extension behavior and routing cleanup. Meanwhile inspect prerequisites for a genuine offline G-Presets export fixture.
+Use the manually opened elevated Rust desktop to attach only the confirmed Habbo COM client without disrupting the separate Habbo FR/G-Earth Java/QX session, then verify encrypted relay, extension behavior and routing cleanup.

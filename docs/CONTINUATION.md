@@ -1,5 +1,7 @@
 # Continuation state
 
+The released G-Presets binary exported a simulated floor item to JSON in two isolated Windows sessions using synthetic furnidata and disabled WIRED/variable/wall export. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI pending. The user reports opening the Rust window manually as administrator; attach only the dedicated COM client, protect FR/QX, and verify cleanup.
+
 G-Presets tests now run a private JAR copy to isolate legacy preset discovery, in addition to the temporary data directory. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI pending. Next: inspect a genuine offline preset export fixture; do not retry canceled elevation without the user, and preserve FR/QX.
 
 Fixed G-Presets test data isolation: both launch paths now set `gpresets.dataDir` to their own temporary directories. Earlier Windows runs could write an existing G-Presets cache, whose previous contents are unavailable; the fixed rerun left its timestamp unchanged. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI pending. Next: inspect a genuine offline preset export fixture while waiting for the user to handle elevation; preserve FR/QX.

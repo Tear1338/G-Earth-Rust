@@ -1,5 +1,7 @@
 # Migration tasks
 
+An isolated G-Presets fixture exports a simulated floor item with synthetic furnidata and WIRED disabled; full live export/import remains open. The user opened Rust as administrator for the dedicated COM session.
+
 G-Presets fixture JAR and data are now both copied or scoped to per-test temporary directories; next inspect a genuine offline preset export fixture.
 
 G-Presets tests explicitly isolate their data directory on Windows and Linux; earlier Windows runs could write the existing cache. Next inspect prerequisites for a real offline preset export fixture.
