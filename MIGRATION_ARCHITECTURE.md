@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+The isolated G-Presets fixture acknowledges one simulated inventory placement and observes the extension internal ID mapping under its lock; the build is intentionally aborted afterward.
+
 The G-Presets fixture checks invalid staging selection and abort through the relay without a real hotel.
 
 The offline G-Presets fixture reaches import staging using synthetic furnidata and server state; it does not access a hotel.

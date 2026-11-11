@@ -12,9 +12,9 @@ import java.util.stream.Collectors;
 public class GPresetsObserver extends GPresetsLauncher {
     private static final class FixtureFurniData extends furnidata.FurniDataTools {
         @Override public boolean isReady() { return true; }
-        @Override public Integer getFloorTypeId(String name) { return "fixture_floor".equals(name) ? 1500 : -1; }
+        @Override public Integer getFloorTypeId(String name) { return "fixture_floor".equals(name) ? 1500 : "tile_stackmagic1".equals(name) ? 1550 : -1; }
         @Override public Integer getWallTypeId(String name) { return -1; }
-        @Override public String getFloorItemName(int id) { return "fixture_floor"; }
+        @Override public String getFloorItemName(int id) { return id == 1550 ? "tile_stackmagic1" : "fixture_floor"; }
         @Override public String getWallItemName(int id) { return "fixture_wall"; }
     }
 
@@ -82,6 +82,17 @@ public class GPresetsObserver extends GPresetsLauncher {
                         Files.writeString(state.resolveSibling("readiness.txt"),
                             presets.getCatalog().getState() + ":" + presets.getPermissions().canMoveFurni() + ":" + presets.getImporter().isReady());
                         Files.writeString(state.resolveSibling("import-state-live.txt"), presets.getImporter().getState().toString());
+                        Object importer = presets.getImporter();
+                        java.lang.reflect.Field lockField = importer.getClass().getDeclaredField("lock");
+                        java.lang.reflect.Field idMap = importer.getClass().getDeclaredField("realFurniIdMap");
+                        lockField.setAccessible(true);
+                        idMap.setAccessible(true);
+                        Object mapped;
+                        synchronized (lockField.get(importer)) {
+                            Object rawMap = idMap.get(importer);
+                            mapped = rawMap instanceof java.util.Map<?, ?> ? ((java.util.Map<?, ?>) rawMap).get(1) : null;
+                        }
+                        Files.writeString(state.resolveSibling("placement-ack.txt"), mapped == null ? "" : mapped.toString());
                     }
                     if (presets.getFloorState() != null) {
                         String floorIds = presets.getFloorState().getItems().stream()

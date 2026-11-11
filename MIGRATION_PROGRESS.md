@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- In two isolated Windows loopback sessions, the released G-Presets binary accepted a valid staging tile, moved a simulated stack tile, emitted an inventory placement request, and bound the simulated ObjectAdd acknowledgement to the preset item ID. A test-only observer reads the extension mapping under its lock. The fixture deliberately aborts after this first acknowledgement; completed import and live hotel behavior remain unverified. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI pending.
+
 - In two Windows loopback sessions, released G-Presets blocked an out-of-room staging selection, reported the invalid area and stayed in the staging state; `:abort` was also blocked and returned the importer to its initial state. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI and actual placement remain unverified.
 
 - With synthetic furnidata, inventory, catalog, controller rights and an exported preset, the released G-Presets binary accepted `:ip 0,0`, blocked the command and reached its staging-location selection state in two isolated Windows sessions. No placement or completed import was tested. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI and live import remain unverified.
@@ -424,4 +426,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Do not resume stopped Computer Use without the user. Independently simulate G-Presets staging-tile selection and a placement acknowledgement; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.
+Do not resume stopped Computer Use without the user. Independently simulate subsequent G-Presets furniture movement and complete the isolated import; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.

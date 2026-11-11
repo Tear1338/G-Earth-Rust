@@ -1,5 +1,7 @@
 # Changelog
 
+- Verify G-Presets first simulated placement and acknowledgement over the relay.
+
 - Verify G-Presets invalid staging selection and import abort.
 
 - Exercise G-Presets simulated import startup and staging prompt.

@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+G-Presets sent a placement for simulated inventory, accepted a simulated ObjectAdd and associated the returned ID in two Windows loopback sessions. The fixture aborts afterward; full import and real hotel behavior remain unverified.
+
 Released G-Presets rejected a simulated invalid staging tile and returned to its initial state after abort in two Windows loopback sessions. Valid placement and real hotel behavior remain unverified.
 
 G-Presets accepted a synthetic preset import and reached staging-location selection in two Windows loopback sessions. No placement, complete import or live hotel behavior was verified.

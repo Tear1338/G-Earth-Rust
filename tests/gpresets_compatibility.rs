@@ -294,6 +294,22 @@ fn released_gpresets_authenticates_to_the_rust_host() {
                 direction: Direction::ToClient,
                 source: "fixture".into(),
             })
+            .chain(
+                [
+                    (101, "PlaceObject"),
+                    (102, "MoveObject"),
+                    (103, "SetCustomStackingHeight"),
+                ]
+                .into_iter()
+                .map(|(header, name)| PacketInfo {
+                    header,
+                    hash: None,
+                    name: Some(name.into()),
+                    structure: None,
+                    direction: Direction::ToServer,
+                    source: "fixture".into(),
+                }),
+            )
             .chain(std::iter::once(PacketInfo {
                 header: 100,
                 hash: None,
@@ -973,6 +989,98 @@ fn released_gpresets_authenticates_to_the_rust_host() {
             "abort command must be blocked"
         );
         wait_room("import-state-live.txt", "NONE");
+        // Add a synthetic stack tile after export so the importer can place furniture.
+        let mut stack = floor.clone();
+        stack.id = 3700 + session;
+        stack.type_id = 1550;
+        stack.tile = HPoint::new(3, 3);
+        let mut stack_add = Packet::new(86);
+        stack.append(&mut stack_add).unwrap();
+        stack_add.put_string("Fixture").unwrap();
+        write_frame(&mut server, &stack_add).unwrap();
+        // Pending extension whispers may precede the forwarded object event.
+        loop {
+            if read_frame(&mut client).unwrap().header() == 86 {
+                break;
+            }
+        }
+        wait_room(
+            "floor-state.txt",
+            &format!("{},{}", 2600 + session, 3700 + session),
+        );
+        let mut import = Packet::new(92);
+        import.put_string(":ip 0,0").unwrap();
+        write_frame(&mut client, &import).unwrap();
+        wait_room("import-state-live.txt", "AWAITING_UNOCCUPIED_SPACE");
+        let mut staging = Packet::new(100);
+        staging.put_i32(0).unwrap().put_i32(0).unwrap();
+        write_frame(&mut client, &staging).unwrap();
+        // Observe the extension's first actual placement request. The fake server
+        // acknowledges it with ObjectAdd, and the extension must bind the new ID.
+        let mut saw_stack_move = false;
+        let mut placement = None;
+        for _ in 0..30 {
+            let mut packet = read_frame(&mut server).unwrap_or_else(|error| {
+                let log = fs::read_to_string(directory.0.join("app.log")).unwrap_or_default();
+                panic!(
+                    "waiting for simulated placement: {error}; log={}",
+                    log.replace(&token, "[token]")
+                );
+            });
+            match packet.header() {
+                100 => panic!("staging selection reached the simulated server"),
+                102 => {
+                    let id = packet.read_i32().unwrap();
+                    let x = packet.read_i32().unwrap();
+                    let y = packet.read_i32().unwrap();
+                    if id == 3700 + session && x == 0 && y == 0 {
+                        saw_stack_move = true;
+                    }
+                }
+                101 => {
+                    placement = Some(packet.read_string().unwrap());
+                    break;
+                }
+                _ => {}
+            }
+        }
+        assert!(saw_stack_move, "extension did not move the stack tile");
+        let placement = placement.expect("extension did not send PlaceObject");
+        let fields: Vec<_> = placement.split_whitespace().collect();
+        assert_eq!(fields.len(), 4, "unexpected placement: {placement}");
+        assert!(
+            fields[0].starts_with('-'),
+            "expected inventory placement: {placement}"
+        );
+        let x: i32 = fields[1].parse().unwrap();
+        let y: i32 = fields[2].parse().unwrap();
+        let inventory_id: i32 = fields[0].parse().unwrap();
+        let base = 90_000 + session * 2_000;
+        assert!(
+            (-inventory_id >= base) && (-inventory_id <= base + 600),
+            "placement did not use the simulated inventory"
+        );
+        assert_eq!((x, y), (0, 0));
+        let mut added = floor.clone();
+        added.id = 4700 + session;
+        added.tile = HPoint::new(x, y);
+        let mut placed = Packet::new(86);
+        added.append(&mut placed).unwrap();
+        placed.put_string("Fixture").unwrap();
+        write_frame(&mut server, &placed).unwrap();
+        wait_room("placement-ack.txt", &(4700 + session).to_string());
+        // Stop the simulated build rather than sending further server acknowledgements.
+        let mut abort = Packet::new(92);
+        abort.put_string(":abort").unwrap();
+        write_frame(&mut client, &abort).unwrap();
+        wait_room("import-state-live.txt", "NONE");
+        // Remove synthetic additions so the next isolated session starts cleanly.
+        for id in [3700 + session, 4700 + session] {
+            let mut remove = Packet::new(87);
+            remove.put_string(&id.to_string()).unwrap();
+            write_frame(&mut server, &remove).unwrap();
+        }
+        wait_room("floor-state.txt", &(2600 + session).to_string());
         drop(client);
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
