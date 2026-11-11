@@ -1,5 +1,7 @@
 # Migration tasks
 
+The dedicated Habbo COM AIR process and socket passed a read-only diagnostic; complete elevated attachment, encrypted traffic and cleanup without disturbing the existing FR/QX session.
+
 G-Presets loopback fixtures now observe floor movement and wall state updates; the separate AIR session is being prepared, while the existing WIRED TEST session must remain untouched.
 
 G-Presets inventory and room item changes now have observable loopback tests; the user has prepared a dedicated AIR session for real relay validation.

@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+The live AIR diagnostic reads selected process memory without writing it and reports aggregate scan statistics; candidate discovery is not proof of decryption.
+
 The G-Presets observer also checks simulated floor position and wall state updates via public extension state.
 
 The G-Presets test observer reads public floor and wall state after simulated room initialization and incremental changes; the JAR is unchanged.

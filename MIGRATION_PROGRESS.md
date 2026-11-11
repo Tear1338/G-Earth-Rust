@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- The user identified a separate official Habbo COM AIR client for testing and confirmed the existing Habbo FR/QX session must be preserved. A read-only release diagnostic matched the COM process to its socket and completed a 450 MB scan with one table candidate; this does not prove key recovery or relay compatibility. The current shell is unelevated; a Rust desktop administrator launch is awaiting Windows user action. GitHub Actions run 43031587134 passed all validation jobs for `4f2d179`.
+
 - The real G-Presets loopback fixture now observes an updated floor-item position and wall-item state in each of two Windows sessions. Both G-Presets tests, both Clippy configurations and desktop/web debug build pass; Linux CI is pending. The user clarified that the existing AIR client in WIRED TEST is not the dedicated test session and is preparing a separate one. Current shell lacks administrator rights; existing G-Earth Java and QX remain untouched.
 
 - The unmodified G-Presets binary, launched through a test observer, exposed expected floor and wall item IDs after simulated room initialization, additions and removals in two Windows loopback sessions. Both G-Presets tests, both Clippy configurations and desktop/web debug build pass; Linux CI is pending. The prior inventory observer passed all jobs in run 42924223541. No live hotel or preset import/export was tested.
@@ -392,4 +394,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-When the separately prepared AIR session appears, identify its PID and endpoint, plan isolated routing without disrupting existing G-Earth Java/QX, obtain an elevated execution path if required, then test relay and cleanup; monitor Linux CI.
+Complete the pending elevated Rust desktop launch, attach only the confirmed Habbo COM client without disrupting the separate Habbo FR/G-Earth Java/QX session, then verify encrypted relay, extension behavior and routing cleanup.

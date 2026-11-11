@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+A dedicated official Habbo COM AIR process passed read-only process/socket identification and completed a memory scan with one candidate. This is not proof of RC4 recovery or an attached relay; the separate FR/QX session must be preserved.
+
 The released G-Presets binary exposed expected simulated floor-position and wall-state updates in two Windows loopback sessions. Linux CI for this addition and real hotel/preset workflows remain unverified.
 
 A test launcher observed expected floor and wall item IDs in the released G-Presets binary after simulated room initialization, additions and removals across two Windows loopback sessions. Linux CI for this fixture and live hotel/preset workflows remain unverified.

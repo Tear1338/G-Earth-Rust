@@ -1,5 +1,7 @@
 # Changelog
 
+- Record read-only diagnostic of the dedicated official AIR client.
+
 - Verify G-Presets room-item position and state updates in the loopback fixture.
 
 - Observe real G-Presets floor and wall state during simulated additions and removals.
