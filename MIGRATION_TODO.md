@@ -1,5 +1,7 @@
 # Migration tasks
 
+G-Presets inventory and room item changes now have observable loopback tests; the user has prepared a dedicated AIR session for real relay validation.
+
 The released G-Presets binary exposes expected incremental inventory state through an isolated observer; next observe floor and wall item state and updates. Live hotel and preset workflows remain open.
 
 The released G-Presets binary handles one floor and one wall room item in two isolated Windows relay sessions; next investigate its incremental inventory updates and observable state. Live hotel and preset workflows remain open.

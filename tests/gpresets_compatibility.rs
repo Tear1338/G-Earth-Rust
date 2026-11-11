@@ -241,6 +241,13 @@ fn released_gpresets_authenticates_to_the_rust_host() {
                 (80, "Items"),
                 (81, "FurniListAddOrUpdate"),
                 (82, "FurniListRemove"),
+                (83, "FloorHeightMap"),
+                (84, "HeightMap"),
+                (85, "RoomEntryInfo"),
+                (86, "ObjectAdd"),
+                (87, "ObjectRemove"),
+                (88, "ItemAdd"),
+                (89, "ItemRemove"),
             ]
             .into_iter()
             .map(|(header, name)| PacketInfo {
@@ -407,8 +414,8 @@ fn released_gpresets_authenticates_to_the_rust_host() {
             owner_name: Some("Fixture".into()),
         };
         for packet in [
-            HFloorItem::construct(&[floor], 79).unwrap(),
-            HWallItem::construct(&[wall], 80).unwrap(),
+            HFloorItem::construct(std::slice::from_ref(&floor), 79).unwrap(),
+            HWallItem::construct(std::slice::from_ref(&wall), 80).unwrap(),
         ] {
             write_frame(&mut server, &packet).unwrap();
             assert_eq!(read_frame(&mut client).unwrap().bytes(), packet.bytes());
@@ -432,6 +439,95 @@ fn released_gpresets_authenticates_to_the_rust_host() {
             );
             std::thread::sleep(Duration::from_millis(50));
         }
+        let mut floorplan = Packet::new(83);
+        floorplan
+            .put_u8(0)
+            .unwrap()
+            .put_i32(0)
+            .unwrap()
+            .put_string("0000\r0000\r0000\r0000")
+            .unwrap();
+        let mut heightmap = Packet::new(84);
+        heightmap.put_i32(4).unwrap().put_i32(16).unwrap();
+        for _ in 0..16 {
+            heightmap.put_u16(0).unwrap();
+        }
+        let mut room = Packet::new(85);
+        room.put_i32(12345).unwrap();
+        for packet in [floorplan, heightmap] {
+            write_frame(&mut server, &packet).unwrap();
+            assert_eq!(read_frame(&mut client).unwrap().bytes(), packet.bytes());
+        }
+        // G-Presets can block RoomEntryInfo when it just requested room state.
+        write_frame(&mut server, &room).unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_millis(500)))
+            .unwrap();
+        match read_frame(&mut client) {
+            Ok(received) => assert_eq!(received.bytes(), room.bytes()),
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+                ) => {}
+            Err(error) => panic!("room entry forwarding failed: {error}"),
+        }
+        client
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
+        let wait_room = |filename: &str, expected: &str| {
+            let path = directory.0.join(filename);
+            let deadline = Instant::now() + Duration::from_secs(10);
+            loop {
+                let state = fs::read_to_string(&path).unwrap_or_default();
+                if state == expected {
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "G-Presets {filename} expected {expected:?}, observed {state:?}"
+                );
+                std::thread::sleep(Duration::from_millis(50));
+            }
+        };
+        wait_room("floor-state.txt", &(1600 + session).to_string());
+        wait_room("wall-state.txt", &(1700 + session).to_string());
+        let mut extra_floor = floor.clone();
+        extra_floor.id = 2600 + session;
+        let mut extra_wall = wall.clone();
+        extra_wall.id = 2700 + session;
+        let mut floor_add = Packet::new(86);
+        extra_floor.append(&mut floor_add).unwrap();
+        floor_add.put_string("Fixture").unwrap();
+        let mut wall_add = Packet::new(88);
+        extra_wall.append(&mut wall_add).unwrap();
+        wall_add.put_string("Fixture").unwrap();
+        for packet in [floor_add, wall_add] {
+            write_frame(&mut server, &packet).unwrap();
+            assert_eq!(read_frame(&mut client).unwrap().bytes(), packet.bytes());
+        }
+        wait_room(
+            "floor-state.txt",
+            &format!("{},{}", 1600 + session, 2600 + session),
+        );
+        wait_room(
+            "wall-state.txt",
+            &format!("{},{}", 1700 + session, 2700 + session),
+        );
+        let mut floor_remove = Packet::new(87);
+        floor_remove
+            .put_string(&(1600 + session).to_string())
+            .unwrap();
+        let mut wall_remove = Packet::new(89);
+        wall_remove
+            .put_string(&(1700 + session).to_string())
+            .unwrap();
+        for packet in [floor_remove, wall_remove] {
+            write_frame(&mut server, &packet).unwrap();
+            assert_eq!(read_frame(&mut client).unwrap().bytes(), packet.bytes());
+        }
+        wait_room("floor-state.txt", &(2600 + session).to_string());
+        wait_room("wall-state.txt", &(2700 + session).to_string());
         drop(client);
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {

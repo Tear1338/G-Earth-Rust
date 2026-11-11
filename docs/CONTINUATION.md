@@ -1,5 +1,7 @@
 # Continuation state
 
+The unmodified G-Presets binary exposed expected floor and wall item IDs after simulated room initialization, additions and removals on two Windows loopback sessions; both G-Presets tests, both Clippy configurations and desktop/web debug build pass. Linux CI is pending. The user confirms the dedicated AIR session is ready: identify its process, exercise attachment and real relay safely, and verify routing cleanup.
+
 A test-only G-Presets launcher observed correct public inventory state after addition and removal across two isolated Windows relay sessions; the original JAR launcher also authenticated separately. Both tests, both Clippy configurations and desktop/web debug build pass. Next: observe floor/wall item state and updates; verify Linux CI. Dedicated AIR and live hotel/preset testing remain outstanding.
 
 The real G-Presets loopback fixture now forwards one named floor and wall item and observes both parse logs across two Windows sessions. The fixture, both Clippy configurations and desktop/web debug build pass; the earlier inventory fixture passed the Linux G-Presets job (42923554869). Next: inspect incremental inventory updates and observable extension state. Dedicated AIR and live hotel/preset testing remain outstanding.

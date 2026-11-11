@@ -1,5 +1,7 @@
 # Changelog
 
+- Observe real G-Presets floor and wall state during simulated additions and removals.
+
 - Verify real G-Presets incremental inventory state over loopback and retain original launcher coverage.
 
 - Exercise real G-Presets floor and wall parsing over isolated relay sessions.
