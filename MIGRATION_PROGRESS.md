@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- The released G-Presets binary requested and assembled a 601-item virtual inventory across two pages in two Windows loopback sessions; both pages were blocked from the simulated client and the following marker passed. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI pending. This is not a live hotel test.
+
 - The released G-Presets binary reconstructed 599, 600, 601 and 1201 inventory items from one to three correctly formed pages in each of two Windows loopback sessions. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI is pending. This does not validate production hotel traffic or the full preset workflow.
 
 - In two isolated Windows relay sessions, the released G-Presets binary injected an inventory request toward the simulated server, consumed and blocked the virtual response, and exposed the expected new inventory state. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI is pending. Live hotel and full preset workflows remain unverified.
@@ -402,4 +404,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-When the user is ready to complete Windows elevation, launch the Rust desktop as administrator; attach only the confirmed Habbo COM client without disrupting the separate Habbo FR/G-Earth Java/QX session, then verify encrypted relay, extension behavior and routing cleanup. Meanwhile test a multi-page response to the G-Presets virtual inventory request.
+When the user is ready to complete Windows elevation, launch the Rust desktop as administrator; attach only the confirmed Habbo COM client without disrupting the separate Habbo FR/G-Earth Java/QX session, then verify encrypted relay, extension behavior and routing cleanup. Meanwhile inspect prerequisites for a genuine offline G-Presets export fixture.

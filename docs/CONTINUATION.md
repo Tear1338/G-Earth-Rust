@@ -1,5 +1,7 @@
 # Continuation state
 
+The released G-Presets binary assembled a 601-item virtual inventory across two pages, blocking both pages from the simulated client in two Windows loopback sessions. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI pending. Next independent step: inspect prerequisites for a genuine offline preset export fixture. Do not retry canceled elevation without the user; preserve FR/QX.
+
 G-Presets assembled 599, 600, 601 and 1201 items across one to three pages in two Windows loopback sessions. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI pending. Next independent step: test a multi-page response to the extension virtual inventory request. The canceled administrator launch must not be retried without the user; preserve FR/QX.
 
 Released G-Presets injected an inventory request to the simulated server, blocked the virtual response and updated its public inventory in two Windows loopback sessions. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI pending. Next independent step: compare multi-page inventory behavior around 600 items. The canceled administrator launch must not be retried without the user; preserve FR/QX.

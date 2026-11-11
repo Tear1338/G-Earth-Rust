@@ -645,6 +645,33 @@ fn released_gpresets_authenticates_to_the_rust_host() {
                 .join(",");
             wait_state(&expected);
         }
+        // Virtual multi-page responses are hidden from the client until completion.
+        fs::write(directory.0.join("request-inventory.trigger"), "").unwrap();
+        while read_frame(&mut server).unwrap().header() != 94 {}
+        let base = 90_000 + session * 2_000;
+        let virtual_items: Vec<_> = (0..601)
+            .map(|offset| {
+                let mut entry = item.clone();
+                entry.placement_id = base + offset;
+                entry.id = base + offset;
+                entry
+            })
+            .collect();
+        for page in HInventoryItem::construct_pages(&virtual_items, 78).unwrap() {
+            write_frame(&mut server, &page).unwrap();
+        }
+        let mut after_virtual = Packet::new(77);
+        after_virtual.put_i32(20000 + session).unwrap();
+        write_frame(&mut server, &after_virtual).unwrap();
+        assert_eq!(
+            read_frame(&mut client).unwrap().bytes(),
+            after_virtual.bytes()
+        );
+        let expected = (0..601)
+            .map(|offset| (base + offset).to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        wait_state(&expected);
         drop(client);
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {

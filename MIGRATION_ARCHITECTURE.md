@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+The G-Presets fixture verifies blocking of every page in a virtual inventory response and checks the resulting extension state.
+
 The G-Presets loopback fixture verifies full public inventory state across one to three valid pages at the 600-item boundary.
 
 The G-Presets loopback fixture triggers an inventory request through the unmodified extension, checks the server-directed injection, and verifies that its virtual response is blocked and updates public state.

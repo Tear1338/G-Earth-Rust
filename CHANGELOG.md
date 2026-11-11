@@ -1,5 +1,7 @@
 # Changelog
 
+- Verify G-Presets virtual inventory responses across multiple pages.
+
 - Verify real G-Presets inventory paging at and across the 600-item boundary.
 
 - Exercise real G-Presets virtual inventory request and response handling.

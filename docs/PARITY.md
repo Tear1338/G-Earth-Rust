@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+G-Presets assembled a 601-item virtual inventory and blocked both pages from the simulated client in two Windows loopback sessions. Linux CI and live hotel/preset export remain unverified.
+
 The released G-Presets binary assembled 599, 600, 601 and 1201 items across one to three pages in two Windows loopback sessions. Linux CI and real hotel behavior remain unverified.
 
 Released G-Presets sent a virtual inventory request, blocked its response from the simulated client, and updated its inventory in two Windows loopback sessions. Linux CI and real hotel/preset workflows remain unverified.
