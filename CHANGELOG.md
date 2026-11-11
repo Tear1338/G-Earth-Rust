@@ -1,5 +1,7 @@
 # Changelog
 
+- Verify real G-Presets inventory paging at and across the 600-item boundary.
+
 - Exercise real G-Presets virtual inventory request and response handling.
 
 - Verify real G-Presets command blocking and client feedback injection over loopback.

@@ -622,6 +622,29 @@ fn released_gpresets_authenticates_to_the_rust_host() {
             "virtual inventory response should be blocked"
         );
         wait_state(&(3200 + session).to_string());
+        // Exercise exact and crossed boundaries with the real extension.
+        for (case, count) in [599, 600, 601, 1201].into_iter().enumerate() {
+            let base = 50_000 + session * 10_000 + case as i32 * 2_000;
+            let items: Vec<_> = (0..count)
+                .map(|offset| {
+                    let mut entry = item.clone();
+                    entry.placement_id = base + offset;
+                    entry.id = base + offset;
+                    entry
+                })
+                .collect();
+            let pages = HInventoryItem::construct_pages(&items, 78).unwrap();
+            assert_eq!(pages.len(), (count as usize).div_ceil(600));
+            for page in pages {
+                write_frame(&mut server, &page).unwrap();
+                assert_eq!(read_frame(&mut client).unwrap().bytes(), page.bytes());
+            }
+            let expected = (0..count)
+                .map(|offset| (base + offset).to_string())
+                .collect::<Vec<_>>()
+                .join(",");
+            wait_state(&expected);
+        }
         drop(client);
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {

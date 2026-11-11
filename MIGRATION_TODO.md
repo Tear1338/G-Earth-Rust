@@ -1,5 +1,7 @@
 # Migration tasks
 
+G-Presets assembled 599, 600, 601 and 1201 item inventories in loopback; next exercise a multi-page response to its own virtual inventory request.
+
 G-Presets virtual inventory request, response blocking and state update pass in Windows loopback; next exercise multi-page inventory across the Java 600-item boundary.
 
 G-Presets command blocking and feedback injection are exercised in loopback; next test an extension-originated inventory request toward the simulated server. The AIR administrator launch was canceled and must not be retried automatically.
