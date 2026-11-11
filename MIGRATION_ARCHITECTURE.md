@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+The G-Presets fixture simulates an empty Builders Club catalog and controller rights and observes the importer readiness transition; prerequisites reset between sessions.
+
 The G-Presets fixture checks import refusal and feedback when a selected preset lacks required catalog initialization.
 
 The G-Presets loopback observer loads the exported test file through the released extension parser and checks its furniture fields.

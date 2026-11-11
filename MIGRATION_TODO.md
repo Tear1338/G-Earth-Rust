@@ -1,5 +1,7 @@
 # Migration tasks
 
+G-Presets import readiness now changes after simulated catalog and controller rights; next exercise a controlled import and placement acknowledgement.
+
 G-Presets refuses the simulated import when catalog prerequisites are absent; next investigate catalog setup and a controlled placement acknowledgement fixture.
 
 G-Presets reloads the simulated exported preset through its own parser; next inspect requirements for an isolated import fixture.

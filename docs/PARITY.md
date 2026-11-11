@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+The released G-Presets importer became ready after simulated catalog and controller messages in two Windows loopback sessions. No placement or actual hotel import was verified.
+
 The released G-Presets binary refused a selected simulated preset import without catalog initialization and returned feedback in two Windows loopback sessions. This does not verify a successful import or live hotel behavior.
 
 The released G-Presets binary reloaded a simulated exported preset and returned expected furniture fields in two Windows loopback sessions. Synthetic furnidata and disabled WIRED/variable/wall export limit this result; live import and export remain unverified.

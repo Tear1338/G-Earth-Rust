@@ -56,10 +56,16 @@ public class GPresetsObserver extends GPresetsLauncher {
                             .map(item -> item.getClassName() + ":" + item.getFurniId() + ":" +
                                 item.getLocation().getX() + ":" + item.getLocation().getY() + ":" + item.getRotation())
                             .sorted().collect(Collectors.joining(","));
+                        // Reset simulated prerequisites between independent relay sessions.
+                        presets.getCatalog().clear();
+                        presets.getPermissions().clear();
                         presets.getImporter().setPresetConfig(preset);
                         Files.writeString(state.resolveSibling("import-status.txt"),
                             presets.getImporter().isReady() + ":" + presets.getImporter().getState());
                         Files.writeString(state.resolveSibling("loaded-preset.txt"), loaded);
+                    }
+                    if (Files.deleteIfExists(state.resolveSibling("request-catalog.trigger"))) {
+                        javafx.application.Platform.runLater(() -> presets.loadBCClick(null));
                     }
                     if (Files.deleteIfExists(state.resolveSibling("request-inventory.trigger"))) {
                         javafx.application.Platform.runLater(() -> presets.loadInventoryClick(null));
@@ -69,6 +75,10 @@ public class GPresetsObserver extends GPresetsLauncher {
                             .map(item -> item.getPlacementId()).sorted()
                             .map(String::valueOf).collect(Collectors.joining(","));
                         Files.writeString(state, ids);
+                    }
+                    if (presets.getCatalog() != null && presets.getPermissions() != null && presets.getImporter() != null) {
+                        Files.writeString(state.resolveSibling("readiness.txt"),
+                            presets.getCatalog().getState() + ":" + presets.getPermissions().canMoveFurni() + ":" + presets.getImporter().isReady());
                     }
                     if (presets.getFloorState() != null) {
                         String floorIds = presets.getFloorState().getItems().stream()

@@ -282,6 +282,8 @@ fn released_gpresets_authenticates_to_the_rust_host() {
                 (91, "ItemUpdate"),
                 (93, "Whisper"),
                 (95, "WiredAllVariablesDiffs"),
+                (98, "CatalogIndex"),
+                (99, "YouAreController"),
             ]
             .into_iter()
             .map(|(header, name)| PacketInfo {
@@ -292,6 +294,14 @@ fn released_gpresets_authenticates_to_the_rust_host() {
                 direction: Direction::ToClient,
                 source: "fixture".into(),
             })
+            .chain(std::iter::once(PacketInfo {
+                header: 97,
+                hash: None,
+                name: Some("GetCatalogIndex".into()),
+                structure: None,
+                direction: Direction::ToServer,
+                source: "fixture".into(),
+            }))
             .chain(std::iter::once(PacketInfo {
                 header: 96,
                 hash: None,
@@ -854,6 +864,44 @@ fn released_gpresets_authenticates_to_the_rust_host() {
             refusal_seen,
             "G-Presets did not report missing import prerequisites"
         );
+        // Confirm the reset reached the observer before testing the positive transition.
+        wait_room("readiness.txt", "NONE:false:false");
+        // Grant simulated controller rights and answer the extension's BC catalog request.
+        let mut controller = Packet::new(99);
+        controller.put_i32(4).unwrap();
+        write_frame(&mut server, &controller).unwrap();
+        assert_eq!(read_frame(&mut client).unwrap().bytes(), controller.bytes());
+        fs::write(directory.0.join("request-catalog.trigger"), "").unwrap();
+        let mut request = loop {
+            let packet = read_frame(&mut server).unwrap();
+            if packet.header() == 97 {
+                break packet;
+            }
+        };
+        assert_eq!(request.read_string().unwrap(), "BUILDERS_CLUB");
+        let mut index = Packet::new(98);
+        index
+            .put_bool(true)
+            .unwrap()
+            .put_i32(0)
+            .unwrap()
+            .put_i32(-1)
+            .unwrap()
+            .put_string("root")
+            .unwrap()
+            .put_string("root")
+            .unwrap()
+            .put_i32(0)
+            .unwrap()
+            .put_i32(0)
+            .unwrap()
+            .put_bool(false)
+            .unwrap()
+            .put_string("BUILDERS_CLUB")
+            .unwrap();
+        write_frame(&mut server, &index).unwrap();
+        assert_eq!(read_frame(&mut client).unwrap().bytes(), index.bytes());
+        wait_room("readiness.txt", "COLLECTED:true:true");
         drop(client);
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {

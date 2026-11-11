@@ -1,5 +1,7 @@
 # Changelog
 
+- Verify G-Presets import readiness with simulated catalog and controller rights.
+
 - Verify G-Presets import refusal when catalog prerequisites are absent.
 
 - Verify G-Presets reload of the simulated exported preset.
