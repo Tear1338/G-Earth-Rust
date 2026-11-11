@@ -1,5 +1,7 @@
 # Migration tasks
 
+G-Presets rejects an invalid simulated staging tile and aborts cleanly; next exercise a valid staging tile and placement acknowledgement.
+
 G-Presets starts a simulated preset import and requests a staging location; next simulate the selected tile and placement acknowledgement.
 
 G-Presets import readiness now changes after simulated catalog and controller rights; next exercise a controlled import and placement acknowledgement.

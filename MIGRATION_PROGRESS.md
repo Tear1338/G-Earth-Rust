@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- In two Windows loopback sessions, released G-Presets blocked an out-of-room staging selection, reported the invalid area and stayed in the staging state; `:abort` was also blocked and returned the importer to its initial state. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI and actual placement remain unverified.
+
 - With synthetic furnidata, inventory, catalog, controller rights and an exported preset, the released G-Presets binary accepted `:ip 0,0`, blocked the command and reached its staging-location selection state in two isolated Windows sessions. No placement or completed import was tested. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI and live import remain unverified.
 
 - In two isolated Windows sessions, the released G-Presets extension requested a simulated empty Builders Club catalog, consumed its index and received simulated controller rights; its public importer readiness changed from false to true. No import or placement was attempted in this step. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI and live import remain unverified.

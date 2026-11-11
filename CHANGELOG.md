@@ -1,5 +1,7 @@
 # Changelog
 
+- Verify G-Presets invalid staging selection and import abort.
+
 - Exercise G-Presets simulated import startup and staging prompt.
 
 - Verify G-Presets import readiness with simulated catalog and controller rights.

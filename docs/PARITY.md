@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Released G-Presets rejected a simulated invalid staging tile and returned to its initial state after abort in two Windows loopback sessions. Valid placement and real hotel behavior remain unverified.
+
 G-Presets accepted a synthetic preset import and reached staging-location selection in two Windows loopback sessions. No placement, complete import or live hotel behavior was verified.
 
 The released G-Presets importer became ready after simulated catalog and controller messages in two Windows loopback sessions. No placement or actual hotel import was verified.

@@ -295,6 +295,14 @@ fn released_gpresets_authenticates_to_the_rust_host() {
                 source: "fixture".into(),
             })
             .chain(std::iter::once(PacketInfo {
+                header: 100,
+                hash: None,
+                name: Some("MoveAvatar".into()),
+                structure: None,
+                direction: Direction::ToServer,
+                source: "fixture".into(),
+            }))
+            .chain(std::iter::once(PacketInfo {
                 header: 97,
                 hash: None,
                 name: Some("GetCatalogIndex".into()),
@@ -922,6 +930,49 @@ fn released_gpresets_authenticates_to_the_rust_host() {
             }
         }
         wait_room("import-state-live.txt", "AWAITING_UNOCCUPIED_SPACE");
+        // An out-of-room staging tile must be blocked and leave the importer waiting.
+        let mut invalid_tile = Packet::new(100);
+        invalid_tile.put_i32(99).unwrap().put_i32(99).unwrap();
+        write_frame(&mut client, &invalid_tile).unwrap();
+        let mut marker = Packet::new(77);
+        marker.put_i32(61000 + session).unwrap();
+        write_frame(&mut client, &marker).unwrap();
+        let forwarded = read_frame(&mut server).unwrap();
+        assert_eq!(
+            forwarded.bytes(),
+            marker.bytes(),
+            "invalid staging click must be blocked"
+        );
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let log = fs::read_to_string(directory.0.join("app.log")).unwrap_or_default();
+            if log
+                .matches("Choose a flat staging area with an adjacent valid tile")
+                .count()
+                > session as usize
+            {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "G-Presets did not reject invalid staging tile"
+            );
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        wait_room("import-state-live.txt", "AWAITING_UNOCCUPIED_SPACE");
+        let mut abort = Packet::new(92);
+        abort.put_string(":abort").unwrap();
+        write_frame(&mut client, &abort).unwrap();
+        let mut marker = Packet::new(77);
+        marker.put_i32(62000 + session).unwrap();
+        write_frame(&mut client, &marker).unwrap();
+        let forwarded = read_frame(&mut server).unwrap();
+        assert_eq!(
+            forwarded.bytes(),
+            marker.bytes(),
+            "abort command must be blocked"
+        );
+        wait_room("import-state-live.txt", "NONE");
         drop(client);
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
