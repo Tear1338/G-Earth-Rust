@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Released G-Presets sent a virtual inventory request, blocked its response from the simulated client, and updated its inventory in two Windows loopback sessions. Linux CI and real hotel/preset workflows remain unverified.
+
 Released G-Presets blocked `:ep` and injected its expected unavailable-data feedback in two Windows loopback sessions; a following packet reached the simulated server. Linux CI, live hotel and complete preset export remain unverified.
 
 A dedicated official Habbo COM AIR process passed read-only process/socket identification and completed a memory scan with one candidate. This is not proof of RC4 recovery or an attached relay; the separate FR/QX session must be preserved.

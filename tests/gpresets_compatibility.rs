@@ -262,6 +262,14 @@ fn released_gpresets_authenticates_to_the_rust_host() {
                 source: "fixture".into(),
             })
             .chain(std::iter::once(PacketInfo {
+                header: 94,
+                hash: None,
+                name: Some("RequestFurniInventory".into()),
+                structure: None,
+                direction: Direction::ToServer,
+                source: "fixture".into(),
+            }))
+            .chain(std::iter::once(PacketInfo {
                 header: 92,
                 hash: None,
                 name: Some("Chat".into()),
@@ -583,6 +591,37 @@ fn released_gpresets_authenticates_to_the_rust_host() {
             feedback.read_string().unwrap(),
             "Error: no room detected or furnidata not available"
         );
+        // Ask the real extension to request inventory and observe its injection.
+        fs::write(directory.0.join("request-inventory.trigger"), "").unwrap();
+        loop {
+            let packet = read_frame(&mut server).unwrap();
+            if packet.header() == 94 {
+                break;
+            }
+        }
+        let mut refreshed = item.clone();
+        refreshed.placement_id = 3200 + session;
+        refreshed.id = 3400 + session;
+        let mut inventory_reply = Packet::new(78);
+        inventory_reply
+            .put_i32(1)
+            .unwrap()
+            .put_i32(0)
+            .unwrap()
+            .put_i32(1)
+            .unwrap();
+        refreshed.append(&mut inventory_reply).unwrap();
+        write_frame(&mut server, &inventory_reply).unwrap();
+        let mut marker = Packet::new(77);
+        marker.put_i32(10000 + session).unwrap();
+        write_frame(&mut server, &marker).unwrap();
+        let forwarded = read_frame(&mut client).unwrap();
+        assert_eq!(
+            forwarded.bytes(),
+            marker.bytes(),
+            "virtual inventory response should be blocked"
+        );
+        wait_state(&(3200 + session).to_string());
         drop(client);
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {

@@ -1,5 +1,7 @@
 # Changelog
 
+- Exercise real G-Presets virtual inventory request and response handling.
+
 - Verify real G-Presets command blocking and client feedback injection over loopback.
 
 - Record read-only diagnostic of the dedicated official AIR client.

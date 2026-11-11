@@ -23,6 +23,9 @@ public class GPresetsObserver extends GPresetsLauncher {
         Thread observer = new Thread(() -> {
             while (!Thread.currentThread().isInterrupted()) {
                 try {
+                    if (Files.deleteIfExists(state.resolveSibling("request-inventory.trigger"))) {
+                        javafx.application.Platform.runLater(() -> presets.loadInventoryClick(null));
+                    }
                     if (presets.getInventory() != null) {
                         String ids = presets.getInventory().getInventoryItems().stream()
                             .map(item -> item.getPlacementId()).sorted()

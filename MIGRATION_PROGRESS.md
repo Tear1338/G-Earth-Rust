@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- In two isolated Windows relay sessions, the released G-Presets binary injected an inventory request toward the simulated server, consumed and blocked the virtual response, and exposed the expected new inventory state. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI is pending. Live hotel and full preset workflows remain unverified.
+
 - The released G-Presets binary intercepted a simulated `:ep` command on two Windows loopback relay sessions: the command did not reach the server, a following packet did, and its expected explanatory Whisper was injected to the client. Both real-extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI is pending. This does not exercise a live hotel or a complete preset export.
 
 - The administrator launch returned Windows error “operation was canceled by the user”; no COM hosts redirect was installed. The existing FR/G-Earth Java/QX session was preserved. Real COM relay, decryption and cleanup remain untested; do not retry the elevation prompt automatically.
@@ -398,4 +400,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-When the user is ready to complete Windows elevation, launch the Rust desktop as administrator; attach only the confirmed Habbo COM client without disrupting the separate Habbo FR/G-Earth Java/QX session, then verify encrypted relay, extension behavior and routing cleanup. Meanwhile test an extension-originated G-Presets inventory request toward the simulated server.
+When the user is ready to complete Windows elevation, launch the Rust desktop as administrator; attach only the confirmed Habbo COM client without disrupting the separate Habbo FR/G-Earth Java/QX session, then verify encrypted relay, extension behavior and routing cleanup. Meanwhile test multi-page G-Presets inventory behavior around the Java 600-item boundary.

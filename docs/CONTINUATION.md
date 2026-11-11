@@ -1,5 +1,7 @@
 # Continuation state
 
+Released G-Presets injected an inventory request to the simulated server, blocked the virtual response and updated its public inventory in two Windows loopback sessions. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI pending. Next independent step: compare multi-page inventory behavior around 600 items. The canceled administrator launch must not be retried without the user; preserve FR/QX.
+
 The released G-Presets binary blocked `:ep`, injected its expected feedback, and allowed a following packet through in two Windows loopback sessions. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI pending. Next independent step: test an extension-originated inventory request to the simulated server. Do not retry the canceled administrator launch without the user; preserve the existing FR/QX session.
 
 Windows reported the administrator launch was canceled; no COM redirect was installed. Do not retry the elevation prompt automatically. The COM read-only diagnostic passed, but real relay, decryption and cleanup remain untested. Preserve the separate FR/G-Earth Java/QX session and continue independent parity work until the user can complete elevation.
