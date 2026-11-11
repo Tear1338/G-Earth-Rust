@@ -1,5 +1,7 @@
 # Continuation state
 
+The manually opened Rust process was not elevated and COM attachment failed with Windows error 5. No COM hosts redirect or listener remained; the separate FR/QX socket was still established. The user was asked to relaunch Rust elevated; verify the token before retrying. G-Presets simulated export passed the Linux G-Presets job in run 43035212875; full CI pending.
+
 The released G-Presets binary exported a simulated floor item to JSON in two isolated Windows sessions using synthetic furnidata and disabled WIRED/variable/wall export. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI pending. The user reports opening the Rust window manually as administrator; attach only the dedicated COM client, protect FR/QX, and verify cleanup.
 
 G-Presets tests now run a private JAR copy to isolate legacy preset discovery, in addition to the temporary data directory. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI pending. Next: inspect a genuine offline preset export fixture; do not retry canceled elevation without the user, and preserve FR/QX.
