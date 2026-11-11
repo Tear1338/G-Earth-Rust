@@ -1,5 +1,7 @@
 # Changelog
 
+- Isolate G-Presets fixture data explicitly instead of relying on user.home on Windows.
+
 - Verify G-Presets virtual inventory responses across multiple pages.
 
 - Verify real G-Presets inventory paging at and across the 600-item boundary.

@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- Fixed G-Presets test isolation on Windows: `user.home` alone did not override APPDATA, so earlier local fixture runs could access and write the existing G-Presets cache. An existing cache file had a modification timestamp during those runs; its previous contents are unavailable, so any preference change cannot be determined or restored. Both launch paths now explicitly set `gpresets.dataDir` inside their temporary directories and assert it exists; both extension tests, both Clippy configurations and desktop/web debug build pass. The existing cache timestamp stayed unchanged during the fixed rerun. Linux CI pending.
+
 - The released G-Presets binary requested and assembled a 601-item virtual inventory across two pages in two Windows loopback sessions; both pages were blocked from the simulated client and the following marker passed. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI pending. This is not a live hotel test.
 
 - The released G-Presets binary reconstructed 599, 600, 601 and 1201 inventory items from one to three correctly formed pages in each of two Windows loopback sessions. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI is pending. This does not validate production hotel traffic or the full preset workflow.

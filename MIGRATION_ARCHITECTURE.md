@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+G-Presets test launches explicitly set `gpresets.dataDir` in a per-test temporary directory; `user.home` alone is insufficient on Windows because the extension prefers APPDATA.
+
 The G-Presets fixture verifies blocking of every page in a virtual inventory response and checks the resulting extension state.
 
 The G-Presets loopback fixture verifies full public inventory state across one to three valid pages at the 600-item boundary.

@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+The G-Presets test fixture explicitly isolates extension data on Windows and Linux. Earlier Windows fixture runs could access and write the existing G-Presets cache; its prior contents are unavailable. The fixed Windows rerun left the existing cache timestamp unchanged.
+
 G-Presets assembled a 601-item virtual inventory and blocked both pages from the simulated client in two Windows loopback sessions. Linux CI and live hotel/preset export remain unverified.
 
 The released G-Presets binary assembled 599, 600, 601 and 1201 items across one to three pages in two Windows loopback sessions. Linux CI and real hotel behavior remain unverified.

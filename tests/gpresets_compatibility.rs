@@ -61,6 +61,10 @@ fn released_gpresets_original_launcher_authenticates() {
         Command::new("java")
             .current_dir(&directory.0)
             .arg(format!("-Duser.home={}", directory.0.display()))
+            .arg(format!(
+                "-Dgpresets.dataDir={}",
+                directory.0.join("data").display()
+            ))
             .arg("-Dhttps.proxyHost=127.0.0.1")
             .arg(format!(
                 "-Dhttps.proxyPort={}",
@@ -99,6 +103,12 @@ fn released_gpresets_original_launcher_authenticates() {
         if process.0.try_wait().unwrap().is_some() {
             break;
         }
+    }
+    if connected {
+        assert!(
+            directory.0.join("data").is_dir(),
+            "G-Presets must use the isolated data directory"
+        );
     }
     if !connected {
         let log = fs::read_to_string(directory.0.join("stderr.log"))
@@ -157,6 +167,10 @@ fn released_gpresets_authenticates_to_the_rust_host() {
         Command::new("java")
             .current_dir(&directory.0)
             .arg(format!("-Duser.home={}", directory.0.display()))
+            .arg(format!(
+                "-Dgpresets.dataDir={}",
+                directory.0.join("data").display()
+            ))
             .arg("-Dhttps.proxyHost=127.0.0.1")
             .arg(format!("-Dhttps.proxyPort={proxy_port}"))
             .arg(format!("-Dgearth.fixture.state={}", state_path.display()))
@@ -195,6 +209,12 @@ fn released_gpresets_authenticates_to_the_rust_host() {
         if process.0.try_wait().unwrap().is_some() {
             break;
         }
+    }
+    if connected {
+        assert!(
+            directory.0.join("data").is_dir(),
+            "G-Presets must use the isolated data directory"
+        );
     }
     if !connected {
         let log = fs::read_to_string(directory.0.join("stderr.log"))
