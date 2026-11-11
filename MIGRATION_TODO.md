@@ -1,5 +1,7 @@
 # Migration tasks
 
+G-Presets command blocking and feedback injection are exercised in loopback; next test an extension-originated inventory request toward the simulated server. The AIR administrator launch was canceled and must not be retried automatically.
+
 The dedicated Habbo COM AIR process and socket passed a read-only diagnostic; complete elevated attachment, encrypted traffic and cleanup without disturbing the existing FR/QX session.
 
 G-Presets loopback fixtures now observe floor movement and wall state updates; the separate AIR session is being prepared, while the existing WIRED TEST session must remain untouched.

@@ -1,5 +1,7 @@
 # Changelog
 
+- Verify real G-Presets command blocking and client feedback injection over loopback.
+
 - Record read-only diagnostic of the dedicated official AIR client.
 
 - Verify G-Presets room-item position and state updates in the loopback fixture.

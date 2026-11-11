@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+The G-Presets loopback fixture checks a real outgoing command is blocked while feedback is injected into the simulated client, with a following server packet preserved.
+
 The live AIR diagnostic reads selected process memory without writing it and reports aggregate scan statistics; candidate discovery is not proof of decryption.
 
 The G-Presets observer also checks simulated floor position and wall state updates via public extension state.

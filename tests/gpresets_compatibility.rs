@@ -250,6 +250,7 @@ fn released_gpresets_authenticates_to_the_rust_host() {
                 (89, "ItemRemove"),
                 (90, "ObjectUpdate"),
                 (91, "ItemUpdate"),
+                (93, "Whisper"),
             ]
             .into_iter()
             .map(|(header, name)| PacketInfo {
@@ -260,6 +261,14 @@ fn released_gpresets_authenticates_to_the_rust_host() {
                 direction: Direction::ToClient,
                 source: "fixture".into(),
             })
+            .chain(std::iter::once(PacketInfo {
+                header: 92,
+                hash: None,
+                name: Some("Chat".into()),
+                structure: None,
+                direction: Direction::ToServer,
+                source: "fixture".into(),
+            }))
             .collect(),
         ),
     };
@@ -548,6 +557,32 @@ fn released_gpresets_authenticates_to_the_rust_host() {
         }
         wait_room("floor-state.txt", &(2600 + session).to_string());
         wait_room("wall-state.txt", &(2700 + session).to_string());
+        // The real extension recognizes :ep and blocks it before the server.
+        let mut command = Packet::new(92);
+        command.put_string(":ep").unwrap();
+        write_frame(&mut client, &command).unwrap();
+        let mut marker = Packet::new(77);
+        marker.put_i32(9000 + session).unwrap();
+        write_frame(&mut client, &marker).unwrap();
+        loop {
+            let packet = read_frame(&mut server).unwrap();
+            assert_ne!(
+                packet.header(),
+                92,
+                "G-Presets command reached the simulated server"
+            );
+            if packet.header() == 77 {
+                assert_eq!(packet.bytes(), marker.bytes());
+                break;
+            }
+        }
+        let mut feedback = read_frame(&mut client).unwrap();
+        assert_eq!(feedback.header(), 93);
+        assert_eq!(feedback.read_i32().unwrap(), -1);
+        assert_eq!(
+            feedback.read_string().unwrap(),
+            "Error: no room detected or furnidata not available"
+        );
         drop(client);
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {
