@@ -1,5 +1,7 @@
 # Continuation state
 
+Windows reported the administrator launch was canceled; no COM redirect was installed. Do not retry the elevation prompt automatically. The COM read-only diagnostic passed, but real relay, decryption and cleanup remain untested. Preserve the separate FR/G-Earth Java/QX session and continue independent parity work until the user can complete elevation.
+
 The user confirmed the Habbo COM client is dedicated; the separate Habbo FR/QX session must remain untouched. Read-only release diagnostic matched its socket and completed a 450 MB scan with one candidate. Administrator launch of the Rust desktop awaits Windows user action; then test COM-only attachment, encrypted traffic, extension and cleanup. All validation jobs in run 43031587134 passed for `4f2d179`.
 
 G-Presets room-item movement and wall state now have observable Windows loopback checks; both extension tests, both Clippy configurations and desktop/web debug build pass, Linux CI pending. The only currently visible AIR client is the user's separate WIRED TEST session and must remain untouched; the user is preparing another. Current shell is not elevated. Next: identify the new AIR PID, plan isolated routing without disrupting G-Earth Java/QX, and obtain an elevated execution path if required.

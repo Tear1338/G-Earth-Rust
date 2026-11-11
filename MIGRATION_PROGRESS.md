@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- The administrator launch returned Windows error “operation was canceled by the user”; no COM hosts redirect was installed. The existing FR/G-Earth Java/QX session was preserved. Real COM relay, decryption and cleanup remain untested; do not retry the elevation prompt automatically.
+
 - The user identified a separate official Habbo COM AIR client for testing and confirmed the existing Habbo FR/QX session must be preserved. A read-only release diagnostic matched the COM process to its socket and completed a 450 MB scan with one table candidate; this does not prove key recovery or relay compatibility. The current shell is unelevated; a Rust desktop administrator launch is awaiting Windows user action. GitHub Actions run 43031587134 passed all validation jobs for `4f2d179`.
 
 - The real G-Presets loopback fixture now observes an updated floor-item position and wall-item state in each of two Windows sessions. Both G-Presets tests, both Clippy configurations and desktop/web debug build pass; Linux CI is pending. The user clarified that the existing AIR client in WIRED TEST is not the dedicated test session and is preparing a separate one. Current shell lacks administrator rights; existing G-Earth Java and QX remain untouched.
@@ -394,4 +396,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Complete the pending elevated Rust desktop launch, attach only the confirmed Habbo COM client without disrupting the separate Habbo FR/G-Earth Java/QX session, then verify encrypted relay, extension behavior and routing cleanup.
+When the user is ready to complete Windows elevation, launch the Rust desktop as administrator; attach only the confirmed Habbo COM client without disrupting the separate Habbo FR/G-Earth Java/QX session, then verify encrypted relay, extension behavior and routing cleanup. Meanwhile continue independent parity work.
