@@ -38,6 +38,14 @@ public class GPresetsObserver extends GPresetsLauncher {
                             .collect(Collectors.joining(","));
                         Files.writeString(state.resolveSibling("floor-state.txt"), floorIds);
                         Files.writeString(state.resolveSibling("wall-state.txt"), wallIds);
+                        String floorDetails = presets.getFloorState().getItems().stream()
+                            .map(item -> item.getId() + ":" + item.getTile().getX() + ":" + item.getTile().getY())
+                            .sorted().collect(Collectors.joining(","));
+                        String wallDetails = presets.getFloorState().getWallItems().stream()
+                            .map(item -> item.getId() + ":" + item.getState())
+                            .sorted().collect(Collectors.joining(","));
+                        Files.writeString(state.resolveSibling("floor-details.txt"), floorDetails);
+                        Files.writeString(state.resolveSibling("wall-details.txt"), wallDetails);
                     }
                 } catch (Exception ignored) {
                     // The extension may update the inventory during this snapshot.

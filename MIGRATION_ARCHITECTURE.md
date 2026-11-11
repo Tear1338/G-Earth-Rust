@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+The G-Presets observer also checks simulated floor position and wall state updates via public extension state.
+
 The G-Presets test observer reads public floor and wall state after simulated room initialization and incremental changes; the JAR is unchanged.
 
 A test-only G-Presets launcher observes the unmodified extension public inventory during loopback tests; a separate fixture exercises the original JAR launcher.

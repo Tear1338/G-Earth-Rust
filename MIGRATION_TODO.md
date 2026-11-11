@@ -1,5 +1,7 @@
 # Migration tasks
 
+G-Presets loopback fixtures now observe floor movement and wall state updates; the separate AIR session is being prepared, while the existing WIRED TEST session must remain untouched.
+
 G-Presets inventory and room item changes now have observable loopback tests; the user has prepared a dedicated AIR session for real relay validation.
 
 The released G-Presets binary exposes expected incremental inventory state through an isolated observer; next observe floor and wall item state and updates. Live hotel and preset workflows remain open.

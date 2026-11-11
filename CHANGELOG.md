@@ -1,5 +1,7 @@
 # Changelog
 
+- Verify G-Presets room-item position and state updates in the loopback fixture.
+
 - Observe real G-Presets floor and wall state during simulated additions and removals.
 
 - Verify real G-Presets incremental inventory state over loopback and retain original launcher coverage.

@@ -248,6 +248,8 @@ fn released_gpresets_authenticates_to_the_rust_host() {
                 (87, "ObjectRemove"),
                 (88, "ItemAdd"),
                 (89, "ItemRemove"),
+                (90, "ObjectUpdate"),
+                (91, "ItemUpdate"),
             ]
             .into_iter()
             .map(|(header, name)| PacketInfo {
@@ -513,6 +515,24 @@ fn released_gpresets_authenticates_to_the_rust_host() {
         wait_room(
             "wall-state.txt",
             &format!("{},{}", 1700 + session, 2700 + session),
+        );
+        extra_floor.tile = HPoint::new(3, 1);
+        extra_wall.state = "1".into();
+        let mut floor_update = Packet::new(90);
+        extra_floor.append(&mut floor_update).unwrap();
+        let mut wall_update = Packet::new(91);
+        extra_wall.append(&mut wall_update).unwrap();
+        for packet in [floor_update, wall_update] {
+            write_frame(&mut server, &packet).unwrap();
+            assert_eq!(read_frame(&mut client).unwrap().bytes(), packet.bytes());
+        }
+        wait_room(
+            "floor-details.txt",
+            &format!("{}:2:3,{}:3:1", 1600 + session, 2600 + session),
+        );
+        wait_room(
+            "wall-details.txt",
+            &format!("{}:0,{}:1", 1700 + session, 2700 + session),
         );
         let mut floor_remove = Packet::new(87);
         floor_remove

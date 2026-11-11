@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+The released G-Presets binary exposed expected simulated floor-position and wall-state updates in two Windows loopback sessions. Linux CI for this addition and real hotel/preset workflows remain unverified.
+
 A test launcher observed expected floor and wall item IDs in the released G-Presets binary after simulated room initialization, additions and removals across two Windows loopback sessions. Linux CI for this fixture and live hotel/preset workflows remain unverified.
 
 G-Presets 1.6.5 incrementally added and removed simulated inventory items with expected public state across two Windows loopback sessions, observed via a test-only launcher; the original JAR launcher separately authenticated. Linux CI and real hotel/preset workflows remain unverified.

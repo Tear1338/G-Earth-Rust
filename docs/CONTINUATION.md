@@ -1,5 +1,7 @@
 # Continuation state
 
+G-Presets room-item movement and wall state now have observable Windows loopback checks; both extension tests, both Clippy configurations and desktop/web debug build pass, Linux CI pending. The only currently visible AIR client is the user's separate WIRED TEST session and must remain untouched; the user is preparing another. Current shell is not elevated. Next: identify the new AIR PID, plan isolated routing without disrupting G-Earth Java/QX, and obtain an elevated execution path if required.
+
 The unmodified G-Presets binary exposed expected floor and wall item IDs after simulated room initialization, additions and removals on two Windows loopback sessions; both G-Presets tests, both Clippy configurations and desktop/web debug build pass. Linux CI is pending. The user confirms the dedicated AIR session is ready: identify its process, exercise attachment and real relay safely, and verify routing cleanup.
 
 A test-only G-Presets launcher observed correct public inventory state after addition and removal across two isolated Windows relay sessions; the original JAR launcher also authenticated separately. Both tests, both Clippy configurations and desktop/web debug build pass. Next: observe floor/wall item state and updates; verify Linux CI. Dedicated AIR and live hotel/preset testing remain outstanding.

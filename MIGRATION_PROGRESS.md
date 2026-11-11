@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- The real G-Presets loopback fixture now observes an updated floor-item position and wall-item state in each of two Windows sessions. Both G-Presets tests, both Clippy configurations and desktop/web debug build pass; Linux CI is pending. The user clarified that the existing AIR client in WIRED TEST is not the dedicated test session and is preparing a separate one. Current shell lacks administrator rights; existing G-Earth Java and QX remain untouched.
+
 - The unmodified G-Presets binary, launched through a test observer, exposed expected floor and wall item IDs after simulated room initialization, additions and removals in two Windows loopback sessions. Both G-Presets tests, both Clippy configurations and desktop/web debug build pass; Linux CI is pending. The prior inventory observer passed all jobs in run 42924223541. No live hotel or preset import/export was tested.
 
 - A test-only launcher subclasses the published G-Presets launcher without modifying its JAR and observes its public inventory. In two isolated Windows relay sessions, a full inventory, incremental addition and removal produce the expected placement IDs. A separate test retains authentication via the original `java -jar` launcher. Both tests, both Clippy configurations and desktop/web debug build pass; Linux CI is pending. No live hotel or preset import/export was tested.
@@ -390,4 +392,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Identify the user-prepared dedicated AIR process, exercise real attachment and relay with an extension, and verify routing cleanup; monitor Linux CI for the G-Presets room-state fixture.
+When the separately prepared AIR session appears, identify its PID and endpoint, plan isolated routing without disrupting existing G-Earth Java/QX, obtain an elevated execution path if required, then test relay and cleanup; monitor Linux CI.
