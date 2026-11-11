@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+A live COM AIR session established client-to-Rust and Rust-to-server TCP sockets, and its hosts entry was removed on acceptance. This evidence does not demonstrate successful decryption.
+
 The offline G-Presets export fixture supplies synthetic furnidata via a test observer and a simulated empty variable response; it validates the generated preset JSON without a hotel.
 
 Each G-Presets fixture uses a private copy of the JAR because the extension also searches beside its executable for legacy presets.

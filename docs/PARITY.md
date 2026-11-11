@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+A dedicated real COM AIR client established TCP connections through Rust and the owned hosts redirect was removed on acceptance; the separate FR/QX socket stayed established. Decrypted traffic, extension behavior, disconnect cleanup and actual protocol parity remain unverified.
+
 The released G-Presets binary exported a simulated floor item with expected class and position in two isolated Windows sessions using synthetic furnidata and disabled WIRED/variable/wall export. Linux CI and real hotel export/import remain unverified.
 
 G-Presets test runs use both a private JAR copy and isolated data directory to avoid loading unrelated legacy presets. Windows tests pass; Linux CI is pending.

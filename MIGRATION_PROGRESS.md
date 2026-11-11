@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- On 2026-11-11 the user launched Rust elevated and manually attached the dedicated COM client. Windows TCP ownership showed the client connected to Rust loopback and Rust connected to the COM endpoint; the owned COM hosts redirect was removed after acceptance. The separate FR/QX socket remained established. Computer Use was subsequently stopped by the user, so no further window interaction was attempted. This proves socket routing only: decrypted packets, extension compatibility, disconnect cleanup and real protocol behavior are not verified. The COM relay remained connected at the last read-only check. Actions run 43035212875 passed all validation jobs for the G-Presets export fixture.
+
 - The user opened the Rust desktop manually, but the COM attachment failed with Windows error 5. Read-only token inspection confirmed that Rust process was not elevated. No COM hosts redirect or listener remained, and the separate FR/QX socket remained established. The user was asked to relaunch Rust elevated. The G-Presets simulated export passed Linux job `gpresets` in run 43035212875; the full run is still pending.
 
 - In two isolated Windows loopback sessions, the released G-Presets binary exported a preset JSON containing the simulated moved floor item with expected normalized ID, class and coordinates. The test uses synthetic furnidata injected by a test observer, disables WIRED/variable/wall export and supplies a simulated empty variable response. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI and live hotel export remain unverified. The user reported the earlier elevation prompt was not visible and has now opened the Rust window manually as administrator.
@@ -412,4 +414,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-After the user relaunches Rust, verify its Windows token is elevated; attach only the confirmed Habbo COM client without disrupting FR/G-Earth Java/QX, then verify encrypted relay, extension behavior and routing cleanup.
+Do not resume stopped Computer Use without the user. Independently extend the isolated G-Presets fixture to reload its exported preset and verify contents; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.

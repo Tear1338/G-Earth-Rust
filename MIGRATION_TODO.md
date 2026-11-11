@@ -1,5 +1,7 @@
 # Migration tasks
 
+A dedicated COM AIR client reached the Rust relay and the hosts redirect cleared; decrypted traffic, real extensions and disconnect cleanup remain unverified. Computer Use was stopped; do not resume window control without the user.
+
 An isolated G-Presets fixture exports a simulated floor item with synthetic furnidata and WIRED disabled; full live export/import remains open. The user opened Rust as administrator for the dedicated COM session.
 
 G-Presets fixture JAR and data are now both copied or scoped to per-test temporary directories; next inspect a genuine offline preset export fixture.

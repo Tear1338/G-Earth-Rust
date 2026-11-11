@@ -1,5 +1,7 @@
 # Changelog
 
+- Record live COM AIR socket routing and automatic hosts-entry cleanup.
+
 - Exercise G-Presets preset export with synthetic room and furnidata.
 
 - Isolate the G-Presets JAR path from legacy preset discovery during tests.
