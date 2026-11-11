@@ -1,5 +1,7 @@
 # Continuation state
 
+G-Presets tests now run a private JAR copy to isolate legacy preset discovery, in addition to the temporary data directory. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI pending. Next: inspect a genuine offline preset export fixture; do not retry canceled elevation without the user, and preserve FR/QX.
+
 Fixed G-Presets test data isolation: both launch paths now set `gpresets.dataDir` to their own temporary directories. Earlier Windows runs could write an existing G-Presets cache, whose previous contents are unavailable; the fixed rerun left its timestamp unchanged. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI pending. Next: inspect a genuine offline preset export fixture while waiting for the user to handle elevation; preserve FR/QX.
 
 The released G-Presets binary assembled a 601-item virtual inventory across two pages, blocking both pages from the simulated client in two Windows loopback sessions. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI pending. Next independent step: inspect prerequisites for a genuine offline preset export fixture. Do not retry canceled elevation without the user; preserve FR/QX.

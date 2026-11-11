@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+G-Presets test runs use both a private JAR copy and isolated data directory to avoid loading unrelated legacy presets. Windows tests pass; Linux CI is pending.
+
 The G-Presets test fixture explicitly isolates extension data on Windows and Linux. Earlier Windows fixture runs could access and write the existing G-Presets cache; its prior contents are unavailable. The fixed Windows rerun left the existing cache timestamp unchanged.
 
 G-Presets assembled a 601-item virtual inventory and blocked both pages from the simulated client in two Windows loopback sessions. Linux CI and live hotel/preset export remain unverified.

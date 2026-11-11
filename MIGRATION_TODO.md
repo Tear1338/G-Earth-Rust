@@ -1,5 +1,7 @@
 # Migration tasks
 
+G-Presets fixture JAR and data are now both copied or scoped to per-test temporary directories; next inspect a genuine offline preset export fixture.
+
 G-Presets tests explicitly isolate their data directory on Windows and Linux; earlier Windows runs could write the existing cache. Next inspect prerequisites for a real offline preset export fixture.
 
 G-Presets virtual multi-page inventory is tested in Windows loopback; next inspect prerequisites for a genuine offline preset export fixture.

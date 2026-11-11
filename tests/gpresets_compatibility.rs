@@ -52,6 +52,11 @@ fn released_gpresets_original_launcher_authenticates() {
         .collect::<String>();
     let directory = Directory(std::env::temp_dir().join(format!("gearth-gpresets-{suffix}")));
     fs::create_dir(&directory.0).unwrap();
+    // G-Presets can migrate legacy presets from beside its own JAR.
+    // Give each test a private copy so that migration cannot inspect user files.
+    let isolated_jar = directory.0.join("GPresets-1.6.5.jar");
+    fs::copy(&jar, &isolated_jar).unwrap();
+    let jar = isolated_jar;
     let (host, events) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
     let filename = "GPresets-1.6.5.jar";
     let token = host.register_launch(filename).unwrap();
@@ -135,6 +140,11 @@ fn released_gpresets_authenticates_to_the_rust_host() {
         .collect::<String>();
     let directory = Directory(std::env::temp_dir().join(format!("gearth-gpresets-{suffix}")));
     fs::create_dir(&directory.0).unwrap();
+    // G-Presets can migrate legacy presets from beside its own JAR.
+    // Give each test a private copy so that migration cannot inspect user files.
+    let isolated_jar = directory.0.join("GPresets-1.6.5.jar");
+    fs::copy(&jar, &isolated_jar).unwrap();
+    let jar = isolated_jar;
     let observer_source =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/GPresetsObserver.java");
     let status = Command::new("javac")

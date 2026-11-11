@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Each G-Presets fixture uses a private copy of the JAR because the extension also searches beside its executable for legacy presets.
+
 G-Presets test launches explicitly set `gpresets.dataDir` in a per-test temporary directory; `user.home` alone is insufficient on Windows because the extension prefers APPDATA.
 
 The G-Presets fixture verifies blocking of every page in a virtual inventory response and checks the resulting extension state.

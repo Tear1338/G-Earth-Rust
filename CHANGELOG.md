@@ -1,5 +1,7 @@
 # Changelog
 
+- Isolate the G-Presets JAR path from legacy preset discovery during tests.
+
 - Isolate G-Presets fixture data explicitly instead of relying on user.home on Windows.
 
 - Verify G-Presets virtual inventory responses across multiple pages.
