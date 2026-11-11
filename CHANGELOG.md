@@ -1,5 +1,7 @@
 # Changelog
 
+- Verify G-Presets import refusal when catalog prerequisites are absent.
+
 - Verify G-Presets reload of the simulated exported preset.
 
 - Record live COM AIR socket routing and automatic hosts-entry cleanup.

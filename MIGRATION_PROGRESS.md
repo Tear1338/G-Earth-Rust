@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- In the isolated G-Presets fixture, the released extension selected the reloaded synthetic preset and refused an import without its catalog, injected the expected explanation, and allowed a following marker through without an intervening placement packet. Both extension tests, both Clippy configurations and desktop/web debug build pass on Windows; Linux CI and actual import remain unverified.
+
 - The released G-Presets binary reloaded the simulated exported preset through its own parser in two Windows loopback sessions; the fixture checked the normalized furniture ID, class, coordinates and rotation. Synthetic furnidata and disabled WIRED/variable/wall export limit this evidence. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI and real hotel export/import remain unverified.
 
 - On 2026-11-11 the user launched Rust elevated and manually attached the dedicated COM client. Windows TCP ownership showed the client connected to Rust loopback and Rust connected to the COM endpoint; the owned COM hosts redirect was removed after acceptance. The separate FR/QX socket remained established. Computer Use was subsequently stopped by the user, so no further window interaction was attempted. This proves socket routing only: decrypted packets, extension compatibility, disconnect cleanup and real protocol behavior are not verified. The COM relay remained connected at the last read-only check. Actions run 43035212875 passed all validation jobs for the G-Presets export fixture.
@@ -416,4 +418,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Do not resume stopped Computer Use without the user. Independently inspect prerequisites for an isolated G-Presets preset import fixture; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.
+Do not resume stopped Computer Use without the user. Independently investigate G-Presets catalog setup and controlled placement acknowledgement; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.

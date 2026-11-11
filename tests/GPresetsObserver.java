@@ -56,6 +56,9 @@ public class GPresetsObserver extends GPresetsLauncher {
                             .map(item -> item.getClassName() + ":" + item.getFurniId() + ":" +
                                 item.getLocation().getX() + ":" + item.getLocation().getY() + ":" + item.getRotation())
                             .sorted().collect(Collectors.joining(","));
+                        presets.getImporter().setPresetConfig(preset);
+                        Files.writeString(state.resolveSibling("import-status.txt"),
+                            presets.getImporter().isReady() + ":" + presets.getImporter().getState());
                         Files.writeString(state.resolveSibling("loaded-preset.txt"), loaded);
                     }
                     if (Files.deleteIfExists(state.resolveSibling("request-inventory.trigger"))) {

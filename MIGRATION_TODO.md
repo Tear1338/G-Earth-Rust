@@ -1,5 +1,7 @@
 # Migration tasks
 
+G-Presets refuses the simulated import when catalog prerequisites are absent; next investigate catalog setup and a controlled placement acknowledgement fixture.
+
 G-Presets reloads the simulated exported preset through its own parser; next inspect requirements for an isolated import fixture.
 
 A dedicated COM AIR client reached the Rust relay and the hosts redirect cleared; decrypted traffic, real extensions and disconnect cleanup remain unverified. Computer Use was stopped; do not resume window control without the user.

@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+The G-Presets fixture checks import refusal and feedback when a selected preset lacks required catalog initialization.
+
 The G-Presets loopback observer loads the exported test file through the released extension parser and checks its furniture fields.
 
 A live COM AIR session established client-to-Rust and Rust-to-server TCP sockets, and its hosts entry was removed on acceptance. This evidence does not demonstrate successful decryption.

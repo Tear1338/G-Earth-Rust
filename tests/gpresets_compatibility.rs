@@ -821,6 +821,39 @@ fn released_gpresets_authenticates_to_the_rust_host() {
         fs::write(&pending, &preset_name).unwrap();
         fs::rename(&pending, directory.0.join("load-preset.trigger")).unwrap();
         wait_room("loaded-preset.txt", "fixture_floor:1:3:1:0");
+        assert_eq!(
+            fs::read_to_string(directory.0.join("import-status.txt")).unwrap(),
+            "false:NONE"
+        );
+        // With no catalog, the real importer must reject :ip without server traffic.
+        let mut import_command = Packet::new(92);
+        import_command.put_string(":ip").unwrap();
+        write_frame(&mut client, &import_command).unwrap();
+        let mut marker = Packet::new(77);
+        marker.put_i32(50000 + session).unwrap();
+        write_frame(&mut client, &marker).unwrap();
+        let forwarded = read_frame(&mut server).unwrap();
+        assert_eq!(
+            forwarded.bytes(),
+            marker.bytes(),
+            "import refusal must not send a placement packet"
+        );
+        // The successful export may also inject feedback; read until the import refusal.
+        let mut refusal_seen = false;
+        for _ in 0..8 {
+            let mut feedback = read_frame(&mut client).unwrap();
+            if feedback.header() == 93 {
+                feedback.read_i32().unwrap();
+                if feedback.read_string().unwrap() == "ERROR: extension not fully initialized yet" {
+                    refusal_seen = true;
+                    break;
+                }
+            }
+        }
+        assert!(
+            refusal_seen,
+            "G-Presets did not report missing import prerequisites"
+        );
         drop(client);
         let deadline = Instant::now() + Duration::from_secs(10);
         loop {

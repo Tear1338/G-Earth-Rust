@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+The released G-Presets binary refused a selected simulated preset import without catalog initialization and returned feedback in two Windows loopback sessions. This does not verify a successful import or live hotel behavior.
+
 The released G-Presets binary reloaded a simulated exported preset and returned expected furniture fields in two Windows loopback sessions. Synthetic furnidata and disabled WIRED/variable/wall export limit this result; live import and export remain unverified.
 
 A dedicated real COM AIR client established TCP connections through Rust and the owned hosts redirect was removed on acceptance; the separate FR/QX socket stayed established. Decrypted traffic, extension behavior, disconnect cleanup and actual protocol parity remain unverified.
