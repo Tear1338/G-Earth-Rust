@@ -1035,6 +1035,11 @@ fn released_gpresets_authenticates_to_the_rust_host() {
                     let y = packet.read_i32().unwrap();
                     if id == 3700 + session && x == 0 && y == 0 {
                         saw_stack_move = true;
+                        let mut moved_stack = stack.clone();
+                        moved_stack.tile = HPoint::new(x, y);
+                        let mut update = Packet::new(90);
+                        moved_stack.append(&mut update).unwrap();
+                        write_frame(&mut server, &update).unwrap();
                     }
                 }
                 101 => {
@@ -1069,11 +1074,81 @@ fn released_gpresets_authenticates_to_the_rust_host() {
         placed.put_string("Fixture").unwrap();
         write_frame(&mut server, &placed).unwrap();
         wait_room("placement-ack.txt", &(4700 + session).to_string());
-        // Stop the simulated build rather than sending further server acknowledgements.
-        let mut abort = Packet::new(92);
-        abort.put_string(":abort").unwrap();
-        write_frame(&mut client, &abort).unwrap();
+        // The simulated server acknowledges subsequent MoveObject requests.
+        server
+            .set_read_timeout(Some(Duration::from_millis(500)))
+            .unwrap();
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let mut moved_item = false;
+        let mut restored_stack = false;
+        loop {
+            let log = fs::read_to_string(directory.0.join("app.log")).unwrap_or_default();
+            if log.matches("[green] Import finished").count() > session as usize {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "simulated import did not finish: {}",
+                log.replace(&token, "[token]")
+            );
+            match read_frame(&mut server) {
+                Ok(mut packet) if packet.header() == 102 => {
+                    let id = packet.read_i32().unwrap();
+                    let x = packet.read_i32().unwrap();
+                    let y = packet.read_i32().unwrap();
+                    let rotation = packet.read_i32().unwrap();
+                    let directions = [
+                        HDirection::North,
+                        HDirection::NorthEast,
+                        HDirection::East,
+                        HDirection::SouthEast,
+                        HDirection::South,
+                        HDirection::SouthWest,
+                        HDirection::West,
+                        HDirection::NorthWest,
+                    ];
+                    let mut changed = if id == 4700 + session {
+                        moved_item = x == 3 && y == 1;
+                        added.clone()
+                    } else if id == 3700 + session {
+                        restored_stack = x == 3 && y == 3;
+                        stack.clone()
+                    } else {
+                        panic!("unexpected simulated furniture move {id}")
+                    };
+                    changed.tile = HPoint::new(x, y);
+                    changed.facing = directions[usize::try_from(rotation).unwrap()];
+                    let mut update = Packet::new(90);
+                    changed.append(&mut update).unwrap();
+                    write_frame(&mut server, &update).unwrap();
+                }
+                Ok(_) => {}
+                Err(error)
+                    if matches!(
+                        error.kind(),
+                        std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+                    ) => {}
+                Err(error) => panic!("simulated import socket failed: {error}"),
+            }
+        }
+        assert!(
+            moved_item,
+            "extension did not move the placed furniture to its target"
+        );
+        assert!(restored_stack, "extension did not restore the stack tile");
+        wait_room(
+            "floor-details.txt",
+            &format!(
+                "{}:3:1,{}:3:3,{}:3:1",
+                2600 + session,
+                3700 + session,
+                4700 + session
+            ),
+        );
         wait_room("import-state-live.txt", "NONE");
+        server
+            .set_read_timeout(Some(Duration::from_secs(10)))
+            .unwrap();
         // Remove synthetic additions so the next isolated session starts cleanly.
         for id in [3700 + session, 4700 + session] {
             let mut remove = Packet::new(87);

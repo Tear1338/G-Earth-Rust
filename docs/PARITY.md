@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Released G-Presets completed a one-item import in two isolated Windows loopback sessions with synthetic data and server acknowledgements; the test checked the final position and stack-tile restoration. WIRED, variables, walls, Linux CI and real hotel imports remain unverified.
+
 G-Presets sent a placement for simulated inventory, accepted a simulated ObjectAdd and associated the returned ID in two Windows loopback sessions. The fixture aborts afterward; full import and real hotel behavior remain unverified.
 
 Released G-Presets rejected a simulated invalid staging tile and returned to its initial state after abort in two Windows loopback sessions. Valid placement and real hotel behavior remain unverified.

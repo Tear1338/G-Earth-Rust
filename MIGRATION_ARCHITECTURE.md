@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+The offline G-Presets fixture runs a one-item export/reload/import and simulates ObjectAdd/ObjectUpdate responses, checking target coordinates, stack-tile restoration and successful completion.
+
 The isolated G-Presets fixture acknowledges one simulated inventory placement and observes the extension internal ID mapping under its lock; the build is intentionally aborted afterward.
 
 The G-Presets fixture checks invalid staging selection and abort through the relay without a real hotel.

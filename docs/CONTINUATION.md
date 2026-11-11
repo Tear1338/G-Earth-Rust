@@ -1,5 +1,7 @@
 # Continuation state
 
+Released G-Presets completed a one-item synthetic export/reload/import in two Windows loopback sessions, including placement, movement and stack-tile restoration. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI pending. Next independent step: check missing placement acknowledgement behavior. Computer Use remains stopped pending the user; real COM decryption and live extensions remain unverified.
+
 The released G-Presets binary moved a simulated stack tile, requested a simulated inventory placement and mapped its ObjectAdd acknowledgement in two Windows loopback sessions. The test deliberately aborts before completion. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI pending. Next independent step: simulate subsequent movement and complete the import. Computer Use remains stopped pending the user.
 
 Released G-Presets blocked an invalid staging selection and abort, reported the invalid area and returned to initial state in two Windows loopback sessions. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI pending. Next independent step: simulate a valid staging tile and placement acknowledgement. Computer Use remains stopped pending the user.

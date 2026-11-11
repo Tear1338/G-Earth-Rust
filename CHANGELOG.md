@@ -1,5 +1,7 @@
 # Changelog
 
+- Exercise a complete one-item G-Presets import with a simulated server.
+
 - Verify G-Presets first simulated placement and acknowledgement over the relay.
 
 - Verify G-Presets invalid staging selection and import abort.

@@ -1,5 +1,7 @@
 # Migration tasks
 
+G-Presets completed a one-item simulated import over loopback; next verify its behavior when placement acknowledgement is absent. Live, WIRED and complex preset imports remain open.
+
 G-Presets has a simulated staging selection and first placement acknowledgement; next exercise subsequent movement and complete the isolated import.
 
 G-Presets rejects an invalid simulated staging tile and aborts cleanly; next exercise a valid staging tile and placement acknowledgement.

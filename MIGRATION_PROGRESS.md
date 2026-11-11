@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- The released G-Presets binary completed a one-item simulated import in two Windows loopback sessions: the fixture acknowledged placement and movement, verified the item at its exported coordinates, observed the stack tile returned to its original position, and saw the extension report successful completion. Furnidata, catalog, room and server responses are synthetic; WIRED/variables/walls were excluded. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI and real hotel import remain unverified.
+
 - In two isolated Windows loopback sessions, the released G-Presets binary accepted a valid staging tile, moved a simulated stack tile, emitted an inventory placement request, and bound the simulated ObjectAdd acknowledgement to the preset item ID. A test-only observer reads the extension mapping under its lock. The fixture deliberately aborts after this first acknowledgement; completed import and live hotel behavior remain unverified. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI pending.
 
 - In two Windows loopback sessions, released G-Presets blocked an out-of-room staging selection, reported the invalid area and stayed in the staging state; `:abort` was also blocked and returned the importer to its initial state. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI and actual placement remain unverified.
@@ -426,4 +428,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Do not resume stopped Computer Use without the user. Independently simulate subsequent G-Presets furniture movement and complete the isolated import; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.
+Do not resume stopped Computer Use without the user. Independently verify G-Presets behavior when a simulated placement acknowledgement is missing; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.
