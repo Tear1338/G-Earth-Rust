@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+All desktop scheduler paths now use catalog snapshots tied to their active transport session and reject stale session/catalog enqueue. Origins publishes its catalog after metadata lookup; manual TCP retains its configured catalog. TCP catalog readiness does not yet establish crypto-handshake readiness or successful delivery.
+
 Nitro scheduling now snapshots metadata on its ready peer and checks peer and catalog identity during enqueue. Matching explicit catalog downloads invalidate old snapshots. This is an enqueue guarantee, not proof that a game received a packet. Origins and manual TCP still use desktop event state.
 
 Unity scheduling uses metadata stored with the initialized TLS peer and an identity-checked enqueue. Matching explicit downloads replace the catalog and invalidate older snapshots. Unity retains its existing static catalog assignment across revisions. Nitro and non-automatic TCP still use desktop event state.

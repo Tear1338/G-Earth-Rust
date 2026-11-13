@@ -1,5 +1,7 @@
 # Continuation state
 
+All scheduler transports now use session-bound catalog snapshots. Origins lookup and manual TCP reconnect fixtures pass; Windows desktop/web library (106 passed, seven ignored), relay/desktop tests, workspace/desktop/desktop-web Clippy and debug build pass. Next compare beta-29 HState.CONNECTED transitions against Flash/Origins crypto readiness and test pending schedules during handshake; enqueue is not delivery. Real clients and visual UI remain unverified.
+
 Nitro scheduled dispatch now uses ready-peer metadata and validates its peer/catalog at enqueue. A saturated-event-queue fixture covers refresh and reconnect. Windows desktop/web library (104 passed, seven ignored), Unity and desktop tests, workspace/desktop/desktop-web Clippy and debug build pass. Next audit Origins and manual TCP scheduling; successful enqueue alone is not delivery. Real clients and UI remain unverified.
 
 Unity scheduler metadata now belongs to the current TLS peer; stale peer/catalog snapshots are rejected and the existing static-catalog behavior is retained. Windows desktop/web library tests (103 passed, seven ignored), five Unity tests, relay/i18n/desktop tests, workspace/desktop/desktop-web Clippy and debug build pass. Next bind Nitro scheduling to its active peer and catalog, then audit Origins/manual TCP. Real clients remain unverified.

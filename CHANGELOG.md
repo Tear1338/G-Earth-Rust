@@ -1,5 +1,7 @@
 # Changelog
 
+- Bind Origins and manual TCP scheduled sends to initialized session metadata and reject stale snapshots.
+
 - Bind Nitro scheduled sends to the ready peer and catalog, even when desktop events are dropped.
 
 - Bind Unity scheduled sends to the current TLS peer and catalog, including refresh and reconnect checks.

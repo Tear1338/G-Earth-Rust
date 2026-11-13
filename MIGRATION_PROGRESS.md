@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- On 2026-11-13, Origins and manual TCP scheduled sends began using a session-bound catalog and identity-checked enqueue. Controlled two-session tests cover a stalled Origins lookup, changed revisions, stale snapshots and retention of a manual catalog. Windows desktop/web library tests (106 passed, seven ignored), 16 relay and 11 desktop tests, workspace/desktop/desktop-web Clippy and desktop/web debug build pass. The beta-29 Java scheduler requires HState.CONNECTED; whether Rust transport/crypto readiness matches that state remains open. Enqueue is not proof of delivery; real clients and visual UI remain unverified.
+
 - On 2026-11-13, Nitro scheduling was bound to the ready WebSocket peer and its catalog, independent of desktop event delivery. A local fixture saturates the event queue, replaces the catalog and reconnects, checking stale-snapshot rejection. Windows desktop/web library tests (104 passed, seven ignored), five Unity and 11 desktop tests, workspace/desktop/desktop-web Clippy and desktop/web debug build pass. Queue acceptance is not proof of network delivery; actual Nitro clients and visual UI remain unverified.
 
 - On 2026-11-13, Unity scheduled sends were bound to the ready TLS peer and its revision/catalog rather than desktop event timing. Replaced peers and replaced matching catalogs invalidate prior snapshots; the static catalog remains available across revisions. Five Unity TLS fixture tests, 103 desktop/web library tests (seven ignored), 16 relay, 11 desktop and 11 i18n tests, workspace/desktop/desktop-web Clippy and desktop/web debug build pass on Windows. CI for the preceding Flash fix passed; real Unity and visual UI remain unverified.
@@ -480,4 +482,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Audit and bind Origins and manual TCP scheduled dispatch to the active session and its catalog, with tests for metadata lookup, reconnection, changed identifiers and lost events; distinguish enqueue from actual delivery. Then verify COM decryption, real extensions and disconnect cleanup when a dedicated session is available, preserving FR/QX.
+Compare beta-29 HState.CONNECTED transitions to Flash and Origins crypto-handshake readiness; reproduce scheduling during handshake and reconnect and preserve pending sends until safe. Distinguish enqueue from delivery. Then verify COM decryption, real extensions and disconnect cleanup when a dedicated session is available, preserving FR/QX.

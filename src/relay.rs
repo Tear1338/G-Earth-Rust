@@ -147,15 +147,17 @@ struct Session {
     injections: SyncSender<(Direction, Packet)>,
     closed: Arc<AtomicBool>,
     flash_automatic: bool,
-    flash_metadata: Mutex<Option<(String, Arc<crate::packet_info::PacketInfoManager>)>>,
+    schedule_metadata: Mutex<Option<(String, Arc<crate::packet_info::PacketInfoManager>)>>,
 }
 
-/// A snapshot bound to exactly one active automatic Flash session.
-pub struct FlashScheduleContext {
+/// A catalog snapshot bound to exactly one active TCP relay session.
+pub struct TcpScheduleContext {
     session: Arc<Session>,
     pub version: String,
     pub packets: Arc<crate::packet_info::PacketInfoManager>,
 }
+
+pub type FlashScheduleContext = TcpScheduleContext;
 
 pub enum FlashScheduleState {
     NotAutomatic,
@@ -320,7 +322,7 @@ impl Relay {
                             injections,
                             closed: closed.clone(),
                             flash_automatic: session_options.flash_process.is_some(),
-                            flash_metadata: Mutex::new(None),
+                            schedule_metadata: Mutex::new(None),
                         });
                         if let Ok(mut slot) = worker_active.lock() {
                             if worker_stop.load(Ordering::Acquire) {
@@ -423,6 +425,14 @@ impl Relay {
                                     safety.register_metadata(&details.version, &details.packets);
                                 }
                             }
+                            let (version, packets) = session_options
+                                .connection
+                                .as_ref()
+                                .map(|details| (details.version.clone(), details.packets.clone()))
+                                .unwrap_or_default();
+                            if let Ok(mut metadata) = session.schedule_metadata.lock() {
+                                *metadata = Some((version, Arc::new(packets)));
+                            }
                         }
                         let _ = events.try_send(Event::Connected(
                             server
@@ -454,7 +464,7 @@ impl Relay {
                             &mut index,
                             &session_options,
                             &mut extension_session,
-                            &session.flash_metadata,
+                            &session.schedule_metadata,
                         );
                         if let (Some(host), Some(epoch)) = (&options.extensions, extension_session)
                         {
@@ -508,6 +518,52 @@ impl Relay {
             })
             .unwrap_or(false)
     }
+    /// Read catalog metadata from the active session after it finishes initialization.
+    pub fn schedule_context(&self) -> Option<TcpScheduleContext> {
+        let active = self.active.lock().ok()?;
+        let session = active
+            .as_ref()
+            .filter(|s| !s.closed.load(Ordering::Acquire))?;
+        let metadata = session.schedule_metadata.lock().ok()?;
+        let (version, packets) = metadata.as_ref()?;
+        Some(TcpScheduleContext {
+            session: session.clone(),
+            version: version.clone(),
+            packets: packets.clone(),
+        })
+    }
+    /// Queue an injection only if the catalog and session are still current.
+    pub fn inject_for_session(
+        &self,
+        context: &TcpScheduleContext,
+        direction: Direction,
+        packet: Packet,
+    ) -> io::Result<()> {
+        self.inject_for_flash_session(context, direction, packet)
+    }
+    /// Update the active catalog only if its nonempty revision matches.
+    pub fn update_schedule_metadata(&self, packets: crate::packet_info::PacketInfoManager) -> bool {
+        let Ok(active) = self.active.lock() else {
+            return false;
+        };
+        let Some(session) = active
+            .as_ref()
+            .filter(|s| !s.closed.load(Ordering::Acquire))
+        else {
+            return false;
+        };
+        let Ok(mut metadata) = session.schedule_metadata.lock() else {
+            return false;
+        };
+        let Some((version, _)) = metadata.as_ref() else {
+            return false;
+        };
+        if version.is_empty() || *version != packets.version {
+            return false;
+        }
+        *metadata = Some((version.clone(), Arc::new(packets)));
+        true
+    }
     /// Snapshot metadata only after this automatic Flash session has identified itself.
     pub fn flash_schedule_state(&self) -> FlashScheduleState {
         let Ok(active) = self.active.lock() else {
@@ -522,11 +578,11 @@ impl Relay {
         if !session.flash_automatic {
             return FlashScheduleState::NotAutomatic;
         }
-        let Ok(metadata) = session.flash_metadata.lock() else {
+        let Ok(metadata) = session.schedule_metadata.lock() else {
             return FlashScheduleState::Pending;
         };
         match metadata.as_ref() {
-            Some((version, packets)) => FlashScheduleState::Ready(FlashScheduleContext {
+            Some((version, packets)) => FlashScheduleState::Ready(TcpScheduleContext {
                 session: session.clone(),
                 version: version.clone(),
                 packets: packets.clone(),
@@ -550,9 +606,9 @@ impl Relay {
             .filter(|session| {
                 Arc::ptr_eq(session, &context.session) && !session.closed.load(Ordering::Acquire)
             })
-            .ok_or_else(|| io::Error::new(io::ErrorKind::NotConnected, "Flash session changed"))?;
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotConnected, "TCP session changed"))?;
         let metadata = session
-            .flash_metadata
+            .schedule_metadata
             .lock()
             .map_err(|_| io::Error::other("metadata lock poisoned"))?;
         if !metadata
@@ -561,7 +617,7 @@ impl Relay {
         {
             return Err(io::Error::new(
                 io::ErrorKind::NotConnected,
-                "Flash metadata changed",
+                "TCP metadata changed",
             ));
         }
         session
@@ -590,7 +646,7 @@ impl Relay {
         else {
             return false;
         };
-        let Ok(mut metadata) = session.flash_metadata.lock() else {
+        let Ok(mut metadata) = session.schedule_metadata.lock() else {
             return false;
         };
         let Some((version, _)) = metadata.as_ref() else {
@@ -735,7 +791,7 @@ fn run_session(
     index: &mut i32,
     options: &RelayOptions,
     extension_session: &mut Option<u64>,
-    flash_metadata: &Mutex<Option<(String, Arc<crate::packet_info::PacketInfoManager>)>>,
+    schedule_metadata: &Mutex<Option<(String, Arc<crate::packet_info::PacketInfoManager>)>>,
 ) -> io::Result<()> {
     client.set_nonblocking(true)?;
     server.set_nonblocking(true)?;
@@ -974,7 +1030,7 @@ fn run_session(
                                 safety.register_metadata(&details.version, &details.packets);
                             }
                         }
-                        if let Ok(mut metadata) = flash_metadata.lock() {
+                        if let Ok(mut metadata) = schedule_metadata.lock() {
                             *metadata =
                                 Some((details.version.clone(), Arc::new(details.packets.clone())));
                         }
@@ -2474,6 +2530,137 @@ mod tests {
             assert_eq!(read_frame(&mut server).unwrap().header(), header + 10);
             previous = Some(replacement);
             client.shutdown(std::net::Shutdown::Both).unwrap();
+            wait_for(&events, |event| matches!(event, Event::Disconnected));
+        }
+        relay.stop();
+    }
+    #[test]
+    fn origins_schedule_context_waits_for_lookup_and_rejects_previous_session() {
+        use crate::packet_info::{PacketInfo, PacketInfoManager};
+        let _test_lock = LOOKUP_TEST_LOCK.lock().unwrap();
+        let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let release_rx = Mutex::new(release_rx);
+        let counter = AtomicUsize::new(0);
+        let lookup = Arc::new(move |_: String| {
+            let iteration = counter.fetch_add(1, Ordering::SeqCst);
+            started_tx.send(()).unwrap();
+            release_rx
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(3))
+                .unwrap();
+            Ok(PacketInfoManager::new(
+                format!("REV-{iteration}"),
+                vec![PacketInfo {
+                    header: 900 + iteration as u16,
+                    direction: Direction::ToServer,
+                    name: Some("Example".into()),
+                    hash: None,
+                    structure: None,
+                    source: "fixture".into(),
+                }],
+            ))
+        });
+        let (mut relay, events) = Relay::start_with_options(
+            Config {
+                listen: "127.0.0.1:0".parse().unwrap(),
+                remote: remote.local_addr().unwrap().to_string(),
+            },
+            RelayOptions {
+                shockwave: true,
+                origins_lookup: Some(lookup),
+                ..RelayOptions::default()
+            },
+        )
+        .unwrap();
+        let mut previous = None;
+        for iteration in 0..2 {
+            let client = TcpStream::connect(relay.address).unwrap();
+            let (_server, _) = remote.accept().unwrap();
+            started_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+            assert!(relay.connected());
+            assert!(relay.schedule_context().is_none());
+            if let Some(old) = &previous {
+                assert_eq!(
+                    relay
+                        .inject_for_session(old, Direction::ToServer, Packet::new(1))
+                        .unwrap_err()
+                        .kind(),
+                    io::ErrorKind::NotConnected
+                );
+            }
+            release_tx.send(()).unwrap();
+            wait_for(&events, |event| matches!(event, Event::Connected(_)));
+            let context = relay.schedule_context().expect("ready Origins metadata");
+            assert_eq!(context.version, format!("REV-{iteration}"));
+            assert_eq!(context.packets.entries()[0].header, 900 + iteration as u16);
+            previous = Some(context);
+            client.shutdown(Shutdown::Both).unwrap();
+            wait_for(&events, |event| matches!(event, Event::Disconnected));
+        }
+        relay.stop();
+    }
+    #[test]
+    fn manual_tcp_schedule_context_keeps_configured_catalog_across_reconnect() {
+        use crate::packet_info::{PacketInfo, PacketInfoManager};
+        let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+        let catalog = PacketInfoManager::new(
+            "MANUAL",
+            vec![PacketInfo {
+                header: 777,
+                direction: Direction::ToServer,
+                name: Some("Example".into()),
+                hash: None,
+                structure: None,
+                source: "fixture".into(),
+            }],
+        );
+        let (mut relay, events) = Relay::start_with_options(
+            Config {
+                listen: "127.0.0.1:0".parse().unwrap(),
+                remote: remote.local_addr().unwrap().to_string(),
+            },
+            RelayOptions {
+                connection: Some(ConnectionDetails {
+                    host: "fixture".into(),
+                    port: 1,
+                    version: "MANUAL".into(),
+                    identifier: "fixture".into(),
+                    client_type: "FLASH".into(),
+                    packets: catalog,
+                }),
+                ..RelayOptions::default()
+            },
+        )
+        .unwrap();
+        let mut previous = None;
+        for _ in 0..2 {
+            let client = TcpStream::connect(relay.address).unwrap();
+            let (mut server, _) = remote.accept().unwrap();
+            server
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            wait_for(&events, |event| matches!(event, Event::Connected(_)));
+            let context = relay.schedule_context().expect("manual catalog");
+            assert_eq!(context.version, "MANUAL");
+            assert_eq!(context.packets.entries()[0].header, 777);
+            if let Some(old) = &previous {
+                assert_eq!(
+                    relay
+                        .inject_for_session(old, Direction::ToServer, Packet::new(777))
+                        .unwrap_err()
+                        .kind(),
+                    io::ErrorKind::NotConnected
+                );
+            }
+            relay
+                .inject_for_session(&context, Direction::ToServer, Packet::new(777))
+                .unwrap();
+            assert_eq!(read_frame(&mut server).unwrap().header(), 777);
+            previous = Some(context);
+            client.shutdown(Shutdown::Both).unwrap();
             wait_for(&events, |event| matches!(event, Event::Disconnected));
         }
         relay.stop();

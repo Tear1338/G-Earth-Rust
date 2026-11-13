@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Origins and manual TCP scheduling now use session-bound catalogs, tested with local delayed metadata lookup and reconnect. Java requires HState.CONNECTED; its crypto-handshake timing versus Rust still needs comparison. Actual client delivery remains unverified.
+
 Nitro scheduler snapshots now survive dropped desktop events and reject a replaced peer/catalog in a controlled local fixture. Network delivery and compatibility with a real Nitro client remain unverified.
 
 Unity scheduler metadata and enqueue are now tied to the initialized peer; a two-revision local TLS fixture covers static metadata, refresh, reconnect and stale-peer rejection. Real Unity and rendered desktop behavior remain unverified.

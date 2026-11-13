@@ -1,5 +1,7 @@
 # Migration tasks
 
+Compare Java HState.CONNECTED transitions to Flash/Origins transport encryption readiness; reproduce scheduling during initial handshake and reconnect, and preserve pending occurrences until it is safe to send. Distinguish successful enqueue from network delivery; real clients remain unverified.
+
 Next audit and bind Origins and manual TCP scheduled dispatch to their active session and current catalog, including metadata lookup before readiness, reconnect and lossy events. Flash, Unity and Nitro have session-bound snapshots, but enqueue acceptance is not confirmed network delivery; live clients remain unverified.
 
 Next bind Nitro scheduled dispatch to its ready peer and metadata and reject injection after peer/catalog replacement; exercise event loss and reconnect. Then audit Origins and manual TCP. Unity and automatic Flash now have session-bound scheduler metadata; real-client compatibility remains unverified.
