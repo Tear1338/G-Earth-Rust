@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- On 2026-11-13, Unity scheduled sends were bound to the ready TLS peer and its revision/catalog rather than desktop event timing. Replaced peers and replaced matching catalogs invalidate prior snapshots; the static catalog remains available across revisions. Five Unity TLS fixture tests, 103 desktop/web library tests (seven ignored), 16 relay, 11 desktop and 11 i18n tests, workspace/desktop/desktop-web Clippy and desktop/web debug build pass on Windows. CI for the preceding Flash fix passed; real Unity and visual UI remain unverified.
+
 - Windows GNU desktop/web release compilation passed for 4af5a4c on 2026-11-13. Four Unity server tests also pass, including explicit static-catalog reuse for different revisions; real Unity remains unverified. Unity peer.ready precedes delivery of identification events, so desktop scheduler state can lag behind the active session.
 
 - On 2026-11-13, automatic Flash scheduled sends were bound to the relay session and its identified catalog instead of desktop event state. Pending identification/lookup keeps due jobs pending; a changed session or explicitly downloaded matching catalog invalidates an earlier snapshot. A two-session controlled lookup fixture verifies both waits, replacement IDs and rejection of stale snapshots. Windows library tests (82 passed, six ignored), 16 relay, 11 i18n and 11 desktop tests, both Clippy configurations and desktop/web debug build pass. No real client or visual UI test was performed; other connection types still need the same session-readiness audit.
@@ -476,4 +478,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Bind Unity scheduled sends to the ready Unity peer and its catalog/revision, reject replaced peers, and test two revisions while preserving intentional static-catalog reuse. Then audit Nitro, Origins and manual TCP. Verify COM decryption, real extensions and disconnect cleanup when a dedicated session is available, preserving FR/QX.
+Bind Nitro scheduled sends to its ready peer and current catalog; reject stale snapshots after peer or catalog replacement and test reconnect and dropped events. Then audit Origins and manual TCP. Verify COM decryption, real extensions and disconnect cleanup when a dedicated session is available, preserving FR/QX.

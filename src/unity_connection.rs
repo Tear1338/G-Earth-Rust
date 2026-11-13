@@ -140,6 +140,21 @@ impl UnityConnection {
     pub fn connected(&self) -> bool {
         self.communicator.connected()
     }
+    pub fn schedule_context(&self) -> Option<crate::unity_server::UnityScheduleContext> {
+        self.communicator.schedule_context()
+    }
+    pub fn inject_for_session(
+        &self,
+        context: &crate::unity_server::UnityScheduleContext,
+        direction: Direction,
+        packet: Packet,
+    ) -> io::Result<()> {
+        self.communicator
+            .inject_for_session(context, direction, packet)
+    }
+    pub fn update_schedule_metadata(&self, packets: crate::packet_info::PacketInfoManager) -> bool {
+        self.communicator.update_schedule_metadata(packets)
+    }
     pub fn inject(&self, direction: Direction, packet: Packet) -> io::Result<()> {
         self.communicator.inject(direction, packet)
     }

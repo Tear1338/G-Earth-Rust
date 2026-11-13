@@ -1,5 +1,7 @@
 # Changelog
 
+- Bind Unity scheduled sends to the current TLS peer and catalog, including refresh and reconnect checks.
+
 - Bind automatic Flash scheduled sends to identified session metadata and reject stale snapshots after reconnect or catalog refresh.
 
 - Test deferred scheduled sends across two simulated relay sessions and metadata revisions.

@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Unity scheduler metadata and enqueue are now tied to the initialized peer; a two-revision local TLS fixture covers static metadata, refresh, reconnect and stale-peer rejection. Real Unity and rendered desktop behavior remain unverified.
+
 Automatic Flash scheduling now waits for the active session identity and catalog, rather than relying on desktop event timing; a controlled two-session fixture covers pending lookup and stale snapshots. Real Flash decryption, desktop visual behavior, and corresponding readiness for other clients remain unverified.
 
 A simulated two-session relay test verifies queued named sends use explicitly supplied replacement metadata. It does not validate desktop metadata readiness across real Flash reconnects; stale desktop state before identification remains a potential gap.

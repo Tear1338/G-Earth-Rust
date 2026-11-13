@@ -280,6 +280,85 @@ fn unity_static_metadata_is_registered_separately_for_each_revision() {
 }
 
 #[test]
+fn unity_scheduler_context_tracks_ready_peer_and_rejects_replaced_peer() {
+    use gearth_rust::packet_info::{PacketInfo, PacketInfoManager};
+    let directory = Directory::new();
+    let mut options = UnityOptions::new("127.0.0.1:0".parse().unwrap(), directory.0.join("ca"));
+    options.packet_info = PacketInfoManager::new(
+        "",
+        vec![PacketInfo {
+            header: 444,
+            direction: Direction::ToServer,
+            name: Some("Example".into()),
+            hash: None,
+            structure: None,
+            source: "static fixture".into(),
+        }],
+    );
+    let (mut server, _) = UnityServer::start(options).unwrap();
+    tokio::runtime::Runtime::new().unwrap().block_on(async {
+        let mut old = None;
+        for version in ["REV-A", "REV-B"] {
+            let mut client = connect(&server, None).await.unwrap();
+            assert!(server.schedule_context().is_none());
+            hello_revision(&mut client, version).await;
+            let context = server.schedule_context().expect("ready metadata");
+            assert_eq!(context.version, version);
+            assert_eq!(context.packets.version, version);
+            assert_eq!(context.packets.entries()[0].header, 444);
+            if let Some(previous) = old {
+                assert_eq!(
+                    server
+                        .inject_for_session(&previous, Direction::ToServer, packet(444, 1))
+                        .unwrap_err()
+                        .kind(),
+                    std::io::ErrorKind::NotConnected
+                );
+            }
+            server
+                .inject_for_session(&context, Direction::ToServer, packet(444, 2))
+                .unwrap();
+            assert_eq!(receive(&mut client).await, (1, packet(444, 2)));
+            assert!(!server.update_schedule_metadata(PacketInfoManager::new("WRONG", Vec::new())));
+            assert!(server.update_schedule_metadata(PacketInfoManager::new(
+                version,
+                vec![PacketInfo {
+                    header: 445,
+                    direction: Direction::ToServer,
+                    name: Some("Example".into()),
+                    hash: None,
+                    structure: None,
+                    source: "download fixture".into(),
+                }]
+            )));
+            assert_eq!(
+                server
+                    .inject_for_session(&context, Direction::ToServer, packet(444, 1))
+                    .unwrap_err()
+                    .kind(),
+                std::io::ErrorKind::NotConnected
+            );
+            let refreshed = server.schedule_context().expect("refreshed metadata");
+            assert_eq!(refreshed.packets.entries()[0].header, 445);
+            server
+                .inject_for_session(&refreshed, Direction::ToServer, packet(445, 3))
+                .unwrap();
+            assert_eq!(receive(&mut client).await, (1, packet(445, 3)));
+            old = Some(refreshed);
+            client.close(None).await.unwrap();
+            tokio::time::timeout(Duration::from_secs(5), async {
+                while server.connected() {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .unwrap();
+        }
+    });
+    server.stop();
+}
+
+#[test]
 fn refuses_missing_token_and_a_second_concurrent_browser() {
     let directory = Directory::new();
     let (mut server, _) = UnityServer::start(UnityOptions::new(

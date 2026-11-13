@@ -62,6 +62,7 @@ struct Peer {
     ready: AtomicBool,
     closed: AtomicBool,
     extension_session: Mutex<Option<u64>>,
+    schedule_metadata: Mutex<Option<(String, Arc<PacketInfoManager>)>>,
     queued: AtomicUsize,
     sender: asynchronous::Sender<(Direction, Packet)>,
     stop: watch::Sender<bool>,
@@ -122,6 +123,12 @@ impl Peer {
         Ok(())
     }
 }
+/// Metadata bound to the exact initialized Unity peer.
+pub struct UnityScheduleContext {
+    peer: Arc<Peer>,
+    pub version: String,
+    pub packets: Arc<PacketInfoManager>,
+}
 struct State {
     options: UnityOptions,
     active: Mutex<Option<Arc<Peer>>>,
@@ -150,6 +157,7 @@ impl State {
             ready: AtomicBool::new(false),
             closed: AtomicBool::new(false),
             extension_session: Mutex::new(None),
+            schedule_metadata: Mutex::new(None),
             queued: AtomicUsize::new(0),
             sender,
             stop,
@@ -229,6 +237,11 @@ impl State {
                 service.on_connect();
             }
         }
+        *peer
+            .schedule_metadata
+            .lock()
+            .map_err(|_| io::Error::other("Unity metadata lock poisoned"))? =
+            Some((revision.clone(), Arc::new(packets.clone())));
         peer.ready.store(true, Ordering::Release);
         let _ = self.events.try_send(Event::PacketIdentifiers(packets));
         let _ = self.events.try_send(Event::Identified {
@@ -448,6 +461,69 @@ impl UnityServer {
     pub fn connected(&self) -> bool {
         self.state.peer().is_some()
     }
+    /// Read the metadata of the ready peer without relying on desktop event delivery.
+    pub fn schedule_context(&self) -> Option<UnityScheduleContext> {
+        let peer = self.state.peer()?;
+        let (version, packets) = peer.schedule_metadata.lock().ok()?.as_ref()?.clone();
+        Some(UnityScheduleContext {
+            peer,
+            version,
+            packets,
+        })
+    }
+    /// Do not send a packet resolved for a peer that has since disconnected.
+    pub fn inject_for_session(
+        &self,
+        context: &UnityScheduleContext,
+        direction: Direction,
+        packet: Packet,
+    ) -> io::Result<()> {
+        let active = self
+            .state
+            .active
+            .lock()
+            .map_err(|_| io::Error::other("Unity active lock poisoned"))?;
+        let peer = active
+            .as_ref()
+            .filter(|peer| Arc::ptr_eq(peer, &context.peer))
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotConnected, "Unity session changed"))?;
+        let metadata = peer
+            .schedule_metadata
+            .lock()
+            .map_err(|_| io::Error::other("Unity metadata lock poisoned"))?;
+        if !metadata
+            .as_ref()
+            .is_some_and(|(_, packets)| Arc::ptr_eq(packets, &context.packets))
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::NotConnected,
+                "Unity metadata changed",
+            ));
+        }
+        peer.enqueue(direction, packet)
+    }
+    /// Apply an explicit catalog download only to the matching ready revision.
+    pub fn update_schedule_metadata(&self, packets: PacketInfoManager) -> bool {
+        let Ok(active) = self.state.active.lock() else {
+            return false;
+        };
+        let Some(peer) = active.as_ref().filter(|peer| {
+            peer.ready.load(Ordering::Acquire) && !peer.closed.load(Ordering::Acquire)
+        }) else {
+            return false;
+        };
+        let Ok(mut metadata) = peer.schedule_metadata.lock() else {
+            return false;
+        };
+        let Some((version, _)) = metadata.as_ref() else {
+            return false;
+        };
+        if version.is_empty() || *version != packets.version {
+            return false;
+        }
+        *metadata = Some((version.clone(), Arc::new(packets)));
+        true
+    }
     pub fn inject(&self, direction: Direction, packet: Packet) -> io::Result<()> {
         self.state
             .peer()
@@ -490,6 +566,7 @@ mod injection_queue_tests {
             ready: AtomicBool::new(true),
             closed: AtomicBool::new(false),
             extension_session: Mutex::new(None),
+            schedule_metadata: Mutex::new(None),
             queued: AtomicUsize::new(0),
             sender,
             stop,

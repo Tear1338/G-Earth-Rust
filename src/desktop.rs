@@ -1154,11 +1154,19 @@ impl Desktop {
                             self.hotel_version = database.version.clone();
                             self.status =
                                 format!("Loaded {} packet identifiers", database.entries().len());
-                            if let Some(Connection::Tcp(relay)) = &self.relay {
-                                if relay.update_flash_schedule_metadata(database.clone()) {
-                                    if let Ok(mut safety) = self.packet_safety.lock() {
-                                        safety.register_metadata(&database.version, &database);
-                                    }
+                            let session_updated = match &self.relay {
+                                Some(Connection::Tcp(relay)) => {
+                                    relay.update_flash_schedule_metadata(database.clone())
+                                }
+                                #[cfg(feature = "web")]
+                                Some(Connection::Unity(unity)) => {
+                                    unity.update_schedule_metadata(database.clone())
+                                }
+                                _ => false,
+                            };
+                            if session_updated {
+                                if let Ok(mut safety) = self.packet_safety.lock() {
+                                    safety.register_metadata(&database.version, &database);
                                 }
                             }
                             self.packet_info = database;
@@ -1327,12 +1335,33 @@ impl Desktop {
                 let mut blocked = None;
                 let mut unresolved = None;
                 let shockwave = self.origins && !self.nitro;
-                let flash_state = match relay {
-                    Connection::Tcp(tcp) => tcp.flash_schedule_state(),
-                    _ => gearth_rust::relay::FlashScheduleState::NotAutomatic,
+                enum ScheduleSession {
+                    Generic,
+                    Waiting,
+                    Flash(gearth_rust::relay::FlashScheduleContext),
+                    #[cfg(feature = "web")]
+                    Unity(gearth_rust::unity_server::UnityScheduleContext),
+                }
+                let session = match relay {
+                    Connection::Tcp(tcp) => match tcp.flash_schedule_state() {
+                        gearth_rust::relay::FlashScheduleState::NotAutomatic => {
+                            ScheduleSession::Generic
+                        }
+                        gearth_rust::relay::FlashScheduleState::Pending => ScheduleSession::Waiting,
+                        gearth_rust::relay::FlashScheduleState::Ready(context) => {
+                            ScheduleSession::Flash(context)
+                        }
+                    },
+                    #[cfg(feature = "web")]
+                    Connection::Unity(unity) => unity
+                        .schedule_context()
+                        .map_or(ScheduleSession::Waiting, ScheduleSession::Unity),
+                    #[cfg(feature = "web")]
+                    Connection::Web(_) => ScheduleSession::Generic,
                 };
                 let info = &self.packet_info;
-                let waiting_for_flash = self.i18n.text("rust.scheduler.waiting_flash").to_owned();
+                let waiting_for_session =
+                    self.i18n.text("rust.scheduler.waiting_session").to_owned();
                 let result: std::io::Result<()> = self.scheduler.dispatch_jobs_with_retry(
                     Instant::now(),
                     SystemTime::now(),
@@ -1347,15 +1376,17 @@ impl Desktop {
                         } else {
                             PacketFormat::EvaWire
                         };
-                        let (info, version) = match &flash_state {
-                            gearth_rust::relay::FlashScheduleState::NotAutomatic => {
-                                (info, &self.hotel_version)
-                            }
-                            gearth_rust::relay::FlashScheduleState::Pending => {
-                                unresolved.get_or_insert_with(|| waiting_for_flash.clone());
+                        let (info, version) = match &session {
+                            ScheduleSession::Generic => (info, &self.hotel_version),
+                            ScheduleSession::Waiting => {
+                                unresolved.get_or_insert_with(|| waiting_for_session.clone());
                                 return Ok(None);
                             }
-                            gearth_rust::relay::FlashScheduleState::Ready(context) => {
+                            ScheduleSession::Flash(context) => {
+                                (context.packets.as_ref(), &context.version)
+                            }
+                            #[cfg(feature = "web")]
+                            ScheduleSession::Unity(context) => {
                                 (context.packets.as_ref(), &context.version)
                             }
                         };
@@ -1380,15 +1411,17 @@ impl Desktop {
                             blocked.get_or_insert(packet.header());
                             return Ok(Some(false));
                         }
-                        match (&flash_state, relay) {
-                            (
-                                gearth_rust::relay::FlashScheduleState::Ready(context),
-                                Connection::Tcp(tcp),
-                            ) => tcp.inject_for_flash_session(
-                                context,
-                                direction,
-                                packet.into_owned(),
-                            )?,
+                        match (&session, relay) {
+                            (ScheduleSession::Flash(context), Connection::Tcp(tcp)) => tcp
+                                .inject_for_flash_session(
+                                    context,
+                                    direction,
+                                    packet.into_owned(),
+                                )?,
+                            #[cfg(feature = "web")]
+                            (ScheduleSession::Unity(context), Connection::Unity(unity)) => {
+                                unity.inject_for_session(context, direction, packet.into_owned())?
+                            }
                             _ => relay.inject(direction, packet.into_owned())?,
                         }
                         Ok(Some(true))

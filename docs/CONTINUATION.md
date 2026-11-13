@@ -1,5 +1,7 @@
 # Continuation state
 
+Unity scheduler metadata now belongs to the current TLS peer; stale peer/catalog snapshots are rejected and the existing static-catalog behavior is retained. Windows desktop/web library tests (103 passed, seven ignored), five Unity tests, relay/i18n/desktop tests, workspace/desktop/desktop-web Clippy and debug build pass. Next bind Nitro scheduling to its active peer and catalog, then audit Origins/manual TCP. Real clients remain unverified.
+
 Automatic Flash scheduler dispatch now uses session-bound catalog snapshots and rejects stale session/catalog injection. Matching explicit catalog downloads refresh the snapshot. The controlled two-session test, Windows library (82 passed, six ignored), relay, i18n and desktop tests, both Clippy configurations and desktop/web debug build pass. Next audit and test Origins, Nitro, Unity and manual TCP scheduling during connection setup and reconnect; real clients and visual UI remain unverified.
 
 Windows GNU desktop/web release compilation passed at 371e256 in an isolated target directory. Live client, encryption and extension compatibility still require verification.

@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Unity scheduling uses metadata stored with the initialized TLS peer and an identity-checked enqueue. Matching explicit downloads replace the catalog and invalidate older snapshots. Unity retains its existing static catalog assignment across revisions. Nitro and non-automatic TCP still use desktop event state.
+
 Automatic Flash holds its identified catalog in the active relay session. Scheduler snapshots refer to that session and catalog; injection rejects snapshots after reconnect or catalog replacement. Explicit desktop downloads are accepted only after identification and for the same nonempty revision. Other transports still use desktop event state.
 
 The two-session scheduler loopback fixture supplies each revision catalog explicitly. Desktop event handling retains prior catalog and revision on disconnect; Flash identifies after connection, so session-specific scheduler metadata readiness requires investigation.
