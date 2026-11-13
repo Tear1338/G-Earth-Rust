@@ -1,5 +1,7 @@
 # Continuation state
 
+Released G-Presets retried a synthetic WIRED trigger save three times and reported incomplete without success when acknowledgement was absent. Both extension tests, both Clippy configurations and desktop/web debug build pass on Windows; Linux CI and real hotel behavior remain unverified. Next compare packet logger export formats against beta-29 Java. Do not resume stopped Computer Use without the user.
+
 Released G-Presets reloaded and imported its own synthetic WIRED trigger preset with four simulated placements and a confirmed remapped save. Both extension tests, both Clippy configurations and desktop/web debug build pass on Windows; Linux CI and real gameplay remain unverified. The previous export commit 6e6199a passed GitHub Actions. Next omit the WIRED save acknowledgement and verify incomplete import. Do not resume stopped Computer Use without the user.
 
 A synthetic WIRED trigger export now passes with the released G-Presets extension on Windows, including option, text and furniture ID remapping. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI and real hotel behavior remain unverified. Next reload the exported preset and exercise its WIRED import with a simulated server. Do not resume stopped Computer Use without the user.

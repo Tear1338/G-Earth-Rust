@@ -1,5 +1,7 @@
 # Changelog
 
+- Verify G-Presets fails a simulated WIRED import after three unconfirmed save attempts.
+
 - Exercise synthetic WIRED trigger preset reload and acknowledged import through G-Presets.
 
 - Exercise synthetic WIRED trigger export through the released G-Presets extension.
