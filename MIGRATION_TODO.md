@@ -1,5 +1,7 @@
 # Migration tasks
 
+Investigate lost TCP Connected/Disconnected events under a saturated event channel: desktop logger state and lifecycle actions can become stale. Reproduce disconnect/reconnect with a full queue and design bounded ordered lifecycle recovery without blocking packet processing. The TCP error fallback is opt-in for API consumers and coalesces older errors.
+
 Investigate critical relay error visibility under saturated event queues: TCP uses nonblocking try_send for errors and packet events, so a send failure can be dropped. Reproduce with a bounded fixture and design a nonblocking durable error path; preserve packet throughput and lifecycle ordering. Partial delivery is inherently uncertain and should not be blindly retried.
 
 Compare and document retry semantics with beta-29 for failed scheduled sends: Java ignores boolean send results; Rust retains rejected enqueues but cannot recover an accepted command lost after disconnect. Exercise disconnect races on real transports and determine whether any retry can duplicate an already delivered packet. Live clients remain unverified.

@@ -1,5 +1,7 @@
 # Continuation state
 
+TCP relay errors now have a bounded latest-error/count fallback when event delivery fails; desktop retains the status while draining its backlog. The 2,200-packet saturation fixture and coalescing test pass, as do Windows desktop/web library (112 passed, seven ignored), relay/i18n/desktop tests, workspace/desktop/desktop-web Clippy and debug build. Next reproduce and fix lost Connected/Disconnected lifecycle events during saturation; API consumers must poll the error fallback, and real clients/UI remain unverified.
+
 The TCP output fixture verifies partial-write offsets across WouldBlock and a subsequent broken pipe. Windows library (87 passed, six ignored), relay tests, both Clippy configurations and debug build pass. Next reproduce lost critical errors when the relay event channel is full and provide nonblocking durable error visibility; real delivery and disconnect races remain unverified.
 
 Scheduler batches now continue after a job enqueue error while preserving the failed occurrence and reporting the first error. Nitro bounded-queue and synthetic dropped-queue fixtures pass; Windows desktop/web library (109 passed, seven ignored), core/relay/desktop tests, both Clippy configurations and debug build pass. Java ignores boolean send results, so Rust retry semantics differ. Next examine real transport disconnect races and duplicate risk, then continue other parity work; real clients remain unverified.

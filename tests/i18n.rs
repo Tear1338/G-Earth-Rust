@@ -141,6 +141,7 @@ fn scheduler_and_tool_controls_have_translations_and_fallbacks() {
         "rust.scheduler.loaded_offline_hint",
         "rust.scheduler.resolve_pending",
         "rust.scheduler.waiting_session",
+        "rust.connection.coalesced_errors",
         "rust.scheduler.load_failed",
         "rust.scheduler.export_templates",
         "rust.scheduler.exported_templates",

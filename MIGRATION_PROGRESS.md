@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- On 2026-11-13, TCP relay errors rejected by the bounded event channel were retained in a bounded latest-error/count slot, which the desktop checks while draining older events. A loopback fixture forwards 2,200 packets to saturate the channel and confirms a later invalid frame error remains observable; a second fixture covers coalescing. Windows desktop/web library tests (112 passed, seven ignored), 16 relay, 11 desktop and 11 i18n tests, workspace/desktop/desktop-web Clippy and desktop/web debug build pass. API consumers must explicitly poll the fallback; individual older errors are coalesced, lifecycle events can still be dropped, and visual UI/live clients remain unverified.
+
 - On 2026-11-13, deterministic scripted writes verified that TCP output resumes at the correct byte after partial write/backpressure and reports a broken pipe after a partial write. The accepted schedule is not restored automatically, and the remote outcome is unknown; automatic resend could duplicate data. Windows library tests (87 passed, six ignored), 16 relay tests, both Clippy configurations and desktop/web debug build pass. Real socket disconnect timing and clients remain unverified.
 
 - On 2026-11-13, scheduler dispatch continued other jobs after a per-job enqueue error while retaining the failed occurrence and returning the first error. A bounded Nitro queue fixture fills the outgoing queue, verifies an incoming scheduled send proceeds, then retries the outgoing job. A separate synthetic no-worker fixture confirms queue acceptance is not delivery. Windows desktop/web library tests (109 passed, seven ignored), 40 core, 16 relay and 11 desktop tests, both Clippy configurations and desktop/web debug build pass. Java Scheduler ignores false send returns; Rust retry behavior remains a deliberate difference and real network delivery is unverified.
@@ -488,4 +490,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Reproduce TCP relay error loss when the bounded event channel is saturated and implement nonblocking durable error visibility without disrupting packet throughput or lifecycle ordering. Partial delivery is uncertain: do not blindly retry. Then verify COM decryption, real extensions and disconnect cleanup when a dedicated session is available, preserving FR/QX.
+Reproduce TCP Connected/Disconnected event loss under event-channel saturation and implement bounded ordered lifecycle recovery without blocking packet processing. Partial delivery remains uncertain: do not blindly retry. Then verify COM decryption, real extensions and disconnect cleanup when a dedicated session is available, preserving FR/QX.

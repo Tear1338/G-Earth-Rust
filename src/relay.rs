@@ -116,6 +116,40 @@ pub enum Event {
     Packet(Message),
     Error(String),
 }
+/// Errors retained when the bounded event channel cannot accept them.
+#[derive(Clone, Debug)]
+pub struct MissedRelayErrors {
+    pub count: u64,
+    pub latest: String,
+}
+fn emit_error(
+    events: &SyncSender<Event>,
+    missed: &Mutex<Option<MissedRelayErrors>>,
+    error: String,
+) {
+    let mut slot = missed
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let error = if slot.is_some() {
+        error
+    } else {
+        match events.try_send(Event::Error(error)) {
+            Ok(()) => return,
+            Err(
+                mpsc::TrySendError::Full(Event::Error(error))
+                | mpsc::TrySendError::Disconnected(Event::Error(error)),
+            ) => error,
+            Err(_) => unreachable!("only error events are sent here"),
+        }
+    };
+    let count = slot
+        .as_ref()
+        .map_or(1, |previous| previous.count.saturating_add(1));
+    *slot = Some(MissedRelayErrors {
+        count,
+        latest: error.chars().take(4096).collect(),
+    });
+}
 pub struct Config {
     pub listen: SocketAddr,
     pub remote: String,
@@ -170,6 +204,7 @@ pub struct Relay {
     active: Arc<Mutex<Option<Arc<Session>>>>,
     worker: Option<JoinHandle<()>>,
     rules: Arc<Mutex<Rules>>,
+    missed_errors: Arc<Mutex<Option<MissedRelayErrors>>>,
     pub address: SocketAddr,
 }
 impl Relay {
@@ -252,6 +287,8 @@ impl Relay {
         let stop = Arc::new(AtomicBool::new(false));
         let active = Arc::new(Mutex::new(None));
         let rules = Arc::new(Mutex::new(Rules::default()));
+        let missed_errors = Arc::new(Mutex::new(None));
+        let worker_missed_errors = missed_errors.clone();
         let (worker_stop, worker_active, worker_rules) =
             (stop.clone(), active.clone(), rules.clone());
         let worker = thread::spawn(move || {
@@ -306,7 +343,7 @@ impl Relay {
                             Ok(server) => server,
                             Err(error) => {
                                 if !worker_stop.load(Ordering::Acquire) {
-                                    let _ = events.try_send(Event::Error(error));
+                                    emit_error(&events, &worker_missed_errors, error);
                                 }
                                 continue;
                             }
@@ -448,7 +485,7 @@ impl Relay {
                                 match host.start_owned_connection(details.clone()) {
                                     Ok(epoch) => extension_session = Some(epoch),
                                     Err(e) => {
-                                        let _ = events.try_send(Event::Error(e.to_string()));
+                                        emit_error(&events, &worker_missed_errors, e.to_string());
                                     }
                                 }
                             }
@@ -478,14 +515,14 @@ impl Relay {
                         // Report the cause last so a desktop processing both
                         // events keeps the actionable error in its status bar.
                         if let Err(e) = result {
-                            let _ = events.try_send(Event::Error(e.to_string()));
+                            emit_error(&events, &worker_missed_errors, e.to_string());
                         }
                     }
                     Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
                         thread::sleep(Duration::from_millis(5))
                     }
                     Err(e) => {
-                        let _ = events.try_send(Event::Error(e.to_string()));
+                        emit_error(&events, &worker_missed_errors, e.to_string());
                         break;
                     }
                 }
@@ -497,6 +534,7 @@ impl Relay {
                 active,
                 worker: Some(worker),
                 rules,
+                missed_errors,
                 address,
             },
             rx,
@@ -508,6 +546,19 @@ impl Relay {
             .lock()
             .map_err(|_| io::Error::other("rules lock poisoned"))? = rules;
         Ok(())
+    }
+    /// Retrieve the latest error that could not enter the event channel.
+    /// While a consumer drains older events it can peek first, then take it.
+    pub fn missed_errors(&self, take: bool) -> Option<MissedRelayErrors> {
+        let mut slot = self
+            .missed_errors
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if take {
+            slot.take()
+        } else {
+            slot.clone()
+        }
     }
     pub fn connected(&self) -> bool {
         self.active
@@ -2734,6 +2785,7 @@ mod tests {
             active: Arc::new(Mutex::new(Some(session))),
             worker: None,
             rules: Arc::new(Mutex::new(Rules::default())),
+            missed_errors: Arc::new(Mutex::new(None)),
             address: "127.0.0.1:0".parse().unwrap(),
         };
         let now = Instant::now();
@@ -2817,5 +2869,63 @@ mod tests {
         assert_eq!(disconnected.bytes, &wire[..3]);
         assert_eq!(output.bytes, wire.len() - 3);
         assert_eq!(output.queue.front().unwrap().offset, 3);
+    }
+    #[test]
+    fn saturated_event_channel_retains_relay_protocol_error() {
+        let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+        let (mut relay, events) = Relay::start(Config {
+            listen: "127.0.0.1:0".parse().unwrap(),
+            remote: remote.local_addr().unwrap().to_string(),
+        })
+        .unwrap();
+        let mut client = TcpStream::connect(relay.address).unwrap();
+        let (mut server, _) = remote.accept().unwrap();
+        server
+            .set_read_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        wait_for(&events, |event| matches!(event, Event::Connected(_)));
+        let packet = Packet::new(22);
+        let mut bytes = Vec::new();
+        for _ in 0..2200 {
+            bytes.extend_from_slice(packet.bytes());
+        }
+        client.write_all(&bytes).unwrap();
+        let mut forwarded = vec![0; bytes.len()];
+        server.read_exact(&mut forwarded).unwrap();
+        assert_eq!(forwarded, bytes);
+        client.write_all(&1u32.to_be_bytes()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let errors = loop {
+            if let Some(errors) = relay.missed_errors(false) {
+                break errors;
+            }
+            assert!(Instant::now() < deadline, "missing retained protocol error");
+            thread::sleep(Duration::from_millis(2));
+        };
+        assert_eq!(errors.count, 1);
+        assert!(
+            errors.latest.contains("invalid frame length"),
+            "{}",
+            errors.latest
+        );
+        assert!(events.try_iter().count() >= 2048);
+        assert_eq!(relay.missed_errors(true).unwrap().latest, errors.latest);
+        assert!(relay.missed_errors(false).is_none());
+        relay.stop();
+    }
+    #[test]
+    fn retained_errors_coalesce_without_displacing_queued_events() {
+        let (events, receiver) = mpsc::sync_channel(1);
+        let missed = Mutex::new(None);
+        events
+            .try_send(Event::Status("older event".into()))
+            .unwrap();
+        emit_error(&events, &missed, "first failure".into());
+        assert!(matches!(receiver.try_recv(), Ok(Event::Status(_))));
+        emit_error(&events, &missed, "second failure".into());
+        assert!(receiver.try_recv().is_err());
+        let errors = missed.lock().unwrap().clone().unwrap();
+        assert_eq!(errors.count, 2);
+        assert_eq!(errors.latest, "second failure");
     }
 }

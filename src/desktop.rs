@@ -1208,8 +1208,11 @@ impl Desktop {
         }
         self.extension_processes
             .retain_mut(|p| !matches!(p.try_wait(), Ok(Some(_))));
+        let mut relay_events_drained = true;
         if let Some(events) = &self.events {
+            let mut processed_events = 0;
             for event in events.try_iter().take(512) {
+                processed_events += 1;
                 match event {
                     Event::Status(status) => self.status = status,
                     Event::PacketIdentifiers(database) => {
@@ -1333,6 +1336,7 @@ impl Desktop {
                     Event::Error(e) => self.status = e,
                 }
             }
+            relay_events_drained = processed_events < 512;
         }
         if let Some(relay) = &self.relay {
             if relay.connected() {
@@ -1441,6 +1445,18 @@ impl Desktop {
                 } else if let Some(header) = blocked {
                     self.status = format!("Scheduled packet {header} was not sent: ID not observed for this hotel version and direction");
                 }
+            }
+        }
+        if let Some(Connection::Tcp(relay)) = &self.relay {
+            if let Some(errors) = relay.missed_errors(relay_events_drained) {
+                self.status = if errors.count == 1 {
+                    errors.latest
+                } else {
+                    self.i18n
+                        .text("rust.connection.coalesced_errors")
+                        .replace("{count}", &errors.count.to_string())
+                        .replace("{error}", &errors.latest)
+                };
             }
         }
     }
