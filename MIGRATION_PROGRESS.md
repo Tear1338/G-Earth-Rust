@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- Windows GNU desktop/web release compilation passed at 371e256 in an isolated target directory on 2026-11-13. This proves compilation only; live clients, encryption and extensions remain unverified.
+
 - On 2026-11-13, a two-session loopback test verified offline-loaded named schedules, retained sends after disconnect, retry when metadata is missing, and delivery with synthetic replacement IDs. All 16 relay tests and both Windows Clippy configurations pass. The test supplies metadata manually: desktop event ordering may still allow stale metadata before Flash identification; real-client decryption and reconnect remain unverified. CI run 43446996634 passed for 67291e1.
 
 - On 2026-11-13, active .sched files can be loaded while disconnected. Unknown named headers are syntax-checked and resolved before dispatch; packet-only scheduler APIs never send the placeholder. Unresolved jobs retry after one second without starving other jobs, and the UI reports offline/retry status in English and French. Windows schedule/relay/core/i18n/desktop tests, Java schedule fixtures, both Clippy configurations and desktop/web debug build pass. Visual UI inspection and real-client reconnection remain unverified.
