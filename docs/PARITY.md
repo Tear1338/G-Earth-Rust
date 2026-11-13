@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Aligned schedule resume now emits at an exact boundary. Java replays elapsed scheduler slots after disconnection; Rust currently skips missed slots and does not claim parity for catch-up or real client scheduling.
+
 The Java-compatible absolute string reader matches selected beta-29 WEDGIE rejection and EVA cursor cases; Rust also exposes independent WEDGIE absolute reads. Real Shockwave behavior remains unverified.
 
 The explicit WEDGIE Java-compatible string reader matches nine beta-29 API fixtures, including cursor state on malformed data. Default Rust parsing remains transactional. Live Shockwave remains unverified.

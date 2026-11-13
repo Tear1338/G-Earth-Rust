@@ -73,6 +73,20 @@ fn next_aligned(deadline: Instant, interval: Duration, now: Instant) -> Option<I
     );
     now.checked_add(delay)
 }
+// On resume Java can send at the current aligned millisecond. After an
+// emission `next_aligned` remains strictly future to avoid duplicate sends.
+fn aligned_at_or_after(deadline: Instant, interval: Duration, now: Instant) -> Option<Instant> {
+    if deadline > now
+        || now
+            .duration_since(deadline)
+            .as_nanos()
+            .is_multiple_of(interval.as_nanos())
+    {
+        Some(deadline.max(now))
+    } else {
+        next_aligned(deadline, interval, now)
+    }
+}
 #[derive(Default)]
 pub struct Scheduler {
     pub jobs: Vec<Job>,
@@ -100,7 +114,7 @@ impl Scheduler {
             .ok_or_else(|| error("unknown schedule"))?;
         if job.paused && !paused {
             job.next = if job.alignment_offset_ms.is_some() {
-                next_aligned(job.next, job.interval, now)
+                aligned_at_or_after(job.next, job.interval, now)
             } else {
                 now.checked_add(job.interval)
             }

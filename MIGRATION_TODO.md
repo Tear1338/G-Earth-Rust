@@ -1,5 +1,7 @@
 # Migration tasks
 
+Aligned schedule resume now fires at an exact boundary. Java replays missed slots after disconnection while Rust skips them; this material divergence remains open. Next compare the accepted offset-equals-interval case against Java runtime behavior.
+
 Explicit Java-compatible absolute string reads now reject WEDGIE like beta-29; Rust absolute reads remain available. Next compare scheduler restart and catch-up behavior against the original Java implementation.
 
 The explicit Java-compatible WEDGIE string reader matches nine beta-29 success, error and cursor fixtures; the transactional Rust reader remains unchanged. Next compare Java and Rust WEDGIE absolute-offset string reads and cursor behavior.

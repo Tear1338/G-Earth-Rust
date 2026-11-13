@@ -535,6 +535,36 @@ fn scheduler_replacement_is_atomic_and_does_not_reuse_ids() {
 }
 
 #[test]
+fn aligned_scheduler_resumes_at_the_current_boundary_without_replaying_missed_sends() {
+    let now = Instant::now();
+    let wall = std::time::UNIX_EPOCH + Duration::from_millis(10_000);
+    for (resume_ms, expected_wait) in [(300, 0), (350, 50)] {
+        let mut scheduler = Scheduler::default();
+        scheduler
+            .add_aligned(
+                Packet::new(1),
+                Direction::ToServer,
+                100,
+                0,
+                None,
+                (now, wall),
+            )
+            .unwrap();
+        scheduler.set_paused(0, true, now).unwrap();
+        let resumed = now + Duration::from_millis(resume_ms);
+        scheduler.set_paused(0, false, resumed).unwrap();
+        assert_eq!(
+            scheduler.jobs[0].next,
+            resumed + Duration::from_millis(expected_wait)
+        );
+        let due = resumed + Duration::from_millis(expected_wait);
+        assert_eq!(scheduler.tick(due).len(), 1);
+        assert!(scheduler.tick(due).is_empty());
+        assert_eq!(scheduler.jobs[0].next, due + Duration::from_millis(100));
+    }
+}
+
+#[test]
 fn scheduler_can_pause_and_repeat_until_removed() {
     let now = Instant::now();
     let mut scheduler = Scheduler::default();

@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- On 2026-11-13, aligned schedules resumed exactly at their due boundary now emit once immediately; a later non-boundary resume waits for the next aligned tick. Scheduler/core tests, both Clippy configurations and desktop/web debug build pass on Windows. Java Scheduler.java replays every missed slot after a delayed/disconnected interval; Rust still deliberately emits at most once per tick, so catch-up parity remains open and real-client replay is unverified.
+
 - On 2026-11-13, an explicit Java-compatible absolute string reader was added: beta-29 rejects WEDGIE absolute reads without moving the cursor, while EVA reads remain available. The Java oracle covers 12 WEDGIE and two EVA cases; Rust-specific absolute WEDGIE reads remain available separately. Windows WEDGIE/oracle tests, both Clippy configurations and desktop/web debug build pass; live Shockwave remains unverified.
 
 - On 2026-11-13, a separate WEDGIE string reader was added for beta-29 Java cursor semantics, including missing incoming terminators and consumed outgoing prefixes. Nine cases match the actual Java API; the original transactional Rust reader remains available. Mutation tests and both Clippy configurations pass on Windows; desktop/web release compilation passed in an isolated directory after the active desktop process locked the original binary. CI now runs the WEDGIE string and logger Java oracles. Live Shockwave remains unverified.
@@ -452,4 +454,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Do not resume stopped Computer Use without the user. Independently compare scheduler restart and catch-up behavior with Java beta-29, then fix and test any confirmed discrepancy; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.
+Do not resume stopped Computer Use without the user. Independently compare the scheduler offset-equals-interval case with Java beta-29 runtime semantics, then fix and test any confirmed discrepancy; Java missed-slot replay remains an open divergence; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.

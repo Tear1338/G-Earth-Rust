@@ -1,5 +1,7 @@
 # Changelog
 
+- Resume aligned schedules at an exact due boundary without duplicate sends.
+
 - Add Java-compatible absolute string read semantics for WEDGIE and EVA.
 
 - Add explicit beta-29-compatible WEDGIE string reading and CI oracle coverage.

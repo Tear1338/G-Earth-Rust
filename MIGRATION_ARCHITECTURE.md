@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Aligned schedule resume uses the current boundary when exact, while post-send advancement remains strictly future. Missed-send replay remains different from Java.
+
 The Java-compatible absolute string reader rejects WEDGIE offsets as beta-29 does; Rust-specific absolute WEDGIE parsing is retained separately.
 
 WEDGIE provides an explicit Java-compatible string reader for legacy malformed-input cursor behavior; the default transactional reader retains its error and rollback guarantees.
