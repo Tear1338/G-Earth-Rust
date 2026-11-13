@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Forward wall-clock corrections shift aligned deadlines by the measured drift so crossed slots remain retryable. Backward jumps with pending backlog and extreme Instant underflow remain open.
+
 Aligned jobs advance one elapsed deadline per accepted or filtered occurrence, capped at 128 per job per dispatch; queue errors preserve the current deadline and remaining repetition count. Relative Rust-only jobs keep no-replay semantics.
 
 An aligned job whose offset equals its interval has no reachable Java modulo phase; it is retained without dispatch or timer wakeups.

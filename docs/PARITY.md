@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Forward scheduler wall-clock jumps replay crossed aligned slots in tested cases, matching a fixture mirroring Java beta-29. Backward jumps with backlog, extreme time shifts and real-client timing remain unverified.
+
 Aligned scheduler catch-up matches eight deterministic cases from a Java fixture mirroring the beta-29 time-window loop. Per-dispatch batching, clock jumps and real-client timing remain distinct or unverified.
 
 A schedule offset equal to its interval is accepted but never dispatched, matching the beta-29 Java modulo condition. Java missed-slot replay and live-client timing remain open.

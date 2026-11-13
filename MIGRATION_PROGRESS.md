@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- On 2026-11-13, forward wall-clock jumps now retain crossed aligned deadlines and retry a queue-rejected occurrence; a Java fixture mirroring the beta-29 loop covers a 950 ms jump. Windows core/schedule tests, the Java catch-up fixture, both Clippy configurations and desktop/web debug build pass. Backward jumps with an existing backlog and extreme Instant underflow remain open; live scheduling remains unverified.
+
 - On 2026-11-13, aligned schedules began replaying elapsed slots in batches of at most 128 per job, retaining pending deadlines on queue failure; relative schedules retain their Rust-specific no-replay behavior. A deterministic Java fixture mirrors the pinned Scheduler.java time-window loop and matches eight cases. Windows core/schedule tests, all three schedule Java fixtures, both Clippy configurations and desktop/web debug build pass. Sudden clock changes and real-client scheduling remain unverified.
 
 - On 2026-11-13, schedules with offset equal to interval were corrected: beta-29 accepts them but its modulo condition never matches, whereas Rust previously sent at phase zero. Such jobs now remain serializable and inactive across pause/resume and clock changes. Windows schedule/core tests, both Clippy configurations and desktop/web debug build pass. Java catch-up after disconnect and real-client scheduling remain unverified.
@@ -458,4 +460,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Do not resume stopped Computer Use without the user. Independently compare forward and backward scheduler wall-clock jumps against beta-29 Java, then implement and test any confirmed discrepancy; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.
+Do not resume stopped Computer Use without the user. Independently preserve pending scheduler catch-up deadlines through backward wall-clock jumps and handle forward Instant underflow, with deterministic tests; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.

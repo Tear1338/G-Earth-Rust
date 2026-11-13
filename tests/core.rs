@@ -673,7 +673,7 @@ fn scheduler_preserves_clock_alignment_when_late_or_resumed() {
 }
 
 #[test]
-fn scheduler_realigns_after_wall_clock_moves_without_bursts() {
+fn scheduler_replays_forward_clock_jumps_and_realigns_backward() {
     let now = Instant::now();
     let wall = std::time::UNIX_EPOCH + Duration::from_millis(1234);
     let mut scheduler = Scheduler::default();
@@ -695,6 +695,12 @@ fn scheduler_realigns_after_wall_clock_moves_without_bursts() {
         )
         .is_empty());
     let forward = std::time::UNIX_EPOCH + Duration::from_millis(2384);
+    assert_eq!(
+        scheduler
+            .tick_with_wall_clock(now + Duration::from_millis(250), forward)
+            .len(),
+        2
+    );
     assert!(scheduler
         .tick_with_wall_clock(now + Duration::from_millis(250), forward)
         .is_empty());
@@ -739,6 +745,52 @@ fn scheduler_realigns_after_wall_clock_moves_without_bursts() {
             backward + Duration::from_millis(66)
         )
         .is_empty());
+}
+
+#[test]
+fn scheduler_retries_a_forward_clock_jump_after_queue_rejection() {
+    let now = Instant::now();
+    let wall = std::time::UNIX_EPOCH + Duration::from_millis(1234);
+    let mut scheduler = Scheduler::default();
+    scheduler
+        .add_aligned(
+            Packet::new(2),
+            Direction::ToServer,
+            500,
+            100,
+            None,
+            (now, wall),
+        )
+        .unwrap();
+    let at = now + Duration::from_millis(250);
+    let jumped = std::time::UNIX_EPOCH + Duration::from_millis(2384);
+    let mut sent = 0;
+    let result = scheduler.dispatch_with_wall_clock(at, jumped, |_, _| {
+        if sent == 1 {
+            return Err("queue full");
+        }
+        sent += 1;
+        Ok(())
+    });
+    assert_eq!(result, Err("queue full"));
+    assert_eq!(sent, 1);
+    scheduler
+        .dispatch_with_wall_clock(at, jumped, |_, _| {
+            sent += 1;
+            Ok::<(), &str>(())
+        })
+        .unwrap();
+    assert_eq!(sent, 2);
+    assert!(scheduler.tick_with_wall_clock(at, jumped).is_empty());
+    assert_eq!(
+        scheduler
+            .tick_with_wall_clock(
+                at + Duration::from_millis(216),
+                jumped + Duration::from_millis(216)
+            )
+            .len(),
+        1
+    );
 }
 
 #[test]

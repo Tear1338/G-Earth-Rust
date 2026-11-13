@@ -1,5 +1,7 @@
 # Changelog
 
+- Preserve aligned scheduler deadlines across forward wall-clock jumps.
+
 - Replay missed aligned scheduler slots in bounded batches without losing queue-rejected sends.
 
 - Prevent scheduler sends for Java-compatible intervals whose offset equals their period.

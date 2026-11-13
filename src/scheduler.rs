@@ -302,20 +302,30 @@ impl Scheduler {
             let Some(expected) = reference_wall.checked_add(elapsed) else {
                 continue;
             };
-            let drift = wall
-                .duration_since(expected)
-                .or_else(|_| expected.duration_since(wall));
             let tolerance = Duration::from_millis(20).min(job.interval / 2);
-            if drift.is_ok_and(|drift| drift > tolerance) {
-                if let Some(next) = deadline_from_wall(now, wall, job.interval, offset, true) {
-                    job.next = next;
-                    job.clock_reference = Some((now, wall));
+            if let Ok(forward) = wall.duration_since(expected) {
+                if forward > tolerance {
+                    // Preserve elapsed and queue-rejected deadlines: Java scans
+                    // every crossed wall-clock millisecond after a forward jump.
+                    if let Some(next) = job.next.checked_sub(forward) {
+                        job.next = next;
+                        job.clock_reference = Some((now, wall));
+                    }
+                }
+            } else if let Ok(backward) = expected.duration_since(wall) {
+                if backward > tolerance {
+                    // Java's negative elapsed window emits nothing, then its
+                    // subsequent scan begins at the new wall-clock position.
+                    if let Some(next) = deadline_from_wall(now, wall, job.interval, offset, true) {
+                        job.next = next;
+                        job.clock_reference = Some((now, wall));
+                    }
                 }
             }
         }
     }
-    /// Correct aligned jobs after a system clock adjustment. Skipped deadlines
-    /// are not replayed, and relative jobs are unaffected.
+    /// Correct aligned jobs after a system clock adjustment. Forward jumps
+    /// retain crossed deadlines; relative jobs are unaffected.
     pub fn tick_with_wall_clock(
         &mut self,
         now: Instant,
