@@ -282,7 +282,7 @@ pub fn recover_state(
     }
     let deadline = Instant::now() + Duration::from_secs(5);
     let mut found = None;
-    for state in states.iter().take(64) {
+    for state in states.iter().take(gearth_platform::MAX_TABLES) {
         for y in 0..256 {
             if cancel.load(Ordering::Acquire) {
                 return Err(io::Error::new(

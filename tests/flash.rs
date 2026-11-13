@@ -246,3 +246,40 @@ fn batch_retains_valid_packets_before_invalid_length() {
         assert!(FlashSession::default().feed(direction, &bytes).is_err());
     }
 }
+
+#[test]
+fn outgoing_snapshot_after_many_unrelated_tables_is_recoverable() {
+    let cancel = AtomicBool::new(false);
+    let mut target = None;
+    for index in 0..16 {
+        let fresh = Rc4::new(format!("target-key-{index}").as_bytes()).unwrap();
+        let mut current = fresh.clone();
+        let mut packet = Packet::new(77);
+        for n in 0..32 {
+            packet.put_i32(n * 1103).unwrap();
+        }
+        let mut wire = packet.bytes().to_vec();
+        current.apply(&mut wire);
+        if recover_state(&[current.state().0], &wire, Direction::ToServer, &cancel)
+            .unwrap()
+            .is_some()
+        {
+            target = Some((fresh, current.state().0, wire));
+            break;
+        }
+    }
+    let (fresh, snapshot, wire) = target.expect("unambiguous deterministic fixture");
+    let mut tables: Vec<_> = (0..64)
+        .map(|i| {
+            Rc4::new(format!("unrelated-{i}").as_bytes())
+                .unwrap()
+                .state()
+                .0
+        })
+        .collect();
+    tables.push(snapshot);
+    let found = recover_state(&tables, &wire, Direction::ToServer, &cancel)
+        .unwrap()
+        .expect("candidate beyond first 64 must be searched");
+    assert_eq!(found.state(), fresh.state());
+}

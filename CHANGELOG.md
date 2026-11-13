@@ -1,5 +1,7 @@
 # Changelog
 
+- Search outgoing Flash RC4 candidate tables beyond the first 64 within the existing time budget.
+
 - Preserve Origins packets preceding malformed chunks in plain and simulated encrypted batches.
 
 - Preserve automatic Flash packets preceding an invalid frame in the same input batch.

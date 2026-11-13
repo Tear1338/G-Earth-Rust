@@ -1,5 +1,7 @@
 # Continuation state
 
+Rust outgoing RC4 reverse search no longer stops at candidate 64; a previously failing deterministic fixture now passes. Windows Flash, relay and library tests, both Clippy configurations and debug build pass. This is incomplete: the synchronous five-second budget can still miss late candidates and stall relay I/O. Next implement incremental, cancellable search preserving ambiguity and buffered ciphertext; the user will test real clients.
+
 Origins batch decoding now retains valid prefixes on malformed tails; plaintext bidirectional loopback and simulated encrypted tests pass. Windows desktop/web library (114 passed, seven ignored), relay/Flash tests, both Clippy configurations and debug build pass. The user will perform live-client tests; next prioritize the reported Flash connection failure using source comparison and isolated automated fixtures, then address lifecycle-event saturation.
 
 Automatic Flash preserves valid packets before a malformed tail, with plaintext bidirectional loopback and batch tests. The pinned Java Flash identification oracle passes on Windows; Flash, relay and library tests, both Clippy configurations and debug build pass. Next audit Origins batch decoders and then TCP lifecycle-event loss under saturation; encrypted real clients remain unverified.

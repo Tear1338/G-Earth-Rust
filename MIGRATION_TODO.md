@@ -1,5 +1,7 @@
 # Migration tasks
 
+Implement incremental, cancellable outgoing RC4 snapshot recovery across the entire candidate list without restarting at index zero after the time budget or blocking relay I/O. Preserve ambiguity detection, buffered ciphertext and cancellation; add deterministic late-candidate and moving-buffer fixtures. Real client tests are the user’s responsibility.
+
 Prioritize investigation of the reported Flash connection failure: compare Rust attachment, handshake and RC4 discovery with pinned beta-29 Java and use isolated automated fixtures. The user will run real-client tests themselves. Also recover dropped TCP lifecycle events under saturation.
 
 Audit Origins decoding for complete packets followed by a malformed chunk in one read, including encrypted and unencrypted paths; add deterministic fixtures and preserve valid prefixes where appropriate. Then reproduce dropped TCP lifecycle events during saturation.
