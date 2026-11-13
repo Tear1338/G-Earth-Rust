@@ -1,5 +1,7 @@
 # Migration tasks
 
+Audit Origins decoding for complete packets followed by a malformed chunk in one read, including encrypted and unencrypted paths; add deterministic fixtures and preserve valid prefixes where appropriate. Then reproduce dropped TCP lifecycle events during saturation.
+
 Audit automatic Flash and Origins decoding when a valid complete frame precedes malformed input in one read. Determine whether their batch-returning decoders also drop the valid prefix; add deterministic fixtures and preserve ordering where appropriate. Also reproduce lifecycle-event loss under saturation.
 
 Investigate lost TCP Connected/Disconnected events under a saturated event channel: desktop logger state and lifecycle actions can become stale. Reproduce disconnect/reconnect with a full queue and design bounded ordered lifecycle recovery without blocking packet processing. The TCP error fallback is opt-in for API consumers and coalesces older errors.

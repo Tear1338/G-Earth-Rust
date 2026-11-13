@@ -1,5 +1,7 @@
 # Continuation state
 
+Automatic Flash preserves valid packets before a malformed tail, with plaintext bidirectional loopback and batch tests. The pinned Java Flash identification oracle passes on Windows; Flash, relay and library tests, both Clippy configurations and debug build pass. Next audit Origins batch decoders and then TCP lifecycle-event loss under saturation; encrypted real clients remain unverified.
+
 Plain TCP preserves complete frames preceding a malformed length in a single batch; both directions and deterministic decoding pass. Windows library (90 passed, six ignored), 17 relay tests, both Clippy configurations and debug build pass. Next inspect Flash and Origins valid-prefix/malformed-tail handling, then recover saturated TCP lifecycle events. Live clients and malformed-input Java parity remain unverified.
 
 TCP relay errors now have a bounded latest-error/count fallback when event delivery fails; desktop retains the status while draining its backlog. The 2,200-packet saturation fixture and coalescing test pass, as do Windows desktop/web library (112 passed, seven ignored), relay/i18n/desktop tests, workspace/desktop/desktop-web Clippy and debug build. Next reproduce and fix lost Connected/Disconnected lifecycle events during saturation; API consumers must poll the error fallback, and real clients/UI remain unverified.

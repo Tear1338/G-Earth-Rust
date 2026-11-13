@@ -84,18 +84,31 @@ pub struct FlashSession {
 }
 impl FlashSession {
     pub fn feed(&mut self, direction: Direction, bytes: &[u8]) -> io::Result<Vec<DecodedPacket>> {
+        let (packets, error) = self.feed_batch(direction, bytes)?;
+        match error {
+            Some(error) => Err(error),
+            None => Ok(packets),
+        }
+    }
+    /// Preserve decoded packets preceding a malformed frame in the same input.
+    pub fn feed_batch(
+        &mut self,
+        direction: Direction,
+        bytes: &[u8],
+    ) -> io::Result<(Vec<DecodedPacket>, Option<io::Error>)> {
         self.side(direction).feed(bytes)?;
         let mut packets = Vec::new();
         loop {
             let side = self.side(direction);
             let encrypted = side.encrypted;
-            let Some(packet) = side.next()? else {
-                break;
+            let packet = match side.next() {
+                Ok(Some(packet)) => packet,
+                Ok(None) => return Ok((packets, None)),
+                Err(error) => return Ok((packets, Some(error))),
             };
             self.observe(direction, &packet);
             packets.push(DecodedPacket { packet, encrypted });
         }
-        Ok(packets)
     }
     fn side(&mut self, direction: Direction) -> &mut Side {
         if direction == Direction::ToServer {

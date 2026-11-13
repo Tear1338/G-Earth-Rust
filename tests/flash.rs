@@ -221,3 +221,28 @@ fn identification_compares_with_java_and_handles_fragmentation() {
         assert!(session.take_identity().is_none());
     }
 }
+
+#[test]
+fn batch_retains_valid_packets_before_invalid_length() {
+    for direction in [Direction::ToServer, Direction::ToClient] {
+        let mut bytes = Packet::new(77).bytes().to_vec();
+        bytes.extend_from_slice(Packet::new(78).bytes());
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        let (packets, error) = FlashSession::default()
+            .feed_batch(direction, &bytes)
+            .unwrap();
+        assert_eq!(
+            packets
+                .iter()
+                .map(|p| p.packet.header())
+                .collect::<Vec<_>>(),
+            [77, 78]
+        );
+        assert!(packets.iter().all(|p| !p.encrypted));
+        assert!(error
+            .unwrap()
+            .to_string()
+            .contains("invalid Flash frame length"));
+        assert!(FlashSession::default().feed(direction, &bytes).is_err());
+    }
+}

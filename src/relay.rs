@@ -1008,8 +1008,9 @@ fn run_session(
             }
             let mut decode_error = None;
             let packets: Vec<(Packet, bool)> = if let Some(flash) = &mut flash {
-                flash
-                    .feed(direction, &buffer[..n])?
+                let (packets, error) = flash.feed_batch(direction, &buffer[..n])?;
+                decode_error = error;
+                packets
                     .into_iter()
                     .map(|p| (p.packet, p.encrypted))
                     .collect()

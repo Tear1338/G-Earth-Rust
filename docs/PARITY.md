@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Automatic Flash now forwards complete packets before a malformed following frame in local plaintext fixtures; its pinned Java identification oracle passes. Encrypted live Flash and malformed-input Java equivalence remain unverified.
+
 Plain TCP now forwards valid frames preceding a malformed length, verified in both directions and with a deterministic batch fixture. Java malformed-input equivalence and Flash/Origins batch decoders remain unverified.
 
 A local saturated-event-channel relay fixture verifies that a protocol error is retained and exposed separately to the desktop. API consumers must poll the fallback; earlier coalesced errors, lost lifecycle events, visual UI and live traffic remain limitations.

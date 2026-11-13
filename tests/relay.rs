@@ -553,6 +553,50 @@ fn truncated_server_frame_reports_buffered_prefix() {
 }
 
 #[test]
+fn automatic_flash_forwards_complete_frames_before_invalid_length() {
+    use gearth_rust::relay::RelayOptions;
+    for direction in [Direction::ToServer, Direction::ToClient] {
+        let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+        let (mut relay, events) = Relay::start_with_options(
+            Config {
+                listen: "127.0.0.1:0".parse().unwrap(),
+                remote: remote.local_addr().unwrap().to_string(),
+            },
+            RelayOptions {
+                flash_process: Some(1),
+                ..RelayOptions::default()
+            },
+        )
+        .unwrap();
+        let mut client = TcpStream::connect(relay.address).unwrap();
+        let (mut server, _) = remote.accept().unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        server
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        wait_for(&events, |event| matches!(event, Event::Connected(_)));
+        let mut bytes = Packet::new(77).bytes().to_vec();
+        bytes.extend_from_slice(Packet::new(78).bytes());
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        let (source, destination) = if direction == Direction::ToServer {
+            (&mut client, &mut server)
+        } else {
+            (&mut server, &mut client)
+        };
+        source.write_all(&bytes).unwrap();
+        assert_eq!(read_frame(destination).unwrap().header(), 77);
+        assert_eq!(read_frame(destination).unwrap().header(), 78);
+        wait_for(
+            &events,
+            |event| matches!(event, Event::Error(error) if error.contains("invalid Flash frame length")),
+        );
+        relay.stop();
+    }
+}
+
+#[test]
 fn complete_frames_are_forwarded_before_a_following_invalid_frame() {
     for direction in [Direction::ToServer, Direction::ToClient] {
         let remote = TcpListener::bind("127.0.0.1:0").unwrap();
