@@ -309,9 +309,16 @@ impl Scheduler {
             let Some(expected) = reference_wall.checked_add(elapsed) else {
                 continue;
             };
-            let tolerance = Duration::from_millis(20).min(job.interval / 2);
-            if let Ok(forward) = wall.duration_since(expected) {
-                if forward > tolerance {
+            // Java samples System.currentTimeMillis(): detect changes in the
+            // observable millisecond, not sub-millisecond sampling jitter.
+            let (Ok(actual_epoch), Ok(expected_epoch)) = (
+                wall.duration_since(UNIX_EPOCH),
+                expected.duration_since(UNIX_EPOCH),
+            ) else {
+                continue;
+            };
+            if actual_epoch.as_millis() > expected_epoch.as_millis() {
+                if let Ok(forward) = wall.duration_since(expected) {
                     // Count crossed slots without representing a far-past
                     // monotonic deadline, which may underflow Instant.
                     if let Some(next) = deadline_from_wall(now, wall, job.interval, offset, true) {
@@ -336,14 +343,12 @@ impl Scheduler {
                         job.clock_reference = Some((now, wall));
                     }
                 }
-            } else if let Ok(backward) = expected.duration_since(wall) {
-                if backward > tolerance {
-                    // Java's negative elapsed window emits nothing, then its
-                    // subsequent scan begins at the new wall-clock position.
-                    if let Some(next) = deadline_from_wall(now, wall, job.interval, offset, true) {
-                        job.next = next;
-                        job.clock_reference = Some((now, wall));
-                    }
+            } else if actual_epoch.as_millis() < expected_epoch.as_millis() {
+                // Java's negative elapsed window emits nothing, then its
+                // subsequent scan begins at the new wall-clock position.
+                if let Some(next) = deadline_from_wall(now, wall, job.interval, offset, true) {
+                    job.next = next;
+                    job.clock_reference = Some((now, wall));
                 }
             }
         }

@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Aligned clock correction compares integer epoch milliseconds, matching Java clock resolution rather than using a fixed multi-millisecond drift threshold.
+
 Aligned jobs store pending occurrences separately from their next monotonic deadline, preserving queue failures across clock rebases and counting large forward jumps without Instant subtraction.
 
 Forward wall-clock corrections shift aligned deadlines by the measured drift so crossed slots remain retryable. Backward jumps with pending backlog and extreme Instant underflow remain open.

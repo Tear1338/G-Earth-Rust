@@ -1,5 +1,7 @@
 # Changelog
 
+- Detect scheduler wall-clock shifts at Java millisecond resolution.
+
 - Preserve scheduler backlog through clock rebases and avoid forward Instant underflow.
 
 - Preserve aligned scheduler deadlines across forward wall-clock jumps.

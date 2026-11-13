@@ -748,6 +748,50 @@ fn scheduler_replays_forward_clock_jumps_and_realigns_backward() {
 }
 
 #[test]
+fn scheduler_detects_small_forward_and_backward_wall_clock_jumps() {
+    let now = Instant::now();
+    let wall = std::time::UNIX_EPOCH + Duration::from_millis(10_000);
+    let mut scheduler = Scheduler::default();
+    scheduler
+        .add_aligned(
+            Packet::new(1),
+            Direction::ToServer,
+            10,
+            0,
+            None,
+            (now, wall),
+        )
+        .unwrap();
+    assert_eq!(scheduler.tick_with_wall_clock(now, wall).len(), 1);
+    // At monotonic +6 ms, wall time jumps four milliseconds and reaches a slot.
+    let at = now + Duration::from_millis(6);
+    let forward = wall + Duration::from_millis(10);
+    assert_eq!(scheduler.tick_with_wall_clock(at, forward).len(), 1);
+    assert!(scheduler.tick_with_wall_clock(at, forward).is_empty());
+    // A five-millisecond backward jump must rebase to the next new wall slot.
+    let backward_at = at + Duration::from_millis(1);
+    let backward = wall + Duration::from_millis(6);
+    assert!(scheduler
+        .tick_with_wall_clock(backward_at, backward)
+        .is_empty());
+    assert!(scheduler
+        .tick_with_wall_clock(
+            backward_at + Duration::from_millis(3),
+            backward + Duration::from_millis(3)
+        )
+        .is_empty());
+    assert_eq!(
+        scheduler
+            .tick_with_wall_clock(
+                backward_at + Duration::from_millis(4),
+                backward + Duration::from_millis(4)
+            )
+            .len(),
+        1
+    );
+}
+
+#[test]
 fn scheduler_preserves_pending_sends_across_backward_clock_jump() {
     let now = Instant::now();
     let wall = std::time::UNIX_EPOCH + Duration::from_millis(10_000);

@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Deterministic small scheduler clock jumps now follow Java-visible millisecond changes; a Java-loop fixture covers the forward case. Operating-system jitter, restart and real-client timing remain unverified.
+
 Aligned scheduler backlog now survives backward rebases and large forward jumps without Instant underflow in Windows tests. Small clock changes, Java timing details and real clients remain unverified.
 
 Forward scheduler wall-clock jumps replay crossed aligned slots in tested cases, matching a fixture mirroring Java beta-29. Backward jumps with backlog, extreme time shifts and real-client timing remain unverified.

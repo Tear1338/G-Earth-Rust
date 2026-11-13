@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- On 2026-11-13, aligned scheduler clock corrections switched from a fixed 20 ms tolerance to comparing the epoch milliseconds visible to Java. Deterministic 4 ms forward and 5 ms backward cases pass, and the Java-loop fixture includes the forward boundary. Windows core/schedule tests with all Java fixtures, both Clippy configurations and desktop/web debug build pass. Real clock jitter and live-client timing remain unverified.
+
 - On 2026-11-13, aligned scheduler backlog was decoupled from future monotonic deadlines. Pending sends survive backward clock jumps, and a very large forward jump is counted without subtracting from Instant. Windows core/schedule tests including all Java fixtures, both Clippy configurations and desktop/web debug build pass. Sub-tolerance clock changes and live-client timing remain unverified.
 
 - On 2026-11-13, forward wall-clock jumps now retain crossed aligned deadlines and retry a queue-rejected occurrence; a Java fixture mirroring the beta-29 loop covers a 950 ms jump. Windows core/schedule tests, the Java catch-up fixture, both Clippy configurations and desktop/web debug build pass. Backward jumps with an existing backlog and extreme Instant underflow remain open; live scheduling remains unverified.
@@ -462,4 +464,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Do not resume stopped Computer Use without the user. Independently compare small wall-clock jumps with beta-29 Java and the scheduler drift tolerance, then fix and test any confirmed discrepancy; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.
+Do not resume stopped Computer Use without the user. Independently compare scheduler restart persistence and active job restoration with beta-29 Java, then fix and test any confirmed discrepancy; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.
