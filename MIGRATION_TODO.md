@@ -1,5 +1,7 @@
 # Migration tasks
 
+A synthetic import now fails when final movement is unconfirmed. Next inspect a controlled WIRED preset fixture and identify the first missing behavior; live client and extension validation remain open.
+
 G-Presets reports an incomplete simulated import when placement acknowledgement is missing; next test a missing movement confirmation. Live client and extension validation remain open.
 
 G-Presets completed a one-item simulated import over loopback; next verify its behavior when placement acknowledgement is absent. Live, WIRED and complex preset imports remain open.

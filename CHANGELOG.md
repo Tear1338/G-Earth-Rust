@@ -1,5 +1,7 @@
 # Changelog
 
+- Verify G-Presets rejects an import with an unconfirmed final movement in loopback.
+
 - Verify G-Presets reports an unacknowledged placement as incomplete.
 
 - Exercise a complete one-item G-Presets import with a simulated server.

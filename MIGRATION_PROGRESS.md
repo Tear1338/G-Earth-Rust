@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- On 2026-11-13, released G-Presets rejected a synthetic import when placement was acknowledged but final movement was not; no success was reported. Both isolated extension tests, both Clippy configurations and the desktop/web debug build pass on Windows; Linux CI and live hotel behavior remain unverified.
+
 - The released G-Presets binary reported an incomplete import when a simulated server omitted the floor placement acknowledgement; it did not report success. The isolated Windows fixture, both Clippy configurations and desktop/web debug build pass; Linux CI is pending. On 2026-11-13 no Habbo or Rust desktop process was present and no COM hosts redirect remained. Live decryption, real extensions and end-to-end import remain unverified.
 
 - The released G-Presets binary completed a one-item simulated import in two Windows loopback sessions: the fixture acknowledged placement and movement, verified the item at its exported coordinates, observed the stack tile returned to its original position, and saw the extension report successful completion. Furnidata, catalog, room and server responses are synthetic; WIRED/variables/walls were excluded. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI and real hotel import remain unverified.
@@ -430,4 +432,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Do not resume stopped Computer Use without the user. Independently verify G-Presets behavior when simulated movement confirmation is missing; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.
+Do not resume stopped Computer Use without the user. Independently inspect a controlled WIRED preset fixture and identify the first missing behavior; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.

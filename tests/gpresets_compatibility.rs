@@ -1223,6 +1223,115 @@ fn released_gpresets_authenticates_to_the_rust_host() {
                 .set_read_timeout(Some(Duration::from_secs(10)))
                 .unwrap();
         }
+        if session == 1 {
+            // Restore the fake stack tile, then acknowledge placement but not the final move.
+            let mut reset_stack = stack.clone();
+            reset_stack.tile = HPoint::new(3, 3);
+            let mut update = Packet::new(90);
+            reset_stack.append(&mut update).unwrap();
+            write_frame(&mut server, &update).unwrap();
+            wait_room("floor-details.txt", "2601:3:1,3701:3:3,4701:3:1");
+            let success_before = fs::read_to_string(directory.0.join("app.log"))
+                .unwrap_or_default()
+                .matches("[green] Import finished")
+                .count();
+            let mut import = Packet::new(92);
+            import.put_string(":ip 0,0").unwrap();
+            write_frame(&mut client, &import).unwrap();
+            wait_room("import-state-live.txt", "AWAITING_UNOCCUPIED_SPACE");
+            let mut staging = Packet::new(100);
+            staging.put_i32(0).unwrap().put_i32(0).unwrap();
+            write_frame(&mut client, &staging).unwrap();
+            let mut placement = None;
+            for _ in 0..30 {
+                let mut packet = read_frame(&mut server).unwrap();
+                match packet.header() {
+                    100 => panic!("staging selection reached simulated server"),
+                    102 => {
+                        let id = packet.read_i32().unwrap();
+                        let x = packet.read_i32().unwrap();
+                        let y = packet.read_i32().unwrap();
+                        if id == 3700 + session {
+                            let mut changed = stack.clone();
+                            changed.tile = HPoint::new(x, y);
+                            let mut update = Packet::new(90);
+                            changed.append(&mut update).unwrap();
+                            write_frame(&mut server, &update).unwrap();
+                        }
+                    }
+                    101 => {
+                        placement = Some(packet.read_string().unwrap());
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            let placement = placement.expect("no placement in missing-movement scenario");
+            let fields: Vec<_> = placement.split_whitespace().collect();
+            assert_eq!(fields.len(), 4);
+            let mut placed_item = floor.clone();
+            placed_item.id = 5700 + session;
+            placed_item.tile = HPoint::new(fields[1].parse().unwrap(), fields[2].parse().unwrap());
+            let mut object_add = Packet::new(86);
+            placed_item.append(&mut object_add).unwrap();
+            object_add.put_string("Fixture").unwrap();
+            write_frame(&mut server, &object_add).unwrap();
+            wait_room("placement-ack.txt", &(5700 + session).to_string());
+            server
+                .set_read_timeout(Some(Duration::from_millis(500)))
+                .unwrap();
+            let deadline = Instant::now() + Duration::from_secs(30);
+            let mut omitted_move = false;
+            loop {
+                let log = fs::read_to_string(directory.0.join("app.log")).unwrap_or_default();
+                if log.contains("Final furniture position/height/rotation not confirmed") {
+                    assert_eq!(
+                        log.matches("[green] Import finished").count(),
+                        success_before
+                    );
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "missing movement did not fail: {}",
+                    log.replace(&token, "[token]")
+                );
+                match read_frame(&mut server) {
+                    Ok(mut packet) if packet.header() == 102 => {
+                        let id = packet.read_i32().unwrap();
+                        let x = packet.read_i32().unwrap();
+                        let y = packet.read_i32().unwrap();
+                        if id == 5700 + session {
+                            omitted_move = true;
+                        } else if id == 3700 + session {
+                            let mut changed = stack.clone();
+                            changed.tile = HPoint::new(x, y);
+                            let mut update = Packet::new(90);
+                            changed.append(&mut update).unwrap();
+                            write_frame(&mut server, &update).unwrap();
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+                        ) => {}
+                    Err(error) => panic!("missing-movement socket failed: {error}"),
+                }
+            }
+            assert!(
+                omitted_move,
+                "extension did not request the unconfirmed move"
+            );
+            wait_room("import-state-live.txt", "NONE");
+            server
+                .set_read_timeout(Some(Duration::from_secs(10)))
+                .unwrap();
+            let mut remove = Packet::new(87);
+            remove.put_string(&(5700 + session).to_string()).unwrap();
+            write_frame(&mut server, &remove).unwrap();
+        }
         // Remove synthetic additions so the next isolated session starts cleanly.
         for id in [3700 + session, 4700 + session] {
             let mut remove = Packet::new(87);
