@@ -432,4 +432,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Do not resume stopped Computer Use without the user. Independently inspect a controlled WIRED preset fixture and identify the first missing behavior; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.
+Do not resume stopped Computer Use without the user. Independently add a synthetic WIRED trigger furniture and its save packet to the G-Presets loopback fixture, enable WIRED export, and verify the exported configuration; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.
