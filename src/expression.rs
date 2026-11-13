@@ -5,7 +5,7 @@ use crate::{
 
 /// Parse EVA_WIRE expressions or G-Earth's lossless [byte] display notation.
 pub fn parse(expression: &str) -> Result<Packet> {
-    parse_inner(expression, PacketFormat::EvaWire, None)
+    parse_inner(expression, PacketFormat::EvaWire, None, false)
 }
 pub fn parse_with_info(
     expression: &str,
@@ -16,6 +16,7 @@ pub fn parse_with_info(
         expression,
         PacketFormat::EvaWire,
         Some((direction, database)),
+        false,
     )
 }
 pub fn parse_with_format(
@@ -23,12 +24,24 @@ pub fn parse_with_format(
     format: PacketFormat,
     context: Option<(Direction, &PacketInfoManager)>,
 ) -> Result<Packet> {
-    parse_inner(expression, format, context)
+    parse_inner(expression, format, context, false)
+}
+
+/// Validate an expression while allowing a nonempty named header to remain unresolved.
+/// No placeholder packet is returned or eligible for transmission.
+pub fn validate_with_deferred_names(
+    expression: &str,
+    format: PacketFormat,
+    direction: Direction,
+    database: &PacketInfoManager,
+) -> Result<()> {
+    parse_inner(expression, format, Some((direction, database)), true).map(|_| ())
 }
 fn parse_inner(
     expression: &str,
     format: PacketFormat,
     context: Option<(Direction, &PacketInfoManager)>,
+    defer_unknown_names: bool,
 ) -> Result<Packet> {
     let mut rest = expression;
     let mut bytes = Vec::new();
@@ -82,10 +95,11 @@ fn parse_inner(
                             "named packet direction differs from selected destination",
                         ));
                     }
-                    database
-                        .by_name(direction, value)
-                        .ok_or_else(|| error("packet identifier not found"))?
-                        .header
+                    match database.by_name(direction, value) {
+                        Some(info) => info.header,
+                        None if defer_unknown_names && !value.is_empty() => 0,
+                        None => return Err(error("packet identifier not found")),
+                    }
                 };
                 bytes.extend_from_slice(Packet::new_with_format(format, header)?.bytes());
             } else {

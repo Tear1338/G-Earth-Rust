@@ -138,6 +138,8 @@ fn scheduler_and_tool_controls_have_translations_and_fallbacks() {
         "rust.scheduler.load_active",
         "rust.scheduler.load_active_hint",
         "rust.scheduler.loaded_active",
+        "rust.scheduler.loaded_offline_hint",
+        "rust.scheduler.resolve_pending",
         "rust.scheduler.load_failed",
         "rust.scheduler.export_templates",
         "rust.scheduler.exported_templates",

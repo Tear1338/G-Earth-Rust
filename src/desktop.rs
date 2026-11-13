@@ -1030,30 +1030,14 @@ impl Desktop {
     fn compile_schedules(
         &self,
         templates: &[ScheduleTemplate],
-    ) -> gearth_rust::packet::Result<Vec<(ScheduleSpec, bool)>> {
-        templates
-            .iter()
-            .map(|template| {
-                expression::parse_with_format(
-                    &template.expression,
-                    self.packet_format(template.direction),
-                    Some((template.direction, &self.packet_info)),
-                )
-                .map(|packet| {
-                    (
-                        ScheduleSpec {
-                            packet,
-                            source_expression: Some(template.expression.clone()),
-                            direction: template.direction,
-                            interval_ms: template.interval_ms,
-                            offset_ms: template.offset_ms,
-                            repeat: (template.repeat != 0).then_some(template.repeat),
-                        },
-                        template.paused,
-                    )
-                })
-            })
-            .collect()
+        allow_deferred_names: bool,
+    ) -> gearth_rust::packet::Result<Vec<(ScheduleSpec, bool, bool)>> {
+        schedule_file::compile_active(
+            templates,
+            &self.packet_info,
+            |direction| self.packet_format(direction),
+            allow_deferred_names,
+        )
     }
 
     fn read_schedule_file(&self) -> std::io::Result<Vec<ScheduleTemplate>> {
@@ -1334,48 +1318,55 @@ impl Desktop {
         if let Some(relay) = &self.relay {
             if relay.connected() {
                 let mut blocked = None;
+                let mut unresolved = None;
                 let shockwave = self.origins && !self.nitro;
                 let info = &self.packet_info;
-                let result: std::io::Result<()> =
-                    self.scheduler.dispatch_jobs_filtered_with_wall_clock(
-                        Instant::now(),
-                        SystemTime::now(),
-                        |job| {
-                            let direction = job.direction;
-                            let format = if shockwave {
-                                if direction == Direction::ToServer {
-                                    PacketFormat::WedgieOutgoing
-                                } else {
-                                    PacketFormat::WedgieIncoming
-                                }
+                let result: std::io::Result<()> = self.scheduler.dispatch_jobs_with_retry(
+                    Instant::now(),
+                    SystemTime::now(),
+                    |job| {
+                        let direction = job.direction;
+                        let format = if shockwave {
+                            if direction == Direction::ToServer {
+                                PacketFormat::WedgieOutgoing
                             } else {
-                                PacketFormat::EvaWire
-                            };
-                            let packet = job
-                                .resolve_packet(format, info)
-                                .map_err(std::io::Error::other)?;
-                            let allowed = self
-                                .packet_safety
-                                .lock()
-                                .map_err(|_| {
-                                    std::io::Error::other("Packet safety state unavailable")
-                                })?
-                                .may_send(
-                                    Some(&self.hotel_version),
-                                    direction,
-                                    packet.header(),
-                                    self.developer_mode,
-                                );
-                            if !allowed {
-                                blocked.get_or_insert(packet.header());
-                                return Ok(false);
+                                PacketFormat::WedgieIncoming
                             }
-                            relay.inject(direction, packet.into_owned())?;
-                            Ok(true)
-                        },
-                    );
+                        } else {
+                            PacketFormat::EvaWire
+                        };
+                        let packet = match job.resolve_packet(format, info) {
+                            Ok(packet) => packet,
+                            Err(error) => {
+                                unresolved.get_or_insert_with(|| error.to_string());
+                                return Ok(None);
+                            }
+                        };
+                        let allowed = self
+                            .packet_safety
+                            .lock()
+                            .map_err(|_| std::io::Error::other("Packet safety state unavailable"))?
+                            .may_send(
+                                Some(&self.hotel_version),
+                                direction,
+                                packet.header(),
+                                self.developer_mode,
+                            );
+                        if !allowed {
+                            blocked.get_or_insert(packet.header());
+                            return Ok(Some(false));
+                        }
+                        relay.inject(direction, packet.into_owned())?;
+                        Ok(Some(true))
+                    },
+                );
                 if let Err(e) = result {
                     self.status = e.to_string();
+                } else if let Some(error) = unresolved {
+                    self.status = format!(
+                        "{}: {error}",
+                        self.i18n.text("rust.scheduler.resolve_pending")
+                    );
                 } else if let Some(header) = blocked {
                     self.status = format!("Scheduled packet {header} was not sent: ID not observed for this hotel version and direction");
                 }
@@ -3244,10 +3235,10 @@ impl Desktop {
             )
             .clicked()
         {
-            let specs = self.compile_schedules(&self.settings.schedules);
+            let specs = self.compile_schedules(&self.settings.schedules, false);
             self.status = match specs.and_then(|specs| {
                 self.scheduler
-                    .add_batch_configured(specs, (Instant::now(), SystemTime::now()))
+                    .add_batch_deferred(specs, (Instant::now(), SystemTime::now()))
             }) {
                 Ok(()) => self.i18n.text("rust.scheduler.started"),
                 Err(e) => format!("{}: {e}", self.i18n.text("rust.scheduler.start_failed")),
@@ -3299,19 +3290,16 @@ impl Desktop {
                 };
             }
             if ui
-                .add_enabled(
-                    self.relay.as_ref().is_some_and(Connection::connected),
-                    egui::Button::new(self.i18n.text("rust.scheduler.load_active")),
-                )
+                .button(self.i18n.text("rust.scheduler.load_active"))
                 .on_hover_text(self.i18n.text("rust.scheduler.load_active_hint"))
                 .clicked()
             {
                 let result = self.read_schedule_file().and_then(|templates| {
                     let specs = self
-                        .compile_schedules(&templates)
+                        .compile_schedules(&templates, true)
                         .map_err(std::io::Error::other)?;
                     self.scheduler
-                        .replace_batch_configured(specs, (Instant::now(), SystemTime::now()))
+                        .replace_batch_deferred(specs, (Instant::now(), SystemTime::now()))
                         .map_err(std::io::Error::other)?;
                     Ok(templates)
                 });
@@ -3321,11 +3309,18 @@ impl Desktop {
                         if self.active_schedule_edit.take().is_some() {
                             self.reset_active_schedule_editor();
                         }
-                        format!(
+                        let mut message = format!(
                             "{}: {count} ({})",
                             self.i18n.text("rust.scheduler.loaded_active"),
                             self.schedule_path
-                        )
+                        );
+                        if !self.relay.as_ref().is_some_and(Connection::connected) {
+                            message.push_str(&format!(
+                                " — {}",
+                                self.i18n.text("rust.scheduler.loaded_offline_hint")
+                            ));
+                        }
+                        message
                     }
                     Err(error) => {
                         format!("{}: {error}", self.i18n.text("rust.scheduler.load_failed"))

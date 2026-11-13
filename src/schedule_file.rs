@@ -1,8 +1,9 @@
 //! G-Earth beta-29 `.sched` files (tab-separated, UTF-8 on Java 21).
 use crate::{
     expression,
-    packet::Direction,
-    scheduler::{Job, MAX_INTERVAL_MS},
+    packet::{Direction, Packet, PacketFormat},
+    packet_info::PacketInfoManager,
+    scheduler::{Job, ScheduleSpec, MAX_INTERVAL_MS},
     settings::ScheduleTemplate,
 };
 use std::{
@@ -13,6 +14,71 @@ use std::{
 
 pub const MAX_SCHEDULE_FILE_BYTES: usize = 2 * 1024 * 1024;
 const MAX_ITEMS: usize = 10_000;
+
+/// Compile active schedules atomically, optionally deferring unknown named IDs.
+/// A deferred placeholder is paired with the original source and must be resolved
+/// with `Job::resolve_packet` before dispatch.
+pub fn compile_active(
+    templates: &[ScheduleTemplate],
+    info: &PacketInfoManager,
+    format_for: impl Fn(Direction) -> PacketFormat,
+    allow_deferred_names: bool,
+) -> crate::packet::Result<Vec<(ScheduleSpec, bool, bool)>> {
+    templates
+        .iter()
+        .map(|template| {
+            let format = format_for(template.direction);
+            let (packet, deferred) = match expression::parse_with_format(
+                &template.expression,
+                format,
+                Some((template.direction, info)),
+            ) {
+                Ok(packet) => (packet, false),
+                Err(_) if allow_deferred_names => {
+                    // A file may be loaded before its eventual client is known.
+                    // Accept syntax valid for either supported wire family; the
+                    // actual family is checked again before dispatch.
+                    if expression::validate_with_deferred_names(
+                        &template.expression,
+                        format,
+                        template.direction,
+                        info,
+                    )
+                    .is_err()
+                    {
+                        let alternate = match format {
+                            PacketFormat::EvaWire => match template.direction {
+                                Direction::ToClient => PacketFormat::WedgieIncoming,
+                                Direction::ToServer => PacketFormat::WedgieOutgoing,
+                            },
+                            _ => PacketFormat::EvaWire,
+                        };
+                        expression::validate_with_deferred_names(
+                            &template.expression,
+                            alternate,
+                            template.direction,
+                            info,
+                        )?;
+                    }
+                    (Packet::new_with_format(format, 0)?, true)
+                }
+                Err(error) => return Err(error),
+            };
+            Ok((
+                ScheduleSpec {
+                    packet,
+                    source_expression: Some(template.expression.clone()),
+                    direction: template.direction,
+                    interval_ms: template.interval_ms,
+                    offset_ms: template.offset_ms,
+                    repeat: (template.repeat != 0).then_some(template.repeat),
+                },
+                template.paused,
+                deferred,
+            ))
+        })
+        .collect()
+}
 
 /// Write beside the destination and replace it only after a complete successful write.
 pub fn write_atomic(path: &Path, text: &str) -> io::Result<()> {

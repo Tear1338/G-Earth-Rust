@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Active scheduler imports validate expressions with deferred names and retain the source; packet-only dispatch skips deferred placeholders. Job-aware dispatch resolves current metadata and retries unresolved jobs independently after one second.
+
 Scheduled jobs retain their source expression and resolve it against the current connection format and metadata on each dispatch; unresolved names leave the occurrence pending. Packet-only jobs retain their original bytes.
 
 Aligned clock correction compares integer epoch milliseconds, matching Java clock resolution rather than using a fixed multi-millisecond drift threshold.

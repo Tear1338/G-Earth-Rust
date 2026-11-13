@@ -1,5 +1,7 @@
 # Changelog
 
+- Allow offline active schedule loading with deferred names and independent retries.
+
 - Resolve scheduled packet expressions against the current client and metadata on each send.
 
 - Detect scheduler wall-clock shifts at Java millisecond resolution.

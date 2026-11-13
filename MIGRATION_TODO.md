@@ -1,5 +1,7 @@
 # Migration tasks
 
+Active .sched loading now works offline with deferred named identifiers, atomic replacement and non-starving retry. Next exercise two loopback relay connections with changed metadata and pending scheduled sends; visual UI and real-client reconnection remain open.
+
 Scheduled expressions now resolve using current metadata and client format at send time. Next support Java-style active .sched loading while disconnected without prematurely resolving named identifiers; live reconnection remains open.
 
 Small clock jumps now use Java-visible millisecond comparisons; deterministic 4 ms forward and 5 ms backward cases pass. Next compare scheduler restart/persistence and active job restoration with Java.

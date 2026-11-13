@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Active .sched loading is available offline with deferred named IDs, source validation, atomic replacement and one-second non-starving retries. Loopback injection passes; real-client reconnect and visual UI remain unverified.
+
 Scheduler packet expressions now resolve against current metadata and client format at dispatch, with a loopback relay test. Java and Rust both start with no active jobs automatically restored; disconnected named-schedule loading and real-client reconnection remain open.
 
 Deterministic small scheduler clock jumps now follow Java-visible millisecond changes; a Java-loop fixture covers the forward case. Operating-system jitter, restart and real-client timing remain unverified.

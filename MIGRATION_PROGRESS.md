@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- On 2026-11-13, active .sched files can be loaded while disconnected. Unknown named headers are syntax-checked and resolved before dispatch; packet-only scheduler APIs never send the placeholder. Unresolved jobs retry after one second without starving other jobs, and the UI reports offline/retry status in English and French. Windows schedule/relay/core/i18n/desktop tests, Java schedule fixtures, both Clippy configurations and desktop/web debug build pass. Visual UI inspection and real-client reconnection remain unverified.
+
 - On 2026-11-13, scheduler expressions began resolving at each send using current packet metadata and client format, as Java Scheduler.java constructs packets per dispatch. A loopback relay test verifies changed metadata is used; missing names leave the occurrence pending. Windows core/relay/schedule/desktop tests, Java schedule fixtures, both Clippy configurations and desktop/web debug build pass. Java does not automatically restore active schedules at restart; Rust also starts with no active jobs. Loading unresolved schedules while disconnected and real reconnection remain open.
 
 - On 2026-11-13, aligned scheduler clock corrections switched from a fixed 20 ms tolerance to comparing the epoch milliseconds visible to Java. Deterministic 4 ms forward and 5 ms backward cases pass, and the Java-loop fixture includes the forward boundary. Windows core/schedule tests with all Java fixtures, both Clippy configurations and desktop/web debug build pass. Real clock jitter and live-client timing remain unverified.
@@ -466,4 +468,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Do not resume stopped Computer Use without the user. Independently support Java-style active .sched loading while disconnected, deferring named packet resolution until dispatch, and verify restoration and failure behavior; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.
+Do not resume stopped Computer Use without the user. Independently exercise two loopback relay connections with changed metadata and pending scheduled sends, then correct and test any reconnection discrepancy; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.

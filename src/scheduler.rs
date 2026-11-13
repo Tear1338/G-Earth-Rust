@@ -38,6 +38,9 @@ pub struct Job {
     clock_reference: Option<(Instant, SystemTime)>,
     // Due aligned occurrences are kept independently of the monotonic clock.
     pending_due: u128,
+    // A placeholder is never exposed through the packet-only dispatch APIs.
+    deferred_packet: bool,
+    retry_after: Option<Instant>,
 }
 
 impl Job {
@@ -53,6 +56,7 @@ impl Job {
                 expression::parse_with_format(source, format, Some((self.direction, info)))
                     .map(Cow::Owned)
             }
+            None if self.deferred_packet => Err(error("deferred schedule source is missing")),
             None => Ok(Cow::Borrowed(&self.packet)),
         }
     }
@@ -134,7 +138,11 @@ impl Scheduler {
             .iter()
             .filter(|job| !job.paused && job.remaining != Some(0) && job.has_reachable_phase())
             .map(|job| {
-                if job.pending_due > 0 {
+                if let Some(retry) = job.retry_after.filter(|retry| *retry > now) {
+                    retry
+                        .saturating_duration_since(now)
+                        .max(Duration::from_millis(1))
+                } else if job.pending_due > 0 {
                     Duration::from_millis(1)
                 } else {
                     job.next
@@ -191,6 +199,8 @@ impl Scheduler {
             alignment_offset_ms: None,
             clock_reference: None,
             pending_due: 0,
+            deferred_packet: false,
+            retry_after: None,
         });
         Ok(())
     }
@@ -263,6 +273,45 @@ impl Scheduler {
         }
         self.next_id = candidate.next_id;
         self.jobs.extend(candidate.jobs);
+        Ok(())
+    }
+    /// Add a validated batch that may include deferred named packet expressions.
+    pub fn add_batch_deferred(
+        &mut self,
+        specs: Vec<(ScheduleSpec, bool, bool)>,
+        clock: (Instant, SystemTime),
+    ) -> Result<()> {
+        let mut candidate = Self {
+            jobs: Vec::new(),
+            next_id: self.next_id,
+        };
+        for (spec, paused, deferred) in specs {
+            if deferred && spec.source_expression.is_none() {
+                return Err(error("deferred schedule requires a source expression"));
+            }
+            candidate.add_batch_configured(vec![(spec, paused)], clock)?;
+            candidate
+                .jobs
+                .last_mut()
+                .expect("newly added schedule")
+                .deferred_packet = deferred;
+        }
+        self.next_id = candidate.next_id;
+        self.jobs.extend(candidate.jobs);
+        Ok(())
+    }
+    /// Atomically replace jobs with a batch that may include deferred expressions.
+    pub fn replace_batch_deferred(
+        &mut self,
+        specs: Vec<(ScheduleSpec, bool, bool)>,
+        clock: (Instant, SystemTime),
+    ) -> Result<()> {
+        let mut candidate = Self {
+            jobs: Vec::new(),
+            next_id: self.next_id,
+        };
+        candidate.add_batch_deferred(specs, clock)?;
+        *self = candidate;
         Ok(())
     }
     /// Replace all jobs only after the complete batch has been validated.
@@ -394,7 +443,9 @@ impl Scheduler {
         mut send: impl FnMut(Direction, &Packet) -> std::result::Result<(), E>,
     ) -> std::result::Result<(), E> {
         self.correct_wall_clock(now, wall);
-        self.dispatch_due(now, |job| send(job.direction, &job.packet).map(|()| true))
+        self.dispatch_due(now, false, |job| {
+            send(job.direction, &job.packet).map(|()| Some(true))
+        })
     }
     /// A false result skips the current occurrence and schedules the next one,
     /// without consuming a finite repetition. Queue errors remain retryable.
@@ -405,24 +456,35 @@ impl Scheduler {
         mut send: impl FnMut(Direction, &Packet) -> std::result::Result<bool, E>,
     ) -> std::result::Result<(), E> {
         self.correct_wall_clock(now, wall);
-        self.dispatch_due(now, |job| send(job.direction, &job.packet))
+        self.dispatch_due(now, false, |job| send(job.direction, &job.packet).map(Some))
     }
     /// Dispatch with access to each job's source expression and current metadata.
     pub fn dispatch_jobs_filtered_with_wall_clock<E>(
         &mut self,
         now: Instant,
         wall: SystemTime,
-        send: impl FnMut(&Job) -> std::result::Result<bool, E>,
+        mut send: impl FnMut(&Job) -> std::result::Result<bool, E>,
     ) -> std::result::Result<(), E> {
         self.correct_wall_clock(now, wall);
-        self.dispatch_due(now, send)
+        self.dispatch_due(now, true, |job| send(job).map(Some))
+    }
+    /// `None` leaves the occurrence pending, retries after one second, and lets
+    /// other jobs run. Queue errors still stop the batch without consuming it.
+    pub fn dispatch_jobs_with_retry<E>(
+        &mut self,
+        now: Instant,
+        wall: SystemTime,
+        send: impl FnMut(&Job) -> std::result::Result<Option<bool>, E>,
+    ) -> std::result::Result<(), E> {
+        self.correct_wall_clock(now, wall);
+        self.dispatch_due(now, true, send)
     }
     /// Replay aligned deadlines in bounded batches; relative jobs emit at most once.
     pub fn tick(&mut self, now: Instant) -> Vec<(Direction, Packet)> {
         let mut due = Vec::new();
-        let result = self.dispatch_due(now, |job| {
+        let result = self.dispatch_due(now, false, |job| {
             due.push((job.direction, job.packet.clone()));
-            Ok::<bool, std::convert::Infallible>(true)
+            Ok::<Option<bool>, std::convert::Infallible>(Some(true))
         });
         match result {
             Ok(()) => {}
@@ -433,11 +495,17 @@ impl Scheduler {
     fn dispatch_due<E>(
         &mut self,
         now: Instant,
-        mut send: impl FnMut(&Job) -> std::result::Result<bool, E>,
+        allow_deferred: bool,
+        mut send: impl FnMut(&Job) -> std::result::Result<Option<bool>, E>,
     ) -> std::result::Result<(), E> {
         let mut failure = None;
         'jobs: for job in &mut self.jobs {
-            if job.paused || !job.has_reachable_phase() || job.remaining == Some(0) {
+            if job.paused
+                || !job.has_reachable_phase()
+                || job.remaining == Some(0)
+                || (job.deferred_packet && !allow_deferred)
+                || job.retry_after.is_some_and(|retry| retry > now)
+            {
                 continue;
             }
             if job.alignment_offset_ms.is_some() && job.next <= now {
@@ -460,7 +528,14 @@ impl Scheduler {
                 }
             {
                 let accepted = match send(job) {
-                    Ok(accepted) => accepted,
+                    Ok(Some(accepted)) => {
+                        job.retry_after = None;
+                        accepted
+                    }
+                    Ok(None) => {
+                        job.retry_after = now.checked_add(Duration::from_secs(1));
+                        break;
+                    }
                     Err(error) => {
                         failure = Some(error);
                         break 'jobs;
