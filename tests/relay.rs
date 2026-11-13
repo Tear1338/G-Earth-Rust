@@ -553,6 +553,67 @@ fn truncated_server_frame_reports_buffered_prefix() {
 }
 
 #[test]
+fn origins_forwards_valid_plaintext_packet_before_malformed_tail() {
+    use gearth_rust::{encoding::encode_b64, packet::PacketFormat, relay::RelayOptions};
+    for direction in [Direction::ToServer, Direction::ToClient] {
+        let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+        let (mut relay, events) = Relay::start_with_options(
+            Config {
+                listen: "127.0.0.1:0".parse().unwrap(),
+                remote: remote.local_addr().unwrap().to_string(),
+            },
+            RelayOptions {
+                shockwave: true,
+                disable_origins_metadata: true,
+                ..RelayOptions::default()
+            },
+        )
+        .unwrap();
+        let mut client = TcpStream::connect(relay.address).unwrap();
+        let (mut server, _) = remote.accept().unwrap();
+        client
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        server
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        wait_for(&events, |event| matches!(event, Event::Connected(_)));
+        let format = if direction == Direction::ToServer {
+            PacketFormat::WedgieOutgoing
+        } else {
+            PacketFormat::WedgieIncoming
+        };
+        let packet = Packet::new_with_format(format, 77).unwrap();
+        let mut valid = if direction == Direction::ToServer {
+            encode_b64(packet.bytes().len() as u32, 3).unwrap()
+        } else {
+            Vec::new()
+        };
+        valid.extend_from_slice(packet.bytes());
+        if direction == Direction::ToClient {
+            valid.push(1);
+        }
+        let mut input = valid.clone();
+        if direction == Direction::ToServer {
+            input.extend_from_slice(&[0, 0, 0]);
+        } else {
+            input.push(1);
+        }
+        let (source, destination) = if direction == Direction::ToServer {
+            (&mut client, &mut server)
+        } else {
+            (&mut server, &mut client)
+        };
+        source.write_all(&input).unwrap();
+        let mut output = vec![0; valid.len()];
+        destination.read_exact(&mut output).unwrap();
+        assert_eq!(output, valid);
+        wait_for(&events, |event| matches!(event, Event::Error(_)));
+        relay.stop();
+    }
+}
+
+#[test]
 fn automatic_flash_forwards_complete_frames_before_invalid_length() {
     use gearth_rust::relay::RelayOptions;
     for direction in [Direction::ToServer, Direction::ToClient] {

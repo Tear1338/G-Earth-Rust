@@ -1,5 +1,7 @@
 # Continuation state
 
+Origins batch decoding now retains valid prefixes on malformed tails; plaintext bidirectional loopback and simulated encrypted tests pass. Windows desktop/web library (114 passed, seven ignored), relay/Flash tests, both Clippy configurations and debug build pass. The user will perform live-client tests; next prioritize the reported Flash connection failure using source comparison and isolated automated fixtures, then address lifecycle-event saturation.
+
 Automatic Flash preserves valid packets before a malformed tail, with plaintext bidirectional loopback and batch tests. The pinned Java Flash identification oracle passes on Windows; Flash, relay and library tests, both Clippy configurations and debug build pass. Next audit Origins batch decoders and then TCP lifecycle-event loss under saturation; encrypted real clients remain unverified.
 
 Plain TCP preserves complete frames preceding a malformed length in a single batch; both directions and deterministic decoding pass. Windows library (90 passed, six ignored), 17 relay tests, both Clippy configurations and debug build pass. Next inspect Flash and Origins valid-prefix/malformed-tail handling, then recover saturated TCP lifecycle events. Live clients and malformed-input Java parity remain unverified.

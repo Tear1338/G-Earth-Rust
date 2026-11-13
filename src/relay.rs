@@ -1006,7 +1006,7 @@ fn run_session(
             if let Some(cipher) = decrypt {
                 cipher.apply(&mut buffer[..n]);
             }
-            let mut decode_error = None;
+            let decode_error;
             let packets: Vec<(Packet, bool)> = if let Some(flash) = &mut flash {
                 let (packets, error) = flash.feed_batch(direction, &buffer[..n])?;
                 decode_error = error;
@@ -1015,11 +1015,12 @@ fn run_session(
                     .map(|p| (p.packet, p.encrypted))
                     .collect()
             } else if let Some(shock) = &mut shockwave {
-                let packets = if direction == Direction::ToServer {
-                    shock.client_packets(&buffer[..n])?
+                let (packets, error) = if direction == Direction::ToServer {
+                    shock.client_packets_batch(&buffer[..n])?
                 } else {
-                    shock.server_packets(&buffer[..n])?
+                    shock.server_packets_batch(&buffer[..n])?
                 };
+                decode_error = error;
                 packets.into_iter().map(|p| (p, false)).collect()
             } else {
                 let (packets, error) = decode_plain_batch(decoder, &buffer[..n])?;

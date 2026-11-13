@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Origins preserves valid packets before malformed tails in plaintext loopback and encrypted in-memory fixtures. Real-client and Java malformed-input equivalence remain unverified; the user will perform real-client tests.
+
 Automatic Flash now forwards complete packets before a malformed following frame in local plaintext fixtures; its pinned Java identification oracle passes. Encrypted live Flash and malformed-input Java equivalence remain unverified.
 
 Plain TCP now forwards valid frames preceding a malformed length, verified in both directions and with a deterministic batch fixture. Java malformed-input equivalence and Flash/Origins batch decoders remain unverified.

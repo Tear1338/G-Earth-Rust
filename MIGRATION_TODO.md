@@ -1,5 +1,7 @@
 # Migration tasks
 
+Prioritize investigation of the reported Flash connection failure: compare Rust attachment, handshake and RC4 discovery with pinned beta-29 Java and use isolated automated fixtures. The user will run real-client tests themselves. Also recover dropped TCP lifecycle events under saturation.
+
 Audit Origins decoding for complete packets followed by a malformed chunk in one read, including encrypted and unencrypted paths; add deterministic fixtures and preserve valid prefixes where appropriate. Then reproduce dropped TCP lifecycle events during saturation.
 
 Audit automatic Flash and Origins decoding when a valid complete frame precedes malformed input in one read. Determine whether their batch-returning decoders also drop the valid prefix; add deterministic fixtures and preserve ordering where appropriate. Also reproduce lifecycle-event loss under saturation.

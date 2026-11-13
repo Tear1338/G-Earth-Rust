@@ -202,73 +202,102 @@ impl ShockwaveTransport {
         })
     }
     pub fn client_packets(&mut self, bytes: &[u8]) -> io::Result<Vec<Packet>> {
+        let (packets, error) = self.client_packets_batch(bytes)?;
+        match error {
+            Some(error) => Err(error),
+            None => Ok(packets),
+        }
+    }
+    /// Preserve valid packets before a later malformed outgoing chunk.
+    pub fn client_packets_batch(
+        &mut self,
+        bytes: &[u8],
+    ) -> io::Result<(Vec<Packet>, Option<io::Error>)> {
         self.client_buffer.push(bytes)?;
         let mut packets = Vec::new();
-        loop {
-            let header = if self.client_encrypted {
-                Some(&mut self.client.keys_mut()?.c2s_header)
-            } else {
-                None
-            };
-            let Some(mut bytes) = self.client_buffer.chunk(header)? else {
-                break;
-            };
-            if self.client_encrypted {
-                bytes = STANDARD_NO_PAD.decode(&bytes).map_err(io::Error::other)?;
-                self.client.keys_mut()?.c2s_data.apply(&mut bytes);
-            }
-            let mut packet = Packet::from_bytes_with_format(PacketFormat::WedgieOutgoing, bytes)
-                .map_err(io::Error::other)?;
-            if !self.client_encrypted && packet.header() == 202 {
-                self.client
-                    .set_peer(&packet.read_string().map_err(io::Error::other)?)?;
-                packet.reset();
-            }
-            packets.push(packet);
-        }
-        Ok(packets)
-    }
-    pub fn server_packets(&mut self, bytes: &[u8]) -> io::Result<Vec<Packet>> {
-        let mut packets = Vec::new();
-        if !self.server_encrypted {
-            self.server_plain.push(bytes)?;
-            while let Some(bytes) = self.server_plain.delimiter() {
-                let mut packet =
-                    Packet::from_bytes_with_format(PacketFormat::WedgieIncoming, bytes)
-                        .map_err(io::Error::other)?;
-                if packet.header() == 1 {
-                    self.server
-                        .set_peer(&packet.read_string().map_err(io::Error::other)?)?;
-                    self.server_encrypted = true;
-                    packet.reset();
-                    packets.push(packet);
-                    let tail = self.server_plain.take_tail();
-                    self.server_buffer.push(&tail)?;
+        let result = (|| -> io::Result<()> {
+            loop {
+                let header = if self.client_encrypted {
+                    Some(&mut self.client.keys_mut()?.c2s_header)
+                } else {
+                    None
+                };
+                let Some(mut bytes) = self.client_buffer.chunk(header)? else {
                     break;
+                };
+                if self.client_encrypted {
+                    bytes = STANDARD_NO_PAD.decode(&bytes).map_err(io::Error::other)?;
+                    self.client.keys_mut()?.c2s_data.apply(&mut bytes);
+                }
+                let mut packet =
+                    Packet::from_bytes_with_format(PacketFormat::WedgieOutgoing, bytes)
+                        .map_err(io::Error::other)?;
+                if !self.client_encrypted && packet.header() == 202 {
+                    self.client
+                        .set_peer(&packet.read_string().map_err(io::Error::other)?)?;
+                    packet.reset();
                 }
                 packets.push(packet);
             }
+            Ok(())
+        })();
+        Ok((packets, result.err()))
+    }
+    pub fn server_packets(&mut self, bytes: &[u8]) -> io::Result<Vec<Packet>> {
+        let (packets, error) = self.server_packets_batch(bytes)?;
+        match error {
+            Some(error) => Err(error),
+            None => Ok(packets),
+        }
+    }
+    /// Preserve valid packets before a later malformed incoming chunk.
+    pub fn server_packets_batch(
+        &mut self,
+        bytes: &[u8],
+    ) -> io::Result<(Vec<Packet>, Option<io::Error>)> {
+        let mut packets = Vec::new();
+        let result = (|| -> io::Result<()> {
             if !self.server_encrypted {
-                return Ok(packets);
+                self.server_plain.push(bytes)?;
+                while let Some(bytes) = self.server_plain.delimiter() {
+                    let mut packet =
+                        Packet::from_bytes_with_format(PacketFormat::WedgieIncoming, bytes)
+                            .map_err(io::Error::other)?;
+                    if packet.header() == 1 {
+                        self.server
+                            .set_peer(&packet.read_string().map_err(io::Error::other)?)?;
+                        self.server_encrypted = true;
+                        packet.reset();
+                        packets.push(packet);
+                        let tail = self.server_plain.take_tail();
+                        self.server_buffer.push(&tail)?;
+                        break;
+                    }
+                    packets.push(packet);
+                }
+                if !self.server_encrypted {
+                    return Ok(());
+                }
+            } else {
+                self.server_buffer.push(bytes)?;
             }
-        } else {
-            self.server_buffer.push(bytes)?;
-        }
-        while let Some(bytes) = self
-            .server_buffer
-            .chunk(Some(&mut self.server.keys_mut()?.s2c_header))?
-        {
-            let mut decoded = STANDARD_NO_PAD.decode(bytes).map_err(io::Error::other)?;
-            self.server.keys_mut()?.s2c_data.apply(&mut decoded);
-            self.server_plain.push(&decoded)?;
-            while let Some(bytes) = self.server_plain.delimiter() {
-                packets.push(
-                    Packet::from_bytes_with_format(PacketFormat::WedgieIncoming, bytes)
-                        .map_err(io::Error::other)?,
-                );
+            while let Some(bytes) = self
+                .server_buffer
+                .chunk(Some(&mut self.server.keys_mut()?.s2c_header))?
+            {
+                let mut decoded = STANDARD_NO_PAD.decode(bytes).map_err(io::Error::other)?;
+                self.server.keys_mut()?.s2c_data.apply(&mut decoded);
+                self.server_plain.push(&decoded)?;
+                while let Some(bytes) = self.server_plain.delimiter() {
+                    packets.push(
+                        Packet::from_bytes_with_format(PacketFormat::WedgieIncoming, bytes)
+                            .map_err(io::Error::other)?,
+                    );
+                }
             }
-        }
-        Ok(packets)
+            Ok(())
+        })();
+        Ok((packets, result.err()))
     }
     pub fn encode_to_server(&mut self, packet: &Packet) -> io::Result<Vec<u8>> {
         if packet.format() != PacketFormat::WedgieOutgoing {
@@ -422,5 +451,41 @@ mod tests {
             decode_wire(&wire, &mut keys.s2c_header, &mut keys.s2c_data),
             plain
         );
+        let next = Packet::new_with_format(PacketFormat::WedgieOutgoing, 79).unwrap();
+        let keys = client.keys_mut().unwrap();
+        let mut wire = encrypt(next.bytes(), &mut keys.c2s_header, &mut keys.c2s_data).unwrap();
+        wire.extend_from_slice(b"!!!!!!");
+        let (packets, error) = proxy.client_packets_batch(&wire).unwrap();
+        assert_eq!(packets.iter().map(Packet::header).collect::<Vec<_>>(), [79]);
+        assert!(error.is_some());
+
+        let next = Packet::new_with_format(PacketFormat::WedgieIncoming, 80).unwrap();
+        let mut plain = next.bytes().to_vec();
+        plain.push(1);
+        let keys = server.keys_mut().unwrap();
+        let mut wire = encrypt(&plain, &mut keys.s2c_header, &mut keys.s2c_data).unwrap();
+        wire.extend_from_slice(b"!!!!!!");
+        let (packets, error) = proxy.server_packets_batch(&wire).unwrap();
+        assert_eq!(packets.iter().map(Packet::header).collect::<Vec<_>>(), [80]);
+        assert!(error.is_some());
+    }
+
+    #[test]
+    fn plaintext_batches_retain_valid_packets_before_malformed_tail() {
+        let mut proxy = ShockwaveTransport::new().unwrap();
+        let outgoing = Packet::new_with_format(PacketFormat::WedgieOutgoing, 77).unwrap();
+        let mut wire = encode_b64(outgoing.bytes().len() as u32, 3).unwrap();
+        wire.extend_from_slice(outgoing.bytes());
+        wire.extend_from_slice(&[0, 0, 0]);
+        let (packets, error) = proxy.client_packets_batch(&wire).unwrap();
+        assert_eq!(packets.iter().map(Packet::header).collect::<Vec<_>>(), [77]);
+        assert!(error.is_some());
+        let mut proxy = ShockwaveTransport::new().unwrap();
+        let incoming = Packet::new_with_format(PacketFormat::WedgieIncoming, 78).unwrap();
+        let mut wire = incoming.bytes().to_vec();
+        wire.extend_from_slice(&[1, 1]);
+        let (packets, error) = proxy.server_packets_batch(&wire).unwrap();
+        assert_eq!(packets.iter().map(Packet::header).collect::<Vec<_>>(), [78]);
+        assert!(error.is_some());
     }
 }

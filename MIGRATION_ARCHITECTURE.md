@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Origins batch decoding now retains valid packets before a later error, including simulated encrypted chunks; legacy packet APIs still return errors. The relay flushes the valid prefix before reporting malformed data. Real client and Java malformed-input behavior remain unverified.
+
 Automatic Flash batch decoding returns already-decoded packets alongside a later parse error; the legacy feed API still returns an error. The relay forwards the valid prefix before closing. Origins batch failure behavior remains to be checked.
 
 Plain TCP batch decoding returns complete frames alongside a later decode error, forwards and drains them before reporting that error. Automatic Flash and Origins have separate decoders whose malformed-tail behavior remains unverified.

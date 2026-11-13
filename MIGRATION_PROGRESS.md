@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- On 2026-11-13, Origins decoding retained complete packets before malformed trailing chunks, preserving existing public methods error behavior. Fixtures cover plaintext in both relay directions and simulated encrypted streams after the Bobba handshake. Windows desktop/web library tests (114 passed, seven ignored), 19 relay, five Flash tests (one ignored in the normal run), both Clippy configurations and desktop/web debug build pass. The user will conduct real-client tests themselves; live compatibility and Java malformed-input equivalence remain unverified. Next prioritize the reported Flash connection problem via source comparison and automated tests.
+
 - On 2026-11-13, automatic Flash decoding retained complete packets before a malformed later frame; the old feed API keeps its error contract and relay forwards the valid prefix before reporting the error. Plaintext batch and bidirectional loopback fixtures pass. The pinned Java Flash identification oracle also passes on Windows. Flash tests (five passed, one ignored in the ordinary run, then the ignored oracle passed), 18 relay tests, library tests (90 passed, six ignored), both Clippy configurations and desktop/web debug build pass. Encrypted live Flash and malformed-input Java parity remain unverified.
 
 - On 2026-11-13, plain TCP relay decoding retained and forwarded valid complete frames before reporting a later invalid length in the same input batch. A deterministic batch test and bidirectional loopback fixture pass; Windows library tests (90 passed, six ignored), 17 relay tests, both Clippy configurations and desktop/web debug build pass. Java FlashBuffer source was inspected but malformed-input equivalence is not established. Automatic Flash and Origins decoders still need the same valid-prefix audit; real clients remain unverified.
@@ -494,4 +496,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Audit Origins decoding for complete packets followed by malformed chunks in one read, including encrypted and unencrypted directions; preserve valid prefixes where appropriate. Then reproduce TCP lifecycle-event loss under saturation and design bounded ordered recovery. Verify COM decryption, real extensions and disconnect cleanup when a dedicated session is available, preserving FR/QX.
+Prioritize the reported Flash connection failure: compare attachment, handshake and RC4 key discovery against pinned beta-29 Java and construct isolated automated regression fixtures. Then reproduce TCP lifecycle-event loss under saturation and design bounded ordered recovery. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.

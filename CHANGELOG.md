@@ -1,5 +1,7 @@
 # Changelog
 
+- Preserve Origins packets preceding malformed chunks in plain and simulated encrypted batches.
+
 - Preserve automatic Flash packets preceding an invalid frame in the same input batch.
 
 - Forward complete plain TCP frames before reporting a malformed following frame in the same input batch.
