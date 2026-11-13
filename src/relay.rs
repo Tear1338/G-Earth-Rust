@@ -2718,4 +2718,50 @@ mod tests {
         assert_eq!(actual, expected);
         relay.stop();
     }
+    #[test]
+    fn accepted_scheduled_enqueue_is_not_a_delivery_acknowledgement() {
+        use crate::scheduler::Scheduler;
+        use std::time::SystemTime;
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let session = Arc::new(Session {
+            injections: sender,
+            closed: Arc::new(AtomicBool::new(false)),
+            flash_automatic: false,
+            schedule_metadata: Mutex::new(None),
+        });
+        let mut relay = Relay {
+            stop: Arc::new(AtomicBool::new(false)),
+            active: Arc::new(Mutex::new(Some(session))),
+            worker: None,
+            rules: Arc::new(Mutex::new(Rules::default())),
+            address: "127.0.0.1:0".parse().unwrap(),
+        };
+        let now = Instant::now();
+        let mut scheduler = Scheduler::default();
+        scheduler
+            .add(
+                Packet::new(777),
+                Direction::ToServer,
+                Duration::from_secs(1),
+                Some(1),
+                now,
+            )
+            .unwrap();
+        scheduler
+            .dispatch_with_wall_clock(now, SystemTime::now(), |direction, packet| {
+                relay.inject(direction, packet.clone())
+            })
+            .unwrap();
+        assert!(
+            scheduler.jobs.is_empty(),
+            "accepted enqueue consumes the occurrence"
+        );
+        // No worker sends the packet; disconnect discards the accepted command.
+        relay.stop();
+        drop(receiver);
+        assert!(
+            scheduler.jobs.is_empty(),
+            "disconnect cannot restore an already accepted occurrence"
+        );
+    }
 }

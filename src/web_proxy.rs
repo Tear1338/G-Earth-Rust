@@ -1020,6 +1020,71 @@ mod unity_http_tests {
 mod injection_queue_tests {
     use super::*;
     #[test]
+    fn full_outgoing_queue_does_not_block_incoming_schedule() {
+        use crate::scheduler::Scheduler;
+        use std::time::{Instant, SystemTime};
+        let peer = Peer::new(
+            PeerKey {
+                client: "127.0.0.1:1234".parse().unwrap(),
+                uri: "ws://fixture".into(),
+            },
+            Modifier::new(&crate::nitro::HotelKind::Plain).unwrap(),
+        );
+        peer.active.store(true, Ordering::Release);
+        for _ in 0..128 {
+            peer.enqueue(Direction::ToServer, Packet::new(1)).unwrap();
+        }
+        let mut incoming = peer.receivers.lock().unwrap()[side(Direction::ToClient)]
+            .take()
+            .unwrap();
+        let mut outgoing = peer.receivers.lock().unwrap()[side(Direction::ToServer)]
+            .take()
+            .unwrap();
+        let now = Instant::now();
+        let wall = SystemTime::now();
+        let mut scheduler = Scheduler::default();
+        scheduler
+            .add(
+                Packet::new(777),
+                Direction::ToServer,
+                Duration::from_secs(1),
+                Some(1),
+                now,
+            )
+            .unwrap();
+        scheduler
+            .add(
+                Packet::new(778),
+                Direction::ToClient,
+                Duration::from_secs(1),
+                Some(1),
+                now,
+            )
+            .unwrap();
+        let error = scheduler
+            .dispatch_with_wall_clock(now, wall, |direction, packet| {
+                peer.enqueue(direction, packet.clone())
+            })
+            .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::WouldBlock);
+        assert_eq!(incoming.try_recv().unwrap().header(), 778);
+        assert_eq!(scheduler.jobs.len(), 1);
+        assert_eq!(scheduler.jobs[0].packet.header(), 777);
+        let first = outgoing.try_recv().unwrap();
+        peer.queued.fetch_sub(first.bytes().len(), Ordering::AcqRel);
+        scheduler
+            .dispatch_with_wall_clock(now, wall, |direction, packet| {
+                peer.enqueue(direction, packet.clone())
+            })
+            .unwrap();
+        assert!(scheduler.jobs.is_empty());
+        for _ in 0..127 {
+            outgoing.try_recv().unwrap();
+        }
+        assert_eq!(outgoing.try_recv().unwrap().header(), 777);
+    }
+
+    #[test]
     fn full_and_closed_queues_return_the_original_packet_and_restore_budget() {
         let peer = Peer::new(
             PeerKey {

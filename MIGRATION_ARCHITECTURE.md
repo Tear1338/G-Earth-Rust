@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+A scheduler batch reports the first enqueue error after attempting other jobs; the failed occurrence remains pending. Queue acceptance consumes an occurrence but does not acknowledge network delivery. Java Scheduler ignores its send boolean, so rejected-enqueue retry is a documented Rust difference.
+
 Beta-29 marks Origins connected before socket readers and Flash connected after outgoing datastream confirmation; neither explicitly awaits crypto negotiation. Local pre-handshake Origins/Flash injection fixtures exercise the Rust behavior but do not establish live protocol correctness. Java Scheduler ignores send return values, while Rust queues injections asynchronously.
 
 All desktop scheduler paths now use catalog snapshots tied to their active transport session and reject stale session/catalog enqueue. Origins publishes its catalog after metadata lookup; manual TCP retains its configured catalog. TCP catalog readiness does not yet establish crypto-handshake readiness or successful delivery.

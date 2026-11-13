@@ -1177,18 +1177,17 @@ fn scheduler_keeps_unsent_jobs_when_injection_queue_rejects_a_packet() {
         Ok(())
     });
     assert_eq!(result, Err("queue full"));
-    assert_eq!(accepted, [1]);
-    assert_eq!(scheduler.jobs.len(), 2);
+    assert_eq!(accepted, [1, 3]);
+    assert_eq!(scheduler.jobs.len(), 1);
     assert_eq!(scheduler.jobs[0].packet.header(), 2);
     assert_eq!(scheduler.jobs[0].remaining, Some(2));
-    assert_eq!(scheduler.jobs[1].packet.header(), 3);
     scheduler
         .dispatch_with_wall_clock(now, wall, |_, packet| {
             accepted.push(packet.header());
             Ok::<(), &str>(())
         })
         .unwrap();
-    assert_eq!(accepted, [1, 2, 3]);
+    assert_eq!(accepted, [1, 3, 2]);
     assert_eq!(scheduler.jobs.len(), 1);
     assert_eq!(scheduler.jobs[0].remaining, Some(1));
     assert!(scheduler.tick(now).is_empty());

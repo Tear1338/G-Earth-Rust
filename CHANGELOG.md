@@ -1,5 +1,7 @@
 # Changelog
 
+- Continue independent scheduled sends when another queue is full, retaining the rejected occurrence and reporting the first error.
+
 - Add an Origins pre-handshake injection fixture and document Java connection timing.
 
 - Bind Origins and manual TCP scheduled sends to initialized session metadata and reject stale snapshots.

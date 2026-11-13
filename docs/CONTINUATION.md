@@ -1,5 +1,7 @@
 # Continuation state
 
+Scheduler batches now continue after a job enqueue error while preserving the failed occurrence and reporting the first error. Nitro bounded-queue and synthetic dropped-queue fixtures pass; Windows desktop/web library (109 passed, seven ignored), core/relay/desktop tests, both Clippy configurations and debug build pass. Java ignores boolean send results, so Rust retry semantics differ. Next examine real transport disconnect races and duplicate risk, then continue other parity work; real clients remain unverified.
+
 Pinned Java source confirms Origins CONNECTED before socket reading and Flash CONNECTED on outgoing datastream confirmation, with no explicit crypto-completion gate. Local pre-handshake Origins and Flash fixtures pass; Windows library (85 passed, six ignored), relay tests, both Clippy configurations and desktop/web debug build pass. Next compare Java direct writes/WebSocket sends with Rust asynchronous queues on disconnect and failures; do not conflate enqueue with delivery. Live-client behavior remains unverified.
 
 All scheduler transports now use session-bound catalog snapshots. Origins lookup and manual TCP reconnect fixtures pass; Windows desktop/web library (106 passed, seven ignored), relay/desktop tests, workspace/desktop/desktop-web Clippy and debug build pass. Next compare beta-29 HState.CONNECTED transitions against Flash/Origins crypto readiness and test pending schedules during handshake; enqueue is not delivery. Real clients and visual UI remain unverified.

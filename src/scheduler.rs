@@ -435,7 +435,7 @@ impl Scheduler {
     }
 
     /// Commit each scheduled send only after the caller accepts it for delivery.
-    /// A failed enqueue leaves that job and later jobs due for a subsequent attempt.
+    /// A failed enqueue leaves that job due while allowing other jobs to run.
     pub fn dispatch_with_wall_clock<E>(
         &mut self,
         now: Instant,
@@ -469,7 +469,7 @@ impl Scheduler {
         self.dispatch_due(now, true, |job| send(job).map(Some))
     }
     /// `None` leaves the occurrence pending, retries after one second, and lets
-    /// other jobs run. Queue errors still stop the batch without consuming it.
+    /// other jobs run. Queue errors leave that job pending and are reported after the batch.
     pub fn dispatch_jobs_with_retry<E>(
         &mut self,
         now: Instant,
@@ -499,7 +499,7 @@ impl Scheduler {
         mut send: impl FnMut(&Job) -> std::result::Result<Option<bool>, E>,
     ) -> std::result::Result<(), E> {
         let mut failure = None;
-        'jobs: for job in &mut self.jobs {
+        for job in &mut self.jobs {
             if job.paused
                 || !job.has_reachable_phase()
                 || job.remaining == Some(0)
@@ -537,8 +537,10 @@ impl Scheduler {
                         break;
                     }
                     Err(error) => {
-                        failure = Some(error);
-                        break 'jobs;
+                        if failure.is_none() {
+                            failure = Some(error);
+                        }
+                        break;
                     }
                 };
                 if accepted {
