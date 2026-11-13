@@ -705,7 +705,6 @@ fn write_log_capture<'a>(
         // Java's byte views export the same text shown by its packet logger.
         // The Rust-only expression view keeps its existing enriched layout.
         if options.representation != PacketRepresentation::Expression
-            && !row.skipped
             && !(options.representation == PacketRepresentation::NoBytes
                 && !options.export_hide_empty_header
                 && !options.extra_legacy
@@ -763,12 +762,28 @@ fn write_log_capture<'a>(
                     }
                 }
             }
-            if let Some(structure) = rendered.structure {
-                let text = structure
-                    .strip_prefix("Structure: ")
-                    .or_else(|| structure.strip_prefix("Predicted: "))
-                    .unwrap_or(&structure);
-                writeln!(output, "{text}")?;
+            // The on-screen cache is bounded for responsiveness; exports must not
+            // silently truncate an otherwise valid Java-sized structure.
+            if options.structure
+                && (packet.format() != PacketFormat::EvaWire
+                    || logger_display::allow_eva_structure(
+                        packet.bytes().len(),
+                        options.java_structure_limit,
+                    ))
+            {
+                let (text, _) = gearth_rust::structure_prediction::expression_with_metadata(
+                    packet,
+                    row.message.direction,
+                    info,
+                    row.unity,
+                )
+                .unwrap_or_default();
+                if !text.is_empty()
+                    && (!options.java_structure_clean
+                        || logger_display::java_structure_is_clean(&text))
+                {
+                    writeln!(output, "{text}")?;
+                }
             }
             if split {
                 writeln!(output, "--------------------")?;
@@ -4785,6 +4800,11 @@ mod logger_prediction_tests {
         assert!(String::from_utf8(output)
             .unwrap()
             .contains("<paquet ignoré>"));
+        let mut output = Vec::new();
+        write_log_capture(&mut output, [&row], &info, options, true).unwrap();
+        let skipped = String::from_utf8(output).unwrap();
+        assert!(skipped.ends_with("<paquet ignoré>--------------------\n"));
+        assert!(!skipped.contains("Incoming[42] ->"));
         options.representation = PacketRepresentation::Expression;
         options.skip_big = false;
         let mut output = Vec::new();
@@ -4888,6 +4908,35 @@ mod logger_prediction_tests {
             "Outgoing[42] -> ".len() + row.message.packet.bytes().len() * 2
         );
         assert!(!text.contains('…'));
+        // A display-limited row still retains the complete packet for export.
+        row.skipped = true;
+        options.structure = true;
+        options.java_structure_limit = true;
+        let structured_info = PacketInfoManager::new(
+            "test",
+            vec![PacketInfo {
+                header: 42,
+                direction: Direction::ToServer,
+                name: Some("LongText".into()),
+                hash: None,
+                structure: Some("s".into()),
+                source: "test".into(),
+            }],
+        );
+        let (expected_structure, _) = gearth_rust::structure_prediction::expression_with_metadata(
+            &row.message.packet,
+            Direction::ToServer,
+            &structured_info,
+            false,
+        )
+        .unwrap();
+        assert!(expected_structure.len() > LOG_PREDICTION_LIMIT);
+        let mut output = Vec::new();
+        write_log_capture(&mut output, [&row], &structured_info, options, true).unwrap();
+        let text = String::from_utf8(output).unwrap();
+        assert!(text.contains(&expected_structure));
+        assert!(!text.contains("packet too large to display"));
+        row.skipped = false;
         row.message.packet = Packet::new(42);
         row.message.direction = Direction::ToClient;
         row.message.blocked = true;

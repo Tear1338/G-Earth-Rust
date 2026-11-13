@@ -1,5 +1,7 @@
 # Continuation state
 
+Byte-view export now recomputes full eligible structures instead of reusing bounded display text and can export retained display-limited packets. Desktop and logger tests, both Clippy configurations and desktop/web debug build pass on Windows; CI and live UI remain unverified. Next compare metadata name/hash export limits and ordering against beta-29. Do not resume stopped Computer Use without the user.
+
 Byte-view packet exports now follow Java direction/header formatting and complete-byte output. Windows desktop tests, logger tests, Java hexdump oracle, both Clippy configurations and desktop/web debug build pass. Next compare structure prediction and skipped/oversized packet export behavior with beta-29. Real clients and logger UI remain unverified. Do not resume stopped Computer Use without the user.
 
 Released G-Presets retried a synthetic WIRED trigger save three times and reported incomplete without success when acknowledgement was absent. Both extension tests, both Clippy configurations and desktop/web debug build pass on Windows; Linux CI and real hotel behavior remain unverified. Next compare packet logger export formats against beta-29 Java. Do not resume stopped Computer Use without the user.

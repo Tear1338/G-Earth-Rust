@@ -1,5 +1,7 @@
 # Changelog
 
+- Preserve complete structures and retained packet bytes in byte-view log exports.
+
 - Align byte-view log exports with Java direction/header formatting and avoid truncating packet bytes.
 
 - Verify G-Presets fails a simulated WIRED import after three unconfirmed save attempts.

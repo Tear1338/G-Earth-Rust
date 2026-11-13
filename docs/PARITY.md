@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Byte-view export now preserves eligible full structures and retained display-limited packet bytes; a skipped-packet fixture checks Java separator behavior. Prediction parity and live logger behavior remain open.
+
 Byte-view log exports now follow selected beta-29 Java formatting and include all packet bytes; incoming/outgoing examples and Java hexdump oracle pass locally. Expression mode, structure rendering, oversized packets and live UI are not fully proven equivalent.
 
 Released G-Presets retried a synthetic WIRED trigger save three times and reported incomplete when the loopback server omitted acknowledgement. Linux CI and real hotel behavior remain unverified.

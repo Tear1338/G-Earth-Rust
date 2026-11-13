@@ -1,5 +1,7 @@
 # Migration tasks
 
+Byte-view log export now writes full eligible structures and retained display-limited packets; Java skip formatting has a fixture. Next compare logger metadata name/hash export limits and ordering with beta-29; real logger UI remains open.
+
 Byte-view logger exports now use Java-style direction/header formatting and complete byte output. Next compare Java and Rust structure prediction and skipped/oversized packet export behavior; live logger validation remains open.
 
 A synthetic WIRED import without save acknowledgement retries three times and reports incomplete. Next compare packet logger export formats with beta-29 Java; live WIRED gameplay remains open.
