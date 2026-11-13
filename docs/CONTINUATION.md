@@ -1,5 +1,7 @@
 # Continuation state
 
+Aligned scheduler jobs replay elapsed slots in bounded retryable batches; eight cases match a Java fixture mirroring the beta-29 loop. Windows core/schedule tests, all three schedule Java fixtures, both Clippy configurations and desktop/web debug build pass. Next compare forward/backward wall-clock jumps against Java; live-client timing remains unverified. Do not resume stopped Computer Use without the user.
+
 Offset-equals-interval schedules now remain importable/exportable without dispatch, matching the Java modulo condition. Windows schedule/core tests, both Clippy configurations and desktop/web debug build pass. Next build deterministic Java catch-up comparison fixtures; real-client scheduling remains unverified. Do not resume stopped Computer Use without the user.
 
 Aligned schedule resume now emits at the exact boundary; scheduler/core tests, both Clippy configurations and desktop/web debug build pass on Windows. Java replays missed slots after disconnection; Rust deliberately skips them, so catch-up parity remains open. Next compare the accepted offset-equals-interval case against Java runtime behavior. Do not resume stopped Computer Use without the user.

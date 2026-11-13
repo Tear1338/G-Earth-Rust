@@ -203,9 +203,10 @@ jobs:
             mkdir -p "/tmp/scheduler-src/$(dirname "$source")"
             curl --fail --location --retry 3 "https://raw.githubusercontent.com/G-Realm/G-Earth/242155c291b1109d6c9a02370f6a2af1ead41ea8/G-Earth/src/main/java/$source" -o "/tmp/scheduler-src/$source"
           done
-          javac -cp "$api_jar:/tmp/javafx-base.jar" -d /tmp/scheduler-classes $(find /tmp/scheduler-src -name '*.java') tests/java_schedule/gearth/app/ui/subforms/scheduler/SchedulerController.java tests/java_schedule/JavaScheduleOracle.java tests/java_schedule/JavaSchedulePacketOracle.java
+          javac -cp "$api_jar:/tmp/javafx-base.jar" -d /tmp/scheduler-classes $(find /tmp/scheduler-src -name '*.java') tests/java_schedule/gearth/app/ui/subforms/scheduler/SchedulerController.java tests/java_schedule/JavaScheduleOracle.java tests/java_schedule/JavaSchedulePacketOracle.java tests/java_schedule/JavaSchedulerCatchupOracle.java
           java -cp "$api_jar:/tmp/javafx-base.jar:/tmp/scheduler-classes" JavaScheduleOracle > /tmp/schedule-oracle.txt
           export GEARTH_SCHEDULE_PACKET_CLASSPATH="$api_jar:/tmp/scheduler-classes"
+          export GEARTH_SCHEDULER_CATCHUP_CLASSPATH="/tmp/scheduler-classes"
           cargo test --locked --test schedule_file -- --ignored
         env:
           GEARTH_SCHEDULE_ORACLE: /tmp/schedule-oracle.txt

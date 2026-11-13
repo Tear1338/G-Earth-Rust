@@ -1,5 +1,7 @@
 # Changelog
 
+- Replay missed aligned scheduler slots in bounded batches without losing queue-rejected sends.
+
 - Prevent scheduler sends for Java-compatible intervals whose offset equals their period.
 
 - Resume aligned schedules at an exact due boundary without duplicate sends.

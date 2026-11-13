@@ -3,6 +3,8 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// Largest positive millisecond interval accepted by Java's signed integer parser.
 pub const MAX_INTERVAL_MS: u64 = i32::MAX as u64;
+/// Limit work per job per dispatch while retaining all unprocessed deadlines.
+pub const MAX_CATCHUP_PER_DISPATCH: usize = 128;
 
 /// The scheduler editor keeps its draft separate from the injection editor.
 pub struct ScheduleDraft {
@@ -347,7 +349,7 @@ impl Scheduler {
         self.correct_wall_clock(now, wall);
         self.dispatch_due(now, send)
     }
-    /// At most one emission per job per tick; missed deadlines never create bursts.
+    /// Replay aligned deadlines in bounded batches; relative jobs emit at most once.
     pub fn tick(&mut self, now: Instant) -> Vec<(Direction, Packet)> {
         let mut due = Vec::new();
         let result = self.dispatch_due(now, |direction, packet| {
@@ -366,17 +368,19 @@ impl Scheduler {
         mut send: impl FnMut(Direction, &Packet) -> std::result::Result<bool, E>,
     ) -> std::result::Result<(), E> {
         let mut failure = None;
-        for job in &mut self.jobs {
-            if !job.paused
+        'jobs: for job in &mut self.jobs {
+            let mut processed = 0;
+            while !job.paused
                 && job.has_reachable_phase()
                 && job.next <= now
                 && job.remaining != Some(0)
+                && processed < MAX_CATCHUP_PER_DISPATCH
             {
                 let accepted = match send(job.direction, &job.packet) {
                     Ok(accepted) => accepted,
                     Err(error) => {
                         failure = Some(error);
-                        break;
+                        break 'jobs;
                     }
                 };
                 if accepted {
@@ -384,8 +388,12 @@ impl Scheduler {
                         *count -= 1;
                     }
                 }
+                processed += 1;
+                // Java's aligned scheduler visits every elapsed millisecond.
+                // Relative schedules are a Rust extension and retain their
+                // previous no-replay behavior.
                 let next = if job.alignment_offset_ms.is_some() {
-                    next_aligned(job.next, job.interval, now)
+                    job.next.checked_add(job.interval)
                 } else {
                     now.checked_add(job.interval)
                 };

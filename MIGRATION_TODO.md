@@ -1,5 +1,7 @@
 # Migration tasks
 
+Aligned jobs replay missed slots in bounded, retryable batches; eight cases match a Java fixture mirroring the beta-29 loop. Next compare forward/backward wall-clock jumps against Java and implement verified behavior. Live scheduler validation remains open.
+
 Offset equal to interval remains importable and exportable but no longer sends, matching the Java modulo condition. Next build deterministic Java catch-up comparison fixtures and assess replay behavior; live client scheduling remains open.
 
 Aligned schedule resume now fires at an exact boundary. Java replays missed slots after disconnection while Rust skips them; this material divergence remains open. Next compare the accepted offset-equals-interval case against Java runtime behavior.

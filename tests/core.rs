@@ -355,6 +355,49 @@ fn rules_direction_and_replacement() {
     assert!(m.blocked);
 }
 #[test]
+fn aligned_scheduler_replays_missed_slots_in_bounded_retryable_batches() {
+    use gearth_rust::scheduler::MAX_CATCHUP_PER_DISPATCH;
+    let now = Instant::now();
+    let wall = std::time::UNIX_EPOCH + Duration::from_millis(10_000);
+    let mut scheduler = Scheduler::default();
+    scheduler
+        .add_aligned(Packet::new(1), Direction::ToServer, 1, 0, None, (now, wall))
+        .unwrap();
+    let late = now + Duration::from_millis(300);
+    let late_wall = wall + Duration::from_millis(300);
+    let mut accepted = 0;
+    let result = scheduler.dispatch_with_wall_clock(late, late_wall, |_, _| {
+        if accepted == 2 {
+            return Err("full");
+        }
+        accepted += 1;
+        Ok(())
+    });
+    assert_eq!(result, Err("full"));
+    assert_eq!(accepted, 2);
+    assert_eq!(scheduler.jobs[0].next, now + Duration::from_millis(2));
+    assert_eq!(scheduler.tick(late).len(), MAX_CATCHUP_PER_DISPATCH);
+    assert_eq!(scheduler.tick(late).len(), MAX_CATCHUP_PER_DISPATCH);
+    assert_eq!(scheduler.tick(late).len(), 43);
+    assert!(scheduler.tick(late).is_empty());
+    assert_eq!(scheduler.jobs[0].next, now + Duration::from_millis(301));
+
+    let mut finite = Scheduler::default();
+    finite
+        .add_aligned(
+            Packet::new(2),
+            Direction::ToClient,
+            100,
+            0,
+            Some(3),
+            (now, wall),
+        )
+        .unwrap();
+    assert_eq!(finite.tick(now + Duration::from_secs(2)).len(), 3);
+    assert!(finite.jobs.is_empty());
+}
+
+#[test]
 fn scheduler_no_catchup_bursts_and_repeat() {
     let now = Instant::now();
     let mut s = Scheduler::default();

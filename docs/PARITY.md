@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Aligned scheduler catch-up matches eight deterministic cases from a Java fixture mirroring the beta-29 time-window loop. Per-dispatch batching, clock jumps and real-client timing remain distinct or unverified.
+
 A schedule offset equal to its interval is accepted but never dispatched, matching the beta-29 Java modulo condition. Java missed-slot replay and live-client timing remain open.
 
 Aligned schedule resume now emits at an exact boundary. Java replays elapsed scheduler slots after disconnection; Rust currently skips missed slots and does not claim parity for catch-up or real client scheduling.

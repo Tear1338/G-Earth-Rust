@@ -279,3 +279,47 @@ fn schedule_file_matches_original_java_serializer() {
     assert_eq!(schedules.len(), 2);
     assert_eq!(schedule_file::format(&schedules).unwrap(), input);
 }
+
+#[test]
+#[ignore = "requires JavaSchedulerCatchupOracle"]
+fn aligned_catchup_matches_java_scheduler_time_window() {
+    let cp = std::env::var("GEARTH_SCHEDULER_CATCHUP_CLASSPATH").unwrap();
+    let output = std::process::Command::new("java")
+        .args(["-cp", &cp, "JavaSchedulerCatchupOracle"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    for line in String::from_utf8(output.stdout).unwrap().lines() {
+        let (input, expected) = line.split_once('=').unwrap();
+        let values: Vec<u64> = input.split(',').map(|part| part.parse().unwrap()).collect();
+        let (end, changed, interval, offset) = (values[0], values[1], values[2], values[3]);
+        let start = end - changed + 1;
+        let now = Instant::now();
+        let mut scheduler = Scheduler::default();
+        scheduler
+            .add_aligned(
+                Packet::new(42),
+                Direction::ToServer,
+                interval,
+                offset,
+                None,
+                (now, UNIX_EPOCH + Duration::from_millis(start)),
+            )
+            .unwrap();
+        let end_at = now + Duration::from_millis(changed - 1);
+        let mut count = 0;
+        loop {
+            let batch = scheduler.tick(end_at).len();
+            count += batch;
+            if batch == 0 {
+                break;
+            }
+            assert!(count <= 10000, "unexpected unbounded catch-up");
+        }
+        assert_eq!(count, expected.parse::<usize>().unwrap(), "{input}");
+    }
+}
