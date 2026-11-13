@@ -12,7 +12,7 @@ import java.util.stream.Collectors;
 public class GPresetsObserver extends GPresetsLauncher {
     private static final class FixtureFurniData extends furnidata.FurniDataTools {
         @Override public boolean isReady() { return true; }
-        @Override public Integer getFloorTypeId(String name) { return "fixture_floor".equals(name) ? 1500 : "tile_stackmagic1".equals(name) ? 1550 : -1; }
+        @Override public Integer getFloorTypeId(String name) { return "fixture_floor".equals(name) ? 1500 : "tile_stackmagic1".equals(name) ? 1550 : "wf_trg_fixture".equals(name) ? 1600 : -1; }
         @Override public Integer getWallTypeId(String name) { return -1; }
         @Override public String getFloorItemName(int id) { return id == 1550 ? "tile_stackmagic1" : id == 1600 ? "wf_trg_fixture" : "fixture_floor"; }
         @Override public String getWallItemName(int id) { return "fixture_wall"; }
@@ -69,11 +69,18 @@ public class GPresetsObserver extends GPresetsLauncher {
                                 item.getLocation().getX() + ":" + item.getLocation().getY() + ":" + item.getRotation())
                             .sorted().collect(Collectors.joining(","));
                         // Reset simulated prerequisites between independent relay sessions.
-                        presets.getCatalog().clear();
-                        presets.getPermissions().clear();
+                        if (!"fixture_wired".equals(presetName)) {
+                            presets.getCatalog().clear();
+                            presets.getPermissions().clear();
+                        }
                         presets.getImporter().setPresetConfig(preset);
                         Files.writeString(state.resolveSibling("import-status.txt"),
                             presets.getImporter().isReady() + ":" + presets.getImporter().getState());
+                        var triggers = preset.getPresetWireds().getTriggers();
+                        String wired = triggers.stream().map(trigger -> trigger.getWiredId() + ":" +
+                            trigger.getOptions() + ":" + trigger.getStringConfig() + ":" + trigger.getItems())
+                            .collect(Collectors.joining(","));
+                        Files.writeString(state.resolveSibling("loaded-wired.txt"), wired);
                         Files.writeString(state.resolveSibling("loaded-preset.txt"), loaded);
                     }
                     if (Files.deleteIfExists(state.resolveSibling("request-catalog.trigger"))) {
@@ -103,6 +110,9 @@ public class GPresetsObserver extends GPresetsLauncher {
                         synchronized (lockField.get(importer)) {
                             Object rawMap = idMap.get(importer);
                             mapped = rawMap instanceof java.util.Map<?, ?> ? ((java.util.Map<?, ?>) rawMap).get(1) : null;
+                            java.lang.reflect.Field expected = importer.getClass().getDeclaredField("expectFurniDrops");
+                            expected.setAccessible(true);
+                            Files.writeString(state.resolveSibling("placement-diagnostics.txt"), rawMap + ":" + expected.get(importer));
                         }
                         Files.writeString(state.resolveSibling("placement-ack.txt"), mapped == null ? "" : mapped.toString());
                     }

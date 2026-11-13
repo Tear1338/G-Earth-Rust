@@ -287,6 +287,7 @@ fn released_gpresets_authenticates_to_the_rust_host() {
                 (105, "WiredPermissions"),
                 (106, "FurnitureLabelsAndRegions"),
                 (108, "WiredRoomSettings"),
+                (109, "WiredSaveSuccess"),
             ]
             .into_iter()
             .map(|(header, name)| PacketInfo {
@@ -304,6 +305,7 @@ fn released_gpresets_authenticates_to_the_rust_host() {
                     (103, "SetCustomStackingHeight"),
                     (104, "UpdateTrigger"),
                     (107, "WiredGetRoomSettings"),
+                    (110, "WiredSetRoomSettings"),
                 ]
                 .into_iter()
                 .map(|(header, name)| PacketInfo {
@@ -1471,6 +1473,163 @@ fn released_gpresets_authenticates_to_the_rust_host() {
                     .any(|item| item["className"] == "fixture_floor" && item["id"] == selected[0]),
                 "selected floor item was not remapped: {json}"
             );
+            let expected_wired = format!("{}:[42]:fixture trigger:[{}]", wired_id, selected[0]);
+            let _ = fs::remove_file(directory.0.join("loaded-wired.txt"));
+            let pending = directory.0.join("load-preset.pending");
+            fs::write(&pending, "fixture_wired").unwrap();
+            fs::rename(&pending, directory.0.join("load-preset.trigger")).unwrap();
+            wait_room("loaded-wired.txt", &expected_wired);
+            wait_room("readiness.txt", "COLLECTED:true:true");
+            let mut wired_inventory = item.clone();
+            wired_inventory.placement_id = 98901;
+            wired_inventory.id = 98911;
+            wired_inventory.type_id = 1600;
+            let mut stack_inventory = item.clone();
+            stack_inventory.placement_id = 98902;
+            stack_inventory.id = 98912;
+            stack_inventory.type_id = 1550;
+            let mut inventory_update = Packet::new(81);
+            inventory_update.put_i32(2).unwrap();
+            wired_inventory.append(&mut inventory_update).unwrap();
+            stack_inventory.append(&mut inventory_update).unwrap();
+            write_frame(&mut server, &inventory_update).unwrap();
+            let deadline = Instant::now() + Duration::from_secs(10);
+            loop {
+                let state = fs::read_to_string(&state_path).unwrap_or_default();
+                if state.contains("98901") && state.contains("98902") {
+                    break;
+                }
+                assert!(Instant::now() < deadline, "WIRED inventory unavailable");
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            // Begin importing the unmodified exported preset into the fake room.
+            let success_before = fs::read_to_string(directory.0.join("app.log"))
+                .unwrap_or_default()
+                .matches("[green] Import finished")
+                .count();
+            let mut import = Packet::new(92);
+            import.put_string(":ip 0,0").unwrap();
+            write_frame(&mut client, &import).unwrap();
+            wait_room("import-state-live.txt", "AWAITING_UNOCCUPIED_SPACE");
+            let mut staging = Packet::new(100);
+            staging.put_i32(0).unwrap().put_i32(0).unwrap();
+            write_frame(&mut client, &staging).unwrap();
+            let mut objects = std::collections::HashMap::new();
+            objects.insert(3701, stack.clone());
+            let mut placed_count = 0;
+            let mut placements = Vec::new();
+            let mut saved = false;
+            let deadline = Instant::now() + Duration::from_secs(30);
+            server
+                .set_read_timeout(Some(Duration::from_millis(500)))
+                .unwrap();
+            loop {
+                let log = fs::read_to_string(directory.0.join("app.log")).unwrap_or_default();
+                if log.matches("[green] Import finished").count() > success_before {
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "WIRED import did not finish; placements={placements:?}; mapping={}; log={}",
+                    fs::read_to_string(directory.0.join("placement-diagnostics.txt"))
+                        .unwrap_or_default(),
+                    log.replace(&token, "[token]")
+                );
+                match read_frame(&mut server) {
+                    Ok(mut packet) => match packet.header() {
+                        101 => {
+                            let place = packet.read_string().unwrap();
+                            let fields: Vec<_> = place.split_whitespace().collect();
+                            assert_eq!(fields.len(), 4);
+                            let inventory_id: i32 = -fields[0].parse::<i32>().unwrap();
+                            let mut obj = floor.clone();
+                            obj.id = 7700 + placed_count;
+                            obj.type_id = match inventory_id {
+                                98911 => 1600,
+                                98912 => 1550,
+                                _ => 1500,
+                            };
+                            obj.tile =
+                                HPoint::new(fields[1].parse().unwrap(), fields[2].parse().unwrap());
+                            placed_count += 1;
+                            placements.push((
+                                inventory_id,
+                                obj.id,
+                                obj.type_id,
+                                obj.tile.x,
+                                obj.tile.y,
+                            ));
+                            let mut add = Packet::new(86);
+                            obj.append(&mut add).unwrap();
+                            add.put_string("Fixture").unwrap();
+                            objects.insert(obj.id, obj);
+                            write_frame(&mut server, &add).unwrap();
+                        }
+                        102 => {
+                            let id = packet.read_i32().unwrap();
+                            let x = packet.read_i32().unwrap();
+                            let y = packet.read_i32().unwrap();
+                            let rotation = packet.read_i32().unwrap();
+                            let obj = objects.get_mut(&id).expect("unexpected WIRED import move");
+                            obj.tile = HPoint::new(x, y);
+                            obj.facing = [
+                                HDirection::North,
+                                HDirection::NorthEast,
+                                HDirection::East,
+                                HDirection::SouthEast,
+                                HDirection::South,
+                                HDirection::SouthWest,
+                                HDirection::West,
+                                HDirection::NorthWest,
+                            ][rotation as usize];
+                            let mut update = Packet::new(90);
+                            obj.append(&mut update).unwrap();
+                            write_frame(&mut server, &update).unwrap();
+                        }
+                        104 => {
+                            let id = packet.read_i32().unwrap();
+                            assert_eq!(objects.get(&id).unwrap().type_id, 1600);
+                            assert_eq!(packet.read_i32().unwrap(), 1);
+                            assert_eq!(packet.read_i32().unwrap(), 42);
+                            assert_eq!(packet.read_string().unwrap(), "fixture trigger");
+                            assert_eq!(packet.read_i32().unwrap(), 1);
+                            let selected_id = packet.read_i32().unwrap();
+                            assert_eq!(objects.get(&selected_id).unwrap().type_id, 1500);
+                            saved = true;
+                            write_frame(&mut server, &Packet::new(109)).unwrap();
+                        }
+                        107 => {
+                            let mut settings = Packet::new(108);
+                            settings
+                                .put_i32(0)
+                                .unwrap()
+                                .put_i32(0)
+                                .unwrap()
+                                .put_string("UTC")
+                                .unwrap();
+                            write_frame(&mut server, &settings).unwrap();
+                        }
+                        110 | 103 => {}
+                        other => panic!("unexpected WIRED import packet {other}"),
+                    },
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+                        ) => {}
+                    Err(error) => panic!("WIRED import socket: {error}"),
+                }
+            }
+            assert_eq!(placed_count, 4);
+            assert!(saved, "WIRED trigger save was not confirmed");
+            for id in objects.keys().filter(|&&id| id != 3701) {
+                let mut remove = Packet::new(87);
+                remove.put_string(&id.to_string()).unwrap();
+                write_frame(&mut server, &remove).unwrap();
+            }
+            server
+                .set_read_timeout(Some(Duration::from_secs(10)))
+                .unwrap();
             let mut remove = Packet::new(87);
             remove.put_string("6701").unwrap();
             write_frame(&mut server, &remove).unwrap();

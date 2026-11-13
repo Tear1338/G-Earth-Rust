@@ -1,5 +1,7 @@
 # Changelog
 
+- Exercise synthetic WIRED trigger preset reload and acknowledged import through G-Presets.
+
 - Exercise synthetic WIRED trigger export through the released G-Presets extension.
 
 - Verify G-Presets rejects an import with an unconfirmed final movement in loopback.

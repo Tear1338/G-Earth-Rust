@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- On 2026-11-13, released G-Presets reloaded and imported its own synthetic WIRED trigger preset over loopback: four placements and movement updates were acknowledged, and the remapped trigger save was confirmed by a simulated server. Both extension tests, both Clippy configurations and the desktop/web debug build pass on Windows; Linux CI for this change and real hotel gameplay remain unverified. Prior export commit 6e6199a passed GitHub Actions.
+
 - On 2026-11-13, released G-Presets exported a synthetic WIRED trigger over loopback after simulated permissions, label snapshot and room settings. The fixture verifies its option, text, trigger ID and selected furniture remapping. Both extension tests, both Clippy configurations and the desktop/web debug build pass on Windows; Linux CI and live WIRED behavior remain unverified.
 
 - On 2026-11-13, released G-Presets rejected a synthetic import when placement was acknowledged but final movement was not; no success was reported. Both isolated extension tests, both Clippy configurations and the desktop/web debug build pass on Windows; Linux CI and live hotel behavior remain unverified.
@@ -434,4 +436,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Do not resume stopped Computer Use without the user. Independently reload the exported synthetic WIRED trigger preset and exercise its import and configuration acknowledgements with the simulated server; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.
+Do not resume stopped Computer Use without the user. Independently repeat the synthetic WIRED trigger import while omitting its save acknowledgement and verify that it reports incomplete rather than success; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.

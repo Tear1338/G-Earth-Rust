@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Released G-Presets reloaded and imported a synthetic WIRED trigger preset over the Windows loopback relay, with simulated placement, movement and save acknowledgements. Linux CI and actual WIRED gameplay remain unverified.
+
 Released G-Presets exported a synthetic WIRED trigger with configuration and selected-furniture ID remapping through the Windows loopback relay. Linux CI, WIRED import and real hotel behavior remain unverified.
 
 Released G-Presets rejected an import with an unconfirmed final movement in a Windows synthetic loopback session. Linux CI, WIRED presets and real hotel imports remain unverified.

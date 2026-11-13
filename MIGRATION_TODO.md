@@ -1,5 +1,7 @@
 # Migration tasks
 
+A synthetic WIRED trigger preset now reloads and imports with a simulated save acknowledgement. Next omit the WIRED save acknowledgement and verify that the extension reports an incomplete import; real WIRED gameplay remains open.
+
 A synthetic WIRED trigger exports with its option, text and selected-furniture remapping. Next reload that preset and exercise its WIRED import using a simulated server; live WIRED behavior remains open.
 
 A synthetic import now fails when final movement is unconfirmed. Next inspect a controlled WIRED preset fixture and identify the first missing behavior; live client and extension validation remain open.
