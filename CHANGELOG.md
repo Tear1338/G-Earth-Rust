@@ -1,5 +1,7 @@
 # Changelog
 
+- Bind automatic Flash scheduled sends to identified session metadata and reject stale snapshots after reconnect or catalog refresh.
+
 - Test deferred scheduled sends across two simulated relay sessions and metadata revisions.
 
 - Allow offline active schedule loading with deferred names and independent retries.

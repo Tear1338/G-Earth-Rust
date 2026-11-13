@@ -146,7 +146,23 @@ pub struct RelayOptions {
 struct Session {
     injections: SyncSender<(Direction, Packet)>,
     closed: Arc<AtomicBool>,
+    flash_automatic: bool,
+    flash_metadata: Mutex<Option<(String, Arc<crate::packet_info::PacketInfoManager>)>>,
 }
+
+/// A snapshot bound to exactly one active automatic Flash session.
+pub struct FlashScheduleContext {
+    session: Arc<Session>,
+    pub version: String,
+    pub packets: Arc<crate::packet_info::PacketInfoManager>,
+}
+
+pub enum FlashScheduleState {
+    NotAutomatic,
+    Pending,
+    Ready(FlashScheduleContext),
+}
+
 pub struct Relay {
     stop: Arc<AtomicBool>,
     active: Arc<Mutex<Option<Arc<Session>>>>,
@@ -303,12 +319,14 @@ impl Relay {
                         let session = Arc::new(Session {
                             injections,
                             closed: closed.clone(),
+                            flash_automatic: session_options.flash_process.is_some(),
+                            flash_metadata: Mutex::new(None),
                         });
                         if let Ok(mut slot) = worker_active.lock() {
                             if worker_stop.load(Ordering::Acquire) {
                                 break;
                             }
-                            *slot = Some(session);
+                            *slot = Some(session.clone());
                         } else {
                             break;
                         }
@@ -436,6 +454,7 @@ impl Relay {
                             &mut index,
                             &session_options,
                             &mut extension_session,
+                            &session.flash_metadata,
                         );
                         if let (Some(host), Some(epoch)) = (&options.extensions, extension_session)
                         {
@@ -488,6 +507,100 @@ impl Relay {
                     .is_some_and(|s| !s.closed.load(Ordering::Acquire))
             })
             .unwrap_or(false)
+    }
+    /// Snapshot metadata only after this automatic Flash session has identified itself.
+    pub fn flash_schedule_state(&self) -> FlashScheduleState {
+        let Ok(active) = self.active.lock() else {
+            return FlashScheduleState::Pending;
+        };
+        let Some(session) = active
+            .as_ref()
+            .filter(|s| !s.closed.load(Ordering::Acquire))
+        else {
+            return FlashScheduleState::Pending;
+        };
+        if !session.flash_automatic {
+            return FlashScheduleState::NotAutomatic;
+        }
+        let Ok(metadata) = session.flash_metadata.lock() else {
+            return FlashScheduleState::Pending;
+        };
+        match metadata.as_ref() {
+            Some((version, packets)) => FlashScheduleState::Ready(FlashScheduleContext {
+                session: session.clone(),
+                version: version.clone(),
+                packets: packets.clone(),
+            }),
+            None => FlashScheduleState::Pending,
+        }
+    }
+    /// Reject a schedule resolved for a session that was replaced in the meantime.
+    pub fn inject_for_flash_session(
+        &self,
+        context: &FlashScheduleContext,
+        direction: Direction,
+        packet: Packet,
+    ) -> io::Result<()> {
+        let active = self
+            .active
+            .lock()
+            .map_err(|_| io::Error::other("session lock poisoned"))?;
+        let session = active
+            .as_ref()
+            .filter(|session| {
+                Arc::ptr_eq(session, &context.session) && !session.closed.load(Ordering::Acquire)
+            })
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotConnected, "Flash session changed"))?;
+        let metadata = session
+            .flash_metadata
+            .lock()
+            .map_err(|_| io::Error::other("metadata lock poisoned"))?;
+        if !metadata
+            .as_ref()
+            .is_some_and(|(_, packets)| Arc::ptr_eq(packets, &context.packets))
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::NotConnected,
+                "Flash metadata changed",
+            ));
+        }
+        session
+            .injections
+            .try_send((direction, packet))
+            .map_err(|e| match e {
+                mpsc::TrySendError::Full(_) => {
+                    io::Error::new(io::ErrorKind::WouldBlock, "injection queue full")
+                }
+                mpsc::TrySendError::Disconnected(_) => {
+                    io::Error::new(io::ErrorKind::NotConnected, "session closed")
+                }
+            })
+    }
+    /// Apply an explicitly downloaded catalog only to the identified matching revision.
+    pub fn update_flash_schedule_metadata(
+        &self,
+        packets: crate::packet_info::PacketInfoManager,
+    ) -> bool {
+        let Ok(active) = self.active.lock() else {
+            return false;
+        };
+        let Some(session) = active
+            .as_ref()
+            .filter(|s| s.flash_automatic && !s.closed.load(Ordering::Acquire))
+        else {
+            return false;
+        };
+        let Ok(mut metadata) = session.flash_metadata.lock() else {
+            return false;
+        };
+        let Some((version, _)) = metadata.as_ref() else {
+            return false;
+        };
+        if version.is_empty() || *version != packets.version {
+            return false;
+        }
+        *metadata = Some((version.clone(), Arc::new(packets)));
+        true
     }
     /// Queue an injection. Delivery errors are reported through Event::Error.
     pub fn inject(&self, direction: Direction, packet: Packet) -> io::Result<()> {
@@ -622,6 +735,7 @@ fn run_session(
     index: &mut i32,
     options: &RelayOptions,
     extension_session: &mut Option<u64>,
+    flash_metadata: &Mutex<Option<(String, Arc<crate::packet_info::PacketInfoManager>)>>,
 ) -> io::Result<()> {
     client.set_nonblocking(true)?;
     server.set_nonblocking(true)?;
@@ -859,6 +973,10 @@ fn run_session(
                             if let Ok(mut safety) = safety.lock() {
                                 safety.register_metadata(&details.version, &details.packets);
                             }
+                        }
+                        if let Ok(mut metadata) = flash_metadata.lock() {
+                            *metadata =
+                                Some((details.version.clone(), Arc::new(details.packets.clone())));
                         }
                         if let Some(host) = &options.extensions {
                             *extension_session = Some(host.start_owned_connection(details)?);
@@ -2174,6 +2292,7 @@ mod tests {
                 &mut 0,
                 &RelayOptions::default(),
                 &mut None,
+                &Mutex::new(None),
             )
         });
         for header in 1..=64 {
@@ -2217,6 +2336,146 @@ mod tests {
             remote.accept(),
             Err(error) if error.kind() == io::ErrorKind::WouldBlock
         ));
+        relay.stop();
+    }
+    #[test]
+    fn flash_schedule_metadata_is_bound_to_identified_session() {
+        use crate::packet_info::{PacketInfo, PacketInfoManager};
+        let _test_lock = LOOKUP_TEST_LOCK.lock().unwrap();
+        let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+        let (requested_tx, requested_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let release_rx = Arc::new(Mutex::new(release_rx));
+        let lookup = Arc::new(move |version: String| {
+            requested_tx.send(version.clone()).unwrap();
+            release_rx
+                .lock()
+                .unwrap()
+                .recv_timeout(Duration::from_secs(3))
+                .unwrap();
+            let header = if version == "REV-1" { 801 } else { 802 };
+            Ok(PacketInfoManager::new(
+                version,
+                vec![PacketInfo {
+                    header,
+                    direction: Direction::ToServer,
+                    name: Some("Example".into()),
+                    hash: None,
+                    structure: None,
+                    source: "fixture".into(),
+                }],
+            ))
+        });
+        let (mut relay, events) = Relay::start_with_options(
+            Config {
+                listen: "127.0.0.1:0".parse().unwrap(),
+                remote: remote.local_addr().unwrap().to_string(),
+            },
+            RelayOptions {
+                flash_process: Some(1),
+                flash_lookup: Some(lookup),
+                connection: Some(ConnectionDetails {
+                    host: "fixture".into(),
+                    port: 1,
+                    version: "OLD".into(),
+                    identifier: String::new(),
+                    client_type: "FLASH".into(),
+                    packets: PacketInfoManager::default(),
+                }),
+                ..RelayOptions::default()
+            },
+        )
+        .unwrap();
+        let mut previous = None;
+        for (version, header) in [("REV-1", 801), ("REV-2", 802)] {
+            let mut client = TcpStream::connect(relay.address).unwrap();
+            let (mut server, _) = remote.accept().unwrap();
+            server
+                .set_read_timeout(Some(Duration::from_secs(3)))
+                .unwrap();
+            wait_for(&events, |event| matches!(event, Event::Connected(_)));
+            assert!(matches!(
+                relay.flash_schedule_state(),
+                FlashScheduleState::Pending
+            ));
+            if let Some(old) = &previous {
+                assert_eq!(
+                    relay
+                        .inject_for_flash_session(old, Direction::ToServer, Packet::new(801))
+                        .unwrap_err()
+                        .kind(),
+                    io::ErrorKind::NotConnected
+                );
+            }
+            let mut hello = Packet::new(1);
+            hello
+                .put_string(version)
+                .unwrap()
+                .put_string("FLASH")
+                .unwrap();
+            write_frame(&mut client, &hello).unwrap();
+            assert_eq!(
+                requested_rx.recv_timeout(Duration::from_secs(3)).unwrap(),
+                version
+            );
+            assert!(matches!(
+                relay.flash_schedule_state(),
+                FlashScheduleState::Pending
+            ));
+            release_tx.send(()).unwrap();
+            assert_eq!(read_frame(&mut server).unwrap().bytes(), hello.bytes());
+            let deadline = Instant::now() + Duration::from_secs(3);
+            let context = loop {
+                if let FlashScheduleState::Ready(context) = relay.flash_schedule_state() {
+                    break context;
+                }
+                assert!(Instant::now() < deadline);
+                thread::yield_now();
+            };
+            assert_eq!(context.version, version);
+            assert_eq!(context.packets.entries()[0].header, header);
+            relay
+                .inject_for_flash_session(&context, Direction::ToServer, Packet::new(header))
+                .unwrap();
+            assert_eq!(read_frame(&mut server).unwrap().header(), header);
+            assert!(
+                !relay.update_flash_schedule_metadata(PacketInfoManager::new("WRONG", Vec::new()))
+            );
+            let replacement = PacketInfoManager::new(
+                version,
+                vec![PacketInfo {
+                    header: header + 10,
+                    direction: Direction::ToServer,
+                    name: Some("Example".into()),
+                    hash: None,
+                    structure: None,
+                    source: "download".into(),
+                }],
+            );
+            assert!(relay.update_flash_schedule_metadata(replacement));
+            assert_eq!(
+                relay
+                    .inject_for_flash_session(&context, Direction::ToServer, Packet::new(header))
+                    .unwrap_err()
+                    .kind(),
+                io::ErrorKind::NotConnected
+            );
+            let FlashScheduleState::Ready(replacement) = relay.flash_schedule_state() else {
+                panic!("updated metadata missing")
+            };
+            assert_eq!(replacement.packets.entries()[0].header, header + 10);
+            relay
+                .inject_for_flash_session(
+                    &replacement,
+                    Direction::ToServer,
+                    Packet::new(header + 10),
+                )
+                .unwrap();
+            assert_eq!(read_frame(&mut server).unwrap().header(), header + 10);
+            previous = Some(replacement);
+            client.shutdown(std::net::Shutdown::Both).unwrap();
+            wait_for(&events, |event| matches!(event, Event::Disconnected));
+        }
         relay.stop();
     }
 }

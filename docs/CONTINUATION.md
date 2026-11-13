@@ -1,5 +1,7 @@
 # Continuation state
 
+Automatic Flash scheduler dispatch now uses session-bound catalog snapshots and rejects stale session/catalog injection. Matching explicit catalog downloads refresh the snapshot. The controlled two-session test, Windows library (82 passed, six ignored), relay, i18n and desktop tests, both Clippy configurations and desktop/web debug build pass. Next audit and test Origins, Nitro, Unity and manual TCP scheduling during connection setup and reconnect; real clients and visual UI remain unverified.
+
 Windows GNU desktop/web release compilation passed at 371e256 in an isolated target directory. Live client, encryption and extension compatibility still require verification.
 
 The two-session loopback scheduler test passes with explicit synthetic catalogs and pending sends, as do 16 relay tests and both Windows Clippy configurations. Next reproduce and fix desktop stale metadata across Flash reconnect, accounting for identification-before-Connected on other clients and lossy event delivery. Real COM decryption, extensions, cleanup and reconnect remain unverified; no Habbo or G-Earth process was found in the current read-only check.

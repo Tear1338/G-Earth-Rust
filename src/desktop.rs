@@ -1154,6 +1154,13 @@ impl Desktop {
                             self.hotel_version = database.version.clone();
                             self.status =
                                 format!("Loaded {} packet identifiers", database.entries().len());
+                            if let Some(Connection::Tcp(relay)) = &self.relay {
+                                if relay.update_flash_schedule_metadata(database.clone()) {
+                                    if let Ok(mut safety) = self.packet_safety.lock() {
+                                        safety.register_metadata(&database.version, &database);
+                                    }
+                                }
+                            }
                             self.packet_info = database;
                             invalidate_log_expressions(&mut self.logs);
                             self.logger_search_cache = None;
@@ -1320,7 +1327,12 @@ impl Desktop {
                 let mut blocked = None;
                 let mut unresolved = None;
                 let shockwave = self.origins && !self.nitro;
+                let flash_state = match relay {
+                    Connection::Tcp(tcp) => tcp.flash_schedule_state(),
+                    _ => gearth_rust::relay::FlashScheduleState::NotAutomatic,
+                };
                 let info = &self.packet_info;
+                let waiting_for_flash = self.i18n.text("rust.scheduler.waiting_flash").to_owned();
                 let result: std::io::Result<()> = self.scheduler.dispatch_jobs_with_retry(
                     Instant::now(),
                     SystemTime::now(),
@@ -1335,6 +1347,18 @@ impl Desktop {
                         } else {
                             PacketFormat::EvaWire
                         };
+                        let (info, version) = match &flash_state {
+                            gearth_rust::relay::FlashScheduleState::NotAutomatic => {
+                                (info, &self.hotel_version)
+                            }
+                            gearth_rust::relay::FlashScheduleState::Pending => {
+                                unresolved.get_or_insert_with(|| waiting_for_flash.clone());
+                                return Ok(None);
+                            }
+                            gearth_rust::relay::FlashScheduleState::Ready(context) => {
+                                (context.packets.as_ref(), &context.version)
+                            }
+                        };
                         let packet = match job.resolve_packet(format, info) {
                             Ok(packet) => packet,
                             Err(error) => {
@@ -1347,7 +1371,7 @@ impl Desktop {
                             .lock()
                             .map_err(|_| std::io::Error::other("Packet safety state unavailable"))?
                             .may_send(
-                                Some(&self.hotel_version),
+                                Some(version),
                                 direction,
                                 packet.header(),
                                 self.developer_mode,
@@ -1356,7 +1380,17 @@ impl Desktop {
                             blocked.get_or_insert(packet.header());
                             return Ok(Some(false));
                         }
-                        relay.inject(direction, packet.into_owned())?;
+                        match (&flash_state, relay) {
+                            (
+                                gearth_rust::relay::FlashScheduleState::Ready(context),
+                                Connection::Tcp(tcp),
+                            ) => tcp.inject_for_flash_session(
+                                context,
+                                direction,
+                                packet.into_owned(),
+                            )?,
+                            _ => relay.inject(direction, packet.into_owned())?,
+                        }
                         Ok(Some(true))
                     },
                 );

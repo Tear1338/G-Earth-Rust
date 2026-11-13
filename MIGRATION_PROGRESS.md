@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- On 2026-11-13, automatic Flash scheduled sends were bound to the relay session and its identified catalog instead of desktop event state. Pending identification/lookup keeps due jobs pending; a changed session or explicitly downloaded matching catalog invalidates an earlier snapshot. A two-session controlled lookup fixture verifies both waits, replacement IDs and rejection of stale snapshots. Windows library tests (82 passed, six ignored), 16 relay, 11 i18n and 11 desktop tests, both Clippy configurations and desktop/web debug build pass. No real client or visual UI test was performed; other connection types still need the same session-readiness audit.
+
 - Windows GNU desktop/web release compilation passed at 371e256 in an isolated target directory on 2026-11-13. This proves compilation only; live clients, encryption and extensions remain unverified.
 
 - On 2026-11-13, a two-session loopback test verified offline-loaded named schedules, retained sends after disconnect, retry when metadata is missing, and delivery with synthetic replacement IDs. All 16 relay tests and both Windows Clippy configurations pass. The test supplies metadata manually: desktop event ordering may still allow stale metadata before Flash identification; real-client decryption and reconnect remain unverified. CI run 43446996634 passed for 67291e1.
@@ -472,4 +474,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Reproduce and fix desktop scheduler use of stale metadata during Flash reconnection, including event ordering and dropped events; preserve Origins/Nitro/Unity and manual metadata behavior. Then verify COM decryption, real extensions and disconnect cleanup when a dedicated session is available, preserving FR/QX.
+Audit and test session readiness and stale metadata during scheduled dispatch for Origins, Nitro, Unity and manual TCP, including session replacement and lost events; correct any proven discrepancies. Then verify COM decryption, real extensions and disconnect cleanup when a dedicated session is available, preserving FR/QX.

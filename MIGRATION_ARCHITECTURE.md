@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Automatic Flash holds its identified catalog in the active relay session. Scheduler snapshots refer to that session and catalog; injection rejects snapshots after reconnect or catalog replacement. Explicit desktop downloads are accepted only after identification and for the same nonempty revision. Other transports still use desktop event state.
+
 The two-session scheduler loopback fixture supplies each revision catalog explicitly. Desktop event handling retains prior catalog and revision on disconnect; Flash identifies after connection, so session-specific scheduler metadata readiness requires investigation.
 
 Active scheduler imports validate expressions with deferred names and retain the source; packet-only dispatch skips deferred placeholders. Job-aware dispatch resolves current metadata and retries unresolved jobs independently after one second.
