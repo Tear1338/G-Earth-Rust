@@ -1,5 +1,7 @@
 # Migration tasks
 
+Investigate and test desktop scheduler session readiness: Flash can become connected before Identified/PacketIdentifiers, while the desktop retains the previous version and metadata. Ensure pending named jobs cannot use stale IDs and preserve Origins/Nitro/Unity event ordering and manually loaded metadata. Real-client reconnect remains unverified.
+
 Active .sched loading now works offline with deferred named identifiers, atomic replacement and non-starving retry. Next exercise two loopback relay connections with changed metadata and pending scheduled sends; visual UI and real-client reconnection remain open.
 
 Scheduled expressions now resolve using current metadata and client format at send time. Next support Java-style active .sched loading while disconnected without prematurely resolving named identifiers; live reconnection remains open.

@@ -660,6 +660,124 @@ fn scheduled_send_survives_disconnection_and_retries_after_reconnect() {
     relay.stop();
 }
 #[test]
+fn deferred_schedule_reconnects_with_new_metadata_and_preserves_pending_sends() {
+    use gearth_rust::{
+        packet::PacketFormat,
+        packet_info::{PacketInfo, PacketInfoManager},
+        packet_safety::PacketSafety,
+        schedule_file,
+    };
+    let catalog = |version: &str, header| {
+        PacketInfoManager::new(
+            version,
+            vec![PacketInfo {
+                header,
+                direction: Direction::ToServer,
+                name: Some("Example".into()),
+                hash: None,
+                structure: None,
+                source: "fixture".into(),
+            }],
+        )
+    };
+    let old_info = catalog("old", 42);
+    let new_info = catalog("new", 77);
+    let mut safety = PacketSafety::default();
+    assert!(safety.register_metadata("old", &old_info));
+    assert!(safety.register_metadata("new", &new_info));
+    assert!(!safety.may_send(Some("new"), Direction::ToServer, 42, false));
+    let templates = schedule_file::parse("0\tfalse\t500+0\tTOSERVER\t{out:Example}{i:7}").unwrap();
+    let mut specs = schedule_file::compile_active(
+        &templates,
+        &PacketInfoManager::default(),
+        |_| PacketFormat::EvaWire,
+        true,
+    )
+    .unwrap();
+    specs[0].0.repeat = Some(4);
+    let now = Instant::now();
+    let wall = SystemTime::UNIX_EPOCH + Duration::from_secs(100);
+    let mut scheduler = Scheduler::default();
+    scheduler
+        .replace_batch_deferred(specs, (now, wall))
+        .unwrap();
+    assert!(scheduler.tick(now).is_empty());
+    let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+    let (mut relay, events) = Relay::start(Config {
+        listen: "127.0.0.1:0".parse().unwrap(),
+        remote: remote.local_addr().unwrap().to_string(),
+    })
+    .unwrap();
+    let client = TcpStream::connect(relay.address).unwrap();
+    let (mut server, _) = remote.accept().unwrap();
+    server
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    wait_for(&events, |event| matches!(event, Event::Connected(_)));
+    scheduler
+        .dispatch_jobs_with_retry(now, wall, |job| {
+            let packet = job
+                .resolve_packet(PacketFormat::EvaWire, &old_info)
+                .map_err(std::io::Error::other)?;
+            assert!(safety.may_send(Some("old"), job.direction, packet.header(), false));
+            relay.inject(job.direction, packet.into_owned())?;
+            Ok::<_, std::io::Error>(Some(true))
+        })
+        .unwrap();
+    let mut first = read_frame(&mut server).unwrap();
+    assert_eq!((first.header(), first.read_i32().unwrap()), (42, 7));
+    client.shutdown(Shutdown::Both).unwrap();
+    wait_for(&events, |event| matches!(event, Event::Disconnected));
+    let later = now + Duration::from_secs(1);
+    let later_wall = wall + Duration::from_secs(1);
+    assert!(scheduler
+        .dispatch_jobs_with_retry(later, later_wall, |job| {
+            let packet = job
+                .resolve_packet(PacketFormat::EvaWire, &old_info)
+                .map_err(std::io::Error::other)?;
+            relay.inject(job.direction, packet.into_owned())?;
+            Ok::<_, std::io::Error>(Some(true))
+        })
+        .is_err());
+    assert_eq!(scheduler.jobs[0].remaining, Some(3));
+    let _client = TcpStream::connect(relay.address).unwrap();
+    let (mut server, _) = remote.accept().unwrap();
+    server
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    wait_for(&events, |event| matches!(event, Event::Connected(_)));
+    let mut unresolved = 0;
+    scheduler
+        .dispatch_jobs_with_retry(later, later_wall, |job| {
+            assert!(job
+                .resolve_packet(PacketFormat::EvaWire, &PacketInfoManager::default())
+                .is_err());
+            unresolved += 1;
+            Ok::<_, std::io::Error>(None)
+        })
+        .unwrap();
+    assert_eq!(unresolved, 1);
+    assert_eq!(scheduler.next_wake_in(later), Some(Duration::from_secs(1)));
+    let retry = later + Duration::from_secs(1);
+    scheduler
+        .dispatch_jobs_with_retry(retry, later_wall + Duration::from_secs(1), |job| {
+            let packet = job
+                .resolve_packet(PacketFormat::EvaWire, &new_info)
+                .map_err(std::io::Error::other)?;
+            assert!(safety.may_send(Some("new"), job.direction, packet.header(), false));
+            relay.inject(job.direction, packet.into_owned())?;
+            Ok::<_, std::io::Error>(Some(true))
+        })
+        .unwrap();
+    for _ in 0..3 {
+        let mut packet = read_frame(&mut server).unwrap();
+        assert_eq!((packet.header(), packet.read_i32().unwrap()), (77, 7));
+    }
+    assert!(scheduler.jobs.is_empty());
+    relay.stop();
+}
+
+#[test]
 fn logging_backpressure_does_not_stall_relay() {
     let remote = TcpListener::bind("127.0.0.1:0").unwrap();
     let (mut relay, events) = Relay::start(Config {

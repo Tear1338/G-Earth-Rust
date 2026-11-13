@@ -1,5 +1,7 @@
 # Changelog
 
+- Test deferred scheduled sends across two simulated relay sessions and metadata revisions.
+
 - Allow offline active schedule loading with deferred names and independent retries.
 
 - Resolve scheduled packet expressions against the current client and metadata on each send.

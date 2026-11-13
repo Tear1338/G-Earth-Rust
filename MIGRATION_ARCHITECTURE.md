@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+The two-session scheduler loopback fixture supplies each revision catalog explicitly. Desktop event handling retains prior catalog and revision on disconnect; Flash identifies after connection, so session-specific scheduler metadata readiness requires investigation.
+
 Active scheduler imports validate expressions with deferred names and retain the source; packet-only dispatch skips deferred placeholders. Job-aware dispatch resolves current metadata and retries unresolved jobs independently after one second.
 
 Scheduled jobs retain their source expression and resolve it against the current connection format and metadata on each dispatch; unresolved names leave the occurrence pending. Packet-only jobs retain their original bytes.

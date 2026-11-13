@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- On 2026-11-13, a two-session loopback test verified offline-loaded named schedules, retained sends after disconnect, retry when metadata is missing, and delivery with synthetic replacement IDs. All 16 relay tests and both Windows Clippy configurations pass. The test supplies metadata manually: desktop event ordering may still allow stale metadata before Flash identification; real-client decryption and reconnect remain unverified. CI run 43446996634 passed for 67291e1.
+
 - On 2026-11-13, active .sched files can be loaded while disconnected. Unknown named headers are syntax-checked and resolved before dispatch; packet-only scheduler APIs never send the placeholder. Unresolved jobs retry after one second without starving other jobs, and the UI reports offline/retry status in English and French. Windows schedule/relay/core/i18n/desktop tests, Java schedule fixtures, both Clippy configurations and desktop/web debug build pass. Visual UI inspection and real-client reconnection remain unverified.
 
 - On 2026-11-13, scheduler expressions began resolving at each send using current packet metadata and client format, as Java Scheduler.java constructs packets per dispatch. A loopback relay test verifies changed metadata is used; missing names leave the occurrence pending. Windows core/relay/schedule/desktop tests, Java schedule fixtures, both Clippy configurations and desktop/web debug build pass. Java does not automatically restore active schedules at restart; Rust also starts with no active jobs. Loading unresolved schedules while disconnected and real reconnection remain open.
@@ -468,4 +470,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Do not resume stopped Computer Use without the user. Independently exercise two loopback relay connections with changed metadata and pending scheduled sends, then correct and test any reconnection discrepancy; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.
+Reproduce and fix desktop scheduler use of stale metadata during Flash reconnection, including event ordering and dropped events; preserve Origins/Nitro/Unity and manual metadata behavior. Then verify COM decryption, real extensions and disconnect cleanup when a dedicated session is available, preserving FR/QX.
