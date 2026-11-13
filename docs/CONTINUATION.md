@@ -1,5 +1,7 @@
 # Continuation state
 
+Logger export now preserves complete ordered distinct names and hashes, including empty values. Desktop/logger tests, both Clippy configurations and desktop/web debug build pass on Windows; live UI and full logger parity remain open. Next compare beta-29 WEDGIE packet length and byte-display behavior with the Rust logger. Do not resume stopped Computer Use without the user.
+
 Byte-view export now recomputes full eligible structures instead of reusing bounded display text and can export retained display-limited packets. Desktop and logger tests, both Clippy configurations and desktop/web debug build pass on Windows; CI and live UI remain unverified. Next compare metadata name/hash export limits and ordering against beta-29. Do not resume stopped Computer Use without the user.
 
 Byte-view packet exports now follow Java direction/header formatting and complete-byte output. Windows desktop tests, logger tests, Java hexdump oracle, both Clippy configurations and desktop/web debug build pass. Next compare structure prediction and skipped/oversized packet export behavior with beta-29. Real clients and logger UI remain unverified. Do not resume stopped Computer Use without the user.

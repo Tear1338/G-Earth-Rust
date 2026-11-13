@@ -1,5 +1,7 @@
 # Migration tasks
 
+Logger exports preserve distinct, ordered and complete names/hashes per Java. Next compare beta-29 WEDGIE packet length and byte-display behavior with the Rust logger; real clients remain unverified.
+
 Byte-view log export now writes full eligible structures and retained display-limited packets; Java skip formatting has a fixture. Next compare logger metadata name/hash export limits and ordering with beta-29; real logger UI remains open.
 
 Byte-view logger exports now use Java-style direction/header formatting and complete byte output. Next compare Java and Rust structure prediction and skipped/oversized packet export behavior; live logger validation remains open.

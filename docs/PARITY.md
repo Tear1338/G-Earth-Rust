@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Logger exports now preserve distinct names and hashes in beta-29 order, including empty and long metadata, in Windows tests. Full logger and live-client parity remain open.
+
 Byte-view export now preserves eligible full structures and retained display-limited packet bytes; a skipped-packet fixture checks Java separator behavior. Prediction parity and live logger behavior remain open.
 
 Byte-view log exports now follow selected beta-29 Java formatting and include all packet bytes; incoming/outgoing examples and Java hexdump oracle pass locally. Expression mode, structure rendering, oversized packets and live UI are not fully proven equivalent.

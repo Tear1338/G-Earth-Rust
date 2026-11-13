@@ -1,5 +1,7 @@
 # Changelog
 
+- Preserve complete, ordered packet metadata in logger exports.
+
 - Preserve complete structures and retained packet bytes in byte-view log exports.
 
 - Align byte-view log exports with Java direction/header formatting and avoid truncating packet bytes.

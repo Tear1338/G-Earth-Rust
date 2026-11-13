@@ -684,6 +684,46 @@ fn render_log_row(
     }
 }
 
+// Java exports every distinct name, then every distinct hash, in metadata order.
+// The interactive logger deliberately keeps a bounded cache, so export must
+// read directly from the packet catalog instead of reusing that cache.
+fn write_log_metadata(
+    output: &mut impl std::io::Write,
+    row: &LogRow,
+    info: &PacketInfoManager,
+    options: LogDisplayOptions<'_>,
+) -> std::io::Result<()> {
+    let packet = &row.message.packet;
+    let mut wrote = false;
+    for names in [true, false] {
+        if (names && !options.names) || (!names && !options.hashes) {
+            continue;
+        }
+        let mut seen = HashSet::new();
+        for item in info.by_header(row.message.direction, packet.header()) {
+            let value = if names {
+                item.name.as_deref()
+            } else {
+                item.hash.as_deref()
+            };
+            if let Some(value) = value {
+                if seen.insert(value) {
+                    write!(output, "[{value}]")?;
+                    wrote = true;
+                }
+            }
+        }
+    }
+    if options.message_id {
+        write!(output, "[{}]", packet.header())?;
+        wrote = true;
+    }
+    if wrote {
+        writeln!(output)?;
+    }
+    Ok(())
+}
+
 fn write_log_capture<'a>(
     mut output: impl std::io::Write,
     rows: impl IntoIterator<Item = &'a LogRow>,
@@ -696,9 +736,7 @@ fn write_log_capture<'a>(
         if let Some(timestamp) = rendered.timestamp {
             writeln!(output, "{timestamp}")?;
         }
-        if let Some(metadata) = rendered.metadata {
-            writeln!(output, "{metadata}")?;
-        }
+        write_log_metadata(&mut output, row, info, options)?;
         if let Some(marker) = rendered.marker {
             writeln!(output, "{marker}")?;
         }
@@ -4620,7 +4658,8 @@ mod logger_prediction_tests {
     use super::{
         bounded_log_prediction, clear_log_contents, invalidate_log_expressions, log_colors,
         log_header_layout, log_packet_metadata, log_row_matches, matching_packet_metadata,
-        write_log_capture, LogDisplayOptions, LogRow, PacketRepresentation, LOG_PREDICTION_LIMIT,
+        write_log_capture, write_log_metadata, LogDisplayOptions, LogRow, PacketRepresentation,
+        LOG_PREDICTION_LIMIT,
     };
     use eframe::egui;
     use gearth_rust::packet::{Direction, Message, Packet};
@@ -4885,6 +4924,51 @@ mod logger_prediction_tests {
         assert!(text.contains("[Example][Another][abc][def][42]\n[Blocked]\n"));
         assert!(text.contains("00000002002a"));
         assert!(text.ends_with("--------------------\n"));
+        let long_name = "é".repeat(700);
+        let long_hash = "f".repeat(1100);
+        let metadata = PacketInfoManager::new(
+            "test",
+            vec![
+                PacketInfo {
+                    header: 42,
+                    direction: Direction::ToClient,
+                    name: Some(long_name.clone()),
+                    hash: Some(long_hash.clone()),
+                    structure: None,
+                    source: "test".into(),
+                },
+                PacketInfo {
+                    header: 42,
+                    direction: Direction::ToClient,
+                    name: Some("".into()),
+                    hash: Some(long_hash.clone()),
+                    structure: None,
+                    source: "test".into(),
+                },
+                PacketInfo {
+                    header: 42,
+                    direction: Direction::ToClient,
+                    name: Some(long_name.clone()),
+                    hash: Some("second".into()),
+                    structure: None,
+                    source: "test".into(),
+                },
+                PacketInfo {
+                    header: 42,
+                    direction: Direction::ToServer,
+                    name: Some("wrong direction".into()),
+                    hash: None,
+                    structure: None,
+                    source: "test".into(),
+                },
+            ],
+        );
+        let mut full_metadata = Vec::new();
+        write_log_metadata(&mut full_metadata, &row, &metadata, options).unwrap();
+        assert_eq!(
+            String::from_utf8(full_metadata).unwrap(),
+            format!("[{long_name}][][{long_hash}][second][42]\n")
+        );
         let original_options = options;
         options.names = false;
         options.hashes = false;

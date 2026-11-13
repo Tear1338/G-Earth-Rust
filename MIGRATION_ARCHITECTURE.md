@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Logger export streams distinct metadata from the directional packet catalog in Java order, independently of the bounded UI cache.
+
 Byte-view export recomputes complete packet structures instead of reusing the bounded display cache, while honoring the configured Java size and cleaning options.
 
 Byte-view capture export formats full packet bytes in Java logger order with localized direction and header; the Rust expression view keeps its enriched format and existing display options.

@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- On 2026-11-13, logger exports were changed to stream all distinct packet names and hashes in beta-29 Java order, including empty values and long metadata, without the bounded screen cache. Windows desktop/logger tests, both Clippy configurations and desktop/web debug build pass; live UI and full logger parity remain unverified.
+
 - On 2026-11-13, byte-view log export stopped reusing the 1024-byte display cache for structures and can export retained packets even when their row is display-limited. Tests cover a >1024-byte structure and the Java skipped-packet separator; desktop and logger tests, both Clippy configurations and desktop/web debug build pass on Windows. Full prediction parity, CI for this change and live UI remain unverified.
 
 - On 2026-11-13, Rust byte-view log exports were aligned with beta-29 Java source for direction/header formatting and legacy/hexdump/raw ordering, and no longer truncate exported bytes. Desktop tests, logger tests, the Java hexdump oracle, both Clippy configurations and desktop/web debug build pass on Windows. Rust expression view and optional display/export settings remain extensions; full logger parity and live UI validation remain open.
@@ -442,4 +444,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Do not resume stopped Computer Use without the user. Independently compare logger metadata name/hash export limits and ordering with Java beta-29, then fix and test any confirmed discrepancy; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.
+Do not resume stopped Computer Use without the user. Independently compare beta-29 WEDGIE packet length and byte-display behavior with the Rust logger, then fix and test any confirmed discrepancy; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.
