@@ -14,6 +14,97 @@ fn scheduler_initial_draft_matches_original_java_sample() {
 }
 
 #[test]
+fn scheduler_resolves_source_against_current_client_and_metadata_at_each_send() {
+    use gearth_rust::packet_info::{PacketInfo, PacketInfoManager};
+    let catalog = |header| {
+        PacketInfoManager::new(
+            "fixture",
+            vec![PacketInfo {
+                header,
+                direction: Direction::ToServer,
+                name: Some("Example".into()),
+                hash: None,
+                structure: None,
+                source: "test".into(),
+            }],
+        )
+    };
+    let first = catalog(42);
+    let second = catalog(77);
+    let source = "{out:Example}{i:7}";
+    let initial = expression::parse_with_format(
+        source,
+        PacketFormat::EvaWire,
+        Some((Direction::ToServer, &first)),
+    )
+    .unwrap();
+    let now = Instant::now();
+    let wall = std::time::UNIX_EPOCH + Duration::from_secs(100);
+    let mut scheduler = Scheduler::default();
+    scheduler
+        .add_configured(
+            initial,
+            Direction::ToServer,
+            500,
+            Some(0),
+            Some(3),
+            (now, wall),
+        )
+        .unwrap();
+    scheduler.jobs[0].source_expression = Some(source.into());
+    let mut sent = Vec::new();
+    scheduler
+        .dispatch_jobs_filtered_with_wall_clock(now, wall, |job| {
+            let packet = job
+                .resolve_packet(PacketFormat::EvaWire, &first)
+                .map_err(|_| "unresolved")?;
+            sent.push((packet.header(), packet.format()));
+            Ok::<_, &str>(true)
+        })
+        .unwrap();
+    let next = now + Duration::from_millis(500);
+    let next_wall = wall + Duration::from_millis(500);
+    scheduler
+        .dispatch_jobs_filtered_with_wall_clock(next, next_wall, |job| {
+            let packet = job
+                .resolve_packet(PacketFormat::WedgieOutgoing, &second)
+                .map_err(|_| "unresolved")?;
+            sent.push((packet.header(), packet.format()));
+            Ok::<_, &str>(true)
+        })
+        .unwrap();
+    assert_eq!(
+        sent,
+        [
+            (42, PacketFormat::EvaWire),
+            (77, PacketFormat::WedgieOutgoing)
+        ]
+    );
+    let third = now + Duration::from_secs(1);
+    let third_wall = wall + Duration::from_secs(1);
+    assert_eq!(
+        scheduler.dispatch_jobs_filtered_with_wall_clock(third, third_wall, |job| {
+            job.resolve_packet(PacketFormat::EvaWire, &PacketInfoManager::default())
+                .map_err(|_| "unresolved")?;
+            Ok::<_, &str>(true)
+        }),
+        Err("unresolved")
+    );
+    assert_eq!(scheduler.jobs[0].remaining, Some(1));
+    scheduler
+        .dispatch_jobs_filtered_with_wall_clock(third, third_wall, |job| {
+            let packet = job
+                .resolve_packet(PacketFormat::EvaWire, &second)
+                .map_err(|_| "unresolved")?;
+            sent.push((packet.header(), packet.format()));
+            Ok::<_, &str>(true)
+        })
+        .unwrap();
+    assert_eq!(sent[2], (77, PacketFormat::EvaWire));
+    assert!(scheduler.jobs.is_empty());
+}
+
+#[test]
 fn scheduler_skips_disallowed_occurrence_without_starving_other_jobs() {
     let now = Instant::now();
     let wall = std::time::UNIX_EPOCH + Duration::from_secs(100);

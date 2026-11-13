@@ -1,5 +1,7 @@
 # Continuation state
 
+Scheduled expressions now resolve per send using current client format and metadata; unresolved names remain pending. Windows core/relay/schedule/desktop tests, Java schedule fixtures, both Clippy configurations and desktop/web debug build pass. Java does not automatically restore active schedules at restart. Next support Java-style active .sched loading while disconnected without prematurely resolving named identifiers. Do not resume stopped Computer Use without the user.
+
 Scheduler clock correction now detects Java-visible millisecond changes; deterministic small forward/backward cases, core/schedule tests and all Java fixtures pass on Windows, as do both Clippy configurations and the desktop/web debug build. Next compare scheduler restart and active job restoration with beta-29. Real clock jitter and live-client timing remain unverified. Do not resume stopped Computer Use without the user.
 
 Aligned scheduler backlog now survives backward jumps and large forward jumps without Instant underflow. Windows core/schedule tests with all Java fixtures, both Clippy configurations and desktop/web debug build pass. Next compare small wall-clock jumps with beta-29 and the current drift tolerance. Do not resume stopped Computer Use without the user.

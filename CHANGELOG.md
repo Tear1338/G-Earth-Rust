@@ -1,5 +1,7 @@
 # Changelog
 
+- Resolve scheduled packet expressions against the current client and metadata on each send.
+
 - Detect scheduler wall-clock shifts at Java millisecond resolution.
 
 - Preserve scheduler backlog through clock rebases and avoid forward Instant underflow.

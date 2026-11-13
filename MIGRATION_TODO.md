@@ -1,5 +1,7 @@
 # Migration tasks
 
+Scheduled expressions now resolve using current metadata and client format at send time. Next support Java-style active .sched loading while disconnected without prematurely resolving named identifiers; live reconnection remains open.
+
 Small clock jumps now use Java-visible millisecond comparisons; deterministic 4 ms forward and 5 ms backward cases pass. Next compare scheduler restart/persistence and active job restoration with Java.
 
 Pending aligned sends survive backward clock jumps and extreme forward jumps are counted without Instant underflow. Next compare small wall-clock jumps against Java and the current drift tolerance; real-client scheduling remains open.

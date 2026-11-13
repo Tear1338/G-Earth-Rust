@@ -390,6 +390,62 @@ fn scheduled_send_waits_until_packet_id_is_observed() {
     relay.stop();
 }
 #[test]
+fn scheduled_send_resolves_current_metadata_before_relay_injection() {
+    use gearth_rust::packet_info::{PacketInfo, PacketInfoManager};
+    let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+    let (mut relay, events) = Relay::start(Config {
+        listen: "127.0.0.1:0".parse().unwrap(),
+        remote: remote.local_addr().unwrap().to_string(),
+    })
+    .unwrap();
+    let _client = TcpStream::connect(relay.address).unwrap();
+    let (mut server, _) = remote.accept().unwrap();
+    server
+        .set_read_timeout(Some(Duration::from_secs(3)))
+        .unwrap();
+    wait_for(&events, |event| matches!(event, Event::Connected(_)));
+    let info = PacketInfoManager::new(
+        "new-version",
+        vec![PacketInfo {
+            header: 77,
+            direction: Direction::ToServer,
+            name: Some("Example".into()),
+            hash: None,
+            structure: None,
+            source: "fixture".into(),
+        }],
+    );
+    let now = Instant::now();
+    let wall = std::time::UNIX_EPOCH + Duration::from_secs(100);
+    let mut scheduler = gearth_rust::scheduler::Scheduler::default();
+    scheduler
+        .add_configured(
+            Packet::new(42),
+            Direction::ToServer,
+            500,
+            None,
+            Some(1),
+            (now, wall),
+        )
+        .unwrap();
+    scheduler.jobs[0].source_expression = Some("{out:Example}{i:7}".into());
+    scheduler
+        .dispatch_jobs_filtered_with_wall_clock(now, wall, |job| {
+            let packet = job
+                .resolve_packet(gearth_rust::packet::PacketFormat::EvaWire, &info)
+                .map_err(std::io::Error::other)?;
+            relay.inject(job.direction, packet.into_owned())?;
+            Ok::<_, std::io::Error>(true)
+        })
+        .unwrap();
+    let mut received = read_frame(&mut server).unwrap();
+    assert_eq!(received.header(), 77);
+    assert_eq!(received.read_i32().unwrap(), 7);
+    assert!(scheduler.jobs.is_empty());
+    relay.stop();
+}
+
+#[test]
 fn truncated_frame_closes_both_sockets() {
     let remote = TcpListener::bind("127.0.0.1:0").unwrap();
     let (mut relay, events) = Relay::start(Config {

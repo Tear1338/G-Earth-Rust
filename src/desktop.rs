@@ -1334,28 +1334,46 @@ impl Desktop {
         if let Some(relay) = &self.relay {
             if relay.connected() {
                 let mut blocked = None;
-                let result: std::io::Result<()> = self.scheduler.dispatch_filtered_with_wall_clock(
-                    Instant::now(),
-                    SystemTime::now(),
-                    |direction, packet| {
-                        let allowed = self
-                            .packet_safety
-                            .lock()
-                            .map_err(|_| std::io::Error::other("Packet safety state unavailable"))?
-                            .may_send(
-                                Some(&self.hotel_version),
-                                direction,
-                                packet.header(),
-                                self.developer_mode,
-                            );
-                        if !allowed {
-                            blocked.get_or_insert(packet.header());
-                            return Ok(false);
-                        }
-                        relay.inject(direction, packet.clone())?;
-                        Ok(true)
-                    },
-                );
+                let shockwave = self.origins && !self.nitro;
+                let info = &self.packet_info;
+                let result: std::io::Result<()> =
+                    self.scheduler.dispatch_jobs_filtered_with_wall_clock(
+                        Instant::now(),
+                        SystemTime::now(),
+                        |job| {
+                            let direction = job.direction;
+                            let format = if shockwave {
+                                if direction == Direction::ToServer {
+                                    PacketFormat::WedgieOutgoing
+                                } else {
+                                    PacketFormat::WedgieIncoming
+                                }
+                            } else {
+                                PacketFormat::EvaWire
+                            };
+                            let packet = job
+                                .resolve_packet(format, info)
+                                .map_err(std::io::Error::other)?;
+                            let allowed = self
+                                .packet_safety
+                                .lock()
+                                .map_err(|_| {
+                                    std::io::Error::other("Packet safety state unavailable")
+                                })?
+                                .may_send(
+                                    Some(&self.hotel_version),
+                                    direction,
+                                    packet.header(),
+                                    self.developer_mode,
+                                );
+                            if !allowed {
+                                blocked.get_or_insert(packet.header());
+                                return Ok(false);
+                            }
+                            relay.inject(direction, packet.into_owned())?;
+                            Ok(true)
+                        },
+                    );
                 if let Err(e) = result {
                     self.status = e.to_string();
                 } else if let Some(header) = blocked {

@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Scheduled jobs retain their source expression and resolve it against the current connection format and metadata on each dispatch; unresolved names leave the occurrence pending. Packet-only jobs retain their original bytes.
+
 Aligned clock correction compares integer epoch milliseconds, matching Java clock resolution rather than using a fixed multi-millisecond drift threshold.
 
 Aligned jobs store pending occurrences separately from their next monotonic deadline, preserving queue failures across clock rebases and counting large forward jumps without Instant subtraction.

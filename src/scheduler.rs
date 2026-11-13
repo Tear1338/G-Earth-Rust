@@ -1,4 +1,9 @@
-use crate::packet::{error, Direction, Packet, Result};
+use crate::{
+    expression,
+    packet::{error, Direction, Packet, PacketFormat, Result},
+    packet_info::PacketInfoManager,
+};
+use std::borrow::Cow;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 /// Largest positive millisecond interval accepted by Java's signed integer parser.
@@ -36,6 +41,22 @@ pub struct Job {
 }
 
 impl Job {
+    /// Resolve the stored expression against the current connection before send.
+    /// Packet-only jobs retain their original bytes and format.
+    pub fn resolve_packet<'a>(
+        &'a self,
+        format: PacketFormat,
+        info: &PacketInfoManager,
+    ) -> Result<Cow<'a, Packet>> {
+        match &self.source_expression {
+            Some(source) => {
+                expression::parse_with_format(source, format, Some((self.direction, info)))
+                    .map(Cow::Owned)
+            }
+            None => Ok(Cow::Borrowed(&self.packet)),
+        }
+    }
+
     // Java accepts offset == interval but `time % interval == offset` can
     // never be true; keep such imported jobs without dispatching them.
     fn has_reachable_phase(&self) -> bool {
@@ -373,9 +394,7 @@ impl Scheduler {
         mut send: impl FnMut(Direction, &Packet) -> std::result::Result<(), E>,
     ) -> std::result::Result<(), E> {
         self.correct_wall_clock(now, wall);
-        self.dispatch_due(now, |direction, packet| {
-            send(direction, packet).map(|()| true)
-        })
+        self.dispatch_due(now, |job| send(job.direction, &job.packet).map(|()| true))
     }
     /// A false result skips the current occurrence and schedules the next one,
     /// without consuming a finite repetition. Queue errors remain retryable.
@@ -383,7 +402,17 @@ impl Scheduler {
         &mut self,
         now: Instant,
         wall: SystemTime,
-        send: impl FnMut(Direction, &Packet) -> std::result::Result<bool, E>,
+        mut send: impl FnMut(Direction, &Packet) -> std::result::Result<bool, E>,
+    ) -> std::result::Result<(), E> {
+        self.correct_wall_clock(now, wall);
+        self.dispatch_due(now, |job| send(job.direction, &job.packet))
+    }
+    /// Dispatch with access to each job's source expression and current metadata.
+    pub fn dispatch_jobs_filtered_with_wall_clock<E>(
+        &mut self,
+        now: Instant,
+        wall: SystemTime,
+        send: impl FnMut(&Job) -> std::result::Result<bool, E>,
     ) -> std::result::Result<(), E> {
         self.correct_wall_clock(now, wall);
         self.dispatch_due(now, send)
@@ -391,8 +420,8 @@ impl Scheduler {
     /// Replay aligned deadlines in bounded batches; relative jobs emit at most once.
     pub fn tick(&mut self, now: Instant) -> Vec<(Direction, Packet)> {
         let mut due = Vec::new();
-        let result = self.dispatch_due(now, |direction, packet| {
-            due.push((direction, packet.clone()));
+        let result = self.dispatch_due(now, |job| {
+            due.push((job.direction, job.packet.clone()));
             Ok::<bool, std::convert::Infallible>(true)
         });
         match result {
@@ -404,7 +433,7 @@ impl Scheduler {
     fn dispatch_due<E>(
         &mut self,
         now: Instant,
-        mut send: impl FnMut(Direction, &Packet) -> std::result::Result<bool, E>,
+        mut send: impl FnMut(&Job) -> std::result::Result<bool, E>,
     ) -> std::result::Result<(), E> {
         let mut failure = None;
         'jobs: for job in &mut self.jobs {
@@ -430,7 +459,7 @@ impl Scheduler {
                     job.next <= now
                 }
             {
-                let accepted = match send(job.direction, &job.packet) {
+                let accepted = match send(job) {
                     Ok(accepted) => accepted,
                     Err(error) => {
                         failure = Some(error);
