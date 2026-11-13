@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Byte-view capture export formats full packet bytes in Java logger order with localized direction and header; the Rust expression view keeps its enriched format and existing display options.
+
 The isolated G-Presets relay fixture repeats the WIRED import without save acknowledgement, checking three retries and incomplete status.
 
 The G-Presets loopback fixture reloads its exported trigger preset, simulates four floor placements and moves, verifies remapped save contents, and returns a WIRED save acknowledgement.

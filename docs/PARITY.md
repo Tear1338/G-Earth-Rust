@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Byte-view log exports now follow selected beta-29 Java formatting and include all packet bytes; incoming/outgoing examples and Java hexdump oracle pass locally. Expression mode, structure rendering, oversized packets and live UI are not fully proven equivalent.
+
 Released G-Presets retried a synthetic WIRED trigger save three times and reported incomplete when the loopback server omitted acknowledgement. Linux CI and real hotel behavior remain unverified.
 
 Released G-Presets reloaded and imported a synthetic WIRED trigger preset over the Windows loopback relay, with simulated placement, movement and save acknowledgements. Linux CI and actual WIRED gameplay remain unverified.

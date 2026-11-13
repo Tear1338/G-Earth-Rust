@@ -702,6 +702,79 @@ fn write_log_capture<'a>(
         if let Some(marker) = rendered.marker {
             writeln!(output, "{marker}")?;
         }
+        // Java's byte views export the same text shown by its packet logger.
+        // The Rust-only expression view keeps its existing enriched layout.
+        if options.representation != PacketRepresentation::Expression
+            && !row.skipped
+            && !(options.representation == PacketRepresentation::NoBytes
+                && !options.export_hide_empty_header
+                && !options.extra_legacy
+                && !options.extra_raw_hex
+                && !options.extra_hex_dump)
+        {
+            let packet = &row.message.packet;
+            let legacy =
+                options.representation == PacketRepresentation::Legacy || options.extra_legacy;
+            let hex =
+                options.representation == PacketRepresentation::HexDump || options.extra_hex_dump;
+            let raw =
+                options.representation == PacketRepresentation::RawHex || options.extra_raw_hex;
+            if legacy || hex || raw {
+                let skipped = options.skip_big
+                    && packet.format() == PacketFormat::EvaWire
+                    && logger_display::skip_large_eva_representations(packet.bytes().len(), hex);
+                if skipped {
+                    write!(output, "{}", options.skipped_label)?;
+                } else {
+                    let direction = if row.message.direction == Direction::ToClient {
+                        options.incoming_label
+                    } else {
+                        options.outgoing_label
+                    };
+                    write!(output, "{direction}[{}] -> ", packet.header())?;
+                    if legacy {
+                        writeln!(
+                            output,
+                            "{}",
+                            logger_display::represent(
+                                packet.bytes(),
+                                PacketRepresentation::Legacy,
+                                usize::MAX
+                            )
+                        )?;
+                    }
+                    if hex {
+                        writeln!(
+                            output,
+                            "{}",
+                            logger_display::hex_dump(packet.bytes(), usize::MAX)
+                        )?;
+                    }
+                    if raw {
+                        writeln!(
+                            output,
+                            "{}",
+                            logger_display::represent(
+                                packet.bytes(),
+                                PacketRepresentation::RawHex,
+                                usize::MAX
+                            )
+                        )?;
+                    }
+                }
+            }
+            if let Some(structure) = rendered.structure {
+                let text = structure
+                    .strip_prefix("Structure: ")
+                    .or_else(|| structure.strip_prefix("Predicted: "))
+                    .unwrap_or(&structure);
+                writeln!(output, "{text}")?;
+            }
+            if split {
+                writeln!(output, "--------------------")?;
+            }
+            continue;
+        }
         if !logger_display::hide_empty_byte_header(
             options.export_hide_empty_header,
             options.representation,
@@ -4786,12 +4859,39 @@ mod logger_prediction_tests {
         let mut output = Vec::new();
         write_log_capture(&mut output, [&row], &info, options, true).unwrap();
         let text = String::from_utf8(output).unwrap();
-        assert!(text.starts_with("(timestamp: 123)\n"));
+        assert_eq!(text, "(timestamp: 123)\n[Example][Another][abc][def][42]\n[Blocked]\nIncoming[42] -> 00000002002a\n--------------------\n");
         assert!(text.contains("Incoming"));
         assert!(text.contains("[Blocked]\n"));
         assert!(text.contains("[Example][Another][abc][def][42]\n[Blocked]\n"));
         assert!(text.contains("00000002002a"));
         assert!(text.ends_with("--------------------\n"));
+        let original_options = options;
+        options.names = false;
+        options.hashes = false;
+        options.message_id = false;
+        options.timestamp = false;
+        row.message.blocked = false;
+        row.message.direction = Direction::ToServer;
+        let mut output = Vec::new();
+        write_log_capture(&mut output, [&row], &info, options, true).unwrap();
+        assert_eq!(
+            String::from_utf8(output).unwrap(),
+            "Outgoing[42] -> 00000002002a\n--------------------\n"
+        );
+        row.message.packet.put_string(&"x".repeat(1500)).unwrap();
+        row.message.packet.edited = false;
+        let mut output = Vec::new();
+        write_log_capture(&mut output, [&row], &info, options, false).unwrap();
+        let text = String::from_utf8(output).unwrap();
+        assert_eq!(
+            text.trim_end().len(),
+            "Outgoing[42] -> ".len() + row.message.packet.bytes().len() * 2
+        );
+        assert!(!text.contains('…'));
+        row.message.packet = Packet::new(42);
+        row.message.direction = Direction::ToClient;
+        row.message.blocked = true;
+        options = original_options;
         for (visible, forced, expected) in [
             (false, false, false),
             (false, true, true),
@@ -4826,7 +4926,8 @@ mod logger_prediction_tests {
         assert!(text.starts_with("(heure: 123)\n"));
         assert!(text.contains("Entrant"));
         assert!(text.contains("[Bloqué]\n"));
-        assert!(text.contains("Legacy:"));
+        assert!(text.contains("Entrant[42] -> "));
+        assert!(!text.contains("Legacy:"));
         assert!(text.contains("00000002002a"));
         assert!(text.contains("00000000  00 00 00 02 00 2a"));
         assert!(!text.contains("Raw hex:")); // Already used by the main representation.
@@ -4851,15 +4952,15 @@ mod logger_prediction_tests {
         let mut output = Vec::new();
         write_log_capture(&mut output, [&row], &info, options, false).unwrap();
         let text = String::from_utf8(output).unwrap();
-        assert!(text.contains("Raw hex: 00000002002a"));
-        assert!(text.contains("#000007"));
+        assert!(text.contains("Entrant[42] -> 00000002002a"));
+        assert!(!text.contains("#000007"));
         options.extra_legacy = true;
         options.extra_hex_dump = true;
         let mut output = Vec::new();
         write_log_capture(&mut output, [&row], &info, options, false).unwrap();
         let text = String::from_utf8(output).unwrap();
-        assert!(text.find("Legacy:").unwrap() < text.find("00000000  ").unwrap());
-        assert!(text.find("00000000  ").unwrap() < text.find("Raw hex:").unwrap());
+        assert!(text.find("Entrant[42] -> ").unwrap() < text.find("00000000  ").unwrap());
+        assert!(text.find("00000000  ").unwrap() < text.rfind("00000002002a").unwrap());
         options.extra_raw_hex = false;
         options.representation = PacketRepresentation::HexDump;
         let mut output = Vec::new();

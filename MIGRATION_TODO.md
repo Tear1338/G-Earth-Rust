@@ -1,5 +1,7 @@
 # Migration tasks
 
+Byte-view logger exports now use Java-style direction/header formatting and complete byte output. Next compare Java and Rust structure prediction and skipped/oversized packet export behavior; live logger validation remains open.
+
 A synthetic WIRED import without save acknowledgement retries three times and reports incomplete. Next compare packet logger export formats with beta-29 Java; live WIRED gameplay remains open.
 
 A synthetic WIRED trigger preset now reloads and imports with a simulated save acknowledgement. Next omit the WIRED save acknowledgement and verify that the extension reports an incomplete import; real WIRED gameplay remains open.
