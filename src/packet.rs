@@ -3628,6 +3628,40 @@ impl Packet {
         }
         result
     }
+    /// Read a WEDGIE string with beta-29 Java cursor and malformed-input semantics.
+    ///
+    /// Unlike `read_string`, an unterminated incoming string returns empty and
+    /// resets the cursor to zero, and an outgoing length prefix remains consumed
+    /// when its body is truncated. Use `read_string` for transactional parsing.
+    pub fn read_wedgie_string_java(&mut self) -> Result<String> {
+        match self.format {
+            PacketFormat::WedgieIncoming => {
+                let tail = self
+                    .bytes
+                    .get(self.cursor..)
+                    .ok_or_else(|| error("truncated packet field"))?;
+                if let Some(length) = tail.iter().position(|byte| *byte == 2) {
+                    let value = latin1_decode(&tail[..length]);
+                    self.cursor += length + 1;
+                    Ok(value)
+                } else {
+                    self.cursor = 0;
+                    Ok(String::new())
+                }
+            }
+            PacketFormat::WedgieOutgoing => {
+                let prefix = self.read_bytes(2)?;
+                let first = i32::from(prefix[0] as i8) - 64;
+                let second = i32::from(prefix[1] as i8) - 64;
+                let length = ((first << 6) | second) as i16;
+                let length =
+                    usize::try_from(length).map_err(|_| error("negative WEDGIE string length"))?;
+                Ok(latin1_decode(self.read_bytes(length)?))
+            }
+            PacketFormat::EvaWire => Err(error("WEDGIE packet required")),
+        }
+    }
+
     /// Read an EVA two-byte-length-prefixed field without copying its bytes.
     /// Invalid or truncated fields leave the cursor unchanged.
     pub fn read_short_bytes(&mut self) -> Result<&[u8]> {

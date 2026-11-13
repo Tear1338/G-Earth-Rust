@@ -1,5 +1,7 @@
 # Changelog
 
+- Add explicit beta-29-compatible WEDGIE string reading and CI oracle coverage.
+
 - Compare all legacy logger byte representations with the released Java API.
 
 - Apply Java logger size thresholds to WEDGIE packet frames.

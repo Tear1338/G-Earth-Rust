@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- On 2026-11-13, a separate WEDGIE string reader was added for beta-29 Java cursor semantics, including missing incoming terminators and consumed outgoing prefixes. Nine cases match the actual Java API; the original transactional Rust reader remains available. Mutation tests and both Clippy configurations pass on Windows; desktop/web release compilation passed in an isolated directory after the active desktop process locked the original binary. CI now runs the WEDGIE string and logger Java oracles. Live Shockwave remains unverified.
+
 - On 2026-11-13, the beta-29 Java API oracle matched Rust legacy byte display for all 256 individual byte values and complete EVA, incoming WEDGIE and outgoing WEDGIE frames. No discrepancy was found. Logger tests, both Clippy configurations and desktop/web debug build pass on Windows; live Shockwave remains unverified.
 
 - On 2026-11-13, logger skip and structure thresholds were corrected for WEDGIE: Java counts its full frame, whereas EVA excludes four length bytes. The beta-29 Java API oracle confirmed 18 boundary cases across formats; desktop/logger tests, both Clippy configurations and desktop/web debug build pass on Windows. WEDGIE live client behavior and CI for this change remain unverified.
@@ -448,4 +450,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Do not resume stopped Computer Use without the user. Independently compare WEDGIE string parsing and cursor behavior at empty, truncated and malformed boundaries with the beta-29 Java API, then fix and test any confirmed discrepancy; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.
+Do not resume stopped Computer Use without the user. Independently compare WEDGIE absolute-offset string reads and cursor behavior with the beta-29 Java API, then fix and test any confirmed discrepancy; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.

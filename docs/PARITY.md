@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+The explicit WEDGIE Java-compatible string reader matches nine beta-29 API fixtures, including cursor state on malformed data. Default Rust parsing remains transactional. Live Shockwave remains unverified.
+
 Legacy byte display matches beta-29 for all 256 byte values and complete EVA/WEDGIE fixtures. This does not verify a live Shockwave connection.
 
 Logger size thresholds now use beta-29 length semantics for EVA and both WEDGIE directions; a Java API oracle covers 18 boundary cases and Windows desktop tests cover the 1000/1001 WEDGIE boundary. Live Shockwave compatibility remains unverified.

@@ -115,6 +115,13 @@ jobs:
         run: cargo test --locked --test oracle -- --ignored
         env:
           GEARTH_JAVA_ORACLE: /tmp/java-oracle.txt
+      - name: Compare WEDGIE strings and logger formats with Java
+        run: |
+          api_jar=$(find /tmp/upstream-gearth -name 'G-Earth-Api-1.5.4-beta-29.jar' -print -quit)
+          test -n "$api_jar"
+          javac -encoding UTF-8 -cp "$api_jar" tests/JavaWedgieStringOracle.java tests/JavaLoggerLengthOracle.java
+          GEARTH_JAVA_WEDGIE_CLASSPATH="$api_jar:tests" cargo test --locked --test wedgie_string_oracle -- --include-ignored
+          GEARTH_JAVA_LOGGER_CLASSPATH="$api_jar:tests" cargo test --locked --test logger_display logger_packet_lengths_match_released_java -- --ignored
       - name: Compare furniture state formats against the original Java API
         run: |
           api_jar=$(find /tmp/upstream-gearth -name 'G-Earth-Api-1.5.4-beta-29.jar' -print -quit)
