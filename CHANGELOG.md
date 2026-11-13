@@ -1,5 +1,7 @@
 # Changelog
 
+- Prevent scheduler sends for Java-compatible intervals whose offset equals their period.
+
 - Resume aligned schedules at an exact due boundary without duplicate sends.
 
 - Add Java-compatible absolute string read semantics for WEDGIE and EVA.

@@ -145,7 +145,7 @@ fn imports_original_schedule_rows_and_preserves_pause_and_offsets() {
 }
 
 #[test]
-fn interval_equal_to_offset_roundtrips_and_runs_on_the_zero_phase() {
+fn interval_equal_to_offset_roundtrips_without_a_reachable_phase() {
     let input = "0\tfalse\t500+500\tTOSERVER\t{h:42}";
     let schedules = schedule_file::parse(input).unwrap();
     assert_eq!(schedules[0].offset_ms, Some(500));
@@ -172,9 +172,24 @@ fn interval_equal_to_offset_roundtrips_and_runs_on_the_zero_phase() {
     assert_eq!(scheduler.jobs[0].next, due);
     assert_eq!(scheduler.jobs[1].next, due);
     assert!(scheduler.tick(due - Duration::from_millis(1)).is_empty());
-    assert_eq!(scheduler.tick(due).len(), 2);
+    let sent = scheduler.tick(due);
+    assert_eq!(sent.len(), 1);
     assert_eq!(scheduler.jobs[0].alignment_offset_ms, Some(500));
-    assert_eq!(scheduler.jobs[0].next, due + Duration::from_millis(500));
+    assert_eq!(scheduler.jobs[1].next, due + Duration::from_millis(500));
+    scheduler.jobs.remove(1);
+    assert_eq!(scheduler.next_wake_in(due), None);
+    scheduler.set_paused(0, true, due).unwrap();
+    scheduler
+        .set_paused(0, false, due + Duration::from_secs(2))
+        .unwrap();
+    assert!(scheduler
+        .tick_with_wall_clock(due + Duration::from_secs(3), wall + Duration::from_secs(10))
+        .is_empty());
+    assert_eq!(scheduler.jobs.len(), 1);
+    let saved = schedule_file::format_active(&scheduler.jobs).unwrap();
+    let restored = schedule_file::parse(&saved).unwrap();
+    assert_eq!(restored[0].offset_ms, Some(500));
+    assert_eq!(restored[0].interval_ms, 500);
     assert!(scheduler
         .add_aligned(
             Packet::new_with_format(PacketFormat::EvaWire, 42).unwrap(),
@@ -220,11 +235,9 @@ fn java_maximum_interval_and_equal_offset_survive_settings_and_schedule_files() 
             (now, UNIX_EPOCH),
         )
         .unwrap();
-    assert_eq!(scheduler.tick(now).len(), 1);
-    assert_eq!(
-        scheduler.jobs[0].next,
-        now + Duration::from_millis(2_147_483_647)
-    );
+    assert!(scheduler.tick(now).is_empty());
+    assert_eq!(scheduler.next_wake_in(now), None);
+    assert_eq!(scheduler.jobs[0].alignment_offset_ms, Some(2_147_483_647));
     assert!(schedule_file::parse("0\tfalse\t2147483648+0\tTOSERVER\t{h:42}").is_err());
     let mut invalid = settings.to_json();
     invalid["schedules"][0]["offset_ms"] = serde_json::json!(2_147_483_648u64);

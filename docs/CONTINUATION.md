@@ -1,5 +1,7 @@
 # Continuation state
 
+Offset-equals-interval schedules now remain importable/exportable without dispatch, matching the Java modulo condition. Windows schedule/core tests, both Clippy configurations and desktop/web debug build pass. Next build deterministic Java catch-up comparison fixtures; real-client scheduling remains unverified. Do not resume stopped Computer Use without the user.
+
 Aligned schedule resume now emits at the exact boundary; scheduler/core tests, both Clippy configurations and desktop/web debug build pass on Windows. Java replays missed slots after disconnection; Rust deliberately skips them, so catch-up parity remains open. Next compare the accepted offset-equals-interval case against Java runtime behavior. Do not resume stopped Computer Use without the user.
 
 An explicit Java-compatible absolute string reader now rejects WEDGIE while retaining EVA support; 14 Java oracle cases, WEDGIE tests, both Clippy configurations and desktop/web debug build pass on Windows. Next compare scheduler restart and catch-up behavior against Java beta-29. Live Shockwave remains unverified. Do not resume stopped Computer Use without the user.

@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+An aligned job whose offset equals its interval has no reachable Java modulo phase; it is retained without dispatch or timer wakeups.
+
 Aligned schedule resume uses the current boundary when exact, while post-send advancement remains strictly future. Missed-send replay remains different from Java.
 
 The Java-compatible absolute string reader rejects WEDGIE offsets as beta-29 does; Rust-specific absolute WEDGIE parsing is retained separately.

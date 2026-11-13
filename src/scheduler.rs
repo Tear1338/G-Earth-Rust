@@ -31,6 +31,15 @@ pub struct Job {
     clock_reference: Option<(Instant, SystemTime)>,
 }
 
+impl Job {
+    // Java accepts offset == interval but `time % interval == offset` can
+    // never be true; keep such imported jobs without dispatching them.
+    fn has_reachable_phase(&self) -> bool {
+        self.alignment_offset_ms
+            .is_none_or(|offset| Duration::from_millis(offset) < self.interval)
+    }
+}
+
 pub struct ScheduleSpec {
     pub packet: Packet,
     pub source_expression: Option<String>,
@@ -98,7 +107,7 @@ impl Scheduler {
     pub fn next_wake_in(&self, now: Instant) -> Option<Duration> {
         self.jobs
             .iter()
-            .filter(|job| !job.paused && job.remaining != Some(0))
+            .filter(|job| !job.paused && job.remaining != Some(0) && job.has_reachable_phase())
             .map(|job| {
                 job.next
                     .saturating_duration_since(now)
@@ -112,7 +121,7 @@ impl Scheduler {
             .jobs
             .get_mut(index)
             .ok_or_else(|| error("unknown schedule"))?;
-        if job.paused && !paused {
+        if job.paused && !paused && job.has_reachable_phase() {
             job.next = if job.alignment_offset_ms.is_some() {
                 aligned_at_or_after(job.next, job.interval, now)
             } else {
@@ -277,6 +286,9 @@ impl Scheduler {
     }
     fn correct_wall_clock(&mut self, now: Instant, wall: SystemTime) {
         for job in &mut self.jobs {
+            if !job.has_reachable_phase() {
+                continue;
+            }
             let (Some(offset), Some((reference, reference_wall))) =
                 (job.alignment_offset_ms, job.clock_reference)
             else {
@@ -355,7 +367,11 @@ impl Scheduler {
     ) -> std::result::Result<(), E> {
         let mut failure = None;
         for job in &mut self.jobs {
-            if !job.paused && job.next <= now && job.remaining != Some(0) {
+            if !job.paused
+                && job.has_reachable_phase()
+                && job.next <= now
+                && job.remaining != Some(0)
+            {
                 let accepted = match send(job.direction, &job.packet) {
                     Ok(accepted) => accepted,
                     Err(error) => {

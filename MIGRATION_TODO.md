@@ -1,5 +1,7 @@
 # Migration tasks
 
+Offset equal to interval remains importable and exportable but no longer sends, matching the Java modulo condition. Next build deterministic Java catch-up comparison fixtures and assess replay behavior; live client scheduling remains open.
+
 Aligned schedule resume now fires at an exact boundary. Java replays missed slots after disconnection while Rust skips them; this material divergence remains open. Next compare the accepted offset-equals-interval case against Java runtime behavior.
 
 Explicit Java-compatible absolute string reads now reject WEDGIE like beta-29; Rust absolute reads remain available. Next compare scheduler restart and catch-up behavior against the original Java implementation.

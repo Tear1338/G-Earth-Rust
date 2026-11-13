@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+A schedule offset equal to its interval is accepted but never dispatched, matching the beta-29 Java modulo condition. Java missed-slot replay and live-client timing remain open.
+
 Aligned schedule resume now emits at an exact boundary. Java replays elapsed scheduler slots after disconnection; Rust currently skips missed slots and does not claim parity for catch-up or real client scheduling.
 
 The Java-compatible absolute string reader matches selected beta-29 WEDGIE rejection and EVA cursor cases; Rust also exposes independent WEDGIE absolute reads. Real Shockwave behavior remains unverified.
