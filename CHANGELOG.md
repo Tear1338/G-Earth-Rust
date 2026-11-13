@@ -1,5 +1,7 @@
 # Changelog
 
+- Compare all legacy logger byte representations with the released Java API.
+
 - Apply Java logger size thresholds to WEDGIE packet frames.
 
 - Preserve complete, ordered packet metadata in logger exports.

@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+The pinned beta-29 Java logger oracle compares every byte representation individually and as complete EVA and WEDGIE frames.
+
 Logger size thresholds share Java packet-length semantics: EVA excludes its four-byte length field and WEDGIE includes its complete frame.
 
 Logger export streams distinct metadata from the directional packet catalog in Java order, independently of the bounded UI cache.

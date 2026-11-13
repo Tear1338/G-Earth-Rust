@@ -266,11 +266,39 @@ fn logger_packet_lengths_match_released_java() {
         String::from_utf8_lossy(&output.stderr)
     );
     let actual = String::from_utf8(output.stdout).unwrap();
+    use base64::{engine::general_purpose::STANDARD, Engine};
+    for value in 0..=255u8 {
+        let key = format!("BYTE:{value}=");
+        let expected = actual
+            .lines()
+            .find_map(|line| line.strip_prefix(&key))
+            .unwrap();
+        let expected = STANDARD.decode(expected).unwrap();
+        assert_eq!(
+            gearth_rust::expression::wire_display(&[value]).as_bytes(),
+            expected
+        );
+    }
     for (name, format) in [
         ("EVA_WIRE", PacketFormat::EvaWire),
         ("WEDGIE_INCOMING", PacketFormat::WedgieIncoming),
         ("WEDGIE_OUTGOING", PacketFormat::WedgieOutgoing),
     ] {
+        let mut frame = if format == PacketFormat::EvaWire {
+            vec![0, 0, 1, 2, 0, 0]
+        } else {
+            vec![64, 64]
+        };
+        frame.extend(0..=255u8);
+        let key = format!("DISPLAY:{name}=");
+        let expected = actual
+            .lines()
+            .find_map(|line| line.strip_prefix(&key))
+            .unwrap();
+        assert_eq!(
+            gearth_rust::expression::wire_display(&frame).as_bytes(),
+            STANDARD.decode(expected).unwrap()
+        );
         for length in [1000, 1001, 2000, 2001, 4000, 4001] {
             let frame_len = length
                 + if format == PacketFormat::EvaWire {

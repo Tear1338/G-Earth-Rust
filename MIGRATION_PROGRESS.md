@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- On 2026-11-13, the beta-29 Java API oracle matched Rust legacy byte display for all 256 individual byte values and complete EVA, incoming WEDGIE and outgoing WEDGIE frames. No discrepancy was found. Logger tests, both Clippy configurations and desktop/web debug build pass on Windows; live Shockwave remains unverified.
+
 - On 2026-11-13, logger skip and structure thresholds were corrected for WEDGIE: Java counts its full frame, whereas EVA excludes four length bytes. The beta-29 Java API oracle confirmed 18 boundary cases across formats; desktop/logger tests, both Clippy configurations and desktop/web debug build pass on Windows. WEDGIE live client behavior and CI for this change remain unverified.
 
 - On 2026-11-13, logger exports were changed to stream all distinct packet names and hashes in beta-29 Java order, including empty values and long metadata, without the bounded screen cache. Windows desktop/logger tests, both Clippy configurations and desktop/web debug build pass; live UI and full logger parity remain unverified.
@@ -446,4 +448,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Do not resume stopped Computer Use without the user. Independently compare Java and Rust legacy logger byte display across all 256 byte values for EVA and WEDGIE, then fix and test any confirmed discrepancy; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.
+Do not resume stopped Computer Use without the user. Independently compare WEDGIE string parsing and cursor behavior at empty, truncated and malformed boundaries with the beta-29 Java API, then fix and test any confirmed discrepancy; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.

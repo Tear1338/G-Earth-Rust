@@ -1,5 +1,7 @@
 # Migration tasks
 
+Legacy byte display matches beta-29 for all byte values and three frame formats. Next compare WEDGIE string parsing and cursor behavior at empty, truncated and malformed boundaries against the Java API.
+
 Java logger size thresholds now apply to WEDGIE with full-frame length, backed by a beta-29 oracle. Next compare Java and Rust legacy byte display across all 256 byte values for EVA and WEDGIE. Live WEDGIE remains open.
 
 Logger exports preserve distinct, ordered and complete names/hashes per Java. Next compare beta-29 WEDGIE packet length and byte-display behavior with the Rust logger; real clients remain unverified.
