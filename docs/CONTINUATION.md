@@ -1,5 +1,7 @@
 # Continuation state
 
+Plain TCP preserves complete frames preceding a malformed length in a single batch; both directions and deterministic decoding pass. Windows library (90 passed, six ignored), 17 relay tests, both Clippy configurations and debug build pass. Next inspect Flash and Origins valid-prefix/malformed-tail handling, then recover saturated TCP lifecycle events. Live clients and malformed-input Java parity remain unverified.
+
 TCP relay errors now have a bounded latest-error/count fallback when event delivery fails; desktop retains the status while draining its backlog. The 2,200-packet saturation fixture and coalescing test pass, as do Windows desktop/web library (112 passed, seven ignored), relay/i18n/desktop tests, workspace/desktop/desktop-web Clippy and debug build. Next reproduce and fix lost Connected/Disconnected lifecycle events during saturation; API consumers must poll the error fallback, and real clients/UI remain unverified.
 
 The TCP output fixture verifies partial-write offsets across WouldBlock and a subsequent broken pipe. Windows library (87 passed, six ignored), relay tests, both Clippy configurations and debug build pass. Next reproduce lost critical errors when the relay event channel is full and provide nonblocking durable error visibility; real delivery and disconnect races remain unverified.

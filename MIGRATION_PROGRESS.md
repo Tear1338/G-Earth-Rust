@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- On 2026-11-13, plain TCP relay decoding retained and forwarded valid complete frames before reporting a later invalid length in the same input batch. A deterministic batch test and bidirectional loopback fixture pass; Windows library tests (90 passed, six ignored), 17 relay tests, both Clippy configurations and desktop/web debug build pass. Java FlashBuffer source was inspected but malformed-input equivalence is not established. Automatic Flash and Origins decoders still need the same valid-prefix audit; real clients remain unverified.
+
 - On 2026-11-13, TCP relay errors rejected by the bounded event channel were retained in a bounded latest-error/count slot, which the desktop checks while draining older events. A loopback fixture forwards 2,200 packets to saturate the channel and confirms a later invalid frame error remains observable; a second fixture covers coalescing. Windows desktop/web library tests (112 passed, seven ignored), 16 relay, 11 desktop and 11 i18n tests, workspace/desktop/desktop-web Clippy and desktop/web debug build pass. API consumers must explicitly poll the fallback; individual older errors are coalesced, lifecycle events can still be dropped, and visual UI/live clients remain unverified.
 
 - On 2026-11-13, deterministic scripted writes verified that TCP output resumes at the correct byte after partial write/backpressure and reports a broken pipe after a partial write. The accepted schedule is not restored automatically, and the remote outcome is unknown; automatic resend could duplicate data. Windows library tests (87 passed, six ignored), 16 relay tests, both Clippy configurations and desktop/web debug build pass. Real socket disconnect timing and clients remain unverified.
@@ -490,4 +492,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Reproduce TCP Connected/Disconnected event loss under event-channel saturation and implement bounded ordered lifecycle recovery without blocking packet processing. Partial delivery remains uncertain: do not blindly retry. Then verify COM decryption, real extensions and disconnect cleanup when a dedicated session is available, preserving FR/QX.
+Audit automatic Flash and Origins decoding for valid complete frames followed by a malformed tail in one read; add deterministic fixtures and preserve valid prefixes where appropriate. Then reproduce TCP lifecycle-event loss under saturation and design bounded ordered recovery. Verify COM decryption, real extensions and disconnect cleanup when a dedicated session is available, preserving FR/QX.

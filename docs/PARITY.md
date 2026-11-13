@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Plain TCP now forwards valid frames preceding a malformed length, verified in both directions and with a deterministic batch fixture. Java malformed-input equivalence and Flash/Origins batch decoders remain unverified.
+
 A local saturated-event-channel relay fixture verifies that a protocol error is retained and exposed separately to the desktop. API consumers must poll the fallback; earlier coalesced errors, lost lifecycle events, visual UI and live traffic remain limitations.
 
 A scripted TCP writer covers partial progress, backpressure and broken-pipe reporting. This does not determine what a real client received and cannot justify automatic replay; real socket timing remains unverified.

@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Plain TCP batch decoding returns complete frames alongside a later decode error, forwards and drains them before reporting that error. Automatic Flash and Origins have separate decoders whose malformed-tail behavior remains unverified.
+
 TCP errors rejected by the bounded event channel are coalesced in a latest-error/count slot; desktop peeks while draining the backlog and consumes after it drains. The relay does not wait for event-channel capacity. API callers must poll explicitly, individual earlier errors are not retained, and lifecycle event loss remains open.
 
 TCP output preserves byte offsets across partial writes and WouldBlock; a later broken pipe reports the error but leaves remote receipt uncertain. Do not equate queue acceptance with delivery or automatically replay a partially written frame. Critical event visibility under a full event channel still needs examination.

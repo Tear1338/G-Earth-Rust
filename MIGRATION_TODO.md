@@ -1,5 +1,7 @@
 # Migration tasks
 
+Audit automatic Flash and Origins decoding when a valid complete frame precedes malformed input in one read. Determine whether their batch-returning decoders also drop the valid prefix; add deterministic fixtures and preserve ordering where appropriate. Also reproduce lifecycle-event loss under saturation.
+
 Investigate lost TCP Connected/Disconnected events under a saturated event channel: desktop logger state and lifecycle actions can become stale. Reproduce disconnect/reconnect with a full queue and design bounded ordered lifecycle recovery without blocking packet processing. The TCP error fallback is opt-in for API consumers and coalesces older errors.
 
 Investigate critical relay error visibility under saturated event queues: TCP uses nonblocking try_send for errors and packet events, so a send failure can be dropped. Reproduce with a bounded fixture and design a nonblocking durable error path; preserve packet throughput and lifecycle ordering. Partial delivery is inherently uncertain and should not be blindly retried.

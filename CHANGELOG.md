@@ -1,5 +1,7 @@
 # Changelog
 
+- Forward complete plain TCP frames before reporting a malformed following frame in the same input batch.
+
 - Retain TCP relay errors during event-channel saturation and surface them in desktop status.
 
 - Test partial TCP writes, backpressure and disconnect without assuming delivery.

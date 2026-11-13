@@ -830,6 +830,22 @@ fn drain_outputs(
     Ok(())
 }
 
+// Preserve complete frames preceding an invalid prefix in the same read.
+fn decode_plain_batch(
+    decoder: &mut FrameDecoder,
+    bytes: &[u8],
+) -> io::Result<(Vec<Packet>, Option<io::Error>)> {
+    decoder.push(bytes).map_err(io::Error::other)?;
+    let mut packets = Vec::new();
+    loop {
+        match decoder.next_packet() {
+            Ok(Some(packet)) => packets.push(packet),
+            Ok(None) => return Ok((packets, None)),
+            Err(error) => return Ok((packets, Some(io::Error::other(error)))),
+        }
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_session(
     mut client: TcpStream,
@@ -990,6 +1006,7 @@ fn run_session(
             if let Some(cipher) = decrypt {
                 cipher.apply(&mut buffer[..n]);
             }
+            let mut decode_error = None;
             let packets: Vec<(Packet, bool)> = if let Some(flash) = &mut flash {
                 flash
                     .feed(direction, &buffer[..n])?
@@ -1004,12 +1021,9 @@ fn run_session(
                 };
                 packets.into_iter().map(|p| (p, false)).collect()
             } else {
-                decoder.push(&buffer[..n]).map_err(io::Error::other)?;
-                let mut packets = Vec::new();
-                while let Some(p) = decoder.next_packet().map_err(io::Error::other)? {
-                    packets.push((p, false));
-                }
-                packets
+                let (packets, error) = decode_plain_batch(decoder, &buffer[..n])?;
+                decode_error = error;
+                packets.into_iter().map(|packet| (packet, false)).collect()
             };
             if let Some(flash) = &mut flash {
                 if let Some(identity) = flash.take_identity() {
@@ -1132,6 +1146,17 @@ fn run_session(
                     }
                 }
                 let _ = events.try_send(Event::Packet(message));
+            }
+            if let Some(error) = decode_error {
+                drain_outputs(
+                    &mut client,
+                    &mut server,
+                    &mut to_client,
+                    &mut to_server,
+                    stop,
+                    closed,
+                )?;
+                return Err(error);
             }
         }
         if let (Some(flash), Some(pid)) = (&mut flash, options.flash_process) {
@@ -2927,5 +2952,19 @@ mod tests {
         let errors = missed.lock().unwrap().clone().unwrap();
         assert_eq!(errors.count, 2);
         assert_eq!(errors.latest, "second failure");
+    }
+    #[test]
+    fn plain_decode_batch_retains_valid_frames_before_invalid_prefix() {
+        let first = Packet::new(77);
+        let second = Packet::new(78);
+        let mut bytes = first.bytes().to_vec();
+        bytes.extend_from_slice(second.bytes());
+        bytes.extend_from_slice(&1u32.to_be_bytes());
+        let (packets, error) = decode_plain_batch(&mut FrameDecoder::default(), &bytes).unwrap();
+        assert_eq!(
+            packets.iter().map(Packet::header).collect::<Vec<_>>(),
+            [77, 78]
+        );
+        assert!(error.unwrap().to_string().contains("invalid frame length"));
     }
 }
