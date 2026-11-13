@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+The G-Presets loopback fixture checks that an unacknowledged placement results in an incomplete import rather than a success report.
+
 The offline G-Presets fixture runs a one-item export/reload/import and simulates ObjectAdd/ObjectUpdate responses, checking target coordinates, stack-tile restoration and successful completion.
 
 The isolated G-Presets fixture acknowledges one simulated inventory placement and observes the extension internal ID mapping under its lock; the build is intentionally aborted afterward.

@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- The released G-Presets binary reported an incomplete import when a simulated server omitted the floor placement acknowledgement; it did not report success. The isolated Windows fixture, both Clippy configurations and desktop/web debug build pass; Linux CI is pending. On 2026-11-13 no Habbo or Rust desktop process was present and no COM hosts redirect remained. Live decryption, real extensions and end-to-end import remain unverified.
+
 - The released G-Presets binary completed a one-item simulated import in two Windows loopback sessions: the fixture acknowledged placement and movement, verified the item at its exported coordinates, observed the stack tile returned to its original position, and saw the extension report successful completion. Furnidata, catalog, room and server responses are synthetic; WIRED/variables/walls were excluded. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI and real hotel import remain unverified.
 
 - In two isolated Windows loopback sessions, the released G-Presets binary accepted a valid staging tile, moved a simulated stack tile, emitted an inventory placement request, and bound the simulated ObjectAdd acknowledgement to the preset item ID. A test-only observer reads the extension mapping under its lock. The fixture deliberately aborts after this first acknowledgement; completed import and live hotel behavior remain unverified. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI pending.
@@ -60,7 +62,7 @@
 
 - Beta-29 entity fixtures now cover unknown type IDs, gender normalization and invalid genders, negative bot skill counts, invalid directions and negative entity/update counts. Java omits the final Habbo integer when serializing; Rust provides separate `append_java`/`construct_java` methods while retaining complete client wire output. The original Java oracle, five entity unit tests, both Clippy configurations and desktop/web debug build pass. Real clients and extensions remain unverified.
 
-Last updated: 2026-11-11. Baseline: Java 1.5.4-beta-29; current status and changes are tracked in the GitHub main branch.
+Last updated: 2026-11-13. Baseline: Java 1.5.4-beta-29; current status and changes are tracked in the GitHub main branch.
 
 The migration is **not complete**. Implemented code and finite fixtures do not establish live-client compatibility or performance gains. See `docs/PARITY.md` and `docs/CONTINUATION.md` for detailed evidence and limitations.
 
@@ -428,4 +430,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Do not resume stopped Computer Use without the user. Independently verify G-Presets behavior when a simulated placement acknowledgement is missing; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.
+Do not resume stopped Computer Use without the user. Independently verify G-Presets behavior when simulated movement confirmation is missing; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.

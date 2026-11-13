@@ -1,5 +1,7 @@
 # Continuation state
 
+Released G-Presets reported an incomplete import after a missing simulated placement acknowledgement. Both extension tests, both Clippy configurations and desktop/web debug build pass on Windows; Linux CI is pending. On 2026-11-13 neither Habbo nor Rust desktop was running and no COM hosts redirect remained. Next independent step: check a missing movement confirmation. Do not resume stopped Computer Use without the user.
+
 Released G-Presets completed a one-item synthetic export/reload/import in two Windows loopback sessions, including placement, movement and stack-tile restoration. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI pending. Next independent step: check missing placement acknowledgement behavior. Computer Use remains stopped pending the user; real COM decryption and live extensions remain unverified.
 
 The released G-Presets binary moved a simulated stack tile, requested a simulated inventory placement and mapped its ObjectAdd acknowledgement in two Windows loopback sessions. The test deliberately aborts before completion. Both extension tests, both Clippy configurations and desktop/web debug build pass; Linux CI pending. Next independent step: simulate subsequent movement and complete the import. Computer Use remains stopped pending the user.

@@ -1149,6 +1149,80 @@ fn released_gpresets_authenticates_to_the_rust_host() {
         server
             .set_read_timeout(Some(Duration::from_secs(10)))
             .unwrap();
+        if session == 1 {
+            // Repeat the build, but deliberately omit the ObjectAdd acknowledgement.
+            let successful_before = fs::read_to_string(directory.0.join("app.log"))
+                .unwrap_or_default()
+                .matches("[green] Import finished")
+                .count();
+            let mut import = Packet::new(92);
+            import.put_string(":ip 0,0").unwrap();
+            write_frame(&mut client, &import).unwrap();
+            wait_room("import-state-live.txt", "AWAITING_UNOCCUPIED_SPACE");
+            let mut staging = Packet::new(100);
+            staging.put_i32(0).unwrap().put_i32(0).unwrap();
+            write_frame(&mut client, &staging).unwrap();
+            let mut requested_placement = false;
+            for _ in 0..30 {
+                let mut packet = read_frame(&mut server).unwrap();
+                match packet.header() {
+                    100 => panic!("staging selection reached simulated server"),
+                    102 => {
+                        let id = packet.read_i32().unwrap();
+                        let x = packet.read_i32().unwrap();
+                        let y = packet.read_i32().unwrap();
+                        if id == 3700 + session {
+                            let mut changed = stack.clone();
+                            changed.tile = HPoint::new(x, y);
+                            let mut update = Packet::new(90);
+                            changed.append(&mut update).unwrap();
+                            write_frame(&mut server, &update).unwrap();
+                        }
+                    }
+                    101 => {
+                        requested_placement = true;
+                        break;
+                    }
+                    _ => {}
+                }
+            }
+            assert!(
+                requested_placement,
+                "no placement request in missing-ack scenario"
+            );
+            server
+                .set_read_timeout(Some(Duration::from_millis(500)))
+                .unwrap();
+            let deadline = Instant::now() + Duration::from_secs(30);
+            loop {
+                let log = fs::read_to_string(directory.0.join("app.log")).unwrap_or_default();
+                if log.contains("Import incomplete: floor placement not confirmed") {
+                    assert_eq!(
+                        log.matches("[green] Import finished").count(),
+                        successful_before
+                    );
+                    break;
+                }
+                assert!(
+                    Instant::now() < deadline,
+                    "missing acknowledgement did not fail: {}",
+                    log.replace(&token, "[token]")
+                );
+                match read_frame(&mut server) {
+                    Ok(_) => {}
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+                        ) => {}
+                    Err(error) => panic!("missing-ack socket failed: {error}"),
+                }
+            }
+            wait_room("import-state-live.txt", "NONE");
+            server
+                .set_read_timeout(Some(Duration::from_secs(10)))
+                .unwrap();
+        }
         // Remove synthetic additions so the next isolated session starts cleanly.
         for id in [3700 + session, 4700 + session] {
             let mut remove = Packet::new(87);

@@ -1,5 +1,7 @@
 # Changelog
 
+- Verify G-Presets reports an unacknowledged placement as incomplete.
+
 - Exercise a complete one-item G-Presets import with a simulated server.
 
 - Verify G-Presets first simulated placement and acknowledgement over the relay.
