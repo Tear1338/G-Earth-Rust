@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+The isolated extension fixture exports a synthetic WIRED trigger using a save packet, simulated WIRED permissions, a label snapshot and room settings; it verifies exported configuration and furniture-ID remapping.
+
 The isolated G-Presets relay fixture also acknowledges placement while withholding final movement confirmation, and checks that the import fails without a success message.
 
 The G-Presets loopback fixture checks that an unacknowledged placement results in an incomplete import rather than a success report.

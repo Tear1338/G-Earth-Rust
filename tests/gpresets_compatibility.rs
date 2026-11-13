@@ -284,6 +284,9 @@ fn released_gpresets_authenticates_to_the_rust_host() {
                 (95, "WiredAllVariablesDiffs"),
                 (98, "CatalogIndex"),
                 (99, "YouAreController"),
+                (105, "WiredPermissions"),
+                (106, "FurnitureLabelsAndRegions"),
+                (108, "WiredRoomSettings"),
             ]
             .into_iter()
             .map(|(header, name)| PacketInfo {
@@ -299,6 +302,8 @@ fn released_gpresets_authenticates_to_the_rust_host() {
                     (101, "PlaceObject"),
                     (102, "MoveObject"),
                     (103, "SetCustomStackingHeight"),
+                    (104, "UpdateTrigger"),
+                    (107, "WiredGetRoomSettings"),
                 ]
                 .into_iter()
                 .map(|(header, name)| PacketInfo {
@@ -1331,6 +1336,147 @@ fn released_gpresets_authenticates_to_the_rust_host() {
             let mut remove = Packet::new(87);
             remove.put_string(&(5700 + session).to_string()).unwrap();
             write_frame(&mut server, &remove).unwrap();
+        }
+        if session == 1 {
+            // Export a cached WIRED trigger using only synthetic room and protocol data.
+            let mut wired = floor.clone();
+            wired.id = 6701;
+            wired.type_id = 1600;
+            wired.tile = HPoint::new(2, 2);
+            let mut add = Packet::new(86);
+            wired.append(&mut add).unwrap();
+            add.put_string("Fixture").unwrap();
+            write_frame(&mut server, &add).unwrap();
+            wait_room("floor-details.txt", "2601:3:1,3701:3:3,4701:3:1,6701:2:2");
+            let mut save = Packet::new(104);
+            save.put_i32(6701)
+                .unwrap()
+                .put_i32(1)
+                .unwrap()
+                .put_i32(42)
+                .unwrap();
+            save.put_string("fixture trigger")
+                .unwrap()
+                .put_i32(1)
+                .unwrap()
+                .put_i32(2601)
+                .unwrap();
+            write_frame(&mut client, &save).unwrap();
+            loop {
+                let packet = read_frame(&mut server).unwrap();
+                if packet.header() == 104 {
+                    assert_eq!(packet.bytes(), save.bytes());
+                    break;
+                }
+            }
+            let ready = directory.0.join("enable-wired.ready");
+            let _ = fs::remove_file(&ready);
+            fs::write(directory.0.join("enable-wired.trigger"), "").unwrap();
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while !ready.exists() {
+                assert!(
+                    Instant::now() < deadline,
+                    "could not enable synthetic WIRED export"
+                );
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            let mut labels = Packet::new(106);
+            labels.put_i32(0).unwrap();
+            write_frame(&mut server, &labels).unwrap();
+            let mut permission = Packet::new(105);
+            permission.put_bool(true).unwrap();
+            write_frame(&mut server, &permission).unwrap();
+            wait_room("wired-permission.txt", "true");
+            let mut command = Packet::new(92);
+            command.put_string(":ep all").unwrap();
+            write_frame(&mut client, &command).unwrap();
+            let mut saw_prompt = false;
+            for _ in 0..100 {
+                let mut packet = read_frame(&mut client).unwrap();
+                if packet.header() == 93
+                    && packet.read_i32().unwrap() == -1
+                    && packet.read_string().unwrap() == "Enter the name of the preset"
+                {
+                    saw_prompt = true;
+                    break;
+                }
+            }
+            assert!(saw_prompt, "WIRED export name prompt missing");
+            let mut name = Packet::new(92);
+            name.put_string("fixture_wired").unwrap();
+            write_frame(&mut client, &name).unwrap();
+            let path = directory.0.join("data/presets/fixture_wired.json");
+            server
+                .set_read_timeout(Some(Duration::from_millis(500)))
+                .unwrap();
+            let deadline = Instant::now() + Duration::from_secs(20);
+            while !path.exists() {
+                let log = fs::read_to_string(directory.0.join("app.log")).unwrap_or_default();
+                assert!(
+                    Instant::now() < deadline,
+                    "WIRED export failed: {}",
+                    log.replace(&token, "[token]")
+                );
+                match read_frame(&mut server) {
+                    Ok(packet) if packet.header() == 96 => {
+                        let mut variables = Packet::new(95);
+                        variables
+                            .put_i32(0)
+                            .unwrap()
+                            .put_bool(true)
+                            .unwrap()
+                            .put_i32(0)
+                            .unwrap()
+                            .put_i32(0)
+                            .unwrap();
+                        write_frame(&mut server, &variables).unwrap();
+                    }
+                    Ok(packet) if packet.header() == 107 => {
+                        let mut settings = Packet::new(108);
+                        settings
+                            .put_i32(0)
+                            .unwrap()
+                            .put_i32(0)
+                            .unwrap()
+                            .put_string("UTC")
+                            .unwrap();
+                        write_frame(&mut server, &settings).unwrap();
+                    }
+                    Ok(packet) => panic!("unexpected packet in WIRED export: {}", packet.header()),
+                    Err(error)
+                        if matches!(
+                            error.kind(),
+                            std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+                        ) => {}
+                    Err(error) => panic!("WIRED export socket failed: {error}"),
+                }
+            }
+            let json: serde_json::Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+            let furni = json["furni"].as_array().unwrap();
+            let wired_id = furni
+                .iter()
+                .find(|item| item["className"] == "wf_trg_fixture")
+                .expect("synthetic WIRED furniture missing")["id"]
+                .clone();
+            let triggers = json["wired"]["triggers"].as_array().unwrap();
+            assert_eq!(triggers.len(), 1, "unexpected WIRED export: {json}");
+            assert_eq!(triggers[0]["wiredId"], wired_id);
+            assert_eq!(triggers[0]["config"], "fixture trigger");
+            assert_eq!(triggers[0]["options"], serde_json::json!([42]));
+            let selected = triggers[0]["items"].as_array().unwrap();
+            assert_eq!(selected.len(), 1);
+            assert!(
+                furni
+                    .iter()
+                    .any(|item| item["className"] == "fixture_floor" && item["id"] == selected[0]),
+                "selected floor item was not remapped: {json}"
+            );
+            let mut remove = Packet::new(87);
+            remove.put_string("6701").unwrap();
+            write_frame(&mut server, &remove).unwrap();
+            server
+                .set_read_timeout(Some(Duration::from_secs(10)))
+                .unwrap();
         }
         // Remove synthetic additions so the next isolated session starts cleanly.
         for id in [3700 + session, 4700 + session] {

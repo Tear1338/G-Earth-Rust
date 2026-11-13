@@ -14,7 +14,7 @@ public class GPresetsObserver extends GPresetsLauncher {
         @Override public boolean isReady() { return true; }
         @Override public Integer getFloorTypeId(String name) { return "fixture_floor".equals(name) ? 1500 : "tile_stackmagic1".equals(name) ? 1550 : -1; }
         @Override public Integer getWallTypeId(String name) { return -1; }
-        @Override public String getFloorItemName(int id) { return id == 1550 ? "tile_stackmagic1" : "fixture_floor"; }
+        @Override public String getFloorItemName(int id) { return id == 1550 ? "tile_stackmagic1" : id == 1600 ? "wf_trg_fixture" : "fixture_floor"; }
         @Override public String getWallItemName(int id) { return "fixture_wall"; }
     }
 
@@ -45,6 +45,16 @@ public class GPresetsObserver extends GPresetsLauncher {
                                 Files.writeString(state.resolveSibling("fixture-furnidata.ready"), "ready");
                             } catch (Exception error) {
                                 throw new IllegalStateException("fixture furnidata setup failed", error);
+                            }
+                        });
+                    }
+                    if (Files.deleteIfExists(state.resolveSibling("enable-wired.trigger"))) {
+                        javafx.application.Platform.runLater(() -> {
+                            try {
+                                presets.noExportWiredCbx.setSelected(false);
+                                Files.writeString(state.resolveSibling("enable-wired.ready"), "ready");
+                            } catch (Exception error) {
+                                throw new IllegalStateException("fixture WIRED setup failed", error);
                             }
                         });
                     }
@@ -79,6 +89,8 @@ public class GPresetsObserver extends GPresetsLauncher {
                         Files.writeString(state, ids);
                     }
                     if (presets.getCatalog() != null && presets.getPermissions() != null && presets.getImporter() != null) {
+                        Files.writeString(state.resolveSibling("wired-permission.txt"),
+                            Boolean.toString(presets.getPermissions().canModifyWired()));
                         Files.writeString(state.resolveSibling("readiness.txt"),
                             presets.getCatalog().getState() + ":" + presets.getPermissions().canMoveFurni() + ":" + presets.getImporter().isReady());
                         Files.writeString(state.resolveSibling("import-state-live.txt"), presets.getImporter().getState().toString());
