@@ -1,5 +1,7 @@
 # Migration tasks
 
+Java logger size thresholds now apply to WEDGIE with full-frame length, backed by a beta-29 oracle. Next compare Java and Rust legacy byte display across all 256 byte values for EVA and WEDGIE. Live WEDGIE remains open.
+
 Logger exports preserve distinct, ordered and complete names/hashes per Java. Next compare beta-29 WEDGIE packet length and byte-display behavior with the Rust logger; real clients remain unverified.
 
 Byte-view log export now writes full eligible structures and retained display-limited packets; Java skip formatting has a fixture. Next compare logger metadata name/hash export limits and ordering with beta-29; real logger UI remains open.

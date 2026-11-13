@@ -564,8 +564,8 @@ fn render_log_row(
         || options.extra_hex_dump;
     let omit_representations = options.skip_big
         && has_byte_representation
-        && packet.format() == PacketFormat::EvaWire
-        && logger_display::skip_large_eva_representations(
+        && logger_display::skip_java_packet_representations(
+            packet.format(),
             packet.bytes().len(),
             options.representation == PacketRepresentation::HexDump || options.extra_hex_dump,
         );
@@ -647,11 +647,11 @@ fn render_log_row(
     }
     let structure = if options.structure
         && !row.skipped
-        && (packet.format() != PacketFormat::EvaWire
-            || logger_display::allow_eva_structure(
-                packet.bytes().len(),
-                options.java_structure_limit,
-            )) {
+        && logger_display::allow_java_packet_structure(
+            packet.format(),
+            packet.bytes().len(),
+            options.java_structure_limit,
+        ) {
         let (expression, known, clean) = row.packet_expression.get_or_init(|| {
             let (expression, known) = gearth_rust::structure_prediction::expression_with_metadata(
                 packet,
@@ -758,8 +758,11 @@ fn write_log_capture<'a>(
                 options.representation == PacketRepresentation::RawHex || options.extra_raw_hex;
             if legacy || hex || raw {
                 let skipped = options.skip_big
-                    && packet.format() == PacketFormat::EvaWire
-                    && logger_display::skip_large_eva_representations(packet.bytes().len(), hex);
+                    && logger_display::skip_java_packet_representations(
+                        packet.format(),
+                        packet.bytes().len(),
+                        hex,
+                    );
                 if skipped {
                     write!(output, "{}", options.skipped_label)?;
                 } else {
@@ -803,11 +806,11 @@ fn write_log_capture<'a>(
             // The on-screen cache is bounded for responsiveness; exports must not
             // silently truncate an otherwise valid Java-sized structure.
             if options.structure
-                && (packet.format() != PacketFormat::EvaWire
-                    || logger_display::allow_eva_structure(
-                        packet.bytes().len(),
-                        options.java_structure_limit,
-                    ))
+                && logger_display::allow_java_packet_structure(
+                    packet.format(),
+                    packet.bytes().len(),
+                    options.java_structure_limit,
+                )
             {
                 let (text, _) = gearth_rust::structure_prediction::expression_with_metadata(
                     packet,
@@ -4662,7 +4665,7 @@ mod logger_prediction_tests {
         LOG_PREDICTION_LIMIT,
     };
     use eframe::egui;
-    use gearth_rust::packet::{Direction, Message, Packet};
+    use gearth_rust::packet::{Direction, Message, Packet, PacketFormat};
     use gearth_rust::packet_info::{PacketInfo, PacketInfoManager};
     use std::{collections::VecDeque, sync::OnceLock};
 
@@ -4844,6 +4847,38 @@ mod logger_prediction_tests {
         let skipped = String::from_utf8(output).unwrap();
         assert!(skipped.ends_with("<paquet ignoré>--------------------\n"));
         assert!(!skipped.contains("Incoming[42] ->"));
+        for format in [PacketFormat::WedgieIncoming, PacketFormat::WedgieOutgoing] {
+            for length in [1000, 1001] {
+                let mut bytes = vec![b'x'; length];
+                bytes[0] = 64;
+                bytes[1] = 64;
+                let wedgie = LogRow {
+                    message: Message {
+                        packet: Packet::from_bytes_with_format(format, bytes).unwrap(),
+                        direction: Direction::ToClient,
+                        index: 1,
+                        blocked: false,
+                    },
+                    timestamp_ms: None,
+                    expression: String::new(),
+                    search: String::new(),
+                    bytes: 0,
+                    skipped: false,
+                    unity: false,
+                    predicted_structure: OnceLock::new(),
+                    packet_expression: OnceLock::new(),
+                    packet_metadata: OnceLock::new(),
+                };
+                let mut output = Vec::new();
+                write_log_capture(&mut output, [&wedgie], &info, options, true).unwrap();
+                let text = String::from_utf8(output).unwrap();
+                if length == 1001 {
+                    assert_eq!(text, "<paquet ignoré>--------------------\n");
+                } else {
+                    assert!(text.starts_with("Incoming[0] -> "));
+                }
+            }
+        }
         options.representation = PacketRepresentation::Expression;
         options.skip_big = false;
         let mut output = Vec::new();

@@ -1,5 +1,7 @@
 # Changelog
 
+- Apply Java logger size thresholds to WEDGIE packet frames.
+
 - Preserve complete, ordered packet metadata in logger exports.
 
 - Preserve complete structures and retained packet bytes in byte-view log exports.

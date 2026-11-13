@@ -1,5 +1,7 @@
 # Continuation state
 
+WEDGIE logger skip and structure thresholds now follow beta-29 full-frame lengths; the actual Java API oracle covers 18 boundary cases. Windows desktop/logger tests, both Clippy configurations and desktop/web debug build pass; CI and live Shockwave remain unverified. Next compare legacy byte display across all 256 byte values for EVA and WEDGIE. Do not resume stopped Computer Use without the user.
+
 Logger export now preserves complete ordered distinct names and hashes, including empty values. Desktop/logger tests, both Clippy configurations and desktop/web debug build pass on Windows; live UI and full logger parity remain open. Next compare beta-29 WEDGIE packet length and byte-display behavior with the Rust logger. Do not resume stopped Computer Use without the user.
 
 Byte-view export now recomputes full eligible structures instead of reusing bounded display text and can export retained display-limited packets. Desktop and logger tests, both Clippy configurations and desktop/web debug build pass on Windows; CI and live UI remain unverified. Next compare metadata name/hash export limits and ordering against beta-29. Do not resume stopped Computer Use without the user.

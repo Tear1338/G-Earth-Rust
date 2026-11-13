@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- On 2026-11-13, logger skip and structure thresholds were corrected for WEDGIE: Java counts its full frame, whereas EVA excludes four length bytes. The beta-29 Java API oracle confirmed 18 boundary cases across formats; desktop/logger tests, both Clippy configurations and desktop/web debug build pass on Windows. WEDGIE live client behavior and CI for this change remain unverified.
+
 - On 2026-11-13, logger exports were changed to stream all distinct packet names and hashes in beta-29 Java order, including empty values and long metadata, without the bounded screen cache. Windows desktop/logger tests, both Clippy configurations and desktop/web debug build pass; live UI and full logger parity remain unverified.
 
 - On 2026-11-13, byte-view log export stopped reusing the 1024-byte display cache for structures and can export retained packets even when their row is display-limited. Tests cover a >1024-byte structure and the Java skipped-packet separator; desktop and logger tests, both Clippy configurations and desktop/web debug build pass on Windows. Full prediction parity, CI for this change and live UI remain unverified.
@@ -444,4 +446,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Do not resume stopped Computer Use without the user. Independently compare beta-29 WEDGIE packet length and byte-display behavior with the Rust logger, then fix and test any confirmed discrepancy; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.
+Do not resume stopped Computer Use without the user. Independently compare Java and Rust legacy logger byte display across all 256 byte values for EVA and WEDGIE, then fix and test any confirmed discrepancy; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.

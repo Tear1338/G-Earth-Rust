@@ -214,3 +214,74 @@ fn long_packets_are_bounded_and_options_restore_from_settings() {
         hex_dump(&bytes, 2)
     );
 }
+
+#[test]
+fn java_logger_limits_include_the_entire_wedgie_frame() {
+    use gearth_rust::{
+        logger_display::{
+            allow_java_packet_structure, java_packet_length, skip_java_packet_representations,
+        },
+        packet::PacketFormat,
+    };
+    for format in [PacketFormat::WedgieIncoming, PacketFormat::WedgieOutgoing] {
+        for len in [2, 1000, 1001, 2000, 2001, 4000, 4001] {
+            assert_eq!(java_packet_length(format, len), len);
+            assert_eq!(
+                skip_java_packet_representations(format, len, true),
+                len > 1000
+            );
+            assert_eq!(
+                skip_java_packet_representations(format, len, false),
+                len > 4000
+            );
+            assert_eq!(allow_java_packet_structure(format, len, true), len <= 2000);
+            assert!(allow_java_packet_structure(format, len, false));
+        }
+    }
+    assert_eq!(java_packet_length(PacketFormat::EvaWire, 1004), 1000);
+    assert!(!skip_java_packet_representations(
+        PacketFormat::EvaWire,
+        1004,
+        true
+    ));
+    assert!(skip_java_packet_representations(
+        PacketFormat::EvaWire,
+        1005,
+        true
+    ));
+}
+
+#[test]
+#[ignore = "requires the compiled beta-29 Java logger length oracle"]
+fn logger_packet_lengths_match_released_java() {
+    use gearth_rust::{logger_display::java_packet_length, packet::PacketFormat};
+    let cp = std::env::var("GEARTH_JAVA_LOGGER_CLASSPATH").unwrap();
+    let output = std::process::Command::new("java")
+        .args(["-cp", &cp, "JavaLoggerLengthOracle"])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let actual = String::from_utf8(output.stdout).unwrap();
+    for (name, format) in [
+        ("EVA_WIRE", PacketFormat::EvaWire),
+        ("WEDGIE_INCOMING", PacketFormat::WedgieIncoming),
+        ("WEDGIE_OUTGOING", PacketFormat::WedgieOutgoing),
+    ] {
+        for length in [1000, 1001, 2000, 2001, 4000, 4001] {
+            let frame_len = length
+                + if format == PacketFormat::EvaWire {
+                    4
+                } else {
+                    0
+                };
+            assert!(actual
+                .lines()
+                .any(|line| line
+                    == format!("{name}:{length}={}", java_packet_length(format, frame_len))));
+        }
+    }
+}

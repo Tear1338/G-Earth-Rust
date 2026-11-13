@@ -1,5 +1,8 @@
 //! Packet representation options for the built-in logger.
-use crate::{expression, packet::Direction};
+use crate::{
+    expression,
+    packet::{Direction, PacketFormat},
+};
 use std::{fs::OpenOptions, io, path::Path};
 
 /// Java shows no byte header when all byte views are disabled.
@@ -135,14 +138,39 @@ pub enum PacketRepresentation {
 /// packet and its structured display available. `frame_len` includes the
 /// four-byte EVA length prefix, while Java's HPacket.length() excludes it.
 pub fn skip_large_eva_representations(frame_len: usize, hex_dump_enabled: bool) -> bool {
-    let packet_len = frame_len.saturating_sub(4);
+    skip_java_packet_representations(PacketFormat::EvaWire, frame_len, hex_dump_enabled)
+}
+
+/// Java's logger uses the EVA body length but the complete WEDGIE frame length.
+pub fn java_packet_length(format: PacketFormat, frame_len: usize) -> usize {
+    if format == PacketFormat::EvaWire {
+        frame_len.saturating_sub(4)
+    } else {
+        frame_len
+    }
+}
+
+pub fn skip_java_packet_representations(
+    format: PacketFormat,
+    frame_len: usize,
+    hex_dump_enabled: bool,
+) -> bool {
+    let packet_len = java_packet_length(format, frame_len);
     packet_len > 4000 || (hex_dump_enabled && packet_len > 1000)
+}
+
+pub fn allow_java_packet_structure(
+    format: PacketFormat,
+    frame_len: usize,
+    java_limit: bool,
+) -> bool {
+    !java_limit || java_packet_length(format, frame_len) <= 2000
 }
 
 /// Java's logger limits structure rendering by the EVA length field, excluding
 /// its four-byte prefix. Other packet formats retain their existing behavior.
 pub fn allow_eva_structure(frame_len: usize, java_limit: bool) -> bool {
-    !java_limit || frame_len.saturating_sub(4) <= 2000
+    allow_java_packet_structure(PacketFormat::EvaWire, frame_len, java_limit)
 }
 
 /// Whether Java's cleanTextContent would leave this expression unchanged.

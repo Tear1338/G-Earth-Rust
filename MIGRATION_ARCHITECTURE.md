@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Logger size thresholds share Java packet-length semantics: EVA excludes its four-byte length field and WEDGIE includes its complete frame.
+
 Logger export streams distinct metadata from the directional packet catalog in Java order, independently of the bounded UI cache.
 
 Byte-view export recomputes complete packet structures instead of reusing the bounded display cache, while honoring the configured Java size and cleaning options.
