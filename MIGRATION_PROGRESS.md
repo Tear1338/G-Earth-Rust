@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- On 2026-11-13, an explicit Java-compatible absolute string reader was added: beta-29 rejects WEDGIE absolute reads without moving the cursor, while EVA reads remain available. The Java oracle covers 12 WEDGIE and two EVA cases; Rust-specific absolute WEDGIE reads remain available separately. Windows WEDGIE/oracle tests, both Clippy configurations and desktop/web debug build pass; live Shockwave remains unverified.
+
 - On 2026-11-13, a separate WEDGIE string reader was added for beta-29 Java cursor semantics, including missing incoming terminators and consumed outgoing prefixes. Nine cases match the actual Java API; the original transactional Rust reader remains available. Mutation tests and both Clippy configurations pass on Windows; desktop/web release compilation passed in an isolated directory after the active desktop process locked the original binary. CI now runs the WEDGIE string and logger Java oracles. Live Shockwave remains unverified.
 
 - On 2026-11-13, the beta-29 Java API oracle matched Rust legacy byte display for all 256 individual byte values and complete EVA, incoming WEDGIE and outgoing WEDGIE frames. No discrepancy was found. Logger tests, both Clippy configurations and desktop/web debug build pass on Windows; live Shockwave remains unverified.
@@ -450,4 +452,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Do not resume stopped Computer Use without the user. Independently compare WEDGIE absolute-offset string reads and cursor behavior with the beta-29 Java API, then fix and test any confirmed discrepancy; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.
+Do not resume stopped Computer Use without the user. Independently compare scheduler restart and catch-up behavior with Java beta-29, then fix and test any confirmed discrepancy; when authorized, verify COM decryption, real extensions and disconnect cleanup while preserving FR/QX.

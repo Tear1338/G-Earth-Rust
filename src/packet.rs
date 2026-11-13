@@ -3442,6 +3442,13 @@ impl Packet {
             .ok_or_else(|| error("length overflow"))?;
         Ok(latin1_decode(self.read_bytes_at(start, length)?))
     }
+    /// Read at an absolute offset with beta-29 format support semantics.
+    /// Java rejects absolute WEDGIE string reads; `read_string_at` is the Rust
+    /// extension that supports them without moving the cursor.
+    pub fn read_string_java_at(&self, offset: usize) -> Result<String> {
+        self.ensure_eva()?;
+        self.read_string_at(offset)
+    }
     pub fn read_long_string_at(&self, offset: usize) -> Result<String> {
         self.ensure_eva()?;
         let length = usize::try_from(self.read_i32_at(offset)?)

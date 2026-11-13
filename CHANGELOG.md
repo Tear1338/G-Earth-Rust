@@ -1,5 +1,7 @@
 # Changelog
 
+- Add Java-compatible absolute string read semantics for WEDGIE and EVA.
+
 - Add explicit beta-29-compatible WEDGIE string reading and CI oracle coverage.
 
 - Compare all legacy logger byte representations with the released Java API.

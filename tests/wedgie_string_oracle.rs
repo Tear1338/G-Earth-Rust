@@ -48,6 +48,27 @@ fn java_compatible_wedgie_strings_cover_boundaries() {
 }
 
 #[test]
+fn java_absolute_string_reads_preserve_format_support_and_cursor() {
+    for (format, expected) in [
+        (PacketFormat::WedgieIncoming, "@AA"),
+        (PacketFormat::WedgieOutgoing, "A"),
+    ] {
+        let packet = Packet::from_bytes_with_format(format, vec![64, 64, 64, 65, 65, 2]).unwrap();
+        assert_eq!(packet.read_string_at(2).unwrap(), expected);
+        for offset in [0, 2, 999] {
+            assert!(packet.read_string_java_at(offset).is_err());
+            assert_eq!(packet.cursor(), 2);
+        }
+    }
+    let mut eva = Packet::new(1);
+    eva.put_string("hi").unwrap();
+    eva.set_cursor(7).unwrap();
+    assert_eq!(eva.read_string_java_at(6).unwrap(), "hi");
+    assert!(eva.read_string_java_at(999).is_err());
+    assert_eq!(eva.cursor(), 7);
+}
+
+#[test]
 #[ignore = "requires compiled JavaWedgieStringOracle and beta-29 Java API"]
 fn wedgie_string_boundaries_match_released_java() {
     let cp = std::env::var("GEARTH_JAVA_WEDGIE_CLASSPATH").unwrap();
@@ -73,4 +94,32 @@ fn wedgie_string_boundaries_match_released_java() {
         };
         assert_eq!(observe(format, &body), java, "{name}");
     }
+    for (name, format) in [
+        ("WEDGIE_INCOMING", PacketFormat::WedgieIncoming),
+        ("WEDGIE_OUTGOING", PacketFormat::WedgieOutgoing),
+    ] {
+        let packet = Packet::from_bytes_with_format(format, vec![64, 64, 64, 65, 65, 2]).unwrap();
+        for offset in [0, 2, 999] {
+            for prefix in ["at_", "at_charset_"] {
+                let key = format!("{prefix}{name}_{offset}=");
+                let java = text
+                    .lines()
+                    .find_map(|line| line.strip_prefix(&key))
+                    .unwrap();
+                assert_eq!(java, "error:ShockPacketUnsupported:2");
+                assert!(packet.read_string_java_at(offset).is_err());
+                assert_eq!(packet.cursor(), 2);
+            }
+        }
+    }
+    let mut eva = Packet::new(1);
+    eva.put_string("hi").unwrap();
+    eva.set_cursor(7).unwrap();
+    assert!(text.lines().any(|line| line == "at_eva_valid=ok:6869:7"));
+    assert!(text
+        .lines()
+        .any(|line| line == "at_eva_truncated=error:ArrayIndexOutOfBoundsException:7"));
+    assert_eq!(eva.read_string_java_at(6).unwrap(), "hi");
+    assert!(eva.read_string_java_at(999).is_err());
+    assert_eq!(eva.cursor(), 7);
 }

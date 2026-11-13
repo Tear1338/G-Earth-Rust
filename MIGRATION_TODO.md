@@ -1,5 +1,7 @@
 # Migration tasks
 
+Explicit Java-compatible absolute string reads now reject WEDGIE like beta-29; Rust absolute reads remain available. Next compare scheduler restart and catch-up behavior against the original Java implementation.
+
 The explicit Java-compatible WEDGIE string reader matches nine beta-29 success, error and cursor fixtures; the transactional Rust reader remains unchanged. Next compare Java and Rust WEDGIE absolute-offset string reads and cursor behavior.
 
 Legacy byte display matches beta-29 for all byte values and three frame formats. Next compare WEDGIE string parsing and cursor behavior at empty, truncated and malformed boundaries against the Java API.

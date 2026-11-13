@@ -1,5 +1,7 @@
 # Continuation state
 
+An explicit Java-compatible absolute string reader now rejects WEDGIE while retaining EVA support; 14 Java oracle cases, WEDGIE tests, both Clippy configurations and desktop/web debug build pass on Windows. Next compare scheduler restart and catch-up behavior against Java beta-29. Live Shockwave remains unverified. Do not resume stopped Computer Use without the user.
+
 An explicit Java-compatible WEDGIE string reader matches nine beta-29 oracle cases while the default Rust reader remains transactional. Mutation tests and both Clippy configurations pass on Windows; desktop/web release compilation passed in an isolated directory after the active desktop process locked the original binary. CI now includes the WEDGIE and logger Java oracles. Next compare WEDGIE absolute-offset string reads and cursor behavior. Do not resume stopped Computer Use without the user.
 
 Legacy byte display matches the actual beta-29 Java API for all 256 bytes and complete EVA/WEDGIE fixtures. Logger tests, both Clippy configurations and desktop/web debug build pass on Windows; live Shockwave remains unverified. Next compare WEDGIE string parsing and cursor behavior at empty, truncated and malformed boundaries. Do not resume stopped Computer Use without the user.

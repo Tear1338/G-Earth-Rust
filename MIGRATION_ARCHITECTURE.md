@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+The Java-compatible absolute string reader rejects WEDGIE offsets as beta-29 does; Rust-specific absolute WEDGIE parsing is retained separately.
+
 WEDGIE provides an explicit Java-compatible string reader for legacy malformed-input cursor behavior; the default transactional reader retains its error and rollback guarantees.
 
 The pinned beta-29 Java logger oracle compares every byte representation individually and as complete EVA and WEDGIE frames.
