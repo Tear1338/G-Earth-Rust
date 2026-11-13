@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- Windows GNU desktop/web release compilation passed for 4af5a4c on 2026-11-13. Four Unity server tests also pass, including explicit static-catalog reuse for different revisions; real Unity remains unverified. Unity peer.ready precedes delivery of identification events, so desktop scheduler state can lag behind the active session.
+
 - On 2026-11-13, automatic Flash scheduled sends were bound to the relay session and its identified catalog instead of desktop event state. Pending identification/lookup keeps due jobs pending; a changed session or explicitly downloaded matching catalog invalidates an earlier snapshot. A two-session controlled lookup fixture verifies both waits, replacement IDs and rejection of stale snapshots. Windows library tests (82 passed, six ignored), 16 relay, 11 i18n and 11 desktop tests, both Clippy configurations and desktop/web debug build pass. No real client or visual UI test was performed; other connection types still need the same session-readiness audit.
 
 - Windows GNU desktop/web release compilation passed at 371e256 in an isolated target directory on 2026-11-13. This proves compilation only; live clients, encryption and extensions remain unverified.
@@ -474,4 +476,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Audit and test session readiness and stale metadata during scheduled dispatch for Origins, Nitro, Unity and manual TCP, including session replacement and lost events; correct any proven discrepancies. Then verify COM decryption, real extensions and disconnect cleanup when a dedicated session is available, preserving FR/QX.
+Bind Unity scheduled sends to the ready Unity peer and its catalog/revision, reject replaced peers, and test two revisions while preserving intentional static-catalog reuse. Then audit Nitro, Origins and manual TCP. Verify COM decryption, real extensions and disconnect cleanup when a dedicated session is available, preserving FR/QX.
