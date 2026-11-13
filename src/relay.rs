@@ -722,7 +722,7 @@ impl Output {
         self.queue.push_back(Pending { bytes, offset: 0 });
         Ok(())
     }
-    fn flush(&mut self, stream: &mut TcpStream) -> io::Result<bool> {
+    fn flush(&mut self, stream: &mut impl Write) -> io::Result<bool> {
         let mut progress = false;
         for _ in 0..64 {
             let Some(frame) = self.queue.front_mut() else {
@@ -2763,5 +2763,59 @@ mod tests {
             scheduler.jobs.is_empty(),
             "disconnect cannot restore an already accepted occurrence"
         );
+    }
+    #[test]
+    fn output_preserves_partial_frame_across_backpressure_and_reports_disconnect() {
+        struct ScriptedWriter {
+            bytes: Vec<u8>,
+            calls: usize,
+            fail: io::ErrorKind,
+        }
+        impl Write for ScriptedWriter {
+            fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+                self.calls += 1;
+                if self.calls == 1 {
+                    let count = bytes.len().min(3);
+                    self.bytes.extend_from_slice(&bytes[..count]);
+                    Ok(count)
+                } else if self.calls == 2 {
+                    Err(io::Error::from(self.fail))
+                } else {
+                    self.bytes.extend_from_slice(bytes);
+                    Ok(bytes.len())
+                }
+            }
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+        let wire = Packet::new(777).bytes().to_vec();
+        let mut output = Output::default();
+        output.push_wire(wire.clone()).unwrap();
+        let mut blocked = ScriptedWriter {
+            bytes: Vec::new(),
+            calls: 0,
+            fail: io::ErrorKind::WouldBlock,
+        };
+        assert!(output.flush(&mut blocked).unwrap());
+        assert_eq!(output.bytes, wire.len() - 3);
+        assert!(output.flush(&mut blocked).unwrap());
+        assert_eq!(blocked.bytes, wire);
+        assert_eq!(output.bytes, 0);
+        assert!(output.queue.is_empty());
+
+        output.push_wire(wire.clone()).unwrap();
+        let mut disconnected = ScriptedWriter {
+            bytes: Vec::new(),
+            calls: 0,
+            fail: io::ErrorKind::BrokenPipe,
+        };
+        assert_eq!(
+            output.flush(&mut disconnected).unwrap_err().kind(),
+            io::ErrorKind::BrokenPipe
+        );
+        assert_eq!(disconnected.bytes, &wire[..3]);
+        assert_eq!(output.bytes, wire.len() - 3);
+        assert_eq!(output.queue.front().unwrap().offset, 3);
     }
 }

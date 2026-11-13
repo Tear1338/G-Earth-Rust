@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+TCP output preserves byte offsets across partial writes and WouldBlock; a later broken pipe reports the error but leaves remote receipt uncertain. Do not equate queue acceptance with delivery or automatically replay a partially written frame. Critical event visibility under a full event channel still needs examination.
+
 A scheduler batch reports the first enqueue error after attempting other jobs; the failed occurrence remains pending. Queue acceptance consumes an occurrence but does not acknowledge network delivery. Java Scheduler ignores its send boolean, so rejected-enqueue retry is a documented Rust difference.
 
 Beta-29 marks Origins connected before socket readers and Flash connected after outgoing datastream confirmation; neither explicitly awaits crypto negotiation. Local pre-handshake Origins/Flash injection fixtures exercise the Rust behavior but do not establish live protocol correctness. Java Scheduler ignores send return values, while Rust queues injections asynchronously.

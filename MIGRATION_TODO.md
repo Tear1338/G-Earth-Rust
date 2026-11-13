@@ -1,5 +1,7 @@
 # Migration tasks
 
+Investigate critical relay error visibility under saturated event queues: TCP uses nonblocking try_send for errors and packet events, so a send failure can be dropped. Reproduce with a bounded fixture and design a nonblocking durable error path; preserve packet throughput and lifecycle ordering. Partial delivery is inherently uncertain and should not be blindly retried.
+
 Compare and document retry semantics with beta-29 for failed scheduled sends: Java ignores boolean send results; Rust retains rejected enqueues but cannot recover an accepted command lost after disconnect. Exercise disconnect races on real transports and determine whether any retry can duplicate an already delivered packet. Live clients remain unverified.
 
 Compare beta-29 direct TCP writes and WebSocket send semantics with Rust asynchronous injection queues during disconnect, full queues and send failure. Java Scheduler ignores send return values; test whether pending jobs and error reporting match without claiming end-to-end delivery. Real-client behavior remains unverified.

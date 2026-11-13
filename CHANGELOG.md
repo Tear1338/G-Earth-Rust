@@ -1,5 +1,7 @@
 # Changelog
 
+- Test partial TCP writes, backpressure and disconnect without assuming delivery.
+
 - Continue independent scheduled sends when another queue is full, retaining the rejected occurrence and reporting the first error.
 
 - Add an Origins pre-handshake injection fixture and document Java connection timing.

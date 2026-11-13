@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+A scripted TCP writer covers partial progress, backpressure and broken-pipe reporting. This does not determine what a real client received and cannot justify automatic replay; real socket timing remains unverified.
+
 Scheduler batches now attempt independent jobs after an enqueue failure. A Nitro bounded-queue fixture covers one blocked direction and one successful direction. Rust retries rejected enqueues while beta-29 ignores boolean send results; accepted queue entries remain unacknowledged and can be lost before delivery. Real network behavior remains unverified.
 
 Pinned Java source sets Origins CONNECTED before reading and Flash CONNECTED after outgoing datastream confirmation; neither explicitly waits for completed crypto negotiation. Local Rust pre-handshake injection tests are consistent with that ordering, not proof of live compatibility. Java Scheduler ignores send return values; Rust queue/delivery behavior still needs comparison.

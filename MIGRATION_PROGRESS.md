@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- On 2026-11-13, deterministic scripted writes verified that TCP output resumes at the correct byte after partial write/backpressure and reports a broken pipe after a partial write. The accepted schedule is not restored automatically, and the remote outcome is unknown; automatic resend could duplicate data. Windows library tests (87 passed, six ignored), 16 relay tests, both Clippy configurations and desktop/web debug build pass. Real socket disconnect timing and clients remain unverified.
+
 - On 2026-11-13, scheduler dispatch continued other jobs after a per-job enqueue error while retaining the failed occurrence and returning the first error. A bounded Nitro queue fixture fills the outgoing queue, verifies an incoming scheduled send proceeds, then retries the outgoing job. A separate synthetic no-worker fixture confirms queue acceptance is not delivery. Windows desktop/web library tests (109 passed, seven ignored), 40 core, 16 relay and 11 desktop tests, both Clippy configurations and desktop/web debug build pass. Java Scheduler ignores false send returns; Rust retry behavior remains a deliberate difference and real network delivery is unverified.
 
 - On 2026-11-13, beta-29 Java source at 242155c was checked: ShockwaveProxy sets CONNECTED before starting socket readers, while FlashProxyProvider sets CONNECTED on outgoing datastream confirmation; neither point explicitly requires a completed encryption handshake. The existing Flash fixture sends after identification before handshake, and a new Origins loopback fixture confirms plaintext WEDGIE injection before handshake. These are source/fixture comparisons, not live-client proof. Windows library tests (85 passed, six ignored), 16 relay tests, both Clippy configurations and desktop/web debug build pass. Java Scheduler ignores send return values; queue acceptance and delivery parity remain open.
@@ -486,4 +488,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Investigate transport disconnect races after queue acceptance and compare beta-29 send-result handling, including potential duplicate or lost scheduled sends; add deterministic transport fixtures before changing retry semantics. Then verify COM decryption, real extensions and disconnect cleanup when a dedicated session is available, preserving FR/QX.
+Reproduce TCP relay error loss when the bounded event channel is saturated and implement nonblocking durable error visibility without disrupting packet throughput or lifecycle ordering. Partial delivery is uncertain: do not blindly retry. Then verify COM decryption, real extensions and disconnect cleanup when a dedicated session is available, preserving FR/QX.
