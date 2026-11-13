@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Aligned scheduler backlog now survives backward rebases and large forward jumps without Instant underflow in Windows tests. Small clock changes, Java timing details and real clients remain unverified.
+
 Forward scheduler wall-clock jumps replay crossed aligned slots in tested cases, matching a fixture mirroring Java beta-29. Backward jumps with backlog, extreme time shifts and real-client timing remain unverified.
 
 Aligned scheduler catch-up matches eight deterministic cases from a Java fixture mirroring the beta-29 time-window loop. Per-dispatch batching, clock jumps and real-client timing remain distinct or unverified.

@@ -1,5 +1,7 @@
 # Migration tasks
 
+Pending aligned sends survive backward clock jumps and extreme forward jumps are counted without Instant underflow. Next compare small wall-clock jumps against Java and the current drift tolerance; real-client scheduling remains open.
+
 Forward wall-clock jumps now replay crossed aligned deadlines, including queue retry. Next preserve queued catch-up deadlines through a backward jump and handle Instant underflow; real-client scheduling remains open.
 
 Aligned jobs replay missed slots in bounded, retryable batches; eight cases match a Java fixture mirroring the beta-29 loop. Next compare forward/backward wall-clock jumps against Java and implement verified behavior. Live scheduler validation remains open.

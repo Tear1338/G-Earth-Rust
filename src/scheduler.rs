@@ -31,6 +31,8 @@ pub struct Job {
     pub paused: bool,
     pub alignment_offset_ms: Option<u64>,
     clock_reference: Option<(Instant, SystemTime)>,
+    // Due aligned occurrences are kept independently of the monotonic clock.
+    pending_due: u128,
 }
 
 impl Job {
@@ -111,9 +113,13 @@ impl Scheduler {
             .iter()
             .filter(|job| !job.paused && job.remaining != Some(0) && job.has_reachable_phase())
             .map(|job| {
-                job.next
-                    .saturating_duration_since(now)
-                    .max(Duration::from_millis(1))
+                if job.pending_due > 0 {
+                    Duration::from_millis(1)
+                } else {
+                    job.next
+                        .saturating_duration_since(now)
+                        .max(Duration::from_millis(1))
+                }
             })
             .min()
     }
@@ -163,6 +169,7 @@ impl Scheduler {
             paused: false,
             alignment_offset_ms: None,
             clock_reference: None,
+            pending_due: 0,
         });
         Ok(())
     }
@@ -305,9 +312,26 @@ impl Scheduler {
             let tolerance = Duration::from_millis(20).min(job.interval / 2);
             if let Ok(forward) = wall.duration_since(expected) {
                 if forward > tolerance {
-                    // Preserve elapsed and queue-rejected deadlines: Java scans
-                    // every crossed wall-clock millisecond after a forward jump.
-                    if let Some(next) = job.next.checked_sub(forward) {
+                    // Count crossed slots without representing a far-past
+                    // monotonic deadline, which may underflow Instant.
+                    if let Some(next) = deadline_from_wall(now, wall, job.interval, offset, true) {
+                        if !job.paused {
+                            let crossed = if job.next > now {
+                                forward
+                                    .as_nanos()
+                                    .checked_sub(job.next.duration_since(now).as_nanos())
+                            } else {
+                                Some(
+                                    forward
+                                        .as_nanos()
+                                        .saturating_add(now.duration_since(job.next).as_nanos()),
+                                )
+                            };
+                            if let Some(crossed) = crossed {
+                                let count = crossed / job.interval.as_nanos() + 1;
+                                job.pending_due = job.pending_due.saturating_add(count);
+                            }
+                        }
                         job.next = next;
                         job.clock_reference = Some((now, wall));
                     }
@@ -379,12 +403,27 @@ impl Scheduler {
     ) -> std::result::Result<(), E> {
         let mut failure = None;
         'jobs: for job in &mut self.jobs {
+            if job.paused || !job.has_reachable_phase() || job.remaining == Some(0) {
+                continue;
+            }
+            if job.alignment_offset_ms.is_some() && job.next <= now {
+                let count = now.duration_since(job.next).as_nanos() / job.interval.as_nanos() + 1;
+                if let Some(next) = next_aligned(job.next, job.interval, now) {
+                    job.pending_due = job.pending_due.saturating_add(count);
+                    job.next = next;
+                } else {
+                    job.remaining = Some(0);
+                    continue;
+                }
+            }
             let mut processed = 0;
-            while !job.paused
-                && job.has_reachable_phase()
-                && job.next <= now
-                && job.remaining != Some(0)
+            while job.remaining != Some(0)
                 && processed < MAX_CATCHUP_PER_DISPATCH
+                && if job.alignment_offset_ms.is_some() {
+                    job.pending_due > 0
+                } else {
+                    job.next <= now
+                }
             {
                 let accepted = match send(job.direction, &job.packet) {
                     Ok(accepted) => accepted,
@@ -399,15 +438,11 @@ impl Scheduler {
                     }
                 }
                 processed += 1;
-                // Java's aligned scheduler visits every elapsed millisecond.
-                // Relative schedules are a Rust extension and retain their
-                // previous no-replay behavior.
-                let next = if job.alignment_offset_ms.is_some() {
-                    job.next.checked_add(job.interval)
-                } else {
-                    now.checked_add(job.interval)
-                };
-                if let Some(next) = next {
+                // A filtered occurrence is also consumed; only queue errors
+                // leave it pending. Relative schedules do not replay.
+                if job.alignment_offset_ms.is_some() {
+                    job.pending_due -= 1;
+                } else if let Some(next) = now.checked_add(job.interval) {
                     job.next = next;
                 } else {
                     job.remaining = Some(0);

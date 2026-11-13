@@ -1,5 +1,7 @@
 # Continuation state
 
+Aligned scheduler backlog now survives backward jumps and large forward jumps without Instant underflow. Windows core/schedule tests with all Java fixtures, both Clippy configurations and desktop/web debug build pass. Next compare small wall-clock jumps with beta-29 and the current drift tolerance. Do not resume stopped Computer Use without the user.
+
 Forward clock jumps preserve crossed aligned deadlines and queue retries; a fixture mirrors beta-29 for a 950 ms jump. Windows core/schedule tests, Java catch-up fixture, both Clippy configurations and desktop/web debug build pass. Next preserve pending backlog through backward jumps and handle Instant underflow. Do not resume stopped Computer Use without the user.
 
 Aligned scheduler jobs replay elapsed slots in bounded retryable batches; eight cases match a Java fixture mirroring the beta-29 loop. Windows core/schedule tests, all three schedule Java fixtures, both Clippy configurations and desktop/web debug build pass. Next compare forward/backward wall-clock jumps against Java; live-client timing remains unverified. Do not resume stopped Computer Use without the user.

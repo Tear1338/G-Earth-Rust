@@ -1,5 +1,7 @@
 # Changelog
 
+- Preserve scheduler backlog through clock rebases and avoid forward Instant underflow.
+
 - Preserve aligned scheduler deadlines across forward wall-clock jumps.
 
 - Replay missed aligned scheduler slots in bounded batches without losing queue-rejected sends.

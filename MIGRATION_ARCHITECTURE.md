@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Aligned jobs store pending occurrences separately from their next monotonic deadline, preserving queue failures across clock rebases and counting large forward jumps without Instant subtraction.
+
 Forward wall-clock corrections shift aligned deadlines by the measured drift so crossed slots remain retryable. Backward jumps with pending backlog and extreme Instant underflow remain open.
 
 Aligned jobs advance one elapsed deadline per accepted or filtered occurrence, capped at 128 per job per dispatch; queue errors preserve the current deadline and remaining repetition count. Relative Rust-only jobs keep no-replay semantics.

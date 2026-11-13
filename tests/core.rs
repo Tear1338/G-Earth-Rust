@@ -375,7 +375,7 @@ fn aligned_scheduler_replays_missed_slots_in_bounded_retryable_batches() {
     });
     assert_eq!(result, Err("full"));
     assert_eq!(accepted, 2);
-    assert_eq!(scheduler.jobs[0].next, now + Duration::from_millis(2));
+    assert_eq!(scheduler.next_wake_in(late), Some(Duration::from_millis(1)));
     assert_eq!(scheduler.tick(late).len(), MAX_CATCHUP_PER_DISPATCH);
     assert_eq!(scheduler.tick(late).len(), MAX_CATCHUP_PER_DISPATCH);
     assert_eq!(scheduler.tick(late).len(), 43);
@@ -745,6 +745,93 @@ fn scheduler_replays_forward_clock_jumps_and_realigns_backward() {
             backward + Duration::from_millis(66)
         )
         .is_empty());
+}
+
+#[test]
+fn scheduler_preserves_pending_sends_across_backward_clock_jump() {
+    let now = Instant::now();
+    let wall = std::time::UNIX_EPOCH + Duration::from_millis(10_000);
+    let mut scheduler = Scheduler::default();
+    scheduler
+        .add_aligned(
+            Packet::new(1),
+            Direction::ToServer,
+            100,
+            0,
+            None,
+            (now, wall),
+        )
+        .unwrap();
+    let at = now + Duration::from_millis(500);
+    let mut sent = 0;
+    let error =
+        scheduler.dispatch_with_wall_clock(at, wall + Duration::from_millis(500), |_, _| {
+            if sent == 2 {
+                return Err("full");
+            }
+            sent += 1;
+            Ok(())
+        });
+    assert_eq!(error, Err("full"));
+    assert_eq!(sent, 2);
+    let backwards = wall - Duration::from_millis(200);
+    scheduler
+        .dispatch_with_wall_clock(at + Duration::from_millis(1), backwards, |_, _| {
+            sent += 1;
+            Ok::<(), &str>(())
+        })
+        .unwrap();
+    assert_eq!(sent, 6);
+    assert!(scheduler
+        .tick_with_wall_clock(at + Duration::from_millis(1), backwards)
+        .is_empty());
+    assert_eq!(
+        scheduler
+            .tick_with_wall_clock(
+                at + Duration::from_millis(101),
+                backwards + Duration::from_millis(100)
+            )
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn scheduler_retains_huge_forward_clock_jump_without_instant_underflow() {
+    use gearth_rust::scheduler::MAX_CATCHUP_PER_DISPATCH;
+    let now = Instant::now();
+    let wall = std::time::UNIX_EPOCH + Duration::from_secs(10_000);
+    let mut scheduler = Scheduler::default();
+    scheduler
+        .add_aligned(
+            Packet::new(1),
+            Direction::ToServer,
+            1000,
+            0,
+            None,
+            (now, wall),
+        )
+        .unwrap();
+    assert_eq!(scheduler.tick_with_wall_clock(now, wall).len(), 1);
+    let jumped = wall
+        .checked_add(Duration::from_secs(50_000_000_000))
+        .unwrap();
+    assert_eq!(
+        scheduler
+            .tick_with_wall_clock(now + Duration::from_millis(1), jumped)
+            .len(),
+        MAX_CATCHUP_PER_DISPATCH
+    );
+    assert_eq!(
+        scheduler.next_wake_in(now + Duration::from_millis(1)),
+        Some(Duration::from_millis(1))
+    );
+    assert_eq!(
+        scheduler
+            .tick_with_wall_clock(now + Duration::from_millis(1), jumped)
+            .len(),
+        MAX_CATCHUP_PER_DISPATCH
+    );
 }
 
 #[test]
