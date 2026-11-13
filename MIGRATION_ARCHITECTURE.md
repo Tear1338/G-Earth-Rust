@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Beta-29 marks Origins connected before socket readers and Flash connected after outgoing datastream confirmation; neither explicitly awaits crypto negotiation. Local pre-handshake Origins/Flash injection fixtures exercise the Rust behavior but do not establish live protocol correctness. Java Scheduler ignores send return values, while Rust queues injections asynchronously.
+
 All desktop scheduler paths now use catalog snapshots tied to their active transport session and reject stale session/catalog enqueue. Origins publishes its catalog after metadata lookup; manual TCP retains its configured catalog. TCP catalog readiness does not yet establish crypto-handshake readiness or successful delivery.
 
 Nitro scheduling now snapshots metadata on its ready peer and checks peer and catalog identity during enqueue. Matching explicit catalog downloads invalidate old snapshots. This is an enqueue guarantee, not proof that a game received a packet. Origins and manual TCP still use desktop event state.

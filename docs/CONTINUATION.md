@@ -1,5 +1,7 @@
 # Continuation state
 
+Pinned Java source confirms Origins CONNECTED before socket reading and Flash CONNECTED on outgoing datastream confirmation, with no explicit crypto-completion gate. Local pre-handshake Origins and Flash fixtures pass; Windows library (85 passed, six ignored), relay tests, both Clippy configurations and desktop/web debug build pass. Next compare Java direct writes/WebSocket sends with Rust asynchronous queues on disconnect and failures; do not conflate enqueue with delivery. Live-client behavior remains unverified.
+
 All scheduler transports now use session-bound catalog snapshots. Origins lookup and manual TCP reconnect fixtures pass; Windows desktop/web library (106 passed, seven ignored), relay/desktop tests, workspace/desktop/desktop-web Clippy and debug build pass. Next compare beta-29 HState.CONNECTED transitions against Flash/Origins crypto readiness and test pending schedules during handshake; enqueue is not delivery. Real clients and visual UI remain unverified.
 
 Nitro scheduled dispatch now uses ready-peer metadata and validates its peer/catalog at enqueue. A saturated-event-queue fixture covers refresh and reconnect. Windows desktop/web library (104 passed, seven ignored), Unity and desktop tests, workspace/desktop/desktop-web Clippy and debug build pass. Next audit Origins and manual TCP scheduling; successful enqueue alone is not delivery. Real clients and UI remain unverified.

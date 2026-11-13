@@ -2665,4 +2665,57 @@ mod tests {
         }
         relay.stop();
     }
+    #[test]
+    fn origins_schedule_context_can_inject_before_crypto_handshake() {
+        use crate::packet_info::{PacketInfo, PacketInfoManager};
+        let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+        let catalog = PacketInfoManager::new(
+            "ORIGINS",
+            vec![PacketInfo {
+                header: 777,
+                direction: Direction::ToServer,
+                name: Some("Example".into()),
+                hash: None,
+                structure: None,
+                source: "fixture".into(),
+            }],
+        );
+        let (mut relay, events) = Relay::start_with_options(
+            Config {
+                listen: "127.0.0.1:0".parse().unwrap(),
+                remote: remote.local_addr().unwrap().to_string(),
+            },
+            RelayOptions {
+                shockwave: true,
+                disable_origins_metadata: true,
+                connection: Some(ConnectionDetails {
+                    host: "fixture".into(),
+                    port: 1,
+                    version: "ORIGINS".into(),
+                    identifier: "SHOCKWAVE".into(),
+                    client_type: "SHOCKWAVE".into(),
+                    packets: catalog,
+                }),
+                ..RelayOptions::default()
+            },
+        )
+        .unwrap();
+        let _client = TcpStream::connect(relay.address).unwrap();
+        let (mut server, _) = remote.accept().unwrap();
+        server
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        wait_for(&events, |event| matches!(event, Event::Connected(_)));
+        let context = relay.schedule_context().expect("Origins metadata");
+        let packet = Packet::new_with_format(PacketFormat::WedgieOutgoing, 777).unwrap();
+        let mut expected = crate::encoding::encode_b64(packet.bytes().len() as u32, 3).unwrap();
+        expected.extend_from_slice(packet.bytes());
+        relay
+            .inject_for_session(&context, Direction::ToServer, packet)
+            .unwrap();
+        let mut actual = vec![0; expected.len()];
+        server.read_exact(&mut actual).unwrap();
+        assert_eq!(actual, expected);
+        relay.stop();
+    }
 }

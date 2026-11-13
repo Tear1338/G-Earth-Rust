@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- On 2026-11-13, beta-29 Java source at 242155c was checked: ShockwaveProxy sets CONNECTED before starting socket readers, while FlashProxyProvider sets CONNECTED on outgoing datastream confirmation; neither point explicitly requires a completed encryption handshake. The existing Flash fixture sends after identification before handshake, and a new Origins loopback fixture confirms plaintext WEDGIE injection before handshake. These are source/fixture comparisons, not live-client proof. Windows library tests (85 passed, six ignored), 16 relay tests, both Clippy configurations and desktop/web debug build pass. Java Scheduler ignores send return values; queue acceptance and delivery parity remain open.
+
 - On 2026-11-13, Origins and manual TCP scheduled sends began using a session-bound catalog and identity-checked enqueue. Controlled two-session tests cover a stalled Origins lookup, changed revisions, stale snapshots and retention of a manual catalog. Windows desktop/web library tests (106 passed, seven ignored), 16 relay and 11 desktop tests, workspace/desktop/desktop-web Clippy and desktop/web debug build pass. The beta-29 Java scheduler requires HState.CONNECTED; whether Rust transport/crypto readiness matches that state remains open. Enqueue is not proof of delivery; real clients and visual UI remain unverified.
 
 - On 2026-11-13, Nitro scheduling was bound to the ready WebSocket peer and its catalog, independent of desktop event delivery. A local fixture saturates the event queue, replaces the catalog and reconnects, checking stale-snapshot rejection. Windows desktop/web library tests (104 passed, seven ignored), five Unity and 11 desktop tests, workspace/desktop/desktop-web Clippy and desktop/web debug build pass. Queue acceptance is not proof of network delivery; actual Nitro clients and visual UI remain unverified.
@@ -482,4 +484,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Compare beta-29 HState.CONNECTED transitions to Flash and Origins crypto-handshake readiness; reproduce scheduling during handshake and reconnect and preserve pending sends until safe. Distinguish enqueue from delivery. Then verify COM decryption, real extensions and disconnect cleanup when a dedicated session is available, preserving FR/QX.
+Compare beta-29 direct TCP writes and WebSocket sends with Rust asynchronous queues during disconnect, full queues and send failure; test scheduler occurrences and error reporting without assuming enqueue means delivery. Then verify COM decryption, real extensions and disconnect cleanup when a dedicated session is available, preserving FR/QX.

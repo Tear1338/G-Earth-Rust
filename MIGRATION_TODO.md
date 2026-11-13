@@ -1,5 +1,7 @@
 # Migration tasks
 
+Compare beta-29 direct TCP writes and WebSocket send semantics with Rust asynchronous injection queues during disconnect, full queues and send failure. Java Scheduler ignores send return values; test whether pending jobs and error reporting match without claiming end-to-end delivery. Real-client behavior remains unverified.
+
 Compare Java HState.CONNECTED transitions to Flash/Origins transport encryption readiness; reproduce scheduling during initial handshake and reconnect, and preserve pending occurrences until it is safe to send. Distinguish successful enqueue from network delivery; real clients remain unverified.
 
 Next audit and bind Origins and manual TCP scheduled dispatch to their active session and current catalog, including metadata lookup before readiness, reconnect and lossy events. Flash, Unity and Nitro have session-bound snapshots, but enqueue acceptance is not confirmed network delivery; live clients remain unverified.

@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Pinned Java source sets Origins CONNECTED before reading and Flash CONNECTED after outgoing datastream confirmation; neither explicitly waits for completed crypto negotiation. Local Rust pre-handshake injection tests are consistent with that ordering, not proof of live compatibility. Java Scheduler ignores send return values; Rust queue/delivery behavior still needs comparison.
+
 Origins and manual TCP scheduling now use session-bound catalogs, tested with local delayed metadata lookup and reconnect. Java requires HState.CONNECTED; its crypto-handshake timing versus Rust still needs comparison. Actual client delivery remains unverified.
 
 Nitro scheduler snapshots now survive dropped desktop events and reject a replaced peer/catalog in a controlled local fixture. Network delivery and compatibility with a real Nitro client remain unverified.
