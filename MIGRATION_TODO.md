@@ -1,5 +1,7 @@
 # Migration tasks
 
+Next audit and bind Origins and manual TCP scheduled dispatch to their active session and current catalog, including metadata lookup before readiness, reconnect and lossy events. Flash, Unity and Nitro have session-bound snapshots, but enqueue acceptance is not confirmed network delivery; live clients remain unverified.
+
 Next bind Nitro scheduled dispatch to its ready peer and metadata and reject injection after peer/catalog replacement; exercise event loss and reconnect. Then audit Origins and manual TCP. Unity and automatic Flash now have session-bound scheduler metadata; real-client compatibility remains unverified.
 
 Audit scheduled dispatch for Origins, Nitro, Unity and manual TCP: their active connection may be visible before its current metadata, and dispatch/injection must be tied to the same session. Test ordering, event loss and replacement independently. Automatic Flash now uses session-bound catalog snapshots; real-client verification remains open.

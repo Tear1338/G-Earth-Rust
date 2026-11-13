@@ -1162,6 +1162,10 @@ impl Desktop {
                                 Some(Connection::Unity(unity)) => {
                                     unity.update_schedule_metadata(database.clone())
                                 }
+                                #[cfg(feature = "web")]
+                                Some(Connection::Web(proxy)) => {
+                                    proxy.update_schedule_metadata(database.clone())
+                                }
                                 _ => false,
                             };
                             if session_updated {
@@ -1341,6 +1345,8 @@ impl Desktop {
                     Flash(gearth_rust::relay::FlashScheduleContext),
                     #[cfg(feature = "web")]
                     Unity(gearth_rust::unity_server::UnityScheduleContext),
+                    #[cfg(feature = "web")]
+                    Nitro(gearth_rust::web_proxy::NitroScheduleContext),
                 }
                 let session = match relay {
                     Connection::Tcp(tcp) => match tcp.flash_schedule_state() {
@@ -1357,7 +1363,9 @@ impl Desktop {
                         .schedule_context()
                         .map_or(ScheduleSession::Waiting, ScheduleSession::Unity),
                     #[cfg(feature = "web")]
-                    Connection::Web(_) => ScheduleSession::Generic,
+                    Connection::Web(proxy) => proxy
+                        .schedule_context()
+                        .map_or(ScheduleSession::Waiting, ScheduleSession::Nitro),
                 };
                 let info = &self.packet_info;
                 let waiting_for_session =
@@ -1387,6 +1395,10 @@ impl Desktop {
                             }
                             #[cfg(feature = "web")]
                             ScheduleSession::Unity(context) => {
+                                (context.packets.as_ref(), &context.version)
+                            }
+                            #[cfg(feature = "web")]
+                            ScheduleSession::Nitro(context) => {
                                 (context.packets.as_ref(), &context.version)
                             }
                         };
@@ -1421,6 +1433,10 @@ impl Desktop {
                             #[cfg(feature = "web")]
                             (ScheduleSession::Unity(context), Connection::Unity(unity)) => {
                                 unity.inject_for_session(context, direction, packet.into_owned())?
+                            }
+                            #[cfg(feature = "web")]
+                            (ScheduleSession::Nitro(context), Connection::Web(proxy)) => {
+                                proxy.inject_for_session(context, direction, packet.into_owned())?
                             }
                             _ => relay.inject(direction, packet.into_owned())?,
                         }

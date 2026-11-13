@@ -1,5 +1,7 @@
 # Changelog
 
+- Bind Nitro scheduled sends to the ready peer and catalog, even when desktop events are dropped.
+
 - Bind Unity scheduled sends to the current TLS peer and catalog, including refresh and reconnect checks.
 
 - Bind automatic Flash scheduled sends to identified session metadata and reject stale snapshots after reconnect or catalog refresh.

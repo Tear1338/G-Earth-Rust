@@ -130,6 +130,7 @@ struct Peer {
     ready: AtomicBool,
     closed: AtomicBool,
     extension_session: Mutex<Option<u64>>,
+    schedule_metadata: Mutex<Option<Arc<PacketInfoManager>>>,
     notify: Notify,
     queued: AtomicUsize,
     finished: AtomicUsize,
@@ -149,6 +150,7 @@ impl Peer {
             ready: AtomicBool::new(false),
             closed: AtomicBool::new(false),
             extension_session: Mutex::new(None),
+            schedule_metadata: Mutex::new(None),
             notify: Notify::new(),
             queued: AtomicUsize::new(0),
             finished: AtomicUsize::new(0),
@@ -216,6 +218,12 @@ fn side(direction: Direction) -> usize {
     } else {
         1
     }
+}
+/// Catalog snapshot bound to one ready Nitro peer.
+pub struct NitroScheduleContext {
+    peer: Arc<Peer>,
+    pub version: String,
+    pub packets: Arc<PacketInfoManager>,
 }
 struct Shared {
     options: WebOptions,
@@ -415,7 +423,7 @@ impl Shared {
                 version: NITRO_REVISION.into(),
                 identifier: "HTML5".into(),
                 client_type: "NITRO".into(),
-                packets: database,
+                packets: database.clone(),
             })?);
         }
         if let Some(service) = &self.options.admin_service {
@@ -423,6 +431,11 @@ impl Shared {
                 service.on_connect();
             }
         }
+        *peer
+            .schedule_metadata
+            .lock()
+            .map_err(|_| io::Error::other("Nitro metadata lock poisoned"))? =
+            Some(Arc::new(database));
         peer.ready.store(true, Ordering::Release);
         peer.notify.notify_waiters();
         let _ = self.events.try_send(Event::Connected(format!(
@@ -862,6 +875,66 @@ impl WebProxy {
     }
     pub fn connected(&self) -> bool {
         self.state.active().is_some()
+    }
+    pub fn schedule_context(&self) -> Option<NitroScheduleContext> {
+        let peer = self.state.active()?;
+        let packets = peer.schedule_metadata.lock().ok()?.as_ref()?.clone();
+        Some(NitroScheduleContext {
+            peer,
+            version: NITRO_REVISION.into(),
+            packets,
+        })
+    }
+    pub fn inject_for_session(
+        &self,
+        context: &NitroScheduleContext,
+        direction: Direction,
+        packet: Packet,
+    ) -> io::Result<()> {
+        let active = self
+            .state
+            .active
+            .lock()
+            .map_err(|_| io::Error::other("Nitro active lock poisoned"))?;
+        let peer = active
+            .as_ref()
+            .filter(|peer| Arc::ptr_eq(peer, &context.peer) && peer.ready.load(Ordering::Acquire))
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotConnected, "Nitro session changed"))?;
+        let metadata = peer
+            .schedule_metadata
+            .lock()
+            .map_err(|_| io::Error::other("Nitro metadata lock poisoned"))?;
+        if !metadata
+            .as_ref()
+            .is_some_and(|packets| Arc::ptr_eq(packets, &context.packets))
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::NotConnected,
+                "Nitro metadata changed",
+            ));
+        }
+        peer.enqueue(direction, packet)
+    }
+    pub fn update_schedule_metadata(&self, packets: PacketInfoManager) -> bool {
+        if packets.version != NITRO_REVISION {
+            return false;
+        }
+        let Ok(active) = self.state.active.lock() else {
+            return false;
+        };
+        let Some(peer) = active.as_ref().filter(|peer| {
+            peer.ready.load(Ordering::Acquire) && !peer.closed.load(Ordering::Acquire)
+        }) else {
+            return false;
+        };
+        let Ok(mut metadata) = peer.schedule_metadata.lock() else {
+            return false;
+        };
+        if metadata.is_none() {
+            return false;
+        }
+        *metadata = Some(Arc::new(packets));
+        true
     }
     pub fn inject(&self, direction: Direction, packet: Packet) -> io::Result<()> {
         self.state
@@ -1838,5 +1911,105 @@ mod lifecycle_tests {
         assert_eq!(read_frame(&mut stream).unwrap().header(), 6);
         drop(stream);
         host.stop();
+    }
+    #[test]
+    fn nitro_schedule_context_survives_lost_events_and_rejects_stale_peers() {
+        use crate::packet_info::PacketInfo;
+        let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), PathBuf::new());
+        options.fetch_packet_info = false;
+        options.packet_info = PacketInfoManager::new(
+            NITRO_REVISION,
+            vec![PacketInfo {
+                header: 444,
+                direction: Direction::ToServer,
+                name: Some("Example".into()),
+                hash: None,
+                structure: None,
+                source: "fixture".into(),
+            }],
+        );
+        let (events, _receiver) = mpsc::sync_channel(1);
+        events.try_send(Event::Status("fill queue".into())).unwrap();
+        let state = Arc::new(Shared {
+            options,
+            hartico_key: Mutex::new(None),
+            city_keys: Mutex::new(None),
+            peers: Mutex::new(HashMap::new()),
+            active: Mutex::new(None),
+            rules: Mutex::new(Rules::default()),
+            pipeline: Mutex::new(()),
+            events,
+            index: AtomicI32::new(0),
+            stop: AtomicBool::new(false),
+        });
+        let proxy = WebProxy {
+            state: state.clone(),
+            stop: None,
+            worker: None,
+            address: "127.0.0.1:0".parse().unwrap(),
+            certificate_path: PathBuf::new(),
+            certificate_der: Vec::new(),
+        };
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let mut previous = None;
+        for port in [1001, 1002] {
+            let peer = Arc::new(Peer::new(
+                PeerKey {
+                    client: format!("127.0.0.1:{port}").parse().unwrap(),
+                    uri: "ws://fixture".into(),
+                },
+                Modifier::new(&crate::nitro::HotelKind::Plain).unwrap(),
+            ));
+            assert!(proxy.schedule_context().is_none());
+            runtime
+                .block_on(state.activate(&peer, &"ws://fixture".parse().unwrap()))
+                .unwrap();
+            let context = proxy
+                .schedule_context()
+                .expect("ready metadata despite dropped events");
+            assert_eq!(context.version, NITRO_REVISION);
+            assert_eq!(context.packets.entries()[0].header, 444);
+            if let Some(old) = &previous {
+                assert_eq!(
+                    proxy
+                        .inject_for_session(old, Direction::ToServer, Packet::new(444))
+                        .unwrap_err()
+                        .kind(),
+                    io::ErrorKind::NotConnected
+                );
+            }
+            assert!(!proxy.update_schedule_metadata(PacketInfoManager::new("WRONG", Vec::new())));
+            assert!(proxy.update_schedule_metadata(PacketInfoManager::new(
+                NITRO_REVISION,
+                vec![PacketInfo {
+                    header: 445,
+                    direction: Direction::ToServer,
+                    name: Some("Example".into()),
+                    hash: None,
+                    structure: None,
+                    source: "refresh".into(),
+                }]
+            )));
+            assert_eq!(
+                proxy
+                    .inject_for_session(&context, Direction::ToServer, Packet::new(444))
+                    .unwrap_err()
+                    .kind(),
+                io::ErrorKind::NotConnected
+            );
+            let refreshed = proxy.schedule_context().unwrap();
+            assert_eq!(refreshed.packets.entries()[0].header, 445);
+            proxy
+                .inject_for_session(&refreshed, Direction::ToServer, Packet::new(445))
+                .unwrap();
+            let packet = peer.receivers.lock().unwrap()[0]
+                .as_mut()
+                .unwrap()
+                .try_recv()
+                .unwrap();
+            assert_eq!(packet.header(), 445);
+            previous = Some(refreshed);
+            state.close(&peer);
+        }
     }
 }

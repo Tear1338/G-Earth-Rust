@@ -1,5 +1,7 @@
 # G-Earth Rust migration progress
 
+- On 2026-11-13, Nitro scheduling was bound to the ready WebSocket peer and its catalog, independent of desktop event delivery. A local fixture saturates the event queue, replaces the catalog and reconnects, checking stale-snapshot rejection. Windows desktop/web library tests (104 passed, seven ignored), five Unity and 11 desktop tests, workspace/desktop/desktop-web Clippy and desktop/web debug build pass. Queue acceptance is not proof of network delivery; actual Nitro clients and visual UI remain unverified.
+
 - On 2026-11-13, Unity scheduled sends were bound to the ready TLS peer and its revision/catalog rather than desktop event timing. Replaced peers and replaced matching catalogs invalidate prior snapshots; the static catalog remains available across revisions. Five Unity TLS fixture tests, 103 desktop/web library tests (seven ignored), 16 relay, 11 desktop and 11 i18n tests, workspace/desktop/desktop-web Clippy and desktop/web debug build pass on Windows. CI for the preceding Flash fix passed; real Unity and visual UI remain unverified.
 
 - Windows GNU desktop/web release compilation passed for 4af5a4c on 2026-11-13. Four Unity server tests also pass, including explicit static-catalog reuse for different revisions; real Unity remains unverified. Unity peer.ready precedes delivery of identification events, so desktop scheduler state can lag behind the active session.
@@ -478,4 +480,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Bind Nitro scheduled sends to its ready peer and current catalog; reject stale snapshots after peer or catalog replacement and test reconnect and dropped events. Then audit Origins and manual TCP. Verify COM decryption, real extensions and disconnect cleanup when a dedicated session is available, preserving FR/QX.
+Audit and bind Origins and manual TCP scheduled dispatch to the active session and its catalog, with tests for metadata lookup, reconnection, changed identifiers and lost events; distinguish enqueue from actual delivery. Then verify COM decryption, real extensions and disconnect cleanup when a dedicated session is available, preserving FR/QX.

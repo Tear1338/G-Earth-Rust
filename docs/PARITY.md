@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Nitro scheduler snapshots now survive dropped desktop events and reject a replaced peer/catalog in a controlled local fixture. Network delivery and compatibility with a real Nitro client remain unverified.
+
 Unity scheduler metadata and enqueue are now tied to the initialized peer; a two-revision local TLS fixture covers static metadata, refresh, reconnect and stale-peer rejection. Real Unity and rendered desktop behavior remain unverified.
 
 Automatic Flash scheduling now waits for the active session identity and catalog, rather than relying on desktop event timing; a controlled two-session fixture covers pending lookup and stale snapshots. Real Flash decryption, desktop visual behavior, and corresponding readiness for other clients remain unverified.
