@@ -3,7 +3,7 @@ use crate::{
     extension_host::{ConnectionDetails, ExtensionHost},
     packet::{Direction, FrameDecoder, Message, Packet, PacketFormat, MAX_FRAME},
     packet_info::PacketInfoManager,
-    relay::Event,
+    relay::{Event, RelayEventSink},
     rules::Rules,
     web_ca::ProxyIdentity,
 };
@@ -25,7 +25,7 @@ use std::{
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering},
-        mpsc::{self, Receiver, SyncSender},
+        mpsc::{self, Receiver},
         Arc, Mutex,
     },
     thread::{self, JoinHandle},
@@ -133,7 +133,7 @@ struct State {
     options: UnityOptions,
     active: Mutex<Option<Arc<Peer>>>,
     rules: Mutex<Rules>,
-    events: SyncSender<Event>,
+    events: RelayEventSink,
     index: [AtomicI32; 2],
     stop: AtomicBool,
 }
@@ -148,8 +148,22 @@ impl State {
             .active
             .lock()
             .map_err(|_| io::Error::other("Unity active lock poisoned"))?;
-        if self.stop.load(Ordering::Acquire) || active.is_some() {
+        if self.stop.load(Ordering::Acquire) {
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "Unity communicator stopped",
+            ));
+        }
+        if active.is_some() {
             return Err(io::Error::other("Unity already has an attached browser"));
+        }
+        // finish() publishes Disconnected under this lock, so a new peer
+        // cannot overtake a pending lifecycle event.
+        if !self.events.flush() {
+            return Err(io::Error::new(
+                io::ErrorKind::WouldBlock,
+                "Unity event consumer is behind",
+            ));
         }
         let (sender, receiver) = asynchronous::channel(128);
         let (stop, _) = watch::channel(false);
@@ -339,13 +353,32 @@ fn revision(bytes: &[u8]) -> io::Result<String> {
     }
     Ok(String::from_utf8(bytes.to_vec()).unwrap())
 }
+async fn claim_ready(state: &State) -> io::Result<(Arc<Peer>, InjectionReceiver)> {
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            match state.claim() {
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+                result => break result,
+            }
+        }
+    })
+    .await
+    .map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::TimedOut,
+            "Unity event consumer did not catch up",
+        )
+    })?
+}
 async fn session(
     state: Arc<State>,
     mut socket: hudsucker::tokio_tungstenite::WebSocketStream<
         tokio_rustls::server::TlsStream<tokio::net::TcpStream>,
     >,
 ) -> io::Result<()> {
-    let (peer, mut injections) = state.claim()?;
+    let (peer, mut injections) = claim_ready(&state).await?;
     let mut stopped = peer.stop.subscribe();
     let mut revision_name = None;
     let mut decoders = [FrameDecoder::default(), FrameDecoder::default()];
@@ -403,7 +436,7 @@ impl UnityServer {
             options,
             active: Mutex::new(None),
             rules: Mutex::new(Rules::default()),
-            events,
+            events: RelayEventSink::new(events),
             index: [AtomicI32::new(0), AtomicI32::new(0)],
             stop: AtomicBool::new(false),
         });
@@ -418,6 +451,7 @@ impl UnityServer {
                     .enable_all()
                     .build()?;
                 let result=runtime.block_on(async {
+            let flush_actor=actor.clone(); tokio::spawn(async move { while !flush_actor.stop.load(Ordering::Acquire) { flush_actor.events.flush(); tokio::time::sleep(Duration::from_millis(5)).await; } });
             let config=authority.gen_server_config(&"localhost".parse().unwrap()).await;let acceptor=tokio_rustls::TlsAcceptor::from(config);let listener=tokio::net::TcpListener::from_std(listener)?;let permits=Arc::new(Semaphore::new(8));let mut tasks=JoinSet::new();let _=ready.send(());let _=actor.events.try_send(Event::Listening(address));
             loop {tokio::select! {_=&mut shutdown=>break,Some(_)=tasks.join_next(),if !tasks.is_empty()=>{},connection=listener.accept()=>{let (stream,_)=connection?;let Ok(permit)=permits.clone().try_acquire_owned()else{continue;};let tls=acceptor.clone();let secret=secret.clone();let state=actor.clone();tasks.spawn(async move {let _permit=permit;let result:io::Result<()>=async {
                 let tls=tokio::time::timeout(Duration::from_secs(5),tls.accept(stream)).await.map_err(io::Error::other)?.map_err(io::Error::other)?;let expected=format!("/?token={secret}");#[allow(clippy::result_large_err)] let callback=move|request:&Request,response:Response|->Result<Response,ErrorResponse>{let supplied=request.uri().path_and_query().map(|value|value.as_str()).unwrap_or("");let same=supplied.len()==expected.len()&&supplied.bytes().zip(expected.bytes()).fold(0u8,|difference,(a,b)|difference|(a^b))==0;if !same {return Err(Response::builder().status(403).body(Some("Unity communicator authentication required".into())).unwrap());}Ok(response)};
@@ -432,6 +466,9 @@ impl UnityServer {
                 let _ = actor.events.try_send(Event::Error(error.to_string()));
             }
             actor.close();
+            while !actor.stop.load(Ordering::Acquire) && !actor.events.flush() {
+                thread::sleep(Duration::from_millis(5));
+            }
         });
         let mut server = Self {
             state,
@@ -558,6 +595,65 @@ impl Drop for UnityServer {
 #[cfg(test)]
 mod injection_queue_tests {
     use super::*;
+    #[test]
+    fn saturated_producer_retains_order_and_defers_next_peer() {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let events = RelayEventSink::new(sender);
+        events.try_send(Event::Status("older".into())).unwrap();
+        let state = State {
+            options: UnityOptions::new("127.0.0.1:0".parse().unwrap(), PathBuf::new()),
+            active: Mutex::new(None),
+            rules: Mutex::new(Rules::default()),
+            events,
+            index: [AtomicI32::new(0), AtomicI32::new(0)],
+            stop: AtomicBool::new(false),
+        };
+        let (peer, _) = state.claim().unwrap();
+        state
+            .initialize(&peer, "fixture".into(), "UNITY".into())
+            .unwrap();
+        state.finish(&peer);
+        assert_eq!(
+            state.claim().err().unwrap().kind(),
+            io::ErrorKind::WouldBlock
+        );
+        assert!(matches!(receiver.try_recv(), Ok(Event::Status(_))));
+        assert_eq!(
+            state.claim().err().unwrap().kind(),
+            io::ErrorKind::WouldBlock
+        );
+        assert!(matches!(receiver.try_recv(), Ok(Event::Connected(_))));
+        let (next, _) = state.claim().unwrap();
+        assert!(matches!(receiver.try_recv(), Ok(Event::Disconnected)));
+        state.finish(&next);
+    }
+    #[test]
+    fn waiting_for_saturated_consumer_stops_promptly() {
+        let (sender, _receiver) = mpsc::sync_channel(1);
+        let events = RelayEventSink::new(sender);
+        events.try_send(Event::Status("older".into())).unwrap();
+        events.try_send(Event::Disconnected).unwrap();
+        let state = Arc::new(State {
+            options: UnityOptions::new("127.0.0.1:0".parse().unwrap(), PathBuf::new()),
+            active: Mutex::new(None),
+            rules: Mutex::new(Rules::default()),
+            events,
+            index: [AtomicI32::new(0), AtomicI32::new(0)],
+            stop: AtomicBool::new(false),
+        });
+        tokio::runtime::Runtime::new().unwrap().block_on(async {
+            let worker_state = state.clone();
+            let task = tokio::spawn(async move { claim_ready(&worker_state).await });
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            assert!(!task.is_finished());
+            state.stop.store(true, Ordering::Release);
+            let result = tokio::time::timeout(Duration::from_secs(2), task)
+                .await
+                .unwrap()
+                .unwrap();
+            assert_eq!(result.err().unwrap().kind(), io::ErrorKind::Interrupted);
+        });
+    }
     #[test]
     fn full_and_closed_queues_return_the_original_packet_and_restore_budget() {
         let (sender, mut receiver) = asynchronous::channel(1);

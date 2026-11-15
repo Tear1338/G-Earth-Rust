@@ -242,6 +242,38 @@ mod tests {
         drop(receiver);
     }
     #[test]
+    fn producer_and_forwarder_preserve_lifecycle_across_saturation() {
+        let (producer, source) = mpsc::sync_channel(1);
+        let upstream = crate::relay::RelayEventSink::new(producer);
+        let (sender, receiver) = mpsc::sync_channel(1);
+        sender.try_send(packet()).unwrap();
+        upstream.try_send(Event::Status("older".into())).unwrap();
+        upstream
+            .try_send(Event::Connected("fixture".into()))
+            .unwrap();
+        upstream.try_send(Event::Disconnected).unwrap();
+        let mut forwarder = EventForwarder::default();
+        for _ in 0..3 {
+            assert!(forwarder.drain(&source, &sender, 512));
+            upstream.flush();
+        }
+        assert!(matches!(receiver.try_recv(), Ok(Event::Packet(_))));
+        let mut delivered = Vec::new();
+        while !forwarder.pending.is_empty() {
+            assert!(forwarder.flush(&sender));
+            delivered.push(receiver.try_recv().unwrap());
+        }
+        let connected = delivered
+            .iter()
+            .position(|event| matches!(event, Event::Connected(_)))
+            .unwrap();
+        let disconnected = delivered
+            .iter()
+            .position(|event| matches!(event, Event::Disconnected))
+            .unwrap();
+        assert!(connected < disconnected);
+    }
+    #[test]
     fn control_backlog_is_bounded_and_receiver_loss_is_reported() {
         let (sender, receiver) = mpsc::sync_channel(1);
         sender.try_send(packet()).unwrap();

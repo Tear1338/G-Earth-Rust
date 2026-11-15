@@ -1,5 +1,8 @@
 # Compatibility with 1.5.4-beta-29
 
+## Unity lifecycle saturation evidence
+
+Synthetic fixtures exercise ordered lifecycle events through the Unity producer sink and forwarding queue, deferred peer admission, and cancellation. The local Node/WASM hook fixture also passed. This is not validation with a real Habbo client or extension.
 ## Unity forwarding saturation
 
 A synthetic test checks that a full Unity forwarding backlog leaves the next disconnection in its producer channel. The Unity server producer is still lossy when its own channel fills; real-client parity is unverified.

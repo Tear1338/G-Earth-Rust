@@ -1,5 +1,10 @@
 # Migration tasks
 
+## Unity event delivery
+
+- [x] Retain ordered Unity producer lifecycle events under saturation, defer peer admission with bounded cancellable waiting, and test the producer and forwarder together.
+- [ ] Investigate remaining Flash reverse-only recovery cost.
+- [ ] Repeat release for current code and obtain real-client and extension evidence when the user performs those tests.
 ## Unity forwarding backlog
 
 - [x] Stop draining Unity forwarding sources when the control backlog is full, avoiding eviction of earlier lifecycle events.

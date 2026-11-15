@@ -1,5 +1,8 @@
 # G-Earth Rust migration progress
 
+## Unity producer and forwarding under saturation
+
+The Unity communicator now uses the concurrent bounded control-event sink and periodically flushes it. Peer admission checks pending lifecycle events under the same lock as peer closure, and asynchronously retries for at most 15 seconds; explicit stop interrupts the wait. On unexpected server exit the worker flushes until delivery or explicit stop. Synthetic tests cover producer saturation, ordered delivery through the producer and forwarder, deferred peer admission and stop during waiting. The Node/WASM Unity hook fixture also passed over local authenticated WSS; it is not a real Habbo client. Unity tests, desktop/web Clippy and debug build passed. Repeat release for current code; real clients and extensions remain unverified.
 ## Unity forwarding backlog
 
 The Unity connection forwarder now stops draining its source channels while its bounded control backlog is full, so it cannot evict older lifecycle events to make room for new ones. A synthetic test verifies that an incoming disconnection remains in the source channel and earlier control events stay queued. The Unity server producer itself still uses lossy `try_send` and must be fixed next; this forwarder change alone does not solve end-to-end saturation. Unity forwarder tests, desktop/web Clippy and debug build checked. The release build predates this change; real clients remain unverified.
@@ -537,4 +540,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Fix Unity lifecycle event loss in src/unity_server.rs: use bounded ordered producer delivery, serialize peer admission with the pending queue, and make waiting cancellable without blocking the active WebSocket. Test producer and src/unity_connection.rs forwarding together under saturation and reconnect. Then investigate remaining Flash RC4 reverse-only search cost and repeat the desktop/web release build. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.
+Investigate the remaining worst-case cost of Flash outgoing RC4 reverse-only discovery when no fresh candidate exists; preserve cancellation and ambiguity detection and add deterministic fixtures before optimizing. Repeat the Windows desktop/web release build for the current code. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.

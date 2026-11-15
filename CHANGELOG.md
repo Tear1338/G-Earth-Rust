@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — Unity producer saturation
+
+- Retain Unity communicator lifecycle events under producer saturation and defer new peers with bounded cancellable waiting.
+- Test ordering across both Unity event stages and the local Node/WASM hook fixture.
 ## Unreleased — Unity forwarding
 
 - Stop draining Unity event sources while the forwarding control backlog is full, preventing eviction of older lifecycle events.

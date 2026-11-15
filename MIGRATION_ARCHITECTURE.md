@@ -1,5 +1,8 @@
 # Rust migration architecture
 
+## Unity producer backpressure
+
+Unity producer events use the bounded concurrent sink. Peer claim is serialized with closure and waits asynchronously for previous pending lifecycle events, with a 15-second limit and explicit-stop cancellation. A periodic flush and the separate bounded forwarder preserve synthetic lifecycle ordering; low-priority events and excess errors may still be lost.
 ## Unity forwarding backpressure
 
 The Unity connection forwarder pauses consumption from its producer channels while its bounded control backlog is full; active producers can still drop events if their own queues saturate. The Unity server producer therefore requires a separate fix.

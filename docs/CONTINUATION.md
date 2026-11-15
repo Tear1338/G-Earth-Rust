@@ -1,5 +1,8 @@
 # Continuation state
 
+## Unity producer continuation
+
+Unity producer and forwarder now retain ordered lifecycle events under synthetic saturation; a pending peer waits at most 15 seconds and stop interrupts it. Next investigate Flash reverse-only search cost and repeat the release build. Real-client and extension verification remains open.
 ## Unity forwarding continuation
 
 The Unity forwarder now pauses source draining at its bounded control limit. Next fix the Unity server producer queue and peer admission so upstream lifecycle events survive saturation too; test both stages together.
