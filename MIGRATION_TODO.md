@@ -1,5 +1,10 @@
 # Migration tasks
 
+## Unity forwarding backlog
+
+- [x] Stop draining Unity forwarding sources when the control backlog is full, avoiding eviction of earlier lifecycle events.
+- [ ] Preserve lifecycle events in the Unity server producer with bounded concurrent admission and cancellation.
+- [ ] Verify both stages together and repeat the release build.
 ## Nitro event saturation
 
 - [x] Preserve ordered Nitro lifecycle events under producer queue saturation, with bounded concurrent admission, periodic flush and cancellable waiting.

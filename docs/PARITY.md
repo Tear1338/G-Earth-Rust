@@ -1,5 +1,8 @@
 # Compatibility with 1.5.4-beta-29
 
+## Unity forwarding saturation
+
+A synthetic test checks that a full Unity forwarding backlog leaves the next disconnection in its producer channel. The Unity server producer is still lossy when its own channel fills; real-client parity is unverified.
 ## Nitro lifecycle saturation evidence
 
 Synthetic Nitro fixtures preserve Connected before Disconnected across a saturated event channel and cover deferred or cancelled activation and stale-session rejection. These tests do not prove behavior with a real client. Unity still has separate bounded queues to audit and fix.

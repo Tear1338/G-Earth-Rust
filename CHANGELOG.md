@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased — Unity forwarding
+
+- Stop draining Unity event sources while the forwarding control backlog is full, preventing eviction of older lifecycle events.
 ## Unreleased — Nitro event saturation
 
 - Retain Nitro lifecycle events across a full consumer queue, with concurrent producer ordering, bounded admission and cancellable asynchronous waiting.

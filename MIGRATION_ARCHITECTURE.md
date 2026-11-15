@@ -1,5 +1,8 @@
 # Rust migration architecture
 
+## Unity forwarding backpressure
+
+The Unity connection forwarder pauses consumption from its producer channels while its bounded control backlog is full; active producers can still drop events if their own queues saturate. The Unity server producer therefore requires a separate fix.
 ## Nitro event backpressure
 
 Nitro producers use the bounded concurrent event sink. An async task flushes without waiting on the consumer; activation serializes its queue check with peer closure and waits asynchronously when the previous lifecycle is pending. Cancellation remains possible. Low-priority events and errors beyond the bounded queue may still be dropped. Unity has a separate producer and forwarding path.

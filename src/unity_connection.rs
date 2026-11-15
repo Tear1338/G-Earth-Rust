@@ -28,6 +28,26 @@ struct EventForwarder {
     pending: VecDeque<Event>,
 }
 impl EventForwarder {
+    fn has_capacity(&self) -> bool {
+        self.pending.len() < MAX_PENDING_CONTROL_EVENTS
+    }
+    fn drain(
+        &mut self,
+        source: &Receiver<Event>,
+        sender: &SyncSender<Event>,
+        limit: usize,
+    ) -> bool {
+        for _ in 0..limit {
+            if !self.has_capacity() {
+                break;
+            }
+            let Ok(event) = source.try_recv() else { break };
+            if !self.forward(sender, event) {
+                return false;
+            }
+        }
+        true
+    }
     fn flush(&mut self, sender: &SyncSender<Event>) -> bool {
         while let Some(event) = self.pending.pop_front() {
             match sender.try_send(event) {
@@ -67,7 +87,7 @@ impl EventForwarder {
             {
                 self.pending.remove(index);
             } else {
-                self.pending.pop_front();
+                return false;
             }
         }
         self.pending.push_back(event);
@@ -114,12 +134,10 @@ impl UnityConnection {
                 if !forwarder.flush(&sender) {
                     break;
                 }
-                for event in unity_events
-                    .try_iter()
-                    .take(512)
-                    .chain(http_events.try_iter().take(128))
-                {
-                    if !forwarder.forward(&sender, event) {
+                for (source, limit) in [(&unity_events, 512), (&http_events, 128)] {
+                    // Leave events in the producer channel while the bounded
+                    // control backlog is full, preserving older transitions.
+                    if !forwarder.drain(source, &sender, limit) {
                         return;
                     }
                 }
@@ -206,6 +224,22 @@ mod tests {
         assert!(forwarder.flush(&sender));
         assert!(matches!(receiver.recv().unwrap(), Event::Disconnected));
         assert!(forwarder.pending.is_empty());
+    }
+    #[test]
+    fn full_control_backlog_leaves_lifecycle_in_the_producer_channel() {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        sender.try_send(packet()).unwrap();
+        let (producer, source) = mpsc::sync_channel(1);
+        let mut forwarder = EventForwarder::default();
+        for index in 0..MAX_PENDING_CONTROL_EVENTS {
+            assert!(forwarder.forward(&sender, Event::Connected(index.to_string())));
+        }
+        producer.try_send(Event::Disconnected).unwrap();
+        assert!(forwarder.drain(&source, &sender, 512));
+        assert_eq!(forwarder.pending.len(), MAX_PENDING_CONTROL_EVENTS);
+        assert!(matches!(source.try_recv(), Ok(Event::Disconnected)));
+        assert!(matches!(forwarder.pending.front(), Some(Event::Connected(value)) if value == "0"));
+        drop(receiver);
     }
     #[test]
     fn control_backlog_is_bounded_and_receiver_loss_is_reported() {

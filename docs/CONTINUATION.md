@@ -1,5 +1,8 @@
 # Continuation state
 
+## Unity forwarding continuation
+
+The Unity forwarder now pauses source draining at its bounded control limit. Next fix the Unity server producer queue and peer admission so upstream lifecycle events survive saturation too; test both stages together.
 ## Nitro event continuation
 
 Nitro uses the concurrent bounded sink, async flush and serialized admission. Next integrate equivalent bounded delivery into Unity server producers and its additional forwarder, with ordered saturation/reconnect tests; then examine Flash reverse-only scan cost. Repeat the release build for current code.
