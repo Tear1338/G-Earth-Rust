@@ -1,5 +1,8 @@
 # Compatibility with 1.5.4-beta-29
 
+## Java control-escape evidence
+
+A beta-29 packet corpus and all-byte Java Pattern comparisons cover `\cX` inside and outside classes; malformed operands are tested transactionally. Full Java regex and live-extension compatibility remain unverified.
 ## Flash test contention evidence
 
 The discovery suite passed five parallel repetitions and the Windows workspace/all-targets command passed after fixtures were made aware of the worker cap. This does not validate real client connections.

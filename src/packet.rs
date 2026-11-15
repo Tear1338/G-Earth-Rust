@@ -542,6 +542,13 @@ fn control_escape(
         'f' => 0x0c,
         'a' => 0x07,
         'e' => 0x1b,
+        'c' => {
+            let operand = chars
+                .next()
+                .ok_or_else(|| error("invalid regex control escape"))?;
+            u8::try_from(u32::from(operand) ^ 0x40)
+                .map_err(|_| error("regex control escape outside Latin-1"))?
+        }
         'x' | 'u' => {
             let digits = if kind == 'x' { 2 } else { 4 };
             let mut value = 0u32;
@@ -632,6 +639,16 @@ fn normalize_regex_comments(pattern: &str) -> String {
                 *first = false;
             }
             at += 2;
+            if next == 'c' && !quoted {
+                // Java consumes the next significant character as the
+                // operand, even when it is ']' or another metacharacter.
+                at = regex_skip_layout(&chars, at, comments, unix);
+                if let Some(operand) = chars.get(at) {
+                    output.push(*operand);
+                    at += 1;
+                }
+                continue;
+            }
             if !in_class && next == 'Q' && !quoted {
                 quoted = true;
             } else if quoted && next == 'E' {
@@ -1683,6 +1700,18 @@ fn replace_alternatives(
 #[cfg(test)]
 mod regex_budget_tests {
     use super::*;
+
+    #[test]
+    fn java_control_escape_consumes_metacharacters_before_class_parsing() {
+        assert_eq!(
+            normalize_regex_comments("(?x)[\\c] # comment\n ]"),
+            "(?x)[\\c]]"
+        );
+        let mut class = "\\c]]".chars().peekable();
+        let class = parse_character_class(&mut class, false, false, false).unwrap();
+        assert!(class[0x1d]);
+        assert_eq!(class.iter().filter(|included| **included).count(), 1);
+    }
 
     #[test]
     fn java_external_unicode_literal_and_range_folding_are_distinct() {

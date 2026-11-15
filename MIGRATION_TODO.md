@@ -1,5 +1,10 @@
 # Migration tasks
 
+## Java regex control escapes
+
+- [x] Support `\cX`, including COMMENTS-mode operand handling, with beta-29 and all-byte Java comparisons.
+- [ ] Compare Java regex octal escapes `\0...`, including digit limits, bracket ranges and malformed syntax.
+- [ ] Revisit `\R` matcher backtracking, repeat release and await user-run compatibility tests.
 ## Flash test stability
 
 - [x] Make parallel discovery fixtures wait safely for the global worker pool and run the CI-equivalent workspace/all-targets tests.

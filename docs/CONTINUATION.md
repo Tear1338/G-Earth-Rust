@@ -1,5 +1,8 @@
 # Continuation state
 
+## Java control-escape continuation
+
+`\cX` is implemented and compared with beta-29 and exhaustive Latin-1 Java Pattern vectors. Next compare Java octal regex escapes, then revisit matcher-level `\R`; repeat the release build.
 ## Flash test contention continuation
 
 Parallel Flash discovery fixtures now wait for available worker slots; five repetitions and the CI-equivalent Windows workspace/all-targets command passed. Next investigate Java `\R` at matcher level using the repeated-group CRLF counterexample, and repeat release.

@@ -555,7 +555,14 @@ fn java_control_escapes_reject_invalid_values_without_mutation() {
     let mut packet = Packet::new(9);
     packet.put_string("(\\x41) A").unwrap();
     let before = packet.clone();
-    for pattern in ["(\\x4)", "(\\u1000)", "([\\xG1])"] {
+    for pattern in [
+        "(\\x4)",
+        "(\\u1000)",
+        "([\\xG1])",
+        "\\c",
+        "(?x)\\c ",
+        "[\\c]",
+    ] {
         assert!(packet
             .replace_substrings_java_groups(pattern, "x", None)
             .is_err());

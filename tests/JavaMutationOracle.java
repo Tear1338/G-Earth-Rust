@@ -1226,6 +1226,26 @@ public class JavaMutationOracle {
             for (int value = 0; value < 256; value++) if (compiled.matcher(Character.toString((char)value)).matches()) matches[value / 8] |= (byte)(1 << (value % 8));
             System.out.println("unicode_external_range_" + lo + "_" + hi + "=" + HexFormat.of().formatHex(matches));
         }
+        String[] controlCases = {"(\\cA+)", "(\\ca+)", "(\\c?+)", "([\\c]]+)", "(?x)(\\c #comment\n A+)", "([\\c-]+)", "(\\cé+)", "(?x)([\\c] #comment\n ]+)"};
+        char[] controlEscapeAlphabet = {'\u0001', '!', '\u007f', '\u001b', '\u001d', 'm', '\u00a9', 'A', 'x', '\u0000', '\\'};
+        for (int i = 0; i < 320; i++) {
+            String pattern = controlCases[i % controlCases.length];
+            StringBuilder value = new StringBuilder(pattern).append(" \u0001!\u007f\u001d m© ");
+            for (int j = 0; j < 16; j++) value.append(controlEscapeAlphabet[(i * 7 + j * 3 + j * j) % controlEscapeAlphabet.length]);
+            HPacket sample = new HPacket(9); sample.appendString(value.toString()); sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try { System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream())); sample.replaceXSubstrings(pattern, "$1/$0", 1); }
+            finally { System.setOut(original); }
+            emit("substring_control_escape_" + i, sample);
+        }
+        for (int operand = 0; operand < 256; operand++) for (int shape = 0; shape < 2; shape++) {
+            String atom = "\\c" + (char)operand;
+            String pattern = shape == 0 ? atom : "[" + atom + "]";
+            java.util.regex.Pattern compiled = java.util.regex.Pattern.compile(pattern);
+            byte[] matches = new byte[32];
+            for (int value = 0; value < 256; value++) if (compiled.matcher(Character.toString((char)value)).matches()) matches[value / 8] |= (byte)(1 << (value % 8));
+            System.out.println("unicode_control_" + operand + "_" + shape + "=" + HexFormat.of().formatHex(matches));
+        }
         char[] propertyAlphabet = {'a', 'A', 'b', 'B', '0', '9', ' ', '\t', '\n', 'é', 'É', 'ö', 'Ö', 'ß', '\u00a0', '\u0085'};
         for (int i = 0; i < 450; i++) {
             String[] entry = propertyCases[i % propertyCases.length]; String pattern = entry[0];

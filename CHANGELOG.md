@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — Java regex control escapes
+
+- Support Java `\cX` in packet regex replacement, including bracket classes and COMMENTS mode.
+- Compare all Latin-1 operands and input bytes against Java Pattern and add beta-29 packet fixtures.
 ## Unreleased — Flash test stability
 
 - Remove a parallel-test race for limited Flash discovery worker slots without changing production admission.

@@ -2995,6 +2995,65 @@ fn mutations_match_original_java_packets_and_cursor() {
             }
         }
     }
+    let control_cases = [
+        "(\\cA+)",
+        "(\\ca+)",
+        "(\\c?+)",
+        "([\\c]]+)",
+        "(?x)(\\c #comment\n A+)",
+        "([\\c-]+)",
+        "(\\cé+)",
+        "(?x)([\\c] #comment\n ]+)",
+    ];
+    let control_alphabet = [
+        '\u{0001}', '!', '\u{007f}', '\u{001b}', '\u{001d}', 'm', '\u{00a9}', 'A', 'x', '\0', '\\',
+    ];
+    for i in 0..320 {
+        let pattern = control_cases[i % control_cases.len()];
+        let mut value = format!("{pattern} \u{0001}!\u{007f}\u{001d} m© ");
+        for j in 0..16 {
+            value.push(control_alphabet[(i * 7 + j * 3 + j * j) % control_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, "$1/$0", Some(1))
+            .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
+        check(&format!("substring_control_escape_{i}"), &packet);
+    }
+    for operand in 0u8..=u8::MAX {
+        for shape in 0..2 {
+            let escape = format!("\\c{}", char::from(operand));
+            let atom = if shape == 0 {
+                escape.clone()
+            } else {
+                format!("[{escape}]")
+            };
+            let pattern = format!("(?:{atom})\\z");
+            let expected_bits = expression::parse_hex(
+                expected[format!("unicode_control_{operand}_{shape}").as_str()],
+            )
+            .unwrap();
+            for byte in 0u8..=u8::MAX {
+                let mut packet = Packet::new(9);
+                packet
+                    .put_string(&format!("{pattern}{}", char::from(byte)))
+                    .unwrap();
+                packet
+                    .replace_substrings_java(&pattern, "##", Some(1))
+                    .unwrap();
+                packet.reset();
+                let output = packet.read_string().unwrap();
+                let expected_match = expected_bits[usize::from(byte) / 8] & (1 << (byte % 8)) != 0;
+                assert_eq!(
+                    output.ends_with("##"),
+                    expected_match,
+                    "operand={operand:02x} shape={shape} byte={byte:02x}"
+                );
+            }
+        }
+    }
     let property_cases = [
         ("(\\p{L}+)", "$1/$0"),
         ("(\\pL+)", "$1/$0"),

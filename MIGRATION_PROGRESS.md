@@ -1,5 +1,12 @@
 # G-Earth Rust migration progress
 
+## Java regex control escapes
+
+Java-style packet regex replacement now supports `\cX`, including metacharacter operands, bracket classes and COMMENTS mode. A 320-case beta-29 packet corpus passed; Java Pattern bitsets compared all 256 Latin-1 operands against all 256 input bytes both inside and outside classes. Invalid missing operands remain transactional. The 39 mutation tests, 150 desktop/web library tests (7 ignored), Clippy and debug build passed. The Windows release build succeeded at preceding code commit `f5afcef5d17f366ef1bbabf4ec0286aab5e437de`; current code needs a new release build. GitHub CI passed for `f5afcef`, after two older Windows runs had failed the now-stabilized Flash fixture. Java `\R`, real clients and extensions remain unverified.
+## Java `\R` matcher investigation
+
+Java 21 `Pattern.LineEnding` tries CRLF before CR and invokes its successor for each choice. Direct repetition invokes the line-ending atom separately; enclosing repeated groups produce additional backtracking differences. For example `(?:\R)+\n` on CRLF differs from a plain alternation, while making the inner alternation atomic changes `(?:\R)?\n`. The current Rust VM assumes fixed-width repeated atoms, so a correct implementation requires matcher-level variable-width choices and repetition semantics. `\R` remains rejected; do not use the discarded textual expansion. Continue independently with Java `\cX` control escapes and return to this gap.
+
 ## Parallel Flash discovery test stability
 
 Flash discovery test fixtures now wait up to 15 seconds for a global worker slot rather than assuming the four-worker pool is empty; production admission remains unchanged. The 22 discovery tests passed five times with normal parallelism, and the CI-equivalent Windows `cargo test --locked --workspace --all-targets` passed, with environment-dependent tests still ignored. Desktop/web Clippy and debug build passed. This addresses the contention observed in CI run 43666623723 but cannot prove future runners will never be flaky. Real clients and extensions remain unverified; release must be repeated on the current commit.
@@ -587,4 +594,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Investigate and implement Java regex `\R` at matcher level, preserving the documented differences between direct quantifiers and repeated enclosing groups on CRLF; compare deterministic beta-29 packet and Java Pattern fixtures before accepting the change. Separately investigate progress within one expensive Flash reverse table and repeat the Windows desktop/web release build. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.
+Compare Java regex octal escapes `\0...` against the released beta-29 packet API, including digit limits, bracket ranges, COMMENTS mode and malformed syntax; implement evidenced behavior and add deterministic differential fixtures. Then revisit `\R` matcher-level backtracking and progress within one expensive Flash reverse table. Repeat the Windows desktop/web release build. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.
