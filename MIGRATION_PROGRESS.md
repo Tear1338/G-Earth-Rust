@@ -1,5 +1,9 @@
 # G-Earth Rust migration progress
 
+## Release and RC4 reverse-search measurement at 5d781c0
+
+Windows GNU desktop/web release build succeeded at code commit `5d781c0caa21e4ff77fef107b3824a91e90571dd`. An isolated optimized probe using the actual RC4 rewind measured approximately 64 ms for 256 candidate counters on one 64 KiB table, 529 ms for eight tables, and 1,046 ms for one 1 MiB table. These are single local measurements during compilation, not end-to-end client benchmarks. Current discovery can spend this work on an early memory page before inspecting a fresh table on a later page. Investigate scanning all pages for fresh candidates first, then a reverse pass only when none exist; preserve ambiguity, cancellation, backpressure and moving-buffer behavior, and document the extra scan when fresh states are absent. Real-client and extension compatibility remains unverified.
+
 ## Streaming Flash frame validation
 
 Flash candidate validation now decrypts frame-length fields incrementally instead of copying and decrypting the entire ciphertext, and avoids advancing through the final body when no later length is needed. It checks strict and partial-tail policies in one pass. A deterministic comparison with a full-decryption reference covers valid, fragmented, malformed and multi-chunk fixtures. Flash discovery, simulated process and relay tests passed; the desktop/web library suite passed 138 with 7 ignored, Clippy and debug build passed. No end-to-end performance measurement or real-client verification was performed. Reverse-only RC4 state reconstruction can still be expensive; the previous release build predates this change.
@@ -547,4 +551,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Investigate worst-case outgoing Flash RC4 reverse-only recovery when no fresh candidate exists: measure representative search cost, preserve ambiguity detection and cancellation, and add deterministic late-candidate fixtures before implementing any optimization. Repeat the Windows desktop/web release build for current code. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.
+Implement and test a two-pass outgoing Flash discovery: scan all memory pages for fresh candidates before doing any reverse search, then scan for reverse candidates only if the fresh pass found none. Preserve ambiguity, cancellation, buffer growth and validation against new ciphertext; test a late fresh table and reverse-only fallback. Document the extra memory scan and measure representative cost. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.
