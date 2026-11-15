@@ -2863,6 +2863,35 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
         check(&format!("substring_whitespace_{i}"), &packet);
     }
+    let braced_hex_cases = [
+        "(\\x{41}+)",
+        "(\\x{000061}+)",
+        "(\\x{a0}+)",
+        "(\\x{100})",
+        "([\\x{41}-\\x{43}]+)",
+        "([^\\x{100}]+)",
+        "([a-\\x{100}]+)",
+        "([\\x{ff}-\\x{100}]+)",
+        "(?iu)(\\x{e9}+)",
+        "([\\x{0}-\\x{1f}]+)",
+    ];
+    let braced_hex_alphabet = [
+        'a', 'A', 'b', 'B', 'c', 'C', '\0', '\t', '\u{007f}', '\u{00a0}', 'é', 'É', '\u{00ff}',
+    ];
+    for i in 0..400 {
+        let pattern = braced_hex_cases[i % braced_hex_cases.len()];
+        let mut value = format!("{pattern} aABC éÉ ÿ ");
+        for j in 0..16 {
+            value.push(braced_hex_alphabet[(i * 7 + j * 3 + j * j) % braced_hex_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, "$1/$0", Some(1))
+            .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
+        check(&format!("substring_braced_hex_{i}"), &packet);
+    }
     let property_cases = [
         ("(\\p{L}+)", "$1/$0"),
         ("(\\pL+)", "$1/$0"),

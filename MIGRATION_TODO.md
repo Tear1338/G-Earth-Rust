@@ -1,9 +1,14 @@
 # Migration tasks
 
+## Java braced hexadecimal escapes
+
+- [x] Support Java `\x{...}` and bracket ranges over Latin-1, including nonmatching code points outside Latin-1 without Unicode case folding.
+- [ ] Implement and differentially test Unicode case folding from non-Latin-1 braced code points and ranges back into Latin-1.
+- [ ] Return to matcher-level `\R` CRLF/backtracking semantics and repeat release.
 ## Java line-break investigation
 
 - [ ] Implement `\R` with Java-compatible CRLF/backtracking semantics; naive alternation differs inside repeated groups.
-- [ ] Compare and implement Java braced hexadecimal escapes `\x{...}` over the supported packet character domain.
+- [x] Compare and implement Java braced hexadecimal escapes `\x{...}` over the Latin-1 packet domain; cross-domain Unicode folding remains tracked above.
 ## Java regex whitespace
 
 - [x] Support Java horizontal and vertical whitespace classes and complements over Latin-1, with beta-29 oracle fixtures.

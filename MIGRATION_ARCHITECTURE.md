@@ -1,5 +1,8 @@
 # Rust migration architecture
 
+## Java braced hexadecimal regex escapes
+
+Braced hex escapes are parsed as Unicode code points; class ranges are intersected with the Latin-1 packet domain. Out-of-domain code points are rejected when Unicode case-insensitive folding is active until Java-compatible cross-domain mappings are verified.
 ## Java line-break compatibility gap
 
 Java `\R` remains unsupported: naive alternation is not equivalent inside repeated groups, and direct-quantifier atomicity does not solve enclosing-group behavior. It requires matcher-level backtracking analysis.

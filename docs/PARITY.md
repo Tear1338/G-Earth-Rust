@@ -1,5 +1,8 @@
 # Compatibility with 1.5.4-beta-29
 
+## Braced regex hex evidence
+
+A 400-case beta-29 packet mutation corpus covers braced hex literals, Latin-1 and outside-domain ranges. Unicode case-insensitive folding of non-Latin-1 code points remains unsupported; full regex and live-extension parity remain unverified.
 ## Java `\R` limitation
 
 A direct Java comparison found that naive alternation differs from `\R` inside repeated groups on CRLF. The experiment was not shipped; line-break matching remains unsupported.

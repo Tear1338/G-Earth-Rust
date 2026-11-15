@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — Java braced regex escapes
+
+- Support Java `\x{...}` literals and ranges in packet regex replacement, with explicit rejection of unimplemented cross-domain Unicode case folding.
+- Add beta-29 differential and transactional malformed-input fixtures.
 ## Investigation — Java line breaks
 
 - Document Java `\R` backtracking differences and retain explicit rejection pending a correct implementation.

@@ -1182,6 +1182,18 @@ public class JavaMutationOracle {
             finally { System.setOut(original); }
             emit("substring_whitespace_" + i, sample);
         }
+        String[] bracedHexCases = {"(\\x{41}+)", "(\\x{000061}+)", "(\\x{a0}+)", "(\\x{100})", "([\\x{41}-\\x{43}]+)", "([^\\x{100}]+)", "([a-\\x{100}]+)", "([\\x{ff}-\\x{100}]+)", "(?iu)(\\x{e9}+)", "([\\x{0}-\\x{1f}]+)"};
+        char[] bracedHexAlphabet = {'a', 'A', 'b', 'B', 'c', 'C', '\u0000', '\t', '\u007f', '\u00a0', 'é', 'É', '\u00ff'};
+        for (int i = 0; i < 400; i++) {
+            String pattern = bracedHexCases[i % bracedHexCases.length];
+            StringBuilder value = new StringBuilder(pattern).append(" aABC éÉ ÿ ");
+            for (int j = 0; j < 16; j++) value.append(bracedHexAlphabet[(i * 7 + j * 3 + j * j) % bracedHexAlphabet.length]);
+            HPacket sample = new HPacket(9); sample.appendString(value.toString()); sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try { System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream())); sample.replaceXSubstrings(pattern, "$1/$0", 1); }
+            finally { System.setOut(original); }
+            emit("substring_braced_hex_" + i, sample);
+        }
         char[] propertyAlphabet = {'a', 'A', 'b', 'B', '0', '9', ' ', '\t', '\n', 'é', 'É', 'ö', 'Ö', 'ß', '\u00a0', '\u0085'};
         for (int i = 0; i < 450; i++) {
             String[] entry = propertyCases[i % propertyCases.length]; String pattern = entry[0];

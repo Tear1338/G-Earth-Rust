@@ -559,6 +559,31 @@ fn control_escape(
     Ok(Some(value))
 }
 
+fn braced_hex_escape(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Result<u32> {
+    if chars.next() != Some('{') {
+        return Err(error("invalid regex hex escape"));
+    }
+    let mut value = 0u32;
+    let mut digits = 0usize;
+    loop {
+        match chars.next() {
+            Some('}') if digits > 0 => return Ok(value),
+            Some(c) => {
+                let digit = c
+                    .to_digit(16)
+                    .ok_or_else(|| error("invalid regex hex escape"))?;
+                value = value
+                    .checked_mul(16)
+                    .and_then(|v| v.checked_add(digit))
+                    .filter(|v| *v <= 0x10ffff)
+                    .ok_or_else(|| error("invalid regex hex escape"))?;
+                digits += 1;
+            }
+            None => return Err(error("invalid regex hex escape")),
+        }
+    }
+}
+
 // Java COMMENTS mode skips ASCII whitespace and # comments while parsing,
 // including inside character classes. Escaped and quoted characters stay literal.
 fn regex_skip_layout(chars: &[char], mut at: usize, comments: bool, unix: bool) -> usize {
@@ -709,7 +734,7 @@ fn normalize_regex_comments(pattern: &str) -> String {
 }
 
 enum CharacterClassElement {
-    Literal(u8, bool),
+    Literal(u32, bool),
     Predefined(Box<[bool; 256]>),
 }
 
@@ -830,15 +855,21 @@ fn parse_character_class_inner(
                 )?));
             } else if let Some(class) = predefined_class(escaped, unicode_class) {
                 elements.push(CharacterClassElement::Predefined(class));
+            } else if escaped == 'x' && chars.peek() == Some(&'{') {
+                let value = braced_hex_escape(chars)?;
+                if value > 255 && case_insensitive && unicode_case {
+                    return Err(error("Unicode case folding outside Latin-1 is unsupported"));
+                }
+                elements.push(CharacterClassElement::Literal(value, true));
             } else if let Some(byte) = control_escape(escaped, chars)? {
-                elements.push(CharacterClassElement::Literal(byte, true));
+                elements.push(CharacterClassElement::Literal(u32::from(byte), true));
             } else if "[]^-\\.#&".contains(escaped) || escaped.is_ascii_whitespace() {
-                elements.push(CharacterClassElement::Literal(escaped as u8, true));
+                elements.push(CharacterClassElement::Literal(u32::from(escaped), true));
             } else {
                 return Err(error("unsupported character class escape"));
             }
         } else {
-            elements.push(CharacterClassElement::Literal(c as u8, false));
+            elements.push(CharacterClassElement::Literal(u32::from(c), false));
         }
     }
     if !closed || (elements.is_empty() && intersection.is_none()) {
@@ -873,7 +904,7 @@ fn build_character_class(
     let mut class = Box::new([false; 256]);
     let mut i = 0;
     while i < elements.len() {
-        if matches!(elements[i], CharacterClassElement::Literal(b'-', false))
+        if matches!(elements[i], CharacterClassElement::Literal(45, false))
             && i != 0
             && i + 1 != elements.len()
             && !matches!(elements[i - 1], CharacterClassElement::Predefined(_))
@@ -882,7 +913,7 @@ fn build_character_class(
         }
         if i + 2 < elements.len()
             && matches!(elements[i], CharacterClassElement::Literal(_, _))
-            && matches!(elements[i + 1], CharacterClassElement::Literal(b'-', false))
+            && matches!(elements[i + 1], CharacterClassElement::Literal(45, false))
         {
             let (CharacterClassElement::Literal(start, _), CharacterClassElement::Literal(end, _)) =
                 (&elements[i], &elements[i + 2])
@@ -892,13 +923,19 @@ fn build_character_class(
             if start > end {
                 return Err(error("invalid character class range"));
             }
-            for byte in *start..=*end {
-                class[usize::from(byte)] = true;
+            for byte in 0u8..=u8::MAX {
+                if (*start..=*end).contains(&u32::from(byte)) {
+                    class[usize::from(byte)] = true;
+                }
             }
             i += 3;
         } else {
             match &elements[i] {
-                CharacterClassElement::Literal(byte, _) => class[usize::from(*byte)] = true,
+                CharacterClassElement::Literal(value, _) => {
+                    if let Ok(byte) = u8::try_from(*value) {
+                        class[usize::from(byte)] = true;
+                    }
+                }
                 CharacterClassElement::Predefined(set) => {
                     for (included, member) in class.iter_mut().zip(set.iter()) {
                         *included |= *member;
@@ -4732,7 +4769,23 @@ impl Packet {
                         last_closed_group = None;
                         continue;
                     }
-                    if let Some(byte) = control_escape(c, &mut chars)? {
+                    if c == 'x' && chars.peek() == Some(&'{') {
+                        let value = braced_hex_escape(&mut chars)?;
+                        if let Ok(byte) = u8::try_from(value) {
+                            c = char::from(byte);
+                        } else {
+                            if case_insensitive && unicode_case {
+                                return Err(error(
+                                    "Unicode case folding outside Latin-1 is unsupported",
+                                ));
+                            }
+                            atoms.push(FixedRegexAtom::Class(Box::new([false; 256])));
+                            dynamic = true;
+                            quantifiable = true;
+                            last_closed_group = None;
+                            continue;
+                        }
+                    } else if let Some(byte) = control_escape(c, &mut chars)? {
                         c = char::from(byte);
                     } else if !".^$|?*+()[]{}\\#".contains(c) && !c.is_ascii_whitespace() {
                         return Err(error("unsupported regex escape"));

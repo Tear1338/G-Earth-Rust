@@ -535,6 +535,30 @@ fn java_character_properties_reject_unknown_or_unclosed_names_transactionally() 
 }
 
 #[test]
+fn java_braced_hex_rejects_invalid_and_unhandled_unicode_folding_transactionally() {
+    for pattern in [
+        "\\x{}",
+        "\\x{110000}",
+        "\\x{xyz}",
+        "\\x{41",
+        "[\\x{100}-a]",
+        "(?iu)\\x{178}",
+        "(?iu)[a-\\x{100}]",
+    ] {
+        let mut packet = Packet::new(9);
+        packet.put_string(pattern).unwrap();
+        let before = packet.clone();
+        assert!(
+            packet
+                .replace_substrings_java(pattern, "x", Some(1))
+                .is_err(),
+            "{pattern}"
+        );
+        assert_eq!(packet, before);
+    }
+}
+
+#[test]
 fn java_control_escapes_reject_invalid_values_without_mutation() {
     let mut packet = Packet::new(9);
     packet.put_string("(\\x41) A").unwrap();

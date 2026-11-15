@@ -1,5 +1,8 @@
 # Continuation state
 
+## Braced hex continuation
+
+Java braced hex literals/ranges now work over the Latin-1 packet domain, except Unicode case-insensitive external code points. A Java probe identified nine external points folding to Latin-1; compare literal and range behavior against beta-29 before implementing. Then revisit `\R`.
 ## Java line-break continuation
 
 `\R` remains unsupported because naive expansion diverges under repeated enclosing groups; preserve the CRLF counterexample in future Java oracle fixtures. Next compare Java `\x{...}` escapes, then return to matcher-level line-break semantics.
