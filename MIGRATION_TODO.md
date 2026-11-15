@@ -1,5 +1,7 @@
 # Migration tasks
 
+Investigate Flash recovery when at least two complete encrypted frames are followed by an incomplete tail below the buffer limit. Determine whether strict whole-buffer validation can stall a connection waiting for more traffic, and add a safe ambiguity-preserving fixture before changing behavior. Evaluate large-frame recovery cost. The user handles real-client testing.
+
 Support a first encrypted Flash frame larger than the initial 64 KiB bootstrap buffer: grow the bounded buffer progressively up to the protocol limit, retain backpressure and test late completion and cancellation. Evaluate CPU/memory bounds of reversing large ciphertext. The user handles real-client testing.
 
 Reproduce and correct encrypted Flash bootstrap overflow during slow key discovery using bounded socket backpressure. Assess incomplete trailing frames and a first encrypted frame larger than 64 KiB without selecting ambiguous keys. The user will test real clients.

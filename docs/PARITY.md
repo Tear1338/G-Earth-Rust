@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+A synthetic first Flash frame larger than 64 KiB now recovers after bounded buffer growth. Maximum-frame performance, fragmented tails below capacity and real Habbo compatibility remain unverified.
+
 Flash input now applies bounded backpressure while keys are pending; a synthetic stream verifies complete-prefix recovery and subsequent partial-frame completion. A first encrypted frame above 64 KiB and real-client behavior remain unverified.
 
 Flash key discovery now copies buffered ciphertext after the memory scan, following pinned Java ordering; a delayed-scan synthetic fixture covers a snapshot that previously failed. Real process timing, encrypted bootstrap limits and real-client compatibility remain unverified.

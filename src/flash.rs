@@ -12,6 +12,7 @@ use std::{
     time::{Duration, Instant},
 };
 const BOOTSTRAP_LIMIT: usize = 65536;
+const BOOTSTRAP_MAX: usize = MAX_FRAME + 4;
 const MAX_DISCOVERY_WORKERS: usize = 4;
 static ACTIVE_DISCOVERY_WORKERS: AtomicUsize = AtomicUsize::new(0);
 
@@ -101,13 +102,26 @@ struct Side {
     waiting: Option<Instant>,
     last_scan: Option<Instant>,
     scan_address: usize,
+    bootstrap_limit: Option<usize>,
     candidates: CandidateAccumulator,
 }
 impl Side {
+    fn bootstrap_limit(&self) -> usize {
+        self.bootstrap_limit.unwrap_or(BOOTSTRAP_LIMIT)
+    }
+    fn grow_bootstrap(&mut self) -> bool {
+        let current = self.bootstrap_limit();
+        let next = current.saturating_mul(2).min(BOOTSTRAP_MAX);
+        if next == current {
+            return false;
+        }
+        self.bootstrap_limit = Some(next);
+        true
+    }
     fn feed(&mut self, bytes: &[u8]) -> io::Result<()> {
         if self.buffer.len() + bytes.len()
             > if self.encrypted && self.reader.is_none() {
-                BOOTSTRAP_LIMIT
+                self.bootstrap_limit()
             } else {
                 MAX_FRAME + 65536
             }
@@ -253,7 +267,7 @@ impl FlashSession {
             &self.incoming
         };
         if side.encrypted && side.reader.is_none() {
-            BOOTSTRAP_LIMIT.saturating_sub(side.buffer.len())
+            side.bootstrap_limit().saturating_sub(side.buffer.len())
         } else {
             usize::MAX
         }
@@ -432,7 +446,7 @@ impl FlashSession {
                     let sample = if side.encrypted && side.reader.is_none() {
                         CiphertextSample {
                             bytes: side.buffer.clone(),
-                            at_capacity: side.buffer.len() == BOOTSTRAP_LIMIT,
+                            at_capacity: side.buffer.len() == side.bootstrap_limit(),
                         }
                     } else {
                         CiphertextSample {
@@ -468,10 +482,13 @@ impl FlashSession {
                             if let Some(cipher) = side.candidates.take_unique() {
                                 if valid_stream_prefix(&side.buffer, &cipher) {
                                     side.install(cipher);
-                                } else {
-                                    side.waiting = Some(now);
                                 }
-                            } else if side.buffer.len() > sampled_len {
+                            }
+                            if side.reader.is_none()
+                                && ((side.buffer.len() == side.bootstrap_limit()
+                                    && side.grow_bootstrap())
+                                    || side.buffer.len() > sampled_len)
+                            {
                                 side.waiting = Some(now);
                             }
                         }
@@ -555,6 +572,16 @@ fn valid_frames(encrypted: &[u8], candidate: &Rc4) -> bool {
 // Validate newly buffered ciphertext too, while allowing an incomplete final
 // frame. The original sample already supplied at least one complete frame.
 fn valid_stream_prefix(encrypted: &[u8], candidate: &Rc4) -> bool {
+    if encrypted.len() < 6 {
+        return false;
+    }
+    let mut first_length = [0u8; 4];
+    first_length.copy_from_slice(&encrypted[..4]);
+    candidate.clone().apply(&mut first_length);
+    let length = u32::from_be_bytes(first_length) as usize;
+    if !(2..=MAX_FRAME).contains(&length) || length + 4 > encrypted.len() {
+        return false;
+    }
     let mut decoded = encrypted.to_vec();
     candidate.clone().apply(&mut decoded);
     let mut at = 0;
@@ -574,6 +601,28 @@ fn valid_stream_prefix(encrypted: &[u8], candidate: &Rc4) -> bool {
         complete += 1;
     }
     complete > 0
+}
+fn rewind_cancellable(
+    cipher: &mut Rc4,
+    mut count: usize,
+    cancel: &AtomicBool,
+    deadline: Option<Instant>,
+) -> io::Result<bool> {
+    while count > 0 {
+        if cancel.load(Ordering::Acquire) {
+            return Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "key discovery cancelled",
+            ));
+        }
+        if deadline.is_some_and(|deadline| Instant::now() > deadline) {
+            return Ok(false);
+        }
+        let chunk = count.min(4096);
+        cipher.rewind(chunk);
+        count -= chunk;
+    }
+    Ok(true)
 }
 pub fn recover_state(
     states: &[[u8; 256]],
@@ -609,7 +658,7 @@ fn recover_candidates(
             "key discovery cancelled",
         ));
     }
-    if encrypted.len() < 6 || encrypted.len() > BOOTSTRAP_LIMIT {
+    if encrypted.len() < 6 || encrypted.len() > BOOTSTRAP_MAX {
         return Ok(RecoveryOutcome {
             priority: 0,
             ambiguous: false,
@@ -678,7 +727,13 @@ fn recover_candidates(
             }
             let mut candidate = Rc4::from_state(*state, encrypted.len() as u8, y as u8)
                 .map_err(io::Error::other)?;
-            candidate.rewind(encrypted.len());
+            if !rewind_cancellable(&mut candidate, encrypted.len(), cancel, deadline)? {
+                return Ok(RecoveryOutcome {
+                    priority: 0,
+                    ambiguous: false,
+                    cipher: None,
+                });
+            }
             let (_, x, y) = candidate.state();
             if x != 0
                 || y != 0
@@ -1089,6 +1144,115 @@ mod discovery_tests {
         let packets = session.feed(Direction::ToClient, &buffer[..n]).unwrap();
         assert_eq!(packets.len(), 1);
         assert_eq!(packets[0].packet.bytes(), second.bytes());
+    }
+
+    #[test]
+    fn oversized_first_frame_grows_bootstrap_and_recovers() {
+        let key = Rc4::new(b"large-first-frame-key").unwrap();
+        let mut packet = Packet::new(90);
+        packet.append(&vec![7; BOOTSTRAP_LIMIT + 4096]).unwrap();
+        let mut wire = packet.bytes().to_vec();
+        key.clone().apply(&mut wire);
+        let mut input = std::io::Cursor::new(wire);
+        let mut session = FlashSession::default();
+        session.incoming.encrypted = true;
+        session.incoming.waiting = Some(Instant::now());
+        let mut buffer = vec![0u8; 8192];
+        while session.input_capacity(Direction::ToClient) > 0 {
+            let n = crate::relay::read_with_capacity(
+                &mut input,
+                &mut buffer,
+                session.input_capacity(Direction::ToClient),
+            )
+            .unwrap()
+            .unwrap();
+            assert!(n > 0);
+            assert!(session
+                .feed(Direction::ToClient, &buffer[..n])
+                .unwrap()
+                .is_empty());
+        }
+        assert_eq!(input.position() as usize, BOOTSTRAP_LIMIT);
+        let table = key.state().0;
+        assert!(session
+            .start_discovery(Direction::ToClient, move |_| Ok(
+                gearth_platform::ScanResult {
+                    states: vec![table],
+                    bytes_read: 1024,
+                    complete: true,
+                    next_address: None,
+                }
+            ))
+            .unwrap());
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while session.discovery[1].is_some() {
+            session
+                .poll_discovery(Direction::ToClient, Instant::now())
+                .unwrap();
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(session.incoming.reader.is_none());
+        assert_eq!(session.incoming.bootstrap_limit(), BOOTSTRAP_LIMIT * 2);
+        while let Some(n) = crate::relay::read_with_capacity(
+            &mut input,
+            &mut buffer,
+            session.input_capacity(Direction::ToClient),
+        )
+        .unwrap()
+        {
+            if n == 0 {
+                break;
+            }
+            assert!(session
+                .feed(Direction::ToClient, &buffer[..n])
+                .unwrap()
+                .is_empty());
+        }
+        let table = key.state().0;
+        assert!(session
+            .start_discovery(Direction::ToClient, move |_| Ok(
+                gearth_platform::ScanResult {
+                    states: vec![table],
+                    bytes_read: 1024,
+                    complete: true,
+                    next_address: None,
+                }
+            ))
+            .unwrap());
+        while session.discovery[1].is_some() {
+            session
+                .poll_discovery(Direction::ToClient, Instant::now())
+                .unwrap();
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let packets = session.feed(Direction::ToClient, &[]).unwrap();
+        assert_eq!(packets.len(), 1);
+        assert_eq!(packets[0].packet.bytes(), packet.bytes());
+        session.incoming.bootstrap_limit = Some(BOOTSTRAP_MAX - 1);
+        assert!(session.incoming.grow_bootstrap());
+        assert_eq!(session.incoming.bootstrap_limit(), BOOTSTRAP_MAX);
+        assert!(!session.incoming.grow_bootstrap());
+    }
+
+    #[test]
+    fn reverse_search_checks_cancellation_before_work() {
+        let mut cipher = Rc4::new(b"cancellable-key").unwrap();
+        let original = cipher.state();
+        let error = rewind_cancellable(&mut cipher, BOOTSTRAP_MAX, &AtomicBool::new(true), None)
+            .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::Interrupted);
+        assert_eq!(cipher.state(), original);
+        let expired = Instant::now().checked_sub(Duration::from_secs(1)).unwrap();
+        assert!(!rewind_cancellable(
+            &mut cipher,
+            BOOTSTRAP_MAX,
+            &AtomicBool::new(false),
+            Some(expired)
+        )
+        .unwrap());
+        assert_eq!(cipher.state(), original);
     }
 
     #[test]

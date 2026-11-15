@@ -1,5 +1,7 @@
 # Continuation state
 
+Flash bootstrap grows from 64 KiB up to MAX_FRAME + 4 after unsuccessful scans at capacity; a large-first-frame fixture, cancellation/deadline tests and synthetic process relay pass. Windows desktop/web library (125 passed, seven ignored), Flash/relay tests, both Clippy configurations and debug build pass. Next investigate incomplete encrypted tails below capacity and search cost; real-client tests belong to the user.
+
 Flash bootstrap now pauses reads at 64 KiB rather than overflowing, and at capacity can recover from a complete prefix with partial tail. Windows desktop/web library (123 passed, seven ignored), Flash/core/relay and synthetic process tests, both Clippy configurations and debug build pass. Next support a first encrypted frame above 64 KiB with bounded growth and evaluate cost. The user will test real clients.
 
 Flash discovery now snapshots ciphertext after memory scanning; a delayed-scan synthetic fixture and Windows Flash-process relay pass. Windows desktop/web library (122 passed, seven ignored), Flash/relay tests, both Clippy configurations and debug build pass; release passed at 3d30e4d. Next implement bounded encrypted bootstrap backpressure and assess partial/oversized first frames; the user handles real-client tests.

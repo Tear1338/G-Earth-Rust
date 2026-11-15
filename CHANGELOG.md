@@ -1,5 +1,7 @@
 # Changelog
 
+- Grow Flash bootstrap buffering for oversized first encrypted frames, with bounded cancellation-aware reversal.
+
 - Apply Flash bootstrap backpressure and recover complete prefixes with a partial trailing frame.
 
 - Sample Flash encrypted bytes after memory scanning to account for traffic arriving during discovery.

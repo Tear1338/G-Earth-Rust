@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Flash bootstrap capacity now grows progressively from 64 KiB to MAX_FRAME + 4 after an unsuccessful complete scan at capacity; socket backpressure remains bounded. Reverse RC4 work checks cancellation/deadlines in chunks. Worst-case search cost and fragmented tails below capacity remain open.
+
 During Flash key discovery, each direction pauses socket reads at the encrypted bootstrap limit. At capacity the key check accepts a valid complete prefix with an incomplete tail while still rejecting ambiguous candidates. An oversized first encrypted frame still needs bounded buffer growth.
 
 After each memory page is read, a discovery worker requests a current ciphertext snapshot from the relay before testing keys, as beta-29 reads tables before copying its encrypted buffer. This reduces but cannot eliminate timing differences with bytes still in OS buffers.
