@@ -25,7 +25,7 @@ impl Drop for DiscoveryTask {
     }
 }
 enum DiscoveryEvent {
-    Scanned((usize, usize, bool)),
+    Scanned((usize, usize, bool), mpsc::SyncSender<Vec<u8>>),
     Candidate(Vec<u8>, Box<RecoveryOutcome>),
     Done {
         sampled_len: usize,
@@ -314,7 +314,6 @@ impl FlashSession {
         if !side.encrypted || side.reader.is_some() || side.buffer.len() < 6 {
             return Ok(false);
         }
-        let sample = side.buffer.clone();
         if ACTIVE_DISCOVERY_WORKERS
             .try_update(Ordering::AcqRel, Ordering::Acquire, |n| {
                 (n < MAX_DISCOVERY_WORKERS).then_some(n + 1)
@@ -343,11 +342,28 @@ impl FlashSession {
                     )));
                     return;
                 }
-                let _ = sender.send(DiscoveryEvent::Scanned((
-                    scan.states.len(),
-                    scan.bytes_read,
-                    scan.complete,
-                )));
+                let (sample_sender, sample_receiver) = mpsc::sync_channel(1);
+                if sender
+                    .send(DiscoveryEvent::Scanned(
+                        (scan.states.len(), scan.bytes_read, scan.complete),
+                        sample_sender,
+                    ))
+                    .is_err()
+                {
+                    return;
+                }
+                // Match Java's ordering: copy the encrypted buffer after the
+                // process scan, while allowing relay I/O to continue meanwhile.
+                let sample = loop {
+                    if worker_cancel.load(Ordering::Acquire) {
+                        return;
+                    }
+                    match sample_receiver.recv_timeout(Duration::from_millis(20)) {
+                        Ok(sample) => break sample,
+                        Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                        Err(mpsc::RecvTimeoutError::Disconnected) => return,
+                    }
+                };
                 let length = sample.len();
                 let next_address = scan.next_address;
                 match recover_candidates(&scan.states, &sample, direction, &worker_cancel, None) {
@@ -385,7 +401,16 @@ impl FlashSession {
                 }
             };
             match event {
-                DiscoveryEvent::Scanned(stats) => self.scan_stats = Some(stats),
+                DiscoveryEvent::Scanned(stats, sample_sender) => {
+                    self.scan_stats = Some(stats);
+                    let side = self.side(direction);
+                    let sample = if side.encrypted && side.reader.is_none() {
+                        side.buffer.clone()
+                    } else {
+                        Vec::new()
+                    };
+                    let _ = sample_sender.try_send(sample);
+                }
                 DiscoveryEvent::Candidate(sample, outcome) => {
                     let side = self.side(direction);
                     if side.encrypted && side.reader.is_none() && side.buffer.starts_with(&sample) {
@@ -670,7 +695,45 @@ mod discovery_tests {
 
     #[test]
     fn background_discovery_reaches_late_candidate_while_buffer_grows() {
-        let (fresh, mut current, first_wire) = outgoing_fixture();
+        let mut fixture = None;
+        for index in 0..32 {
+            let fresh = Rc4::new(format!("growing-fixture-{index}").as_bytes()).unwrap();
+            let mut current = fresh.clone();
+            let mut first = Packet::new(77);
+            for n in 0..32 {
+                first.put_i32(n * 1103).unwrap();
+            }
+            let mut second = Packet::new(78);
+            second.put_i32(42).unwrap();
+            let mut first_wire = first.bytes().to_vec();
+            let mut second_wire = second.bytes().to_vec();
+            current.apply(&mut first_wire);
+            current.apply(&mut second_wire);
+            let mut combined = first_wire.clone();
+            combined.extend_from_slice(&second_wire);
+            if recover_state(
+                &[current.state().0],
+                &combined,
+                Direction::ToServer,
+                &AtomicBool::new(false),
+            )
+            .unwrap()
+            .is_some()
+                && recover_state(
+                    &[current.state().0],
+                    &first_wire,
+                    Direction::ToServer,
+                    &AtomicBool::new(false),
+                )
+                .unwrap()
+                .is_none()
+            {
+                fixture = Some((fresh, current, first_wire, second_wire));
+                break;
+            }
+        }
+        let (fresh, current, first_wire, second_wire) =
+            fixture.expect("unambiguous growing fixture");
         let mut tables: Vec<_> = (0..96)
             .map(|i| {
                 Rc4::new(format!("unrelated-{i}").as_bytes())
@@ -709,10 +772,6 @@ mod discovery_tests {
             session.discovery[0].is_some(),
             "an active search must not be cut off by the idle timeout"
         );
-        let mut second = Packet::new(78);
-        second.put_i32(42).unwrap();
-        let mut second_wire = second.bytes().to_vec();
-        current.apply(&mut second_wire);
         assert!(session
             .feed(Direction::ToServer, &second_wire)
             .unwrap()

@@ -1,5 +1,7 @@
 # Changelog
 
+- Sample Flash encrypted bytes after memory scanning to account for traffic arriving during discovery.
+
 - Resume bounded Windows Flash memory scans and preserve candidate ambiguity across pages.
 
 - Run Flash RC4 discovery in cancellable per-direction workers and defer injections until keys and buffered traffic are ready.

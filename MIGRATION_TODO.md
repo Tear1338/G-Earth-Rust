@@ -1,5 +1,7 @@
 # Migration tasks
 
+Reproduce and correct encrypted Flash bootstrap overflow during slow key discovery using bounded socket backpressure. Assess incomplete trailing frames and a first encrypted frame larger than 64 KiB without selecting ambiguous keys. The user will test real clients.
+
 Test and implement bounded Flash input backpressure during asynchronous key discovery: a full 64 KiB encrypted bootstrap buffer currently causes an error rather than pausing socket reads. Assess a first encrypted frame larger than the bootstrap limit separately. The user will test real clients.
 
 Make Windows Flash memory scanning resumable across its five-second, 1 GiB and table-count limits. Preserve overlap and cancellation, test candidates beyond the first page and prevent restarting forever at address zero. The user will conduct actual-client testing.

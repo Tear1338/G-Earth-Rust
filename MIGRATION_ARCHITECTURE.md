@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+After each memory page is read, a discovery worker requests a current ciphertext snapshot from the relay before testing keys, as beta-29 reads tables before copying its encrypted buffer. This reduces but cannot eliminate timing differences with bytes still in OS buffers.
+
 Windows Flash memory scans now expose a continuation address after bounded time, byte or table-count pages. Each direction scans independently, aggregates candidate ambiguity over a complete pass and rechecks buffered ciphertext before installing a key. This can delay recovery; the 64 KiB encrypted bootstrap limit and real-client behavior remain open.
 
 Flash process scans and complete returned-table reversal run in bounded cancellable background workers, one per direction; the relay can continue processing while ciphertext accumulates. Results apply only to the captured ciphertext prefix. Per-direction injections await keys and buffered complete packets; the Windows memory scanner itself still needs resumable address pagination.
