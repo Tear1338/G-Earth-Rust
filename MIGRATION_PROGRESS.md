@@ -1,5 +1,8 @@
 # G-Earth Rust migration progress
 
+## Java regex octal escapes
+
+Java-style packet regex replacement now supports `\0` followed by one to three octal digits, respecting Java’s first-digit limit and leaving excess digits literal. A beta-29 oracle compared 400 contextual fixtures plus every one-, two- and three-digit octal sequence (584 cases), including classes and COMMENTS mode; malformed escapes are rejected transactionally. The 39 mutation tests and 151 desktop/web library tests (7 ignored) passed; Clippy and debug build checked. The Windows release succeeded at preceding code commit `76c0543bfd3ecc6d37ee38aa7ac1fb77329c3919`; current code needs a new release build. Java `\R`, real clients and extensions remain unverified.
 ## Java regex control escapes
 
 Java-style packet regex replacement now supports `\cX`, including metacharacter operands, bracket classes and COMMENTS mode. A 320-case beta-29 packet corpus passed; Java Pattern bitsets compared all 256 Latin-1 operands against all 256 input bytes both inside and outside classes. Invalid missing operands remain transactional. The 39 mutation tests, 150 desktop/web library tests (7 ignored), Clippy and debug build passed. The Windows release build succeeded at preceding code commit `f5afcef5d17f366ef1bbabf4ec0286aab5e437de`; current code needs a new release build. GitHub CI passed for `f5afcef`, after two older Windows runs had failed the now-stabilized Flash fixture. Java `\R`, real clients and extensions remain unverified.
@@ -594,4 +597,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Compare Java regex octal escapes `\0...` against the released beta-29 packet API, including digit limits, bracket ranges, COMMENTS mode and malformed syntax; implement evidenced behavior and add deterministic differential fixtures. Then revisit `\R` matcher-level backtracking and progress within one expensive Flash reverse table. Repeat the Windows desktop/web release build. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.
+Compare Java four-digit regex Unicode escapes `\uXXXX` outside Latin-1 against the released beta-29 packet API, including bracket ranges, Unicode case folding, malformed escapes and surrogate boundaries; implement verified behavior and add differential fixtures. Then revisit `\R` matcher-level backtracking and progress within one expensive Flash reverse table. Repeat the Windows desktop/web release build. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.

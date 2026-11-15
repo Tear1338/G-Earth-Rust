@@ -549,6 +549,24 @@ fn control_escape(
             u8::try_from(u32::from(operand) ^ 0x40)
                 .map_err(|_| error("regex control escape outside Latin-1"))?
         }
+        '0' => {
+            let first = chars
+                .next()
+                .and_then(|c| c.to_digit(8))
+                .ok_or_else(|| error("invalid regex octal escape"))?;
+            let mut value = first;
+            if let Some(second) = chars.peek().and_then(|c| c.to_digit(8)) {
+                chars.next();
+                value = value * 8 + second;
+                if first <= 3 {
+                    if let Some(third) = chars.peek().and_then(|c| c.to_digit(8)) {
+                        chars.next();
+                        value = value * 8 + third;
+                    }
+                }
+            }
+            value as u8
+        }
         'x' | 'u' => {
             let digits = if kind == 'x' { 2 } else { 4 };
             let mut value = 0u32;
@@ -1700,6 +1718,22 @@ fn replace_alternatives(
 #[cfg(test)]
 mod regex_budget_tests {
     use super::*;
+
+    #[test]
+    fn java_octal_escape_preserves_digits_beyond_its_limit() {
+        for (digits, expected, remaining) in [
+            ("0", 0, ""),
+            ("07", 7, ""),
+            ("377", 255, ""),
+            ("400", 32, "0"),
+            ("777", 63, "7"),
+        ] {
+            let mut chars = digits.chars().peekable();
+            assert_eq!(control_escape('0', &mut chars).unwrap(), Some(expected));
+            assert_eq!(chars.collect::<String>(), remaining);
+        }
+        assert!(control_escape('0', &mut "8".chars().peekable()).is_err());
+    }
 
     #[test]
     fn java_control_escape_consumes_metacharacters_before_class_parsing() {

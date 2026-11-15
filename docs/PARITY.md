@@ -1,5 +1,8 @@
 # Compatibility with 1.5.4-beta-29
 
+## Java octal regex evidence
+
+The beta-29 packet oracle covers 400 contextual cases and all 584 one- to three-digit octal sequences; malformed input is tested transactionally. Full Java regex and live-extension compatibility remain unverified.
 ## Java control-escape evidence
 
 A beta-29 packet corpus and all-byte Java Pattern comparisons cover `\cX` inside and outside classes; malformed operands are tested transactionally. Full Java regex and live-extension compatibility remain unverified.

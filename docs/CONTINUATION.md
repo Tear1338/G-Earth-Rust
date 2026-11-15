@@ -1,5 +1,8 @@
 # Continuation state
 
+## Java octal continuation
+
+Octal regex escapes are implemented with Java digit limits and differential fixtures. Next compare four-digit `\uXXXX` escapes outside Latin-1, including case folding and surrogate boundaries, then revisit `\R`.
 ## Java control-escape continuation
 
 `\cX` is implemented and compared with beta-29 and exhaustive Latin-1 Java Pattern vectors. Next compare Java octal regex escapes, then revisit matcher-level `\R`; repeat the release build.

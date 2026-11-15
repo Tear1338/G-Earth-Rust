@@ -1,9 +1,14 @@
 # Migration tasks
 
+## Java regex octal escapes
+
+- [x] Implement Java octal regex escapes and verify digit limits against the beta-29 packet API.
+- [ ] Compare Java four-digit Unicode escapes outside Latin-1, including case folding and surrogate boundaries.
+- [ ] Revisit `\R` matcher backtracking, repeat release and await user-run compatibility tests.
 ## Java regex control escapes
 
 - [x] Support `\cX`, including COMMENTS-mode operand handling, with beta-29 and all-byte Java comparisons.
-- [ ] Compare Java regex octal escapes `\0...`, including digit limits, bracket ranges and malformed syntax.
+- [x] Compare Java regex octal escapes `\0...`, including digit limits, bracket ranges and malformed syntax.
 - [ ] Revisit `\R` matcher backtracking, repeat release and await user-run compatibility tests.
 ## Flash test stability
 

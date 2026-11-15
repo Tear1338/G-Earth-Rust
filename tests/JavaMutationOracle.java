@@ -1246,6 +1246,27 @@ public class JavaMutationOracle {
             for (int value = 0; value < 256; value++) if (compiled.matcher(Character.toString((char)value)).matches()) matches[value / 8] |= (byte)(1 << (value % 8));
             System.out.println("unicode_control_" + operand + "_" + shape + "=" + HexFormat.of().formatHex(matches));
         }
+        String[] octalCases = {"(\\00+)", "(\\07+)", "(\\010+)", "(\\0377+)", "(\\0400)", "(\\0777)", "([\\00-\\07]+)", "(?x)(\\0 #comment\n 7+)", "([\\0400]+)", "(\\0000+)"};
+        char[] octalAlphabet = {'\u0000', '\u0001', '\u0007', '\b', ' ', '0', '?', '7', 'ÿ', 'x', 'A'};
+        for (int i = 0; i < 400; i++) {
+            String pattern = octalCases[i % octalCases.length];
+            StringBuilder value = new StringBuilder(pattern).append(" \u0000\u0007\bÿ 0?7 ");
+            for (int j = 0; j < 16; j++) value.append(octalAlphabet[(i * 7 + j * 3 + j * j) % octalAlphabet.length]);
+            HPacket sample = new HPacket(9); sample.appendString(value.toString()); sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try { System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream())); sample.replaceXSubstrings(pattern, "$1/$0", 1); }
+            finally { System.setOut(original); }
+            emit("substring_octal_" + i, sample);
+        }
+        for (int i = 0; i < 584; i++) {
+            String digits = i < 8 ? Integer.toOctalString(i) : i < 72 ? String.format("%02o", i - 8) : String.format("%03o", i - 72);
+            String pattern = "(\\0" + digits + ")";
+            HPacket sample = new HPacket(9); sample.appendString(pattern + " " + (char)(i % 256) + " 0?7ÿ"); sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try { System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream())); sample.replaceXSubstrings(pattern, "$1/$0", 1); }
+            finally { System.setOut(original); }
+            emit("substring_octal_digits_" + i, sample);
+        }
         char[] propertyAlphabet = {'a', 'A', 'b', 'B', '0', '9', ' ', '\t', '\n', 'é', 'É', 'ö', 'Ö', 'ß', '\u00a0', '\u0085'};
         for (int i = 0; i < 450; i++) {
             String[] entry = propertyCases[i % propertyCases.length]; String pattern = entry[0];

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — Java regex octal escapes
+
+- Support Java octal regex escapes and preserve excess digits according to Java’s parsing rules.
+- Compare contextual and exhaustive short octal digit cases against the beta-29 packet API.
 ## Unreleased — Java regex control escapes
 
 - Support Java `\cX` in packet regex replacement, including bracket classes and COMMENTS mode.

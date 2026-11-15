@@ -1,5 +1,8 @@
 # Rust migration architecture
 
+## Java regex octal escapes
+
+Octal escapes consume one to three digits after `\0`; a third digit is consumed only when the first is at most 3. Extra digits remain in the pattern. COMMENTS-mode layout is normalized before parsing.
 ## Java regex control escapes
 
 `\cX` consumes Java’s next significant operand, XORs it with 0x40, and handles metacharacters inside classes before closing-class parsing. COMMENTS mode skips whitespace and comments before the operand as observed in Java 21.

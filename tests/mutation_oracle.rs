@@ -3054,6 +3054,54 @@ fn mutations_match_original_java_packets_and_cursor() {
             }
         }
     }
+    let octal_cases = [
+        "(\\00+)",
+        "(\\07+)",
+        "(\\010+)",
+        "(\\0377+)",
+        "(\\0400)",
+        "(\\0777)",
+        "([\\00-\\07]+)",
+        "(?x)(\\0 #comment\n 7+)",
+        "([\\0400]+)",
+        "(\\0000+)",
+    ];
+    let octal_alphabet = [
+        '\0', '\u{0001}', '\u{0007}', '\u{0008}', ' ', '0', '?', '7', 'ÿ', 'x', 'A',
+    ];
+    for i in 0..400 {
+        let pattern = octal_cases[i % octal_cases.len()];
+        let mut value = format!("{pattern} \0\u{0007}\u{0008}ÿ 0?7 ");
+        for j in 0..16 {
+            value.push(octal_alphabet[(i * 7 + j * 3 + j * j) % octal_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, "$1/$0", Some(1))
+            .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
+        check(&format!("substring_octal_{i}"), &packet);
+    }
+    for i in 0..584 {
+        let digits = if i < 8 {
+            format!("{i:o}")
+        } else if i < 72 {
+            format!("{:02o}", i - 8)
+        } else {
+            format!("{:03o}", i - 72)
+        };
+        let pattern = format!("(\\0{digits})");
+        let mut packet = Packet::new(9);
+        packet
+            .put_string(&format!("{pattern} {} 0?7ÿ", char::from((i % 256) as u8)))
+            .unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(&pattern, "$1/$0", Some(1))
+            .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
+        check(&format!("substring_octal_digits_{i}"), &packet);
+    }
     let property_cases = [
         ("(\\p{L}+)", "$1/$0"),
         ("(\\pL+)", "$1/$0"),
