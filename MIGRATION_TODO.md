@@ -1,5 +1,7 @@
 # Migration tasks
 
+Support a first encrypted Flash frame larger than the initial 64 KiB bootstrap buffer: grow the bounded buffer progressively up to the protocol limit, retain backpressure and test late completion and cancellation. Evaluate CPU/memory bounds of reversing large ciphertext. The user handles real-client testing.
+
 Reproduce and correct encrypted Flash bootstrap overflow during slow key discovery using bounded socket backpressure. Assess incomplete trailing frames and a first encrypted frame larger than 64 KiB without selecting ambiguous keys. The user will test real clients.
 
 Test and implement bounded Flash input backpressure during asynchronous key discovery: a full 64 KiB encrypted bootstrap buffer currently causes an error rather than pausing socket reads. Assess a first encrypted frame larger than the bootstrap limit separately. The user will test real clients.

@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+During Flash key discovery, each direction pauses socket reads at the encrypted bootstrap limit. At capacity the key check accepts a valid complete prefix with an incomplete tail while still rejecting ambiguous candidates. An oversized first encrypted frame still needs bounded buffer growth.
+
 After each memory page is read, a discovery worker requests a current ciphertext snapshot from the relay before testing keys, as beta-29 reads tables before copying its encrypted buffer. This reduces but cannot eliminate timing differences with bytes still in OS buffers.
 
 Windows Flash memory scans now expose a continuation address after bounded time, byte or table-count pages. Each direction scans independently, aggregates candidate ambiguity over a complete pass and rechecks buffered ciphertext before installing a key. This can delay recovery; the 64 KiB encrypted bootstrap limit and real-client behavior remain open.

@@ -1,5 +1,7 @@
 # Changelog
 
+- Apply Flash bootstrap backpressure and recover complete prefixes with a partial trailing frame.
+
 - Sample Flash encrypted bytes after memory scanning to account for traffic arriving during discovery.
 
 - Resume bounded Windows Flash memory scans and preserve candidate ambiguity across pages.

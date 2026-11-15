@@ -846,6 +846,19 @@ fn decode_plain_batch(
     }
 }
 
+// None means reads are paused by a full bootstrap buffer; Some(0) is EOF.
+pub(crate) fn read_with_capacity(
+    input: &mut impl Read,
+    buffer: &mut [u8],
+    capacity: usize,
+) -> io::Result<Option<usize>> {
+    let length = capacity.min(buffer.len());
+    if length == 0 {
+        return Ok(None);
+    }
+    input.read(&mut buffer[..length]).map(Some)
+}
+
 // Keep a bounded batch while Flash discovers a key, without blocking the
 // opposite direction or consuming more producer queues during that wait.
 fn ready_injections(
@@ -970,8 +983,11 @@ fn run_session(
                 Direction::ToServer => (&mut client, &mut from_client, &mut to_server),
                 Direction::ToClient => (&mut server, &mut from_server, &mut to_client),
             };
-            let n = match input.read(&mut buffer) {
-                Ok(0) => {
+            let capacity = flash
+                .as_ref()
+                .map_or(usize::MAX, |session| session.input_capacity(direction));
+            let n = match read_with_capacity(input, &mut buffer, capacity) {
+                Ok(Some(0)) => {
                     let pending_bytes = decoder.pending_bytes();
                     drain_outputs(
                         &mut client,
@@ -997,10 +1013,11 @@ fn run_session(
                     }
                     return Ok(());
                 }
-                Ok(n) => {
+                Ok(Some(n)) => {
                     progress = true;
                     n
                 }
+                Ok(None) => 0,
                 Err(e)
                     if matches!(
                         e.kind(),

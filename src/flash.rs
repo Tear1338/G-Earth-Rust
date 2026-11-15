@@ -25,13 +25,17 @@ impl Drop for DiscoveryTask {
     }
 }
 enum DiscoveryEvent {
-    Scanned((usize, usize, bool), mpsc::SyncSender<Vec<u8>>),
+    Scanned((usize, usize, bool), mpsc::SyncSender<CiphertextSample>),
     Candidate(Vec<u8>, Box<RecoveryOutcome>),
     Done {
         sampled_len: usize,
         next_address: Option<usize>,
     },
     Failed(io::Error),
+}
+struct CiphertextSample {
+    bytes: Vec<u8>,
+    at_capacity: bool,
 }
 struct DiscoverySlot;
 impl Drop for DiscoverySlot {
@@ -241,6 +245,19 @@ impl FlashSession {
     pub fn encrypted(&mut self, direction: Direction) -> bool {
         self.side(direction).encrypted
     }
+    /// Remaining encrypted bootstrap space; zero pauses socket reads until recovery.
+    pub fn input_capacity(&self, direction: Direction) -> usize {
+        let side = if direction == Direction::ToServer {
+            &self.outgoing
+        } else {
+            &self.incoming
+        };
+        if side.encrypted && side.reader.is_none() {
+            BOOTSTRAP_LIMIT.saturating_sub(side.buffer.len())
+        } else {
+            usize::MAX
+        }
+    }
     /// Whether an injection can be encoded without waiting for the direction's key.
     pub fn ready_for_injection(&self, direction: Direction) -> bool {
         let side = if direction == Direction::ToServer {
@@ -364,11 +381,19 @@ impl FlashSession {
                         Err(mpsc::RecvTimeoutError::Disconnected) => return,
                     }
                 };
-                let length = sample.len();
+                let length = sample.bytes.len();
                 let next_address = scan.next_address;
-                match recover_candidates(&scan.states, &sample, direction, &worker_cancel, None) {
+                match recover_candidates(
+                    &scan.states,
+                    &sample.bytes,
+                    direction,
+                    &worker_cancel,
+                    None,
+                    sample.at_capacity,
+                ) {
                     Ok(outcome) => {
-                        let _ = sender.send(DiscoveryEvent::Candidate(sample, Box::new(outcome)));
+                        let _ =
+                            sender.send(DiscoveryEvent::Candidate(sample.bytes, Box::new(outcome)));
                     }
                     Err(error) => {
                         let _ = sender.send(DiscoveryEvent::Failed(error));
@@ -405,9 +430,15 @@ impl FlashSession {
                     self.scan_stats = Some(stats);
                     let side = self.side(direction);
                     let sample = if side.encrypted && side.reader.is_none() {
-                        side.buffer.clone()
+                        CiphertextSample {
+                            bytes: side.buffer.clone(),
+                            at_capacity: side.buffer.len() == BOOTSTRAP_LIMIT,
+                        }
                     } else {
-                        Vec::new()
+                        CiphertextSample {
+                            bytes: Vec::new(),
+                            at_capacity: false,
+                        }
                     };
                     let _ = sample_sender.try_send(sample);
                 }
@@ -556,6 +587,7 @@ pub fn recover_state(
         direction,
         cancel,
         Some(Instant::now() + Duration::from_secs(5)),
+        false,
     )?;
     if outcome.ambiguous {
         Ok(None)
@@ -569,6 +601,7 @@ fn recover_candidates(
     direction: Direction,
     cancel: &AtomicBool,
     deadline: Option<Instant>,
+    allow_partial_tail: bool,
 ) -> io::Result<RecoveryOutcome> {
     if cancel.load(Ordering::Acquire) {
         return Err(io::Error::new(
@@ -594,7 +627,12 @@ fn recover_candidates(
             ));
         }
         let candidate = Rc4::from_state(*state, 0, 0).map_err(io::Error::other)?;
-        if valid_frames(encrypted, &candidate) {
+        let matches = if allow_partial_tail {
+            valid_stream_prefix(encrypted, &candidate)
+        } else {
+            valid_frames(encrypted, &candidate)
+        };
+        if matches {
             if fresh
                 .as_ref()
                 .is_some_and(|c: &Rc4| c.state() != candidate.state())
@@ -642,7 +680,14 @@ fn recover_candidates(
                 .map_err(io::Error::other)?;
             candidate.rewind(encrypted.len());
             let (_, x, y) = candidate.state();
-            if x != 0 || y != 0 || !valid_frames(encrypted, &candidate) {
+            if x != 0
+                || y != 0
+                || !(if allow_partial_tail {
+                    valid_stream_prefix(encrypted, &candidate)
+                } else {
+                    valid_frames(encrypted, &candidate)
+                })
+            {
                 continue;
             }
             // Different reverse states can reproduce frame lengths yet corrupt the final body byte.
@@ -952,6 +997,98 @@ mod discovery_tests {
                 .header(),
             77
         );
+    }
+
+    #[test]
+    fn full_bootstrap_pauses_reads_and_recovers_with_partial_tail() {
+        let key = Rc4::new(b"backpressure-fixture-key").unwrap();
+        let first = Packet::new(77);
+        let mut second = Packet::new(78);
+        second.append(&vec![42; BOOTSTRAP_LIMIT]).unwrap();
+        let mut wire = first.bytes().to_vec();
+        wire.extend_from_slice(second.bytes());
+        key.clone().apply(&mut wire);
+        let mut input = std::io::Cursor::new(wire);
+        let mut session = FlashSession::default();
+        session.incoming.encrypted = true;
+        session.incoming.waiting = Some(Instant::now());
+        let mut buffer = vec![0u8; 8192];
+        let n = crate::relay::read_with_capacity(
+            &mut input,
+            &mut buffer,
+            session.input_capacity(Direction::ToClient),
+        )
+        .unwrap()
+        .unwrap();
+        assert!(session
+            .feed(Direction::ToClient, &buffer[..n])
+            .unwrap()
+            .is_empty());
+        let (started_tx, started_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let table = key.state().0;
+        assert!(session
+            .start_discovery(Direction::ToClient, move |cancel| {
+                started_tx.send(()).unwrap();
+                while !cancel.load(Ordering::Acquire) {
+                    if release_rx.recv_timeout(Duration::from_millis(5)).is_ok() {
+                        return Ok(gearth_platform::ScanResult {
+                            states: vec![table],
+                            bytes_read: 1024,
+                            complete: true,
+                            next_address: None,
+                        });
+                    }
+                }
+                Err(io::Error::new(io::ErrorKind::Interrupted, "cancelled"))
+            })
+            .unwrap());
+        started_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+        while session.input_capacity(Direction::ToClient) > 0 {
+            let n = crate::relay::read_with_capacity(
+                &mut input,
+                &mut buffer,
+                session.input_capacity(Direction::ToClient),
+            )
+            .unwrap()
+            .unwrap();
+            assert!(n > 0);
+            assert!(session
+                .feed(Direction::ToClient, &buffer[..n])
+                .unwrap()
+                .is_empty());
+        }
+        assert_eq!(input.position() as usize, BOOTSTRAP_LIMIT);
+        assert!(crate::relay::read_with_capacity(
+            &mut input,
+            &mut buffer,
+            session.input_capacity(Direction::ToClient)
+        )
+        .unwrap()
+        .is_none());
+        assert_eq!(input.position() as usize, BOOTSTRAP_LIMIT);
+        release_tx.send(()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while session.discovery[1].is_some() {
+            session
+                .poll_discovery(Direction::ToClient, Instant::now())
+                .unwrap();
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        let packets = session.feed(Direction::ToClient, &[]).unwrap();
+        assert_eq!(packets.len(), 1);
+        assert_eq!(packets[0].packet.header(), 77);
+        let n = crate::relay::read_with_capacity(
+            &mut input,
+            &mut buffer,
+            session.input_capacity(Direction::ToClient),
+        )
+        .unwrap()
+        .unwrap();
+        let packets = session.feed(Direction::ToClient, &buffer[..n]).unwrap();
+        assert_eq!(packets.len(), 1);
+        assert_eq!(packets[0].packet.bytes(), second.bytes());
     }
 
     #[test]
