@@ -1,5 +1,8 @@
 # Continuation state
 
+## Java regex whitespace continuation
+
+Horizontal and vertical whitespace classes and complements now match the beta-29 packet oracle over Latin-1. Common class intersections were already covered; an explicitly rejected intersection branch lacks a reproducer after a limited generated search. Next compare Java `\R`, including CRLF and quantified patterns, and implement evidenced behavior.
 ## Session metadata continuation
 
 The bounded sink retains session identity and catalog updates and coalesces repeated same-session updates. Next compare unsupported Java regex character-class intersections against the beta-29 API and implement evidenced cases. Repeat release; user-run real-client verification remains open.

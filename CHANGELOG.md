@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — Java regex whitespace
+
+- Support horizontal and vertical whitespace classes and their complements in Java-style packet replacement.
+- Add beta-29 differential fixtures and all-byte Latin-1 checks.
 ## Unreleased — session metadata delivery
 
 - Retain session identity and packet catalog events under saturation, coalescing repeated updates without crossing a disconnect.

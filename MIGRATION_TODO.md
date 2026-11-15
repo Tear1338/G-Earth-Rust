@@ -1,9 +1,15 @@
 # Migration tasks
 
+## Java regex whitespace
+
+- [x] Support Java horizontal and vertical whitespace classes and complements over Latin-1, with beta-29 oracle fixtures.
+- [ ] Compare Java `\R` line-break matching, especially CRLF and quantification, and implement evidenced behavior.
+- [ ] Continue investigating remaining regex constructs and the unreproduced rejected intersection branch.
+- [ ] Repeat release and await user-run real-client and extension evidence.
 ## Session metadata events
 
 - [x] Retain bounded identity and packet catalog events across TCP, Nitro and Unity saturation, with latest-update coalescing and session-boundary tests.
-- [ ] Compare unsupported Java regex character-class intersection with the beta-29 API and implement verified cases.
+- [x] Audit existing Java class-intersection fixtures; retain the unreproduced rejected branch as an open investigation above.
 - [ ] Repeat release and await user-run real-client and extension evidence.
 ## Bounded reverse scan
 

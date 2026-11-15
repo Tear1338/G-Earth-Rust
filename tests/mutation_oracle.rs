@@ -2836,6 +2836,33 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
         check(&format!("substring_nested_class_{i}"), &packet);
     }
+    let whitespace_cases = [
+        "(\\h+)",
+        "(\\H+)",
+        "(\\v+)",
+        "(\\V+)",
+        "([\\h]+)",
+        "([^\\H]+)",
+        "([\\v&&[^\\n]]+)",
+        "(?U)([\\V]+)",
+    ];
+    let whitespace_alphabet = [
+        'a', ' ', '\t', '\n', '\u{000b}', '\u{000c}', '\r', '\u{0085}', '\u{00a0}', 'é',
+    ];
+    for i in 0..320 {
+        let pattern = whitespace_cases[i % whitespace_cases.len()];
+        let mut value = format!("{pattern} a ");
+        for j in 0..20 {
+            value.push(whitespace_alphabet[(i * 5 + j * 3 + j * j) % whitespace_alphabet.len()]);
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, "$1/$0", Some(1))
+            .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
+        check(&format!("substring_whitespace_{i}"), &packet);
+    }
     let property_cases = [
         ("(\\p{L}+)", "$1/$0"),
         ("(\\pL+)", "$1/$0"),

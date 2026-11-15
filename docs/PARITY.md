@@ -1,5 +1,8 @@
 # Compatibility with 1.5.4-beta-29
 
+## Java regex whitespace evidence
+
+A 320-case beta-29 packet mutation corpus covers `\h`, `\H`, `\v` and `\V`, bracket classes and selected intersections; all 256 Latin-1 bytes are tested separately. Full regex and real-extension parity remain unverified.
 ## Saturated session metadata evidence
 
 Synthetic tests cover identity/catalog retention and coalescing across saturated event queues, including Unity producer and Nitro catalog ordering. This does not verify real-client metadata or extension behavior.

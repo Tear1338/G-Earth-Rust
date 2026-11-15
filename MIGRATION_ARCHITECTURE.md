@@ -1,5 +1,8 @@
 # Rust migration architecture
 
+## Java regex whitespace classes
+
+Packet regex matching supports Java `\h`, `\H`, `\v` and `\V` over Latin-1, in and outside bracket classes. They are independent of the Unicode-class flag. General Java regex compatibility remains incomplete.
 ## Session metadata backpressure
 
 The shared control-event sink retains identity and catalog updates during saturation and coalesces later updates of the same kind only after the most recent pending disconnection. Four pending errors leave room for session metadata and lifecycle events; intermediate updates or excess errors can be dropped.

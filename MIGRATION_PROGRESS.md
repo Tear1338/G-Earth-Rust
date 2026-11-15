@@ -1,5 +1,8 @@
 # G-Earth Rust migration progress
 
+## Java horizontal and vertical regex whitespace
+
+Java-style packet replacement now supports `\h`, `\H`, `\v` and `\V` inside and outside bracket classes, including nested intersections and Unicode mode, over the Latin-1 packet domain. A new 320-case corpus matches bytes and cursor against the installed beta-29 Java API; a separate test covers all 256 byte values and both Unicode modes. The 38 mutation tests, Clippy and desktop/web debug build passed. Existing common/nested class intersections already had Java coverage; 250,000 generated exploratory forms produced no example reaching the remaining explicitly rejected intersection branch, which is not proof of completeness. Real extensions and clients remain unverified; the release build predates this change.
 ## Release and Java mutation baseline at 43f33ba
 
 Windows GNU desktop/web release build succeeded at code commit `43f33ba916c5479eb7cb37a8b0009452e0602eb2`. A fresh mutation oracle generated with the installed beta-29 Java API passed the Rust byte/cursor comparison. Common and several nested Java class intersections are already supported; the remaining explicitly rejected intersection path needs a concrete reproducer before changing parser behavior. Real-client and extension compatibility remains unverified.
@@ -572,4 +575,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Compare unsupported Java regex character-class intersections with the released beta-29 packet API, build deterministic Java/Rust fixtures including negation, nesting and invalid syntax, and implement only behavior supported by evidence. Separately investigate progress or resumability within one expensive Flash reverse table and repeat the Windows desktop/web release build. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.
+Compare Java regex `\R` against the released beta-29 packet API, including CRLF precedence, individual Latin-1 line breaks, quantification, flags and invalid use inside bracket classes; add deterministic oracle fixtures before implementing. Continue investigating the unreproduced class-intersection rejection and progress within one expensive Flash reverse table. Repeat the Windows desktop/web release build. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.

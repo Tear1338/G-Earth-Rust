@@ -393,6 +393,10 @@ fn predefined_class(kind: char, unicode: bool) -> Option<Box<[bool; 256]>> {
         'W' => ('w', true),
         's' => ('s', false),
         'S' => ('s', true),
+        'h' => ('h', false),
+        'H' => ('h', true),
+        'v' => ('v', false),
+        'V' => ('v', true),
         _ => return None,
     };
     let mut class = Box::new([false; 256]);
@@ -410,6 +414,8 @@ fn predefined_class(kind: char, unicode: bool) -> Option<Box<[bool; 256]>> {
                 matches!(byte, b' ' | b'\t' | b'\n' | 0x0b | 0x0c | b'\r')
                     || (unicode && matches!(byte, 0x85 | 0xa0))
             }
+            'h' => matches!(byte, b'\t' | b' ' | 0xa0),
+            'v' => matches!(byte, b'\n' | 0x0b | 0x0c | b'\r' | 0x85),
             _ => unreachable!(),
         };
         class[usize::from(byte)] = included != negated;
@@ -1608,6 +1614,27 @@ fn replace_alternatives(
 #[cfg(test)]
 mod regex_budget_tests {
     use super::*;
+
+    #[test]
+    fn java_horizontal_and_vertical_whitespace_cover_latin1() {
+        for unicode in [false, true] {
+            for (kind, expected) in [
+                ('h', &[0x09u8, 0x20, 0xa0][..]),
+                ('v', &[0x0a, 0x0b, 0x0c, 0x0d, 0x85][..]),
+            ] {
+                let positive = predefined_class(kind, unicode).unwrap();
+                let negative = predefined_class(kind.to_ascii_uppercase(), unicode).unwrap();
+                for byte in 0u8..=u8::MAX {
+                    assert_eq!(
+                        positive[usize::from(byte)],
+                        expected.contains(&byte),
+                        "{kind} {byte:02x}"
+                    );
+                    assert_ne!(positive[usize::from(byte)], negative[usize::from(byte)]);
+                }
+            }
+        }
+    }
 
     #[test]
     #[ignore = "requires Java 21 Unicode script and block vectors"]
