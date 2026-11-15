@@ -1,5 +1,11 @@
 # Migration tasks
 
+## Latest RC4 discovery work
+
+- [x] Skip lower-priority outgoing reverse trials after a fresh candidate from an earlier memory page, retaining ambiguity detection and final ciphertext validation.
+- [ ] Address potentially expensive reverse searches without a fresh candidate.
+- [ ] Preserve TCP connection lifecycle events when the consumer event queue is saturated, without blocking traffic or reordering cleanup.
+- [ ] Real-client, protocol, and extension compatibility remains unverified; the user will perform real-client tests.
 Reduce unnecessary RC4 reversal work after a fresh candidate is already retained across memory pages, while still scanning for competing fresh candidates and preserving ambiguity. Measure worst-case large-frame cost separately; the user handles real-client testing.
 
 Investigate Flash recovery when at least two complete encrypted frames are followed by an incomplete tail below the buffer limit. Determine whether strict whole-buffer validation can stall a connection waiting for more traffic, and add a safe ambiguity-preserving fixture before changing behavior. Evaluate large-frame recovery cost. The user handles real-client testing.

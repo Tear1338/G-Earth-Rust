@@ -1,5 +1,8 @@
 # Continuation state
 
+## Latest continuation
+
+The outgoing RC4 scanner avoids reverse trials on later pages once a fresh candidate is known, with multi-page and stale-ciphertext tests. Next inspect TCP lifecycle event loss on a saturated consumer queue, preserving ordering and restoration behavior without blocking relay traffic. Reverse-only scans can still be expensive. Real-client tests are reserved for the user.
 Flash asynchronous recovery now accepts two complete frames and an incomplete tail while direct recovery stays strict. Windows desktop/web library (126 passed, seven ignored), Flash/relay and synthetic process tests, both Clippy configurations and debug build pass. A single optimized microprobe measured 64 ms for 256 x 64 KiB reversals and 65 ms for one 16 MiB reversal; it is not end-to-end. Next skip unnecessary reversal after a fresh candidate while preserving fresh-candidate ambiguity; the user tests real clients.
 
 Flash bootstrap grows from 64 KiB up to MAX_FRAME + 4 after unsuccessful scans at capacity; a large-first-frame fixture, cancellation/deadline tests and synthetic process relay pass. Windows desktop/web library (125 passed, seven ignored), Flash/relay tests, both Clippy configurations and debug build pass. Next investigate incomplete encrypted tails below capacity and search cost; real-client tests belong to the user.

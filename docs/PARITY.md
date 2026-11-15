@@ -1,5 +1,8 @@
 # Compatibility with 1.5.4-beta-29
 
+## RC4 discovery evidence
+
+Multi-page synthetic coverage confirms that a fresh candidate supersedes reverse candidates, competing fresh tables are still checked, and stale candidates are rejected. This optimization is Rust-specific and does not establish real-client parity; real-client verification remains outstanding.
 Asynchronous Flash recovery accepts two complete frames followed by an incomplete tail, unlike the strict Java buffer-empty check; direct Rust recovery remains strict. Synthetic tests pass, while false-positive risk, large-frame cost and real-client compatibility remain unverified.
 
 A synthetic first Flash frame larger than 64 KiB now recovers after bounded buffer growth. Maximum-frame performance, fragmented tails below capacity and real Habbo compatibility remain unverified.

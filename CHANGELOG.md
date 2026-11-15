@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — RC4 discovery
+
+- Avoid lower-priority outgoing RC4 reversals on later memory pages after a fresh candidate is known; retain competing-candidate and current-ciphertext checks.
+- Add deterministic multi-page and stale-candidate regression coverage.
 - Recover fragmented Flash bootstrap streams after two complete frames without waiting for the trailing frame.
 
 - Grow Flash bootstrap buffering for oversized first encrypted frames, with bounded cancellation-aware reversal.

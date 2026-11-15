@@ -345,6 +345,7 @@ impl FlashSession {
         if !side.encrypted || side.reader.is_some() || side.buffer.len() < 6 {
             return Ok(false);
         }
+        let fresh_known = side.candidates.priority == 2;
         if ACTIVE_DISCOVERY_WORKERS
             .try_update(Ordering::AcqRel, Ordering::Acquire, |n| {
                 (n < MAX_DISCOVERY_WORKERS).then_some(n + 1)
@@ -404,6 +405,7 @@ impl FlashSession {
                     &worker_cancel,
                     None,
                     Some(if sample.at_capacity { 1 } else { 2 }),
+                    fresh_known,
                 ) {
                     Ok(outcome) => {
                         let _ =
@@ -646,6 +648,7 @@ pub fn recover_state(
         cancel,
         Some(Instant::now() + Duration::from_secs(5)),
         None,
+        false,
     )?;
     if outcome.ambiguous {
         Ok(None)
@@ -660,6 +663,7 @@ fn recover_candidates(
     cancel: &AtomicBool,
     deadline: Option<Instant>,
     partial_minimum: Option<usize>,
+    fresh_known: bool,
 ) -> io::Result<RecoveryOutcome> {
     if cancel.load(Ordering::Acquire) {
         return Err(io::Error::new(
@@ -707,7 +711,7 @@ fn recover_candidates(
             cipher: Some(cipher),
         });
     }
-    if direction == Direction::ToClient {
+    if direction == Direction::ToClient || fresh_known {
         return Ok(RecoveryOutcome {
             priority: 0,
             ambiguous: false,
@@ -941,6 +945,149 @@ mod discovery_tests {
         candidates.merge(outcome(2, first));
         candidates.merge(outcome(2, second));
         assert!(candidates.take_unique().is_none());
+    }
+
+    #[test]
+    fn known_fresh_candidate_skips_reverse_but_still_checks_fresh_tables() {
+        let (fresh, current, wire) = outgoing_fixture();
+        let cancel = AtomicBool::new(false);
+        let normal = recover_candidates(
+            &[current.state().0],
+            &wire,
+            Direction::ToServer,
+            &cancel,
+            None,
+            None,
+            false,
+        )
+        .unwrap();
+        assert_eq!(normal.priority, 1);
+        assert!(!normal.ambiguous);
+        let skipped = recover_candidates(
+            &[current.state().0],
+            &wire,
+            Direction::ToServer,
+            &cancel,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+        assert_eq!(skipped.priority, 0);
+        let checked = recover_candidates(
+            &[fresh.state().0],
+            &wire,
+            Direction::ToServer,
+            &cancel,
+            None,
+            None,
+            true,
+        )
+        .unwrap();
+        assert_eq!(checked.priority, 2);
+        assert_eq!(checked.cipher.unwrap().state(), fresh.state());
+    }
+
+    #[test]
+    fn fresh_candidate_survives_a_later_reverse_only_page() {
+        let (fresh, current, wire) = outgoing_fixture();
+        let mut session = FlashSession::default();
+        session.outgoing.encrypted = true;
+        session.outgoing.waiting = Some(Instant::now());
+        session.outgoing.feed(&wire).unwrap();
+        let table = fresh.state().0;
+        assert!(session
+            .start_discovery(Direction::ToServer, move |_| Ok(
+                gearth_platform::ScanResult {
+                    states: vec![table],
+                    bytes_read: 65536,
+                    complete: false,
+                    next_address: Some(65536),
+                }
+            ))
+            .unwrap());
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while session.discovery[0].is_some() {
+            session
+                .poll_discovery(Direction::ToServer, Instant::now())
+                .unwrap();
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(session.outgoing.candidates.priority, 2);
+        assert!(session.outgoing.reader.is_none());
+        let table = current.state().0;
+        assert!(session
+            .start_discovery(Direction::ToServer, move |_| Ok(
+                gearth_platform::ScanResult {
+                    states: vec![table],
+                    bytes_read: 1024,
+                    complete: true,
+                    next_address: None,
+                }
+            ))
+            .unwrap());
+        while session.discovery[0].is_some() {
+            session
+                .poll_discovery(Direction::ToServer, Instant::now())
+                .unwrap();
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(
+            session.outgoing.writer.as_ref().unwrap().state(),
+            fresh.state()
+        );
+    }
+
+    #[test]
+    fn stale_fresh_candidate_is_rejected_after_later_ciphertext() {
+        let (fresh, mut current, wire) = outgoing_fixture();
+        let mut session = FlashSession::default();
+        session.outgoing.encrypted = true;
+        session.outgoing.waiting = Some(Instant::now());
+        session.outgoing.feed(&wire).unwrap();
+        let table = fresh.state().0;
+        assert!(session
+            .start_discovery(Direction::ToServer, move |_| Ok(
+                gearth_platform::ScanResult {
+                    states: vec![table],
+                    bytes_read: 65536,
+                    complete: false,
+                    next_address: Some(65536),
+                }
+            ))
+            .unwrap());
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while session.discovery[0].is_some() {
+            session
+                .poll_discovery(Direction::ToServer, Instant::now())
+                .unwrap();
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(session.outgoing.candidates.priority, 2);
+        let mut bad_tail = 1u32.to_be_bytes();
+        current.apply(&mut bad_tail);
+        session.outgoing.feed(&bad_tail).unwrap();
+        assert!(session
+            .start_discovery(Direction::ToServer, |_| Ok(gearth_platform::ScanResult {
+                states: Vec::new(),
+                bytes_read: 1024,
+                complete: true,
+                next_address: None,
+            }))
+            .unwrap());
+        while session.discovery[0].is_some() {
+            session
+                .poll_discovery(Direction::ToServer, Instant::now())
+                .unwrap();
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(session.outgoing.reader.is_none());
+        assert_eq!(session.outgoing.scan_address, 0);
+        assert_eq!(session.outgoing.candidates.priority, 0);
     }
 
     #[test]
