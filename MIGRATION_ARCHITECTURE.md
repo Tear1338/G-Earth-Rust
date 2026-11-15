@@ -1,5 +1,8 @@
 # Rust migration architecture
 
+## Session metadata backpressure
+
+The shared control-event sink retains identity and catalog updates during saturation and coalesces later updates of the same kind only after the most recent pending disconnection. Four pending errors leave room for session metadata and lifecycle events; intermediate updates or excess errors can be dropped.
 ## Reverse scan page limits
 
 Windows scans accept a validated table limit. During outgoing reverse discovery the limit is selected from the current buffer length (one to eight tables); incomplete pages resume immediately and candidates remain accumulated. This bounds tables, not elapsed time, and scans can use a later, larger ciphertext snapshot.

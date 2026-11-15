@@ -622,6 +622,21 @@ mod injection_queue_tests {
             state.claim().err().unwrap().kind(),
             io::ErrorKind::WouldBlock
         );
+        assert!(matches!(
+            receiver.try_recv(),
+            Ok(Event::PacketIdentifiers(_))
+        ));
+        assert_eq!(
+            state.claim().err().unwrap().kind(),
+            io::ErrorKind::WouldBlock
+        );
+        assert!(
+            matches!(receiver.try_recv(), Ok(Event::Identified { version, .. }) if version == "fixture")
+        );
+        assert_eq!(
+            state.claim().err().unwrap().kind(),
+            io::ErrorKind::WouldBlock
+        );
         assert!(matches!(receiver.try_recv(), Ok(Event::Connected(_))));
         let (next, _) = state.claim().unwrap();
         assert!(matches!(receiver.try_recv(), Ok(Event::Disconnected)));

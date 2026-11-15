@@ -117,9 +117,10 @@ pub enum Event {
     Error(String),
 }
 // The worker must never wait for the UI while a connection is forwarding.
-// Keep lifecycle events (and following errors) ordered until the consumer
-// catches up; ordinary packet and status events may still be dropped.
+// Keep lifecycle and session metadata ordered until the consumer catches up;
+// ordinary packet and status events may still be dropped.
 const MAX_PENDING_CONTROL_EVENTS: usize = 8;
+const MAX_PENDING_ERRORS: usize = 4;
 pub(crate) struct RelayEventSink {
     sender: SyncSender<Event>,
     pending: Mutex<VecDeque<Event>>,
@@ -174,15 +175,44 @@ impl RelayEventSink {
     }
     #[allow(clippy::result_large_err)]
     fn queue(pending: &mut VecDeque<Event>, event: Event) -> Result<(), mpsc::TrySendError<Event>> {
-        let capacity = if matches!(event, Event::Error(_)) {
-            MAX_PENDING_CONTROL_EVENTS - 2
-        } else {
-            MAX_PENDING_CONTROL_EVENTS
-        };
+        if matches!(event, Event::Error(_))
+            && pending
+                .iter()
+                .filter(|event| matches!(event, Event::Error(_)))
+                .count()
+                >= MAX_PENDING_ERRORS
+        {
+            return Err(mpsc::TrySendError::Full(event));
+        }
+        // Keep the latest update of each kind within the current session.
+        // Never merge metadata across a disconnection boundary.
+        let session_start = pending
+            .iter()
+            .rposition(|event| matches!(event, Event::Disconnected))
+            .map_or(0, |index| index + 1);
+        let previous = pending
+            .iter()
+            .enumerate()
+            .skip(session_start)
+            .find_map(|(index, old)| {
+                matches!(
+                    (&event, old),
+                    (Event::Identified { .. }, Event::Identified { .. })
+                        | (Event::PacketIdentifiers(_), Event::PacketIdentifiers(_))
+                )
+                .then_some(index)
+            });
+        if let Some(index) = previous {
+            pending.remove(index);
+        }
         if matches!(
             event,
-            Event::Connected(_) | Event::Disconnected | Event::Error(_)
-        ) && pending.len() < capacity
+            Event::Connected(_)
+                | Event::Disconnected
+                | Event::Error(_)
+                | Event::Identified { .. }
+                | Event::PacketIdentifiers(_)
+        ) && pending.len() < MAX_PENDING_CONTROL_EVENTS
         {
             pending.push_back(event);
             Ok(())
@@ -3110,7 +3140,7 @@ mod tests {
                 .map(|worker| worker.join().unwrap())
                 .filter(|accepted| *accepted)
                 .count(),
-            6
+            MAX_PENDING_ERRORS
         );
         events.try_send(Event::Connected("fixture".into())).unwrap();
         events.try_send(Event::Disconnected).unwrap();
@@ -3120,9 +3150,91 @@ mod tests {
             received.push(receiver.try_recv().unwrap());
         }
         received.extend(receiver.try_iter());
-        assert_eq!(received.len(), 8);
-        assert!(matches!(received[6], Event::Connected(_)));
-        assert!(matches!(received[7], Event::Disconnected));
+        assert_eq!(received.len(), MAX_PENDING_ERRORS + 2);
+        assert!(matches!(received[MAX_PENDING_ERRORS], Event::Connected(_)));
+        assert!(matches!(
+            received[MAX_PENDING_ERRORS + 1],
+            Event::Disconnected
+        ));
+    }
+    #[test]
+    fn saturated_sink_retains_latest_session_metadata_and_lifecycle() {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let events = RelayEventSink::new(sender);
+        events.try_send(Event::Status("older".into())).unwrap();
+        for index in 0..MAX_PENDING_ERRORS {
+            events.try_send(Event::Error(index.to_string())).unwrap();
+        }
+        events
+            .try_send(Event::Identified {
+                version: "old".into(),
+                identifier: "old".into(),
+            })
+            .unwrap();
+        events
+            .try_send(Event::PacketIdentifiers(
+                crate::packet_info::PacketInfoManager::new("old", Vec::new()),
+            ))
+            .unwrap();
+        events.try_send(Event::Connected("fixture".into())).unwrap();
+        events
+            .try_send(Event::PacketIdentifiers(
+                crate::packet_info::PacketInfoManager::new("new", Vec::new()),
+            ))
+            .unwrap();
+        events
+            .try_send(Event::Identified {
+                version: "new".into(),
+                identifier: "new".into(),
+            })
+            .unwrap();
+        events.try_send(Event::Disconnected).unwrap();
+        assert!(matches!(receiver.try_recv(), Ok(Event::Status(_))));
+        let mut delivered = Vec::new();
+        while !events.flush() {
+            delivered.push(receiver.try_recv().unwrap());
+        }
+        delivered.extend(receiver.try_iter());
+        assert_eq!(delivered.len(), MAX_PENDING_CONTROL_EVENTS);
+        assert!(matches!(delivered[MAX_PENDING_ERRORS], Event::Connected(_)));
+        assert!(
+            matches!(&delivered[MAX_PENDING_ERRORS + 1], Event::PacketIdentifiers(info) if info.version == "new")
+        );
+        assert!(
+            matches!(&delivered[MAX_PENDING_ERRORS + 2], Event::Identified { version, .. } if version == "new")
+        );
+        assert!(matches!(
+            delivered[MAX_PENDING_ERRORS + 3],
+            Event::Disconnected
+        ));
+    }
+    #[test]
+    fn metadata_coalescing_does_not_cross_disconnection() {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let events = RelayEventSink::new(sender);
+        events.try_send(Event::Status("older".into())).unwrap();
+        events
+            .try_send(Event::Identified {
+                version: "first".into(),
+                identifier: String::new(),
+            })
+            .unwrap();
+        events.try_send(Event::Disconnected).unwrap();
+        events
+            .try_send(Event::Identified {
+                version: "second".into(),
+                identifier: String::new(),
+            })
+            .unwrap();
+        assert!(matches!(receiver.try_recv(), Ok(Event::Status(_))));
+        let mut delivered = Vec::new();
+        while !events.flush() {
+            delivered.push(receiver.try_recv().unwrap());
+        }
+        delivered.extend(receiver.try_iter());
+        assert!(matches!(&delivered[0], Event::Identified { version, .. } if version == "first"));
+        assert!(matches!(delivered[1], Event::Disconnected));
+        assert!(matches!(&delivered[2], Event::Identified { version, .. } if version == "second"));
     }
     #[test]
     fn retained_errors_coalesce_without_displacing_queued_events() {

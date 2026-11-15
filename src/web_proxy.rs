@@ -2000,6 +2000,60 @@ mod lifecycle_tests {
         host.stop();
     }
     #[test]
+    fn saturated_nitro_preserves_catalog_before_lifecycle() {
+        let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), PathBuf::new());
+        options.fetch_packet_info = false;
+        options.packet_info = PacketInfoManager::new(
+            "OLD",
+            vec![crate::packet_info::PacketInfo {
+                header: 444,
+                direction: Direction::ToServer,
+                name: Some("Example".into()),
+                hash: None,
+                structure: None,
+                source: "fixture".into(),
+            }],
+        );
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let events = RelayEventSink::new(sender);
+        events.try_send(Event::Status("older".into())).unwrap();
+        let state = Arc::new(Shared {
+            options,
+            hartico_key: Mutex::new(None),
+            city_keys: Mutex::new(None),
+            peers: Mutex::new(HashMap::new()),
+            active: Mutex::new(None),
+            rules: Mutex::new(Rules::default()),
+            pipeline: Mutex::new(()),
+            events,
+            index: AtomicI32::new(0),
+            stop: AtomicBool::new(false),
+        });
+        let peer = Arc::new(Peer::new(
+            PeerKey {
+                client: "127.0.0.1:1001".parse().unwrap(),
+                uri: "ws://fixture".into(),
+            },
+            Modifier::new(&crate::nitro::HotelKind::Plain).unwrap(),
+        ));
+        tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(state.activate(&peer, &"ws://fixture".parse().unwrap()))
+            .unwrap();
+        state.close(&peer);
+        assert!(matches!(receiver.try_recv(), Ok(Event::Status(_))));
+        let mut delivered = Vec::new();
+        while !state.events.flush() {
+            delivered.push(receiver.try_recv().unwrap());
+        }
+        delivered.extend(receiver.try_iter());
+        assert!(
+            matches!(&delivered[0], Event::PacketIdentifiers(info) if info.version == NITRO_REVISION && info.entries().is_empty())
+        );
+        assert!(matches!(delivered[1], Event::Connected(_)));
+        assert!(matches!(delivered[2], Event::Disconnected));
+    }
+    #[test]
     fn nitro_activation_waits_for_previous_lifecycle_and_can_be_cancelled() {
         let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), PathBuf::new());
         options.fetch_packet_info = false;

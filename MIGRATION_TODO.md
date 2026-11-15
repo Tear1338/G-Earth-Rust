@@ -1,10 +1,15 @@
 # Migration tasks
 
+## Session metadata events
+
+- [x] Retain bounded identity and packet catalog events across TCP, Nitro and Unity saturation, with latest-update coalescing and session-boundary tests.
+- [ ] Compare unsupported Java regex character-class intersection with the beta-29 API and implement verified cases.
+- [ ] Repeat release and await user-run real-client and extension evidence.
 ## Bounded reverse scan
 
 - [x] Limit tables per reverse scan page and resume from the next address while retaining candidate ambiguity.
 - [ ] Investigate reporting and bounding progress within a single expensive table; a table limit is not a time bound.
-- [ ] Audit loss of packet metadata events under saturated channels and its effect on session identity.
+- [x] Audit and retain packet metadata events under saturated channels.
 - [ ] Repeat release and await user-run real-client/extension evidence.
 ## Flash discovery ordering
 

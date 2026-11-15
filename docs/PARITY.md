@@ -1,5 +1,8 @@
 # Compatibility with 1.5.4-beta-29
 
+## Saturated session metadata evidence
+
+Synthetic tests cover identity/catalog retention and coalescing across saturated event queues, including Unity producer and Nitro catalog ordering. This does not verify real-client metadata or extension behavior.
 ## Bounded reverse-page evidence
 
 Controlled Windows memory tests verify scanner resumption within one chunk, and synthetic Flash tests retain reverse candidates across pages. This limits table count rather than elapsed time and does not establish real-client compatibility.

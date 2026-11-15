@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — session metadata delivery
+
+- Retain session identity and packet catalog events under saturation, coalescing repeated updates without crossing a disconnect.
+- Cover TCP, Unity and Nitro producer ordering with synthetic fixtures.
 ## Unreleased — bounded Flash reverse pages
 
 - Limit candidate tables per outgoing reverse page and resume immediately without discarding accumulated states.

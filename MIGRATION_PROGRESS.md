@@ -1,5 +1,8 @@
 # G-Earth Rust migration progress
 
+## Session metadata under event saturation
+
+The shared bounded event sink now retains `Identified` and `PacketIdentifiers` along with lifecycle events. Repeated metadata of the same kind within a session is coalesced to the latest update without crossing a queued disconnection; four error slots leave space for lifecycle and metadata. Synthetic tests cover saturation, coalescing, cross-session boundaries, Unity producer ordering and Nitro catalog delivery before lifecycle events. The full desktop/web library suite passed 146 tests with seven ignored before the additional Nitro fixture; that fixture, relay/process tests, the local Unity Node/WASM fixture, Clippy and debug build passed. Intermediate metadata and excess errors can still be dropped; real-client behavior remains unverified. The most recent release build predates this change.
 ## Release and metadata-event audit at 0037790
 
 Windows GNU desktop/web release build succeeded at code commit `0037790d4f9a1d7f92043ed1b8c9cd39eaa1ff01`; its desktop/web library suite passed 144 tests with 7 ignored. TCP, Nitro and Unity currently drop `Identified` or `PacketIdentifiers` when their bounded event channel is saturated. The desktop applies those events to its displayed version and packet catalog, so it can retain stale values; scheduler dispatch separately uses session-bound metadata. Preserve bounded ordered session metadata and test saturation, coalescing and reconnect before claiming this is fixed. Real-client and extension compatibility remains unverified.
@@ -565,4 +568,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Audit Identified and PacketIdentifiers event loss under saturation in TCP, Nitro and Unity, including whether the desktop can retain stale session identity or packet names; add deterministic tests and preserve session ordering. Separately investigate progress or resumability within one expensive Flash reverse table, and repeat the Windows desktop/web release build. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.
+Compare unsupported Java regex character-class intersections with the released beta-29 packet API, build deterministic Java/Rust fixtures including negation, nesting and invalid syntax, and implement only behavior supported by evidence. Separately investigate progress or resumability within one expensive Flash reverse table and repeat the Windows desktop/web release build. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.

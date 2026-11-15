@@ -1,5 +1,8 @@
 # Continuation state
 
+## Session metadata continuation
+
+The bounded sink retains session identity and catalog updates and coalesces repeated same-session updates. Next compare unsupported Java regex character-class intersections against the beta-29 API and implement evidenced cases. Repeat release; user-run real-client verification remains open.
 ## Reverse-page continuation
 
 Outgoing reverse scans now use one to eight tables per page based on buffer length and immediately resume incomplete pages. A single large table remains costly; next audit metadata-event loss under saturation and investigate progress or resumability within a table. Repeat the release build.
