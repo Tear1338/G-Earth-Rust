@@ -1,5 +1,8 @@
 # Continuation state
 
+## Unicode escape continuation
+
+Four-digit Unicode escapes now parse external code points and escaped surrogate pairs before range construction, with Java packet fixtures. Next investigate `\R` matcher-level backtracking, preserving its distinction between direct and enclosing repetition.
 ## Java octal continuation
 
 Octal regex escapes are implemented with Java digit limits and differential fixtures. Next compare four-digit `\uXXXX` escapes outside Latin-1, including case folding and surrogate boundaries, then revisit `\R`.

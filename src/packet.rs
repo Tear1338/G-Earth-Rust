@@ -567,10 +567,9 @@ fn control_escape(
             }
             value as u8
         }
-        'x' | 'u' => {
-            let digits = if kind == 'x' { 2 } else { 4 };
+        'x' => {
             let mut value = 0u32;
-            for _ in 0..digits {
+            for _ in 0..2 {
                 let digit = chars
                     .next()
                     .and_then(|c| c.to_digit(16))
@@ -582,6 +581,32 @@ fn control_escape(
         _ => return Ok(None),
     };
     Ok(Some(value))
+}
+
+fn unicode_regex_escape(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Result<u32> {
+    fn four_digits(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Result<u32> {
+        let mut value = 0u32;
+        for _ in 0..4 {
+            value = value * 16
+                + chars
+                    .next()
+                    .and_then(|c| c.to_digit(16))
+                    .ok_or_else(|| error("invalid regex Unicode escape"))?;
+        }
+        Ok(value)
+    }
+    let first = four_digits(chars)?;
+    if (0xd800..=0xdbff).contains(&first) {
+        let mut lookahead = chars.clone();
+        if lookahead.next() == Some('\\') && lookahead.next() == Some('u') {
+            let second = four_digits(&mut lookahead)?;
+            if (0xdc00..=0xdfff).contains(&second) {
+                *chars = lookahead;
+                return Ok(0x10000 + ((first - 0xd800) << 10) + second - 0xdc00);
+            }
+        }
+    }
+    Ok(first)
 }
 
 fn braced_hex_escape(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Result<u32> {
@@ -890,8 +915,12 @@ fn parse_character_class_inner(
                 )?));
             } else if let Some(class) = predefined_class(escaped, unicode_class) {
                 elements.push(CharacterClassElement::Predefined(class));
-            } else if escaped == 'x' && chars.peek() == Some(&'{') {
-                let value = braced_hex_escape(chars)?;
+            } else if escaped == 'u' || (escaped == 'x' && chars.peek() == Some(&'{')) {
+                let value = if escaped == 'u' {
+                    unicode_regex_escape(chars)?
+                } else {
+                    braced_hex_escape(chars)?
+                };
                 elements.push(CharacterClassElement::Literal(value, true));
             } else if let Some(byte) = control_escape(escaped, chars)? {
                 elements.push(CharacterClassElement::Literal(u32::from(byte), true));
@@ -1718,6 +1747,22 @@ fn replace_alternatives(
 #[cfg(test)]
 mod regex_budget_tests {
     use super::*;
+
+    #[test]
+    fn java_unicode_escape_combines_only_valid_surrogate_pairs() {
+        let mut pair = "D800\\uDC00!".chars().peekable();
+        assert_eq!(unicode_regex_escape(&mut pair).unwrap(), 0x10000);
+        assert_eq!(pair.next(), Some('!'));
+        let mut unpaired = "D800\\u0041".chars().peekable();
+        assert_eq!(unicode_regex_escape(&mut unpaired).unwrap(), 0xd800);
+        assert_eq!(unpaired.collect::<String>(), "\\u0041");
+        assert!(unicode_regex_escape(&mut "D800\\uX".chars().peekable()).is_err());
+        let mut range = "a-\\uD800\\uDC00]".chars().peekable();
+        let range = parse_character_class(&mut range, false, false, false).unwrap();
+        assert!(!range[usize::from(b'Z')]);
+        assert!(range[usize::from(b'a')]);
+        assert!(range[0xff]);
+    }
 
     #[test]
     fn java_octal_escape_preserves_digits_beyond_its_limit() {
@@ -4880,8 +4925,12 @@ impl Packet {
                         last_closed_group = None;
                         continue;
                     }
-                    if c == 'x' && chars.peek() == Some(&'{') {
-                        let value = braced_hex_escape(&mut chars)?;
+                    if c == 'u' || (c == 'x' && chars.peek() == Some(&'{')) {
+                        let value = if c == 'u' {
+                            unicode_regex_escape(&mut chars)?
+                        } else {
+                            braced_hex_escape(&mut chars)?
+                        };
                         if let Ok(byte) = u8::try_from(value) {
                             c = char::from(byte);
                         } else {

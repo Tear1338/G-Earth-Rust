@@ -557,7 +557,7 @@ fn java_control_escapes_reject_invalid_values_without_mutation() {
     let before = packet.clone();
     for pattern in [
         "(\\x4)",
-        "(\\u1000)",
+        "(\\u10G0)",
         "([\\xG1])",
         "\\c",
         "(?x)\\c ",
@@ -566,6 +566,8 @@ fn java_control_escapes_reject_invalid_values_without_mutation() {
         "\\08",
         "\\0x",
         "[\\08]",
+        "\\uD800\\uX",
+        "[\\uD800\\uDC00-a]",
     ] {
         assert!(packet
             .replace_substrings_java_groups(pattern, "x", None)

@@ -1,5 +1,8 @@
 # Rust migration architecture
 
+## Four-digit Unicode regex escapes
+
+Java `\uXXXX` parses UTF-16 units and combines adjacent escaped high/low surrogate pairs before class-range construction. Values outside the Latin-1 packet domain use the existing Java case-fold mapping.
 ## Java regex octal escapes
 
 Octal escapes consume one to three digits after `\0`; a third digit is consumed only when the first is at most 3. Extra digits remain in the pattern. COMMENTS-mode layout is normalized before parsing.

@@ -1267,6 +1267,18 @@ public class JavaMutationOracle {
             finally { System.setOut(original); }
             emit("substring_octal_digits_" + i, sample);
         }
+        String[] unicodeEscapeCases = {"(\\u0100)", "(?iu)(\\u0178+)", "(?iu)([\\u0130]+)", "(?iu)([\\u0130-\\u0130]+)", "([a-\\u0100]+)", "(\\uD800)", "(\\uD800\\uDC00)", "([^\\uD800\\uDC00]+)", "([a-\\uD800\\uDC00]+)", "([\\uD800-\\uDC00]+)", "(?iu)(\\u212A+)", "(?x)(\\u 0 1 7 8)"};
+        char[] unicodeEscapeAlphabet = {'i', 'I', 'a', 'z', 'ÿ', 'K', 'k', 'µ', 'ß', 'Å', 'å', '\u0000', 'x'};
+        for (int i = 0; i < 480; i++) {
+            String pattern = unicodeEscapeCases[i % unicodeEscapeCases.length];
+            StringBuilder value = new StringBuilder(pattern).append(" iIaÿKkµßÅå ");
+            for (int j = 0; j < 16; j++) value.append(unicodeEscapeAlphabet[(i * 7 + j * 3 + j * j) % unicodeEscapeAlphabet.length]);
+            HPacket sample = new HPacket(9); sample.appendString(value.toString()); sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try { System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream())); sample.replaceXSubstrings(pattern, "$1/$0", 1); }
+            finally { System.setOut(original); }
+            emit("substring_unicode_escape_" + i, sample);
+        }
         char[] propertyAlphabet = {'a', 'A', 'b', 'B', '0', '9', ' ', '\t', '\n', 'é', 'É', 'ö', 'Ö', 'ß', '\u00a0', '\u0085'};
         for (int i = 0; i < 450; i++) {
             String[] entry = propertyCases[i % propertyCases.length]; String pattern = entry[0];

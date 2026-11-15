@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — Java Unicode regex escapes
+
+- Support four-digit Unicode escapes beyond Latin-1, including adjacent surrogate pairs and Java case folding.
+- Add beta-29 packet, malformed-input and surrogate range fixtures.
 ## Unreleased — Java regex octal escapes
 
 - Support Java octal regex escapes and preserve excess digits according to Java’s parsing rules.

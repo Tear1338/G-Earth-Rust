@@ -1,5 +1,8 @@
 # G-Earth Rust migration progress
 
+## Java four-digit Unicode regex escapes
+
+Java-style `\uXXXX` now supports code points outside Latin-1 and combines adjacent valid surrogate escapes before interpreting classes and ranges, using the previously verified Java Unicode folding rules. A 480-case beta-29 packet corpus covers selected external values, flags, classes, surrogate pairs and COMMENTS mode; malformed surrogate and range fixtures remain transactional. The Java mutation oracle, 39 mutation tests, 152 desktop/web library tests (7 ignored), Clippy and debug build passed. Windows desktop/web release succeeded at the preceding code commit `eb6f1fe365619ecc7f0c337b522c175e337632d9`; current code needs a new release build. Java `\R`, real clients and extensions remain unverified.
 ## Java regex octal escapes
 
 Java-style packet regex replacement now supports `\0` followed by one to three octal digits, respecting Java’s first-digit limit and leaving excess digits literal. A beta-29 oracle compared 400 contextual fixtures plus every one-, two- and three-digit octal sequence (584 cases), including classes and COMMENTS mode; malformed escapes are rejected transactionally. The 39 mutation tests and 151 desktop/web library tests (7 ignored) passed; Clippy and debug build checked. The Windows release succeeded at preceding code commit `76c0543bfd3ecc6d37ee38aa7ac1fb77329c3919`; current code needs a new release build. Java `\R`, real clients and extensions remain unverified.
@@ -597,4 +600,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Compare Java four-digit regex Unicode escapes `\uXXXX` outside Latin-1 against the released beta-29 packet API, including bracket ranges, Unicode case folding, malformed escapes and surrogate boundaries; implement verified behavior and add differential fixtures. Then revisit `\R` matcher-level backtracking and progress within one expensive Flash reverse table. Repeat the Windows desktop/web release build. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.
+Investigate Java `\R` matcher-level backtracking using OpenJDK LineEnding and repetition semantics; design bounded variable-width choices that preserve direct versus enclosing quantifier behavior, then compare deterministic beta-29 packet fixtures. Separately investigate progress within one expensive Flash reverse table and repeat the Windows desktop/web release build. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.

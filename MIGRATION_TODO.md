@@ -1,9 +1,14 @@
 # Migration tasks
 
+## Java Unicode regex escapes
+
+- [x] Support four-digit Unicode escapes beyond Latin-1, Unicode case folding and paired surrogate range endpoints in selected Java oracle cases.
+- [ ] Implement Java `\R` matcher-level backtracking and test direct and enclosing quantifiers.
+- [ ] Repeat release and await user-run real-client and extension evidence.
 ## Java regex octal escapes
 
 - [x] Implement Java octal regex escapes and verify digit limits against the beta-29 packet API.
-- [ ] Compare Java four-digit Unicode escapes outside Latin-1, including case folding and surrogate boundaries.
+- [x] Compare Java four-digit Unicode escapes outside Latin-1, including case folding and selected surrogate boundaries.
 - [ ] Revisit `\R` matcher backtracking, repeat release and await user-run compatibility tests.
 ## Java regex control escapes
 

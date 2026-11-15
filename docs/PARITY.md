@@ -1,5 +1,8 @@
 # Compatibility with 1.5.4-beta-29
 
+## Unicode escape evidence
+
+A 480-case beta-29 packet corpus covers selected `\uXXXX` values, flags and surrogate boundaries; malformed escape and range tests pass. Full Java regex and live-extension parity remain unverified.
 ## Java octal regex evidence
 
 The beta-29 packet oracle covers 400 contextual cases and all 584 one- to three-digit octal sequences; malformed input is tested transactionally. Full Java regex and live-extension compatibility remain unverified.

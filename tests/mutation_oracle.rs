@@ -3102,6 +3102,39 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
         check(&format!("substring_octal_digits_{i}"), &packet);
     }
+    let unicode_escape_cases = [
+        "(\\u0100)",
+        "(?iu)(\\u0178+)",
+        "(?iu)([\\u0130]+)",
+        "(?iu)([\\u0130-\\u0130]+)",
+        "([a-\\u0100]+)",
+        "(\\uD800)",
+        "(\\uD800\\uDC00)",
+        "([^\\uD800\\uDC00]+)",
+        "([a-\\uD800\\uDC00]+)",
+        "([\\uD800-\\uDC00]+)",
+        "(?iu)(\\u212A+)",
+        "(?x)(\\u 0 1 7 8)",
+    ];
+    let unicode_escape_alphabet = [
+        'i', 'I', 'a', 'z', 'ÿ', 'K', 'k', 'µ', 'ß', 'Å', 'å', '\0', 'x',
+    ];
+    for i in 0..480 {
+        let pattern = unicode_escape_cases[i % unicode_escape_cases.len()];
+        let mut value = format!("{pattern} iIaÿKkµßÅå ");
+        for j in 0..16 {
+            value.push(
+                unicode_escape_alphabet[(i * 7 + j * 3 + j * j) % unicode_escape_alphabet.len()],
+            );
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, "$1/$0", Some(1))
+            .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
+        check(&format!("substring_unicode_escape_{i}"), &packet);
+    }
     let property_cases = [
         ("(\\p{L}+)", "$1/$0"),
         ("(\\pL+)", "$1/$0"),
