@@ -1,5 +1,9 @@
 # G-Earth Rust migration progress
 
+## Release and metadata-event audit at 0037790
+
+Windows GNU desktop/web release build succeeded at code commit `0037790d4f9a1d7f92043ed1b8c9cd39eaa1ff01`; its desktop/web library suite passed 144 tests with 7 ignored. TCP, Nitro and Unity currently drop `Identified` or `PacketIdentifiers` when their bounded event channel is saturated. The desktop applies those events to its displayed version and packet catalog, so it can retain stale values; scheduler dispatch separately uses session-bound metadata. Preserve bounded ordered session metadata and test saturation, coalescing and reconnect before claiming this is fixed. Real-client and extension compatibility remains unverified.
+
 ## Bounded reverse-scan pages
 
 The Windows platform scanner now accepts a validated per-page table limit. Outgoing reverse discovery chooses one to eight tables based on the buffered sample size, immediately resumes incomplete pages and retains candidates until the complete pass. Controlled Windows memory fixtures cover resumption within a chunk; synthetic Flash tests cover candidate accumulation, cursor advancement and ambiguity. This is an estimated work limit, not a wall-clock bound: the sample can grow after selection and one large table can still take many seconds. Repeated scans add overhead, and no end-to-end performance or real-client compatibility is proven. Platform tests passed 15 with one ignored; Flash/process/relay tests passed; desktop/web library tests passed 144 with seven ignored, Clippy and debug build passed. The latest release predates this change.
