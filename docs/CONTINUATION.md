@@ -1,5 +1,8 @@
 # Continuation state
 
+## Java line-break continuation
+
+`\R` remains unsupported because naive expansion diverges under repeated enclosing groups; preserve the CRLF counterexample in future Java oracle fixtures. Next compare Java `\x{...}` escapes, then return to matcher-level line-break semantics.
 ## Java regex whitespace continuation
 
 Horizontal and vertical whitespace classes and complements now match the beta-29 packet oracle over Latin-1. Common class intersections were already covered; an explicitly rejected intersection branch lacks a reproducer after a limited generated search. Next compare Java `\R`, including CRLF and quantified patterns, and implement evidenced behavior.

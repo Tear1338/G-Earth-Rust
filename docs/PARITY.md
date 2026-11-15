@@ -1,5 +1,8 @@
 # Compatibility with 1.5.4-beta-29
 
+## Java `\R` limitation
+
+A direct Java comparison found that naive alternation differs from `\R` inside repeated groups on CRLF. The experiment was not shipped; line-break matching remains unsupported.
 ## Java regex whitespace evidence
 
 A 320-case beta-29 packet mutation corpus covers `\h`, `\H`, `\v` and `\V`, bracket classes and selected intersections; all 256 Latin-1 bytes are tested separately. Full regex and real-extension parity remain unverified.

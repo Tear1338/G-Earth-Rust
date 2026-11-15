@@ -1,5 +1,8 @@
 # Changelog
 
+## Investigation — Java line breaks
+
+- Document Java `\R` backtracking differences and retain explicit rejection pending a correct implementation.
 ## Unreleased — Java regex whitespace
 
 - Support horizontal and vertical whitespace classes and their complements in Java-style packet replacement.

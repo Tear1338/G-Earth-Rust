@@ -1,5 +1,8 @@
 # G-Earth Rust migration progress
 
+## Java line-break investigation and release at 747f899
+
+Windows GNU desktop/web release build succeeded at code commit `747f89949c56eb8d98448d6419195b45dd66180e`. Java `\R` is still unsupported: a direct Java comparison shows that replacing it with a simple alternation changes behavior inside repeated groups. For example, `(?:\R)+\n` on CRLF does not match in Java, while the naive alternation does. A direct-quantifier workaround also fails to preserve optional enclosing groups. The experimental Rust implementation was removed rather than shipping incorrect matching. Continue independently with Java braced hexadecimal escapes, then return to `\R` with a matcher that preserves Java backtracking. Real-client and extension compatibility remains unverified.
 ## Java horizontal and vertical regex whitespace
 
 Java-style packet replacement now supports `\h`, `\H`, `\v` and `\V` inside and outside bracket classes, including nested intersections and Unicode mode, over the Latin-1 packet domain. A new 320-case corpus matches bytes and cursor against the installed beta-29 Java API; a separate test covers all 256 byte values and both Unicode modes. The 38 mutation tests, Clippy and desktop/web debug build passed. Existing common/nested class intersections already had Java coverage; 250,000 generated exploratory forms produced no example reaching the remaining explicitly rejected intersection branch, which is not proof of completeness. Real extensions and clients remain unverified; the release build predates this change.
@@ -575,4 +578,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Compare Java regex `\R` against the released beta-29 packet API, including CRLF precedence, individual Latin-1 line breaks, quantification, flags and invalid use inside bracket classes; add deterministic oracle fixtures before implementing. Continue investigating the unreproduced class-intersection rejection and progress within one expensive Flash reverse table. Repeat the Windows desktop/web release build. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.
+Compare Java regex braced hexadecimal escapes `\x{...}` with the released beta-29 packet API, including bracket classes, ranges, malformed forms and code points outside Latin-1; implement evidenced behavior and add differential fixtures. Then revisit `\R` at matcher level using the documented repeated-group CRLF counterexample, and investigate progress within one expensive Flash reverse table. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.

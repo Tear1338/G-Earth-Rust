@@ -1,5 +1,9 @@
 # Migration tasks
 
+## Java line-break investigation
+
+- [ ] Implement `\R` with Java-compatible CRLF/backtracking semantics; naive alternation differs inside repeated groups.
+- [ ] Compare and implement Java braced hexadecimal escapes `\x{...}` over the supported packet character domain.
 ## Java regex whitespace
 
 - [x] Support Java horizontal and vertical whitespace classes and complements over Latin-1, with beta-29 oracle fixtures.

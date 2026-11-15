@@ -1,5 +1,8 @@
 # Rust migration architecture
 
+## Java line-break compatibility gap
+
+Java `\R` remains unsupported: naive alternation is not equivalent inside repeated groups, and direct-quantifier atomicity does not solve enclosing-group behavior. It requires matcher-level backtracking analysis.
 ## Java regex whitespace classes
 
 Packet regex matching supports Java `\h`, `\H`, `\v` and `\V` over Latin-1, in and outside bracket classes. They are independent of the Unicode-class flag. General Java regex compatibility remains incomplete.
