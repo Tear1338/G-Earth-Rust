@@ -1,5 +1,8 @@
 # Compatibility with 1.5.4-beta-29
 
+## TCP lifecycle saturation evidence
+
+A local synthetic saturated event channel preserves TCP disconnection before the protocol error and permits a subsequent reconnect after control events drain. This does not establish live-client parity. Web and Unity producer queues have separate behavior and remain to audit.
 ## RC4 discovery evidence
 
 Multi-page synthetic coverage confirms that a fresh candidate supersedes reverse candidates, competing fresh tables are still checked, and stale candidates are rejected. This optimization is Rust-specific and does not establish real-client parity; real-client verification remains outstanding.

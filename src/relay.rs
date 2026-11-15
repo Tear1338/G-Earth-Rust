@@ -7,6 +7,7 @@ use crate::{
     socks::SocksConfig,
 };
 use crate::{packet::PacketFormat, shockwave::ShockwaveTransport};
+use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
@@ -116,17 +117,74 @@ pub enum Event {
     Packet(Message),
     Error(String),
 }
+// The worker must never wait for the UI while a connection is forwarding.
+// Keep lifecycle events (and following errors) ordered until the consumer
+// catches up; ordinary packet and status events may still be dropped.
+const MAX_PENDING_CONTROL_EVENTS: usize = 8;
+struct RelayEventSink {
+    sender: SyncSender<Event>,
+    pending: RefCell<VecDeque<Event>>,
+}
+impl RelayEventSink {
+    fn new(sender: SyncSender<Event>) -> Self {
+        Self {
+            sender,
+            pending: RefCell::new(VecDeque::new()),
+        }
+    }
+    fn flush(&self) -> bool {
+        let mut pending = self.pending.borrow_mut();
+        while let Some(event) = pending.pop_front() {
+            match self.sender.try_send(event) {
+                Ok(()) => {}
+                Err(mpsc::TrySendError::Full(event)) => {
+                    pending.push_front(event);
+                    return false;
+                }
+                Err(mpsc::TrySendError::Disconnected(_)) => {
+                    pending.clear();
+                    return true;
+                }
+            }
+        }
+        true
+    }
+    // Match SyncSender's ownership-preserving error without allocating per event.
+    #[allow(clippy::result_large_err)]
+    fn try_send(&self, event: Event) -> Result<(), mpsc::TrySendError<Event>> {
+        if self.flush() {
+            match self.sender.try_send(event) {
+                Ok(()) => return Ok(()),
+                Err(mpsc::TrySendError::Disconnected(event)) => {
+                    return Err(mpsc::TrySendError::Disconnected(event))
+                }
+                Err(mpsc::TrySendError::Full(event)) => return self.queue(event),
+            }
+        }
+        self.queue(event)
+    }
+    #[allow(clippy::result_large_err)]
+    fn queue(&self, event: Event) -> Result<(), mpsc::TrySendError<Event>> {
+        let mut pending = self.pending.borrow_mut();
+        if matches!(
+            event,
+            Event::Connected(_) | Event::Disconnected | Event::Error(_)
+        ) && pending.len() < MAX_PENDING_CONTROL_EVENTS
+        {
+            pending.push_back(event);
+            Ok(())
+        } else {
+            Err(mpsc::TrySendError::Full(event))
+        }
+    }
+}
 /// Errors retained when the bounded event channel cannot accept them.
 #[derive(Clone, Debug)]
 pub struct MissedRelayErrors {
     pub count: u64,
     pub latest: String,
 }
-fn emit_error(
-    events: &SyncSender<Event>,
-    missed: &Mutex<Option<MissedRelayErrors>>,
-    error: String,
-) {
+fn emit_error(events: &RelayEventSink, missed: &Mutex<Option<MissedRelayErrors>>, error: String) {
     let mut slot = missed
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -292,10 +350,17 @@ impl Relay {
         let (worker_stop, worker_active, worker_rules) =
             (stop.clone(), active.clone(), rules.clone());
         let worker = thread::spawn(move || {
+            let events = RelayEventSink::new(events);
             let mut raw_upstream = raw_upstream;
             let _ = events.try_send(Event::Listening(address));
             let mut index = 0i32;
             while !worker_stop.load(Ordering::Acquire) {
+                // Do not accept another session while its predecessor's
+                // lifecycle notifications remain undelivered.
+                if !events.flush() {
+                    thread::sleep(Duration::from_millis(5));
+                    continue;
+                }
                 match listener.accept() {
                     Ok((client, _)) => {
                         let mut session_options = options.clone();
@@ -884,7 +949,7 @@ fn run_session(
     stop: &AtomicBool,
     closed: &AtomicBool,
     rules: &Mutex<Rules>,
-    events: &SyncSender<Event>,
+    events: &RelayEventSink,
     commands: Receiver<(Direction, Packet)>,
     index: &mut i32,
     options: &RelayOptions,
@@ -923,6 +988,7 @@ fn run_session(
         .map(|details| details.version.clone())
         .unwrap_or_default();
     while !stop.load(Ordering::Acquire) && !closed.load(Ordering::Acquire) {
+        events.flush();
         let mut progress = false;
         if pending_injections.len() < 64 {
             pending_injections.extend(commands.try_iter().take(64 - pending_injections.len()));
@@ -2453,6 +2519,7 @@ mod tests {
         }
         let (events, _) = mpsc::sync_channel(256);
         let worker = thread::spawn(move || {
+            let events = RelayEventSink::new(events);
             run_session(
                 client,
                 server,
@@ -2960,31 +3027,70 @@ mod tests {
         assert_eq!(forwarded, bytes);
         client.write_all(&1u32.to_be_bytes()).unwrap();
         let deadline = Instant::now() + Duration::from_secs(5);
-        let errors = loop {
-            if let Some(errors) = relay.missed_errors(false) {
-                break errors;
-            }
-            assert!(Instant::now() < deadline, "missing retained protocol error");
+        while relay.connected() {
+            assert!(Instant::now() < deadline, "session did not disconnect");
             thread::sleep(Duration::from_millis(2));
+        }
+        let next_client = TcpStream::connect(relay.address).unwrap();
+        let mut disconnected = false;
+        let mut error = None;
+        while error.is_none() && Instant::now() < deadline {
+            if let Ok(event) = events.recv_timeout(Duration::from_millis(50)) {
+                match event {
+                    Event::Disconnected => disconnected = true,
+                    Event::Error(message) => {
+                        assert!(disconnected, "error overtook disconnection");
+                        error = Some(message);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        assert!(error.unwrap().contains("invalid frame length"));
+        remote.set_nonblocking(true).unwrap();
+        let (_next_server, _) = loop {
+            match remote.accept() {
+                Ok(connection) => break connection,
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    assert!(Instant::now() < deadline, "reconnection was not accepted");
+                    thread::sleep(Duration::from_millis(2));
+                }
+                Err(error) => panic!("accept failed: {error}"),
+            }
         };
-        assert_eq!(errors.count, 1);
-        assert!(
-            errors.latest.contains("invalid frame length"),
-            "{}",
-            errors.latest
-        );
-        assert!(events.try_iter().count() >= 2048);
-        assert_eq!(relay.missed_errors(true).unwrap().latest, errors.latest);
-        assert!(relay.missed_errors(false).is_none());
+        wait_for(&events, |event| matches!(event, Event::Connected(_)));
+        drop(next_client);
         relay.stop();
+    }
+    #[test]
+    fn lifecycle_events_wait_in_order_without_blocking_on_a_full_channel() {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let events = RelayEventSink::new(sender);
+        events.try_send(Event::Status("older".into())).unwrap();
+        events.try_send(Event::Connected("fixture".into())).unwrap();
+        events.try_send(Event::Disconnected).unwrap();
+        events.try_send(Event::Error("failure".into())).unwrap();
+        assert!(!events.flush());
+        assert!(events.try_send(Event::Status("newer".into())).is_err());
+        assert!(matches!(receiver.try_recv(), Ok(Event::Status(_))));
+        assert!(!events.flush());
+        assert!(matches!(receiver.try_recv(), Ok(Event::Connected(_))));
+        assert!(!events.flush());
+        assert!(matches!(receiver.try_recv(), Ok(Event::Disconnected)));
+        assert!(events.flush());
+        assert!(matches!(receiver.try_recv(), Ok(Event::Error(_))));
     }
     #[test]
     fn retained_errors_coalesce_without_displacing_queued_events() {
         let (events, receiver) = mpsc::sync_channel(1);
+        let events = RelayEventSink::new(events);
         let missed = Mutex::new(None);
         events
             .try_send(Event::Status("older event".into()))
             .unwrap();
+        for _ in 0..MAX_PENDING_CONTROL_EVENTS {
+            events.try_send(Event::Disconnected).unwrap();
+        }
         emit_error(&events, &missed, "first failure".into());
         assert!(matches!(receiver.try_recv(), Ok(Event::Status(_))));
         emit_error(&events, &missed, "second failure".into());

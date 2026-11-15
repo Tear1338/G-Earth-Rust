@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — TCP event saturation
+
+- Retain ordered TCP connection lifecycle notifications and errors across a full consumer queue, without stalling an active relay.
+- Exercise saturation, protocol error ordering, and a subsequent local reconnect.
 ## Unreleased — RC4 discovery
 
 - Avoid lower-priority outgoing RC4 reversals on later memory pages after a fresh candidate is known; retain competing-candidate and current-ciphertext checks.

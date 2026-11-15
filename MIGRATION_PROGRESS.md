@@ -1,5 +1,8 @@
 # G-Earth Rust migration progress
 
+## TCP lifecycle events under saturation
+
+The TCP relay retains Connected, Disconnected and subsequent errors in a bounded ordered queue when the consumer channel is full. It flushes without blocking the active session and waits before accepting a subsequent session while prior lifecycle events remain pending. Packet/status events may still be dropped; errors exceeding the bounded control queue use the existing coalesced fallback. Synthetic saturation coverage verifies disconnect-before-error and a subsequent reconnect; desktop/web debug build and Clippy checked. The release build at `fabaf04` predates this change and must be repeated for the current code. Web/Unity event producers need a separate saturation audit. Real-client tests remain the user’s responsibility.
 ## Release verification at fabaf04
 
 Windows GNU desktop/web release build succeeded at code commit `fabaf04c021c795dd5fa25b3f7aa320550f5060a`. The Java Flash identification oracle passed, and the desktop/web library suite passed 129 tests with 7 ignored. Synthetic coverage cannot establish compatibility with real clients or extensions; the user will perform those tests. TCP lifecycle events can still be dropped when the event channel is full. A fix needs bounded ordered retention for lifecycle and errors, periodic nonblocking flush during active sessions and idle listening, and a policy for a permanently stalled consumer.
@@ -517,4 +520,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Investigate and fix TCP Connected/Disconnected event loss when the consumer queue is saturated, preserving lifecycle ordering and restoration behavior without blocking relay traffic; add deterministic saturation tests. Then investigate the remaining cost of RC4 reverse searches when no fresh candidate exists. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.
+Audit Web and Unity lifecycle-event producers and their bounded forwarding under saturated consumer queues, preserving order and cleanup without blocking active traffic; add deterministic tests for any losses. Then investigate the remaining cost of Flash RC4 reverse searches when no fresh candidate exists and repeat the desktop/web release build on the current code. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.

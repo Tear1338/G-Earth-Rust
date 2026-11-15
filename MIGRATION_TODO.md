@@ -1,5 +1,11 @@
 # Migration tasks
 
+## TCP lifecycle saturation
+
+- [x] Retain and flush ordered TCP lifecycle notifications without blocking active forwarding; test a saturated channel and reconnect.
+- [ ] Audit Web/Unity event producers and their independent bounded forwarding under saturation.
+- [ ] Repeat the desktop/web release build after this TCP change.
+- [ ] Investigate remaining Flash reverse-only scan costs; real-client compatibility is unverified.
 ## Latest RC4 discovery work
 
 - [x] Skip lower-priority outgoing reverse trials after a fresh candidate from an earlier memory page, retaining ambiguity detection and final ciphertext validation.

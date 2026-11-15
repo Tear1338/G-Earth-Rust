@@ -1,5 +1,8 @@
 # Continuation state
 
+## TCP lifecycle continuation
+
+TCP now retains ordered lifecycle events and errors in a bounded worker queue under consumer saturation. Next audit Web/Unity producer and forwarding queues for the same loss, and investigate remaining Flash reverse-only scan costs. Repeat the desktop/web release build for the new code; real-client tests remain with the user.
 ## Latest continuation
 
 The outgoing RC4 scanner avoids reverse trials on later pages once a fresh candidate is known, with multi-page and stale-ciphertext tests. Next inspect TCP lifecycle event loss on a saturated consumer queue, preserving ordering and restoration behavior without blocking relay traffic. Reverse-only scans can still be expensive. Real-client tests are reserved for the user.

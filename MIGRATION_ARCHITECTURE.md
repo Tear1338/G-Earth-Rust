@@ -1,5 +1,8 @@
 # Rust migration architecture
 
+## TCP event backpressure
+
+A worker-local bounded queue retains lifecycle events and errors when the consumer channel is full. The active forwarding loop periodically flushes without waiting; the listener postpones accepting the next connection while prior control events remain pending. Low-priority events remain lossy, and errors beyond queue capacity use the existing coalesced fallback. This mechanism applies to TCP only.
 ## RC4 discovery priority across memory pages
 
 Once an outgoing scan has accumulated a fresh candidate, subsequent pages still examine fresh tables but skip lower-priority reverse trials. No candidate is installed before the complete scan and validation against current ciphertext. Invalidated candidates cause a fresh scan; reverse trials remain necessary when no fresh candidate exists.
