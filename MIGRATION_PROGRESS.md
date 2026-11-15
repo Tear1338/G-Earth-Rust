@@ -1,5 +1,13 @@
 # G-Earth Rust migration progress
 
+## Release verification at a075c1f
+
+Windows GNU desktop/web release build succeeded at code commit `a075c1fd68132f9c388ecd6e5efe4d7f2c30ff32`. Desktop/web library tests passed 130 with 7 ignored; the TCP relay suite passed 19 and the synthetic Flash process test passed. This does not verify real clients or extensions.
+
+## Web and Unity saturation audit
+
+Nitro `src/web_proxy.rs` sends lifecycle events directly with `try_send`; the existing `nitro_schedule_context_survives_lost_events_and_rejects_stale_peers` fixture already demonstrates a saturated producer queue. Unity `src/unity_server.rs` also sends directly into a bounded producer queue, before `src/unity_connection.rs` forwards events to its own bounded queue; that forwarder can evict an old lifecycle event when its control backlog contains no status messages. Unlike TCP, producers may run concurrently, so a correction must serialize lifecycle transitions and retain bounded ordering at both stages without holding peer locks while waiting or blocking network tasks.
+
 ## TCP lifecycle events under saturation
 
 The TCP relay retains Connected, Disconnected and subsequent errors in a bounded ordered queue when the consumer channel is full. It flushes without blocking the active session and waits before accepting a subsequent session while prior lifecycle events remain pending. Packet/status events may still be dropped; errors exceeding the bounded control queue use the existing coalesced fallback. Synthetic saturation coverage verifies disconnect-before-error and a subsequent reconnect; desktop/web debug build and Clippy checked. The release build at `fabaf04` predates this change and must be repeated for the current code. Web/Unity event producers need a separate saturation audit. Real-client tests remain the user’s responsibility.
@@ -520,4 +528,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Audit Web and Unity lifecycle-event producers and their bounded forwarding under saturated consumer queues, preserving order and cleanup without blocking active traffic; add deterministic tests for any losses. Then investigate the remaining cost of Flash RC4 reverse searches when no fresh candidate exists and repeat the desktop/web release build on the current code. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.
+Fix lost Nitro lifecycle events in src/web_proxy.rs under a saturated producer queue, with concurrent-producer ordering, bounded retention, a nonblocking flush, and deterministic disconnect/reconnect fixtures. Then address the Unity producer and its second forwarding queue, followed by the remaining cost of Flash RC4 reverse searches without a fresh candidate. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.
