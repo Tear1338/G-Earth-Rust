@@ -1194,6 +1194,38 @@ public class JavaMutationOracle {
             finally { System.setOut(original); }
             emit("substring_braced_hex_" + i, sample);
         }
+        String[] externalFoldCases = {"(?iu)(\\x{130}+)", "(?iu)([\\x{131}]+)", "(?iu)(\\x{178}+)", "(?iu)([\\x{17f}]+)", "(?iu)(\\x{39c}+)", "(?iu)([\\x{3bc}]+)", "(?iu)(\\x{1e9e}+)", "(?iu)([\\x{212a}]+)", "(?iu)(\\x{212b}+)", "(?iu)([\\x{130}-\\x{131}]+)", "(?iu)([\\x{178}-\\x{178}]+)", "(?iu)([\\x{100}-\\x{200}]+)", "(?iu)([^\\x{212a}]+)", "(?i)(\\x{212a}+)", "(?iu)([\\x{3bc}-\\x{3bc}]+)"};
+        char[] externalFoldAlphabet = {'i', 'I', 's', 'S', 'k', 'K', 'µ', 'ÿ', 'ß', 'Å', 'å', 'a', 'x'};
+        for (int i = 0; i < 450; i++) {
+            String pattern = externalFoldCases[i % externalFoldCases.length];
+            StringBuilder value = new StringBuilder(pattern).append(" iIsSkKµÿßÅå ");
+            for (int j = 0; j < 16; j++) value.append(externalFoldAlphabet[(i * 7 + j * 3 + j * j) % externalFoldAlphabet.length]);
+            HPacket sample = new HPacket(9); sample.appendString(value.toString()); sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try { System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream())); sample.replaceXSubstrings(pattern, "$1/$0", 1); }
+            finally { System.setOut(original); }
+            emit("substring_external_fold_" + i, sample);
+        }
+        int[] externalFoldPoints = {0x130, 0x131, 0x178, 0x17f, 0x39c, 0x3bc, 0x1e9e, 0x212a, 0x212b};
+        for (int i = 0; i < externalFoldPoints.length; i++) {
+            String escape = String.format("\\x{%x}", externalFoldPoints[i]);
+            for (int shape = 0; shape < 2; shape++) {
+                String pattern = "(?iu)" + (shape == 0 ? escape : "[" + escape + "-" + escape + "]");
+                java.util.regex.Pattern compiled = java.util.regex.Pattern.compile(pattern);
+                byte[] matches = new byte[32];
+                for (int value = 0; value < 256; value++) if (compiled.matcher(Character.toString((char)value)).matches()) matches[value / 8] |= (byte)(1 << (value % 8));
+                System.out.println("unicode_external_" + i + "_" + shape + "=" + HexFormat.of().formatHex(matches));
+            }
+        }
+        int[] externalRangeEnds = {0, 65, 97, 127, 181, 223, 255, 256, 0x130, 0x131, 0x178, 0x17f, 0x39c, 0x3bc, 0x1e9e, 0x212a, 0x212b, 0x10ffff};
+        for (int lo : externalRangeEnds) for (int hi : externalRangeEnds) {
+            if (lo > hi) continue;
+            String pattern = String.format("(?iu)[\\x{%x}-\\x{%x}]", lo, hi);
+            java.util.regex.Pattern compiled = java.util.regex.Pattern.compile(pattern);
+            byte[] matches = new byte[32];
+            for (int value = 0; value < 256; value++) if (compiled.matcher(Character.toString((char)value)).matches()) matches[value / 8] |= (byte)(1 << (value % 8));
+            System.out.println("unicode_external_range_" + lo + "_" + hi + "=" + HexFormat.of().formatHex(matches));
+        }
         char[] propertyAlphabet = {'a', 'A', 'b', 'B', '0', '9', ' ', '\t', '\n', 'é', 'É', 'ö', 'Ö', 'ß', '\u00a0', '\u0085'};
         for (int i = 0; i < 450; i++) {
             String[] entry = propertyCases[i % propertyCases.length]; String pattern = entry[0];

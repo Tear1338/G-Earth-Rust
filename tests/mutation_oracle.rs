@@ -2892,6 +2892,109 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
         check(&format!("substring_braced_hex_{i}"), &packet);
     }
+    let external_fold_cases = [
+        "(?iu)(\\x{130}+)",
+        "(?iu)([\\x{131}]+)",
+        "(?iu)(\\x{178}+)",
+        "(?iu)([\\x{17f}]+)",
+        "(?iu)(\\x{39c}+)",
+        "(?iu)([\\x{3bc}]+)",
+        "(?iu)(\\x{1e9e}+)",
+        "(?iu)([\\x{212a}]+)",
+        "(?iu)(\\x{212b}+)",
+        "(?iu)([\\x{130}-\\x{131}]+)",
+        "(?iu)([\\x{178}-\\x{178}]+)",
+        "(?iu)([\\x{100}-\\x{200}]+)",
+        "(?iu)([^\\x{212a}]+)",
+        "(?i)(\\x{212a}+)",
+        "(?iu)([\\x{3bc}-\\x{3bc}]+)",
+    ];
+    let external_fold_alphabet = [
+        'i', 'I', 's', 'S', 'k', 'K', 'µ', 'ÿ', 'ß', 'Å', 'å', 'a', 'x',
+    ];
+    for i in 0..450 {
+        let pattern = external_fold_cases[i % external_fold_cases.len()];
+        let mut value = format!("{pattern} iIsSkKµÿßÅå ");
+        for j in 0..16 {
+            value.push(
+                external_fold_alphabet[(i * 7 + j * 3 + j * j) % external_fold_alphabet.len()],
+            );
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, "$1/$0", Some(1))
+            .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
+        check(&format!("substring_external_fold_{i}"), &packet);
+    }
+    let external_fold_points = [
+        0x130, 0x131, 0x178, 0x17f, 0x39c, 0x3bc, 0x1e9e, 0x212a, 0x212b,
+    ];
+    for (i, codepoint) in external_fold_points.into_iter().enumerate() {
+        for shape in 0..2 {
+            let escape = format!("\\x{{{codepoint:x}}}");
+            let atom = if shape == 0 {
+                escape.clone()
+            } else {
+                format!("[{escape}-{escape}]")
+            };
+            let pattern = format!("(?iu)(?:{atom})\\z");
+            let expected_bits =
+                expression::parse_hex(expected[format!("unicode_external_{i}_{shape}").as_str()])
+                    .unwrap();
+            for byte in 0u8..=u8::MAX {
+                let mut packet = Packet::new(9);
+                packet
+                    .put_string(&format!("{pattern}{}", char::from(byte)))
+                    .unwrap();
+                packet
+                    .replace_substrings_java(&pattern, "##", Some(1))
+                    .unwrap();
+                packet.reset();
+                let output = packet.read_string().unwrap();
+                let expected_match = expected_bits[usize::from(byte) / 8] & (1 << (byte % 8)) != 0;
+                assert_eq!(
+                    output.ends_with("##"),
+                    expected_match,
+                    "{pattern} byte={byte:02x}"
+                );
+            }
+        }
+    }
+    let external_range_ends = [
+        0u32, 65, 97, 127, 181, 223, 255, 256, 0x130, 0x131, 0x178, 0x17f, 0x39c, 0x3bc, 0x1e9e,
+        0x212a, 0x212b, 0x10ffff,
+    ];
+    for lo in external_range_ends {
+        for hi in external_range_ends {
+            if lo > hi {
+                continue;
+            }
+            let pattern = format!("(?iu)(?:[\\x{{{lo:x}}}-\\x{{{hi:x}}}])\\z");
+            let expected_bits = expression::parse_hex(
+                expected[format!("unicode_external_range_{lo}_{hi}").as_str()],
+            )
+            .unwrap();
+            for byte in 0u8..=u8::MAX {
+                let mut packet = Packet::new(9);
+                packet
+                    .put_string(&format!("{pattern}{}", char::from(byte)))
+                    .unwrap();
+                packet
+                    .replace_substrings_java(&pattern, "##", Some(1))
+                    .unwrap();
+                packet.reset();
+                let output = packet.read_string().unwrap();
+                let expected_match = expected_bits[usize::from(byte) / 8] & (1 << (byte % 8)) != 0;
+                assert_eq!(
+                    output.ends_with("##"),
+                    expected_match,
+                    "{pattern} byte={byte:02x}"
+                );
+            }
+        }
+    }
     let property_cases = [
         ("(\\p{L}+)", "$1/$0"),
         ("(\\pL+)", "$1/$0"),

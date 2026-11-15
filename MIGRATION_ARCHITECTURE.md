@@ -1,5 +1,8 @@
 # Rust migration architecture
 
+## External Unicode case folding
+
+Braced hexadecimal regex literals use Java 21 simple-fold equivalents for external code points mapping into Latin-1. Character ranges follow Java range semantics, which can differ from singleton literals; direct Java Pattern bitsets and beta-29 packet fixtures cover representative boundaries.
 ## Java braced hexadecimal regex escapes
 
 Braced hex escapes are parsed as Unicode code points; class ranges are intersected with the Latin-1 packet domain. Out-of-domain code points are rejected when Unicode case-insensitive folding is active until Java-compatible cross-domain mappings are verified.

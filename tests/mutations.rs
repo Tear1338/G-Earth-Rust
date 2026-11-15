@@ -535,16 +535,8 @@ fn java_character_properties_reject_unknown_or_unclosed_names_transactionally() 
 }
 
 #[test]
-fn java_braced_hex_rejects_invalid_and_unhandled_unicode_folding_transactionally() {
-    for pattern in [
-        "\\x{}",
-        "\\x{110000}",
-        "\\x{xyz}",
-        "\\x{41",
-        "[\\x{100}-a]",
-        "(?iu)\\x{178}",
-        "(?iu)[a-\\x{100}]",
-    ] {
+fn java_braced_hex_rejects_invalid_input_transactionally() {
+    for pattern in ["\\x{}", "\\x{110000}", "\\x{xyz}", "\\x{41", "[\\x{100}-a]"] {
         let mut packet = Packet::new(9);
         packet.put_string(pattern).unwrap();
         let before = packet.clone();

@@ -857,9 +857,6 @@ fn parse_character_class_inner(
                 elements.push(CharacterClassElement::Predefined(class));
             } else if escaped == 'x' && chars.peek() == Some(&'{') {
                 let value = braced_hex_escape(chars)?;
-                if value > 255 && case_insensitive && unicode_case {
-                    return Err(error("Unicode case folding outside Latin-1 is unsupported"));
-                }
                 elements.push(CharacterClassElement::Literal(value, true));
             } else if let Some(byte) = control_escape(escaped, chars)? {
                 elements.push(CharacterClassElement::Literal(u32::from(byte), true));
@@ -924,7 +921,13 @@ fn build_character_class(
                 return Err(error("invalid character class range"));
             }
             for byte in 0u8..=u8::MAX {
-                if (*start..=*end).contains(&u32::from(byte)) {
+                let mut included = (*start..=*end).contains(&u32::from(byte));
+                if case_insensitive && unicode_case {
+                    let (upper, folded) = java_latin1_unicode_case(byte);
+                    included |=
+                        (*start..=*end).contains(&upper) || (*start..=*end).contains(&folded);
+                }
+                if included {
                     class[usize::from(byte)] = true;
                 }
             }
@@ -934,6 +937,10 @@ fn build_character_class(
                 CharacterClassElement::Literal(value, _) => {
                     if let Ok(byte) = u8::try_from(*value) {
                         class[usize::from(byte)] = true;
+                    } else if case_insensitive && unicode_case {
+                        for byte in external_unicode_case_matches(*value) {
+                            class[usize::from(*byte)] = true;
+                        }
                     }
                 }
                 CharacterClassElement::Predefined(set) => {
@@ -1087,6 +1094,31 @@ fn fold_latin1(byte: u8) -> u8 {
         byte + 0x20
     } else {
         byte
+    }
+}
+
+// Java 21 simple uppercase and lower(uppercase) values for a Latin-1 byte.
+fn java_latin1_unicode_case(byte: u8) -> (u32, u32) {
+    match byte {
+        0xb5 => (0x039c, 0x03bc),
+        0xff => (0x0178, 0x00ff),
+        b'a'..=b'z' | 0xe0..=0xf6 | 0xf8..=0xfe => (u32::from(byte - 0x20), u32::from(byte)),
+        _ => (u32::from(byte), u32::from(fold_latin1(byte))),
+    }
+}
+
+// These are the non-Latin-1 Java 21 simple-fold equivalences with a Latin-1
+// character. Singleton literals differ from Java's character range semantics.
+fn external_unicode_case_matches(value: u32) -> &'static [u8] {
+    match value {
+        0x0130 | 0x0131 => b"Ii",
+        0x0178 => &[0xff],
+        0x017f => b"Ss",
+        0x039c | 0x03bc => &[0xb5],
+        0x1e9e => &[0xdf],
+        0x212a => b"Kk",
+        0x212b => &[0xc5, 0xe5],
+        _ => &[],
     }
 }
 
@@ -1651,6 +1683,22 @@ fn replace_alternatives(
 #[cfg(test)]
 mod regex_budget_tests {
     use super::*;
+
+    #[test]
+    fn java_external_unicode_literal_and_range_folding_are_distinct() {
+        let mut literal = "\\x{130}]".chars().peekable();
+        let literal = parse_character_class(&mut literal, true, true, true).unwrap();
+        let mut range = "\\x{130}-\\x{130}]".chars().peekable();
+        let range = parse_character_class(&mut range, true, true, true).unwrap();
+        assert!(literal[usize::from(b'i')]);
+        assert!(!range[usize::from(b'i')]);
+        let mut range = "\\x{178}-\\x{178}]".chars().peekable();
+        let range = parse_character_class(&mut range, true, true, true).unwrap();
+        assert!(range[0xff]);
+        let mut range = "\\x{1e9e}-\\x{1e9e}]".chars().peekable();
+        let range = parse_character_class(&mut range, true, true, true).unwrap();
+        assert!(!range[0xdf]);
+    }
 
     #[test]
     fn java_horizontal_and_vertical_whitespace_cover_latin1() {
@@ -4774,12 +4822,13 @@ impl Packet {
                         if let Ok(byte) = u8::try_from(value) {
                             c = char::from(byte);
                         } else {
+                            let mut class = Box::new([false; 256]);
                             if case_insensitive && unicode_case {
-                                return Err(error(
-                                    "Unicode case folding outside Latin-1 is unsupported",
-                                ));
+                                for byte in external_unicode_case_matches(value) {
+                                    class[usize::from(*byte)] = true;
+                                }
                             }
-                            atoms.push(FixedRegexAtom::Class(Box::new([false; 256])));
+                            atoms.push(FixedRegexAtom::Class(class));
                             dynamic = true;
                             quantifiable = true;
                             last_closed_group = None;

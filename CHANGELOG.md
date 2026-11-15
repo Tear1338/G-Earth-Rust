@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — Java external Unicode folding
+
+- Match Java case-insensitive braced hex literals and ranges that fold into Latin-1, including Java’s distinct range behavior.
+- Compare all Latin-1 values across nine external literals and 171 range boundaries against Java.
 ## Unreleased — Java braced regex escapes
 
 - Support Java `\x{...}` literals and ranges in packet regex replacement, with explicit rejection of unimplemented cross-domain Unicode case folding.

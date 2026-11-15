@@ -1,5 +1,8 @@
 # Continuation state
 
+## Unicode folding continuation
+
+Braced Unicode hex literals and ranges now support Java case folding into Latin-1, with singleton/range distinctions and differential fixtures. Next fix intermittent parallel Flash discovery test contention observed in Windows CI run 43666623723; then revisit Java `\R`.
 ## Braced hex continuation
 
 Java braced hex literals/ranges now work over the Latin-1 packet domain, except Unicode case-insensitive external code points. A Java probe identified nine external points folding to Latin-1; compare literal and range behavior against beta-29 before implementing. Then revisit `\R`.

@@ -1,9 +1,14 @@
 # Migration tasks
 
+## Unicode braced hex folding
+
+- [x] Implement and compare external Unicode case-folded hex literals and ranges over all Latin-1 byte values.
+- [ ] Fix intermittent parallel Flash discovery test contention for the global worker cap, and re-run the CI-equivalent command.
+- [ ] Revisit Java `\R` matcher backtracking and repeat release.
 ## Java braced hexadecimal escapes
 
 - [x] Support Java `\x{...}` and bracket ranges over Latin-1, including nonmatching code points outside Latin-1 without Unicode case folding.
-- [ ] Implement and differentially test Unicode case folding from non-Latin-1 braced code points and ranges back into Latin-1.
+- [x] Implement and differentially test Unicode case folding from non-Latin-1 braced code points and ranges back into Latin-1.
 - [ ] Return to matcher-level `\R` CRLF/backtracking semantics and repeat release.
 ## Java line-break investigation
 

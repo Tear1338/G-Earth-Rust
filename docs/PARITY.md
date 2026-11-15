@@ -1,5 +1,8 @@
 # Compatibility with 1.5.4-beta-29
 
+## External Unicode folding evidence
+
+Java 21 Pattern bitsets cover all 256 Latin-1 bytes for nine external braced literals and 171 selected ranges; a 450-case beta-29 packet corpus also passes. This does not establish full regex or real-extension parity.
 ## Braced regex hex evidence
 
 A 400-case beta-29 packet mutation corpus covers braced hex literals, Latin-1 and outside-domain ranges. Unicode case-insensitive folding of non-Latin-1 code points remains unsupported; full regex and live-extension parity remain unverified.
