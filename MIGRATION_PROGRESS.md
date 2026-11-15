@@ -1,5 +1,9 @@
 # G-Earth Rust migration progress
 
+## Release verification at fabaf04
+
+Windows GNU desktop/web release build succeeded at code commit `fabaf04c021c795dd5fa25b3f7aa320550f5060a`. The Java Flash identification oracle passed, and the desktop/web library suite passed 129 tests with 7 ignored. Synthetic coverage cannot establish compatibility with real clients or extensions; the user will perform those tests. TCP lifecycle events can still be dropped when the event channel is full. A fix needs bounded ordered retention for lifecycle and errors, periodic nonblocking flush during active sessions and idle listening, and a policy for a permanently stalled consumer.
+
 ## RC4 discovery: skip lower-priority reversals
 
 Outgoing discovery now skips costly reverse-state trials on subsequent memory pages once a fresh state has already matched, while still examining every fresh table for ambiguity. The candidate remains provisional until the complete scan finishes and is revalidated against the latest ciphertext; a stale candidate is discarded and scanning restarts. Three deterministic tests cover reverse-only later pages, competing fresh checks, and invalidation by new bytes. Discovery, synthetic Flash process and relay tests passed; desktop/web Clippy and debug build checked. Real-client compatibility remains unverified and will be tested by the user. Reverse searches remain potentially expensive when no fresh candidate has been found.
