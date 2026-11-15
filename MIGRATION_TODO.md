@@ -1,5 +1,7 @@
 # Migration tasks
 
+Reduce unnecessary RC4 reversal work after a fresh candidate is already retained across memory pages, while still scanning for competing fresh candidates and preserving ambiguity. Measure worst-case large-frame cost separately; the user handles real-client testing.
+
 Investigate Flash recovery when at least two complete encrypted frames are followed by an incomplete tail below the buffer limit. Determine whether strict whole-buffer validation can stall a connection waiting for more traffic, and add a safe ambiguity-preserving fixture before changing behavior. Evaluate large-frame recovery cost. The user handles real-client testing.
 
 Support a first encrypted Flash frame larger than the initial 64 KiB bootstrap buffer: grow the bounded buffer progressively up to the protocol limit, retain backpressure and test late completion and cancellation. Evaluate CPU/memory bounds of reversing large ciphertext. The user handles real-client testing.

@@ -1,5 +1,7 @@
 # Continuation state
 
+Flash asynchronous recovery now accepts two complete frames and an incomplete tail while direct recovery stays strict. Windows desktop/web library (126 passed, seven ignored), Flash/relay and synthetic process tests, both Clippy configurations and debug build pass. A single optimized microprobe measured 64 ms for 256 x 64 KiB reversals and 65 ms for one 16 MiB reversal; it is not end-to-end. Next skip unnecessary reversal after a fresh candidate while preserving fresh-candidate ambiguity; the user tests real clients.
+
 Flash bootstrap grows from 64 KiB up to MAX_FRAME + 4 after unsuccessful scans at capacity; a large-first-frame fixture, cancellation/deadline tests and synthetic process relay pass. Windows desktop/web library (125 passed, seven ignored), Flash/relay tests, both Clippy configurations and debug build pass. Next investigate incomplete encrypted tails below capacity and search cost; real-client tests belong to the user.
 
 Flash bootstrap now pauses reads at 64 KiB rather than overflowing, and at capacity can recover from a complete prefix with partial tail. Windows desktop/web library (123 passed, seven ignored), Flash/core/relay and synthetic process tests, both Clippy configurations and debug build pass. Next support a first encrypted frame above 64 KiB with bounded growth and evaluate cost. The user will test real clients.

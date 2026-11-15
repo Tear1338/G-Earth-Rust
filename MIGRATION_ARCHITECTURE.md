@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Asynchronous Flash discovery can use two complete frames plus an incomplete tail as evidence below capacity; direct recover_state retains strict full-buffer behavior. Candidate ambiguity is still checked across pages, but this looser evidence remains a deliberate difference from beta-29.
+
 Flash bootstrap capacity now grows progressively from 64 KiB to MAX_FRAME + 4 after an unsuccessful complete scan at capacity; socket backpressure remains bounded. Reverse RC4 work checks cancellation/deadlines in chunks. Worst-case search cost and fragmented tails below capacity remain open.
 
 During Flash key discovery, each direction pauses socket reads at the encrypted bootstrap limit. At capacity the key check accepts a valid complete prefix with an incomplete tail while still rejecting ambiguous candidates. An oversized first encrypted frame still needs bounded buffer growth.

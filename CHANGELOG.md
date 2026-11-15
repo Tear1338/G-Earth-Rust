@@ -1,5 +1,7 @@
 # Changelog
 
+- Recover fragmented Flash bootstrap streams after two complete frames without waiting for the trailing frame.
+
 - Grow Flash bootstrap buffering for oversized first encrypted frames, with bounded cancellation-aware reversal.
 
 - Apply Flash bootstrap backpressure and recover complete prefixes with a partial trailing frame.

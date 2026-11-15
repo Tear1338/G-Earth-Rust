@@ -403,7 +403,7 @@ impl FlashSession {
                     direction,
                     &worker_cancel,
                     None,
-                    sample.at_capacity,
+                    Some(if sample.at_capacity { 1 } else { 2 }),
                 ) {
                     Ok(outcome) => {
                         let _ =
@@ -572,6 +572,9 @@ fn valid_frames(encrypted: &[u8], candidate: &Rc4) -> bool {
 // Validate newly buffered ciphertext too, while allowing an incomplete final
 // frame. The original sample already supplied at least one complete frame.
 fn valid_stream_prefix(encrypted: &[u8], candidate: &Rc4) -> bool {
+    valid_stream_prefix_with_minimum(encrypted, candidate, 1)
+}
+fn valid_stream_prefix_with_minimum(encrypted: &[u8], candidate: &Rc4, minimum: usize) -> bool {
     if encrypted.len() < 6 {
         return false;
     }
@@ -588,19 +591,25 @@ fn valid_stream_prefix(encrypted: &[u8], candidate: &Rc4) -> bool {
     let mut complete = 0;
     while at < decoded.len() {
         if decoded.len() - at < 4 {
-            return complete > 0;
+            return complete >= minimum;
         }
         let length = u32::from_be_bytes(decoded[at..at + 4].try_into().unwrap()) as usize;
         if !(2..=MAX_FRAME).contains(&length) {
             return false;
         }
         if decoded.len() - at < length + 4 {
-            return complete > 0;
+            return complete >= minimum;
         }
         at += length + 4;
         complete += 1;
     }
-    complete > 0
+    complete >= minimum
+}
+// A partial tail is accepted below capacity only after two complete frames.
+fn candidate_matches(encrypted: &[u8], candidate: &Rc4, partial_minimum: Option<usize>) -> bool {
+    valid_frames(encrypted, candidate)
+        || partial_minimum
+            .is_some_and(|minimum| valid_stream_prefix_with_minimum(encrypted, candidate, minimum))
 }
 fn rewind_cancellable(
     cipher: &mut Rc4,
@@ -636,7 +645,7 @@ pub fn recover_state(
         direction,
         cancel,
         Some(Instant::now() + Duration::from_secs(5)),
-        false,
+        None,
     )?;
     if outcome.ambiguous {
         Ok(None)
@@ -650,7 +659,7 @@ fn recover_candidates(
     direction: Direction,
     cancel: &AtomicBool,
     deadline: Option<Instant>,
-    allow_partial_tail: bool,
+    partial_minimum: Option<usize>,
 ) -> io::Result<RecoveryOutcome> {
     if cancel.load(Ordering::Acquire) {
         return Err(io::Error::new(
@@ -676,11 +685,7 @@ fn recover_candidates(
             ));
         }
         let candidate = Rc4::from_state(*state, 0, 0).map_err(io::Error::other)?;
-        let matches = if allow_partial_tail {
-            valid_stream_prefix(encrypted, &candidate)
-        } else {
-            valid_frames(encrypted, &candidate)
-        };
+        let matches = candidate_matches(encrypted, &candidate, partial_minimum);
         if matches {
             if fresh
                 .as_ref()
@@ -735,14 +740,7 @@ fn recover_candidates(
                 });
             }
             let (_, x, y) = candidate.state();
-            if x != 0
-                || y != 0
-                || !(if allow_partial_tail {
-                    valid_stream_prefix(encrypted, &candidate)
-                } else {
-                    valid_frames(encrypted, &candidate)
-                })
-            {
+            if x != 0 || y != 0 || !candidate_matches(encrypted, &candidate, partial_minimum) {
                 continue;
             }
             // Different reverse states can reproduce frame lengths yet corrupt the final body byte.
@@ -1144,6 +1142,83 @@ mod discovery_tests {
         let packets = session.feed(Direction::ToClient, &buffer[..n]).unwrap();
         assert_eq!(packets.len(), 1);
         assert_eq!(packets[0].packet.bytes(), second.bytes());
+    }
+
+    #[test]
+    fn recovery_handles_two_complete_frames_with_incomplete_tail() {
+        let key = Rc4::new(b"fragmented-tail-key").unwrap();
+        let first = Packet::new(77);
+        let second = Packet::new(78);
+        let mut third = Packet::new(79);
+        third.append(&[7; 20]).unwrap();
+        let mut wire = first.bytes().to_vec();
+        wire.extend_from_slice(second.bytes());
+        wire.extend_from_slice(third.bytes());
+        key.clone().apply(&mut wire);
+        let split = first.bytes().len() + second.bytes().len() + 5;
+        assert!(
+            recover_state(
+                &[key.state().0],
+                &wire[..split],
+                Direction::ToClient,
+                &AtomicBool::new(false)
+            )
+            .unwrap()
+            .is_none(),
+            "legacy direct recovery remains strict"
+        );
+        let one_frame_and_tail = first.bytes().len() + 5;
+        assert!(!candidate_matches(
+            &wire[..one_frame_and_tail],
+            &key,
+            Some(2)
+        ));
+        assert!(candidate_matches(
+            &wire[..one_frame_and_tail],
+            &key,
+            Some(1)
+        ));
+        let mut session = FlashSession::default();
+        session.incoming.encrypted = true;
+        session.incoming.waiting = Some(Instant::now());
+        assert!(session
+            .feed(Direction::ToClient, &wire[..split])
+            .unwrap()
+            .is_empty());
+        let table = key.state().0;
+        assert!(session
+            .start_discovery(Direction::ToClient, move |_| Ok(
+                gearth_platform::ScanResult {
+                    states: vec![table],
+                    bytes_read: 1024,
+                    complete: true,
+                    next_address: None,
+                }
+            ))
+            .unwrap());
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while session.discovery[1].is_some() {
+            session
+                .poll_discovery(Direction::ToClient, Instant::now())
+                .unwrap();
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(
+            session.incoming.reader.is_some(),
+            "complete prefix should permit recovery without waiting for the tail"
+        );
+        let packets = session.feed(Direction::ToClient, &[]).unwrap();
+        assert_eq!(
+            packets
+                .iter()
+                .map(|p| p.packet.header())
+                .collect::<Vec<_>>(),
+            [77, 78]
+        );
+        let packets = session.feed(Direction::ToClient, &wire[split..]).unwrap();
+        assert_eq!(packets.len(), 1);
+        assert_eq!(packets[0].packet.bytes(), third.bytes());
     }
 
     #[test]

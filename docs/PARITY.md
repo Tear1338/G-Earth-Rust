@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Asynchronous Flash recovery accepts two complete frames followed by an incomplete tail, unlike the strict Java buffer-empty check; direct Rust recovery remains strict. Synthetic tests pass, while false-positive risk, large-frame cost and real-client compatibility remain unverified.
+
 A synthetic first Flash frame larger than 64 KiB now recovers after bounded buffer growth. Maximum-frame performance, fragmented tails below capacity and real Habbo compatibility remain unverified.
 
 Flash input now applies bounded backpressure while keys are pending; a synthetic stream verifies complete-prefix recovery and subsequent partial-frame completion. A first encrypted frame above 64 KiB and real-client behavior remain unverified.
