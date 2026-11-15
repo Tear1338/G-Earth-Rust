@@ -1,5 +1,8 @@
 # Compatibility with 1.5.4-beta-29
 
+## Bounded reverse-page evidence
+
+Controlled Windows memory tests verify scanner resumption within one chunk, and synthetic Flash tests retain reverse candidates across pages. This limits table count rather than elapsed time and does not establish real-client compatibility.
 ## Flash two-pass evidence
 
 Synthetic multi-page tests cover a fresh state after a reverse-only page, a reverse-only fallback, ambiguity, buffer growth and moving ciphertext. The additional scan is Rust-specific and real-client compatibility has not been verified.

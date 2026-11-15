@@ -1,5 +1,11 @@
 # Migration tasks
 
+## Bounded reverse scan
+
+- [x] Limit tables per reverse scan page and resume from the next address while retaining candidate ambiguity.
+- [ ] Investigate reporting and bounding progress within a single expensive table; a table limit is not a time bound.
+- [ ] Audit loss of packet metadata events under saturated channels and its effect on session identity.
+- [ ] Repeat release and await user-run real-client/extension evidence.
 ## Flash discovery ordering
 
 - [x] Scan all pages for fresh outgoing states before starting reverse-state trials; preserve ambiguity, buffer growth and reverse-only fallback.
@@ -18,28 +24,28 @@
 ## Unity forwarding backlog
 
 - [x] Stop draining Unity forwarding sources when the control backlog is full, avoiding eviction of earlier lifecycle events.
-- [ ] Preserve lifecycle events in the Unity server producer with bounded concurrent admission and cancellation.
-- [ ] Verify both stages together and repeat the release build.
+- [x] Preserve lifecycle events in the Unity server producer with bounded concurrent admission and cancellation.
+- [x] Verify both Unity event stages together; release remains tracked above.
 ## Nitro event saturation
 
 - [x] Preserve ordered Nitro lifecycle events under producer queue saturation, with bounded concurrent admission, periodic flush and cancellable waiting.
-- [ ] Address Unity producer saturation and its separate forwarder eviction policy.
+- [x] Address Unity producer saturation and its separate forwarder eviction policy.
 - [ ] Repeat the release build for current code; real-client verification remains with the user.
 ## Concurrent event preparation
 
 - [x] Make the bounded event sink safe for concurrent producers and reserve lifecycle capacity under error flood.
-- [ ] Integrate and test the sink in Nitro and Unity; their producers still drop events.
+- [x] Integrate and test the sink in Nitro and Unity.
 ## TCP lifecycle saturation
 
 - [x] Retain and flush ordered TCP lifecycle notifications without blocking active forwarding; test a saturated channel and reconnect.
-- [ ] Audit Web/Unity event producers and their independent bounded forwarding under saturation.
+- [x] Audit and address Web/Unity lifecycle-event producers and bounded forwarding.
 - [ ] Repeat the desktop/web release build after this TCP change.
 - [ ] Investigate remaining Flash reverse-only scan costs; real-client compatibility is unverified.
 ## Latest RC4 discovery work
 
 - [x] Skip lower-priority outgoing reverse trials after a fresh candidate from an earlier memory page, retaining ambiguity detection and final ciphertext validation.
 - [ ] Address potentially expensive reverse searches without a fresh candidate.
-- [ ] Preserve TCP connection lifecycle events when the consumer event queue is saturated, without blocking traffic or reordering cleanup.
+- [x] Preserve TCP connection lifecycle events when the consumer event queue is saturated, without blocking active traffic.
 - [ ] Real-client, protocol, and extension compatibility remains unverified; the user will perform real-client tests.
 Reduce unnecessary RC4 reversal work after a fresh candidate is already retained across memory pages, while still scanning for competing fresh candidates and preserving ambiguity. Measure worst-case large-frame cost separately; the user handles real-client testing.
 

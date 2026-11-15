@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — bounded Flash reverse pages
+
+- Limit candidate tables per outgoing reverse page and resume immediately without discarding accumulated states.
+- Cover cursor resumption, limit validation and multi-page candidate retention.
 ## Unreleased — Flash discovery order
 
 - Search all memory pages for fresh outgoing RC4 states before attempting costly reverse-state trials.

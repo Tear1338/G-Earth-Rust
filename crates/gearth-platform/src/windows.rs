@@ -62,10 +62,15 @@ pub(super) fn processes() -> io::Result<Vec<ClientProcess>> {
         Ok(result)
     }
 }
-pub(super) fn scan(
+#[cfg(test)]
+fn scan(pid: u32, cancel: &AtomicBool, range: Option<(usize, usize)>) -> io::Result<ScanResult> {
+    scan_limited(pid, cancel, range, MAX_TABLES)
+}
+pub(super) fn scan_limited(
     pid: u32,
     cancel: &AtomicBool,
     range: Option<(usize, usize)>,
+    max_tables: usize,
 ) -> io::Result<ScanResult> {
     scan_with_limits(
         pid,
@@ -73,7 +78,7 @@ pub(super) fn scan(
         range,
         1024 * 1024 * 1024,
         Duration::from_secs(5),
-        MAX_TABLES,
+        max_tables,
     )
 }
 fn scan_with_limits(

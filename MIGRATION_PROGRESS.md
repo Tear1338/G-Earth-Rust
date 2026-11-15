@@ -1,5 +1,8 @@
 # G-Earth Rust migration progress
 
+## Bounded reverse-scan pages
+
+The Windows platform scanner now accepts a validated per-page table limit. Outgoing reverse discovery chooses one to eight tables based on the buffered sample size, immediately resumes incomplete pages and retains candidates until the complete pass. Controlled Windows memory fixtures cover resumption within a chunk; synthetic Flash tests cover candidate accumulation, cursor advancement and ambiguity. This is an estimated work limit, not a wall-clock bound: the sample can grow after selection and one large table can still take many seconds. Repeated scans add overhead, and no end-to-end performance or real-client compatibility is proven. Platform tests passed 15 with one ignored; Flash/process/relay tests passed; desktop/web library tests passed 144 with seven ignored, Clippy and debug build passed. The latest release predates this change.
 ## Release verification at b836a83
 
 Windows GNU desktop/web release build succeeded at code commit `b836a83a8ee8cee565f54c5ce25e9aaab1ad4446`. The desktop/web library suite passed 142 tests with 7 ignored, and simulated Flash process and relay tests passed. Real-client and extension compatibility remains unverified.
@@ -558,4 +561,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Investigate bounding outgoing Flash reverse-phase work per memory page: expose an appropriate table limit in the platform scanner and test resumption without skipping overlapping or late candidates, while preserving ambiguity and cancellation. Measure representative costs and repeat the Windows desktop/web release build. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.
+Audit Identified and PacketIdentifiers event loss under saturation in TCP, Nitro and Unity, including whether the desktop can retain stale session identity or packet names; add deterministic tests and preserve session ordering. Separately investigate progress or resumability within one expensive Flash reverse table, and repeat the Windows desktop/web release build. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.

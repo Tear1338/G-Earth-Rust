@@ -1,5 +1,8 @@
 # Continuation state
 
+## Reverse-page continuation
+
+Outgoing reverse scans now use one to eight tables per page based on buffer length and immediately resume incomplete pages. A single large table remains costly; next audit metadata-event loss under saturation and investigate progress or resumability within a table. Repeat the release build.
 ## Flash discovery continuation
 
 Outgoing discovery checks all pages for fresh states before a reverse-only fallback pass. Next investigate bounded work and progress visibility for very large reverse-only pages, retaining cancellation and ambiguity detection. Repeat the release build; real-client testing remains with the user.

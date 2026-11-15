@@ -1,5 +1,8 @@
 # Rust migration architecture
 
+## Reverse scan page limits
+
+Windows scans accept a validated table limit. During outgoing reverse discovery the limit is selected from the current buffer length (one to eight tables); incomplete pages resume immediately and candidates remain accumulated. This bounds tables, not elapsed time, and scans can use a later, larger ciphertext snapshot.
 ## Two-pass Flash discovery
 
 Outgoing discovery first scans all pages for fresh states, then scans again for reverse candidates only if no fresh candidate exists. Ambiguous fresh states remain unresolved and do not trigger reverse fallback. The second scan adds memory work for reverse-only sessions; expensive reverse trials and real-client behavior remain unverified.

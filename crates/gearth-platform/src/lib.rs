@@ -200,6 +200,21 @@ pub fn scan_habbo(pid: u32, cancel: &AtomicBool) -> io::Result<ScanResult> {
 }
 /// Resume a bounded read-only scan at an address previously returned by the scanner.
 pub fn scan_habbo_from(pid: u32, address: usize, cancel: &AtomicBool) -> io::Result<ScanResult> {
+    scan_habbo_from_with_limit(pid, address, cancel, MAX_TABLES)
+}
+/// Resume a scan, limiting unique RC4 tables returned on this page.
+pub fn scan_habbo_from_with_limit(
+    pid: u32,
+    address: usize,
+    cancel: &AtomicBool,
+    max_tables: usize,
+) -> io::Result<ScanResult> {
+    if !(1..=MAX_TABLES).contains(&max_tables) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid Flash scan table limit",
+        ));
+    }
     #[cfg(windows)]
     {
         let known = habbo_processes()?;
@@ -209,11 +224,11 @@ pub fn scan_habbo_from(pid: u32, address: usize, cancel: &AtomicBool) -> io::Res
                 "select a running Habbo or Flash player process",
             ));
         }
-        windows::scan(pid, cancel, Some((address, usize::MAX)))
+        windows::scan_limited(pid, cancel, Some((address, usize::MAX)), max_tables)
     }
     #[cfg(not(windows))]
     {
-        let _ = (pid, address, cancel);
+        let _ = (pid, address, cancel, max_tables);
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
             "automatic Flash memory discovery currently requires Windows",
@@ -223,6 +238,19 @@ pub fn scan_habbo_from(pid: u32, address: usize, cancel: &AtomicBool) -> io::Res
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn rejects_invalid_scan_table_limits_before_process_lookup() {
+        let cancel = AtomicBool::new(false);
+        for limit in [0, MAX_TABLES + 1] {
+            assert_eq!(
+                scan_habbo_from_with_limit(0, 0, &cancel, limit)
+                    .err()
+                    .unwrap()
+                    .kind(),
+                io::ErrorKind::InvalidInput
+            );
+        }
+    }
     #[test]
     fn finds_aligned_word_permutations_and_rejects_duplicates() {
         let mut words: Vec<u32> = (0..256).collect();

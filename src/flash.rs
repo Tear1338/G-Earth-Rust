@@ -14,6 +14,13 @@ use std::{
 const BOOTSTRAP_LIMIT: usize = 65536;
 const BOOTSTRAP_MAX: usize = MAX_FRAME + 4;
 const MAX_DISCOVERY_WORKERS: usize = 4;
+// Estimate reverse work per page; one table may still take a long time for a
+// very large sample, and the sample can grow after this limit is selected.
+const REVERSE_PAGE_BYTES: usize = 8 * BOOTSTRAP_LIMIT;
+const REVERSE_PAGE_TABLES: usize = 8;
+fn reverse_page_table_limit(buffer_len: usize) -> usize {
+    (REVERSE_PAGE_BYTES / buffer_len.max(1)).clamp(1, REVERSE_PAGE_TABLES)
+}
 static ACTIVE_DISCOVERY_WORKERS: AtomicUsize = AtomicUsize::new(0);
 
 struct DiscoveryTask {
@@ -481,6 +488,11 @@ impl FlashSession {
                         side.scan_address = next;
                         if side.reader.is_none() {
                             side.waiting = Some(now);
+                            if side.reverse_phase {
+                                // Continue a bounded reverse page immediately;
+                                // the normal idle retry delay applies to new scans.
+                                side.last_scan = None;
+                            }
                         }
                     } else {
                         side.scan_address = 0;
@@ -547,13 +559,18 @@ impl FlashSession {
             {
                 side.last_scan = Some(now);
                 let address = side.scan_address;
+                let table_limit = if side.reverse_phase && side.candidates.priority != 2 {
+                    reverse_page_table_limit(side.buffer.len())
+                } else {
+                    gearth_platform::MAX_TABLES
+                };
                 self.start_discovery(direction, move |cancel| {
                     let pid = if pid == 0 {
                         let processes = gearth_platform::habbo_processes()?;
                         if processes.len() != 1 { return Err(io::Error::other("Unable to identify the connecting client; select the Habbo process before attaching")); }
                         processes[0].pid
                     } else { pid };
-                    gearth_platform::scan_habbo_from(pid, address, cancel)
+                    gearth_platform::scan_habbo_from_with_limit(pid, address, cancel, table_limit)
                 })?;
             }
         }
@@ -892,6 +909,15 @@ mod discovery_tests {
     }
 
     #[test]
+    fn reverse_page_limit_scales_with_sample_and_remains_nonzero() {
+        assert_eq!(reverse_page_table_limit(0), 8);
+        assert_eq!(reverse_page_table_limit(BOOTSTRAP_LIMIT), 8);
+        assert_eq!(reverse_page_table_limit(BOOTSTRAP_LIMIT * 2), 4);
+        assert_eq!(reverse_page_table_limit(1024 * 1024), 1);
+        assert_eq!(reverse_page_table_limit(BOOTSTRAP_MAX), 1);
+    }
+
+    #[test]
     fn fresh_pass_reaches_later_page_before_reverse_search() {
         let (fresh, current, wire) = outgoing_fixture();
         let mut session = FlashSession::default();
@@ -967,6 +993,47 @@ mod discovery_tests {
             fresh.state()
         );
         assert!(!session.outgoing.reverse_phase);
+    }
+
+    #[test]
+    fn bounded_reverse_pages_preserve_candidates_and_resume_immediately() {
+        let (fresh, current, wire) = outgoing_fixture();
+        let mut session = FlashSession::default();
+        session.outgoing.encrypted = true;
+        session.outgoing.reverse_phase = true;
+        session.outgoing.waiting = Some(Instant::now());
+        session.outgoing.last_scan = Some(Instant::now());
+        session.outgoing.feed(&wire).unwrap();
+        let table = current.state().0;
+        assert!(session
+            .start_discovery(Direction::ToServer, move |_| Ok(
+                gearth_platform::ScanResult {
+                    states: vec![table],
+                    bytes_read: 1024,
+                    complete: false,
+                    next_address: Some(1024),
+                }
+            ))
+            .unwrap());
+        finish_outgoing_discovery(&mut session);
+        assert_eq!(session.outgoing.candidates.priority, 1);
+        assert_eq!(session.outgoing.scan_address, 1024);
+        assert!(session.outgoing.last_scan.is_none());
+        assert!(session
+            .start_discovery(Direction::ToServer, move |_| Ok(
+                gearth_platform::ScanResult {
+                    states: vec![table],
+                    bytes_read: 1024,
+                    complete: true,
+                    next_address: None,
+                }
+            ))
+            .unwrap());
+        finish_outgoing_discovery(&mut session);
+        assert_eq!(
+            session.outgoing.writer.as_ref().unwrap().state(),
+            fresh.state()
+        );
     }
 
     #[test]
