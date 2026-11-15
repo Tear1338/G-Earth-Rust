@@ -1,5 +1,7 @@
 # Rust migration architecture
 
+Flash process scans and complete returned-table reversal run in bounded cancellable background workers, one per direction; the relay can continue processing while ciphertext accumulates. Results apply only to the captured ciphertext prefix. Per-direction injections await keys and buffered complete packets; the Windows memory scanner itself still needs resumable address pagination.
+
 Outgoing RC4 recovery considers candidates beyond the former first-64 cap, but its synchronous five-second search deadline can still prevent late candidates from being reached and blocks relay processing during that search. Incremental cancellation-safe search remains required.
 
 Origins batch decoding now retains valid packets before a later error, including simulated encrypted chunks; legacy packet APIs still return errors. The relay flushes the valid prefix before reporting malformed data. Real client and Java malformed-input behavior remain unverified.

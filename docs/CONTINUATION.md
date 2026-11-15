@@ -1,5 +1,7 @@
 # Continuation state
 
+Flash RC4 discovery now uses bounded cancellable per-direction workers and defers injections until keys and buffered frames are ready. Windows synthetic child-process relay passed repeatedly; desktop/web library (118 passed, seven ignored), Flash/core/relay/desktop tests, both Clippy configurations and debug build pass. Next make Windows memory scanning resume after its current time/byte/table caps; it still restarts from zero. The user will perform real-client tests.
+
 Rust outgoing RC4 reverse search no longer stops at candidate 64; a previously failing deterministic fixture now passes. Windows Flash, relay and library tests, both Clippy configurations and debug build pass. This is incomplete: the synchronous five-second budget can still miss late candidates and stall relay I/O. Next implement incremental, cancellable search preserving ambiguity and buffered ciphertext; the user will test real clients.
 
 Origins batch decoding now retains valid prefixes on malformed tails; plaintext bidirectional loopback and simulated encrypted tests pass. Windows desktop/web library (114 passed, seven ignored), relay/Flash tests, both Clippy configurations and debug build pass. The user will perform live-client tests; next prioritize the reported Flash connection failure using source comparison and isolated automated fixtures, then address lifecycle-event saturation.

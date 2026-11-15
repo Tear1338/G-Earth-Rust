@@ -1,5 +1,7 @@
 # Changelog
 
+- Run Flash RC4 discovery in cancellable per-direction workers and defer injections until keys and buffered traffic are ready.
+
 - Search outgoing Flash RC4 candidate tables beyond the first 64 within the existing time budget.
 
 - Preserve Origins packets preceding malformed chunks in plain and simulated encrypted batches.

@@ -50,6 +50,13 @@ fn main() -> io::Result<()> {
     assert_eq!(secret.header(), 2);
     secret.read_string().unwrap();
     assert!(secret.read_bool().unwrap());
+    if std::env::var_os("GEARTH_FLASH_FIXTURE_PAUSE_AFTER_SECRET").is_some() {
+        let mut resume = String::new();
+        io::stdin().read_line(&mut resume)?;
+        if resume.trim() != "continue" {
+            return Err(io::Error::other("fixture was not resumed"));
+        }
+    }
     let mut wire = Vec::new();
     for (header, value) in [(77, 13), (78, 41)] {
         let mut p = Packet::new(header);

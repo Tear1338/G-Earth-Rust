@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Flash discovery now searches all returned candidates off the relay thread with per-direction cancellation and handles buffered ciphertext growth and early injections in synthetic tests. Windows memory scan pagination, actual Habbo key discovery and real-client compatibility remain unverified.
+
 Beta-29 Rc4Obtainer iterates all candidate RC4 tables; Rust no longer truncates outgoing reverse search at 64, verified with the correct snapshot at index 64. Rust still has a synchronous five-second deadline and may not reach all candidates; live connection compatibility remains unverified.
 
 Origins preserves valid packets before malformed tails in plaintext loopback and encrypted in-memory fixtures. Real-client and Java malformed-input equivalence remain unverified; the user will perform real-client tests.

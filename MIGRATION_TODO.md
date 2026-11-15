@@ -1,5 +1,7 @@
 # Migration tasks
 
+Make Windows Flash memory scanning resumable across its five-second, 1 GiB and table-count limits. Preserve overlap and cancellation, test candidates beyond the first page and prevent restarting forever at address zero. The user will conduct actual-client testing.
+
 Implement incremental, cancellable outgoing RC4 snapshot recovery across the entire candidate list without restarting at index zero after the time budget or blocking relay I/O. Preserve ambiguity detection, buffered ciphertext and cancellation; add deterministic late-candidate and moving-buffer fixtures. Real client tests are the user’s responsibility.
 
 Prioritize investigation of the reported Flash connection failure: compare Rust attachment, handshake and RC4 discovery with pinned beta-29 Java and use isolated automated fixtures. The user will run real-client tests themselves. Also recover dropped TCP lifecycle events under saturation.

@@ -45,6 +45,7 @@ fn discovers_real_child_memory_and_relays_negotiated_encryption_with_rules_and_i
     )
     .unwrap();
     let child = Command::new(dir.join("Habbo.exe"))
+        .env("GEARTH_FLASH_FIXTURE_PAUSE_AFTER_SECRET", "1")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -85,7 +86,8 @@ fn discovers_real_child_memory_and_relays_negotiated_encryption_with_rules_and_i
             ],
         })
         .unwrap();
-    writeln!(fixture.0.stdin.take().unwrap(), "{}", relay.address).unwrap();
+    let mut fixture_stdin = fixture.0.stdin.take().unwrap();
+    writeln!(fixture_stdin, "{}", relay.address).unwrap();
     let server = thread::spawn(move || {
         let (mut stream, _) = server.accept().unwrap();
         stream
@@ -132,6 +134,7 @@ fn discovers_real_child_memory_and_relays_negotiated_encryption_with_rules_and_i
     );
     let deadline = Instant::now() + Duration::from_secs(30);
     let mut out = false;
+    let mut early_injection = false;
     let mut incoming = false;
     let mut owner = false;
     while Instant::now() < deadline {
@@ -140,11 +143,19 @@ fn discovers_real_child_memory_and_relays_negotiated_encryption_with_rules_and_i
                 owner = true
             }
             Ok(Event::Packet(m))
-                if m.direction == Direction::ToServer && m.packet.header() == 78 && !out =>
+                if m.direction == Direction::ToClient
+                    && m.packet.header() == 2
+                    && !early_injection =>
             {
                 let mut p = Packet::new(79);
                 p.put_i32(99).unwrap();
                 relay.inject(Direction::ToServer, p).unwrap();
+                early_injection = true;
+                writeln!(fixture_stdin, "continue").unwrap();
+            }
+            Ok(Event::Packet(m))
+                if m.direction == Direction::ToServer && m.packet.header() == 78 && !out =>
+            {
                 out = true;
             }
             Ok(Event::Packet(m))
@@ -171,7 +182,7 @@ fn discovers_real_child_memory_and_relays_negotiated_encryption_with_rules_and_i
                 .unwrap();
             assert!(status.success(), "fixture failed: {stderr}");
             assert!(output.contains("FLASH_FIXTURE_OK"));
-            assert!(out && incoming && owner);
+            assert!(out && incoming && owner && early_injection);
             server.join().unwrap();
             relay.stop();
             return;

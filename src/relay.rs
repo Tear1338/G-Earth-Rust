@@ -846,6 +846,24 @@ fn decode_plain_batch(
     }
 }
 
+// Keep a bounded batch while Flash discovers a key, without blocking the
+// opposite direction or consuming more producer queues during that wait.
+fn ready_injections(
+    pending: &mut VecDeque<(Direction, Packet)>,
+    flash: Option<&crate::flash::FlashSession>,
+) -> Vec<(Direction, Packet)> {
+    let mut ready = Vec::new();
+    for _ in 0..pending.len() {
+        let (direction, packet) = pending.pop_front().expect("length checked");
+        if flash.is_none_or(|session| session.ready_for_injection(direction)) {
+            ready.push((direction, packet));
+        } else {
+            pending.push_back((direction, packet));
+        }
+    }
+    ready
+}
+
 #[allow(clippy::too_many_arguments)]
 fn run_session(
     mut client: TcpStream,
@@ -885,6 +903,7 @@ fn run_session(
     let mut flash = options
         .flash_process
         .map(|_| crate::flash::FlashSession::default());
+    let mut pending_injections = VecDeque::new();
     let mut safety_revision = options
         .connection
         .as_ref()
@@ -892,11 +911,13 @@ fn run_session(
         .unwrap_or_default();
     while !stop.load(Ordering::Acquire) && !closed.load(Ordering::Acquire) {
         let mut progress = false;
-        let mut injected: Vec<_> = commands.try_iter().take(64).collect();
-        if let (Some(host), Some(epoch)) = (&options.extensions, *extension_session) {
-            injected.extend(host.take_owned_injections(epoch)?);
+        if pending_injections.len() < 64 {
+            pending_injections.extend(commands.try_iter().take(64 - pending_injections.len()));
+            if let (Some(host), Some(epoch)) = (&options.extensions, *extension_session) {
+                pending_injections.extend(host.take_owned_injections(epoch)?);
+            }
         }
-        for (direction, packet) in injected {
+        for (direction, packet) in ready_injections(&mut pending_injections, flash.as_ref()) {
             let message = Message {
                 packet,
                 direction,
@@ -2968,5 +2989,58 @@ mod tests {
             [77, 78]
         );
         assert!(error.unwrap().to_string().contains("invalid frame length"));
+    }
+    #[test]
+    fn flash_injections_wait_for_direction_key_without_blocking_other_direction() {
+        let mut flash = crate::flash::FlashSession::default();
+        let mut hello = Packet::new(1);
+        hello
+            .put_string("REV")
+            .unwrap()
+            .put_string("FLASH")
+            .unwrap();
+        flash.feed(Direction::ToServer, hello.bytes()).unwrap();
+        let mut secret = Packet::new(2);
+        secret.put_string(&"x".repeat(300)).unwrap();
+        flash.feed(Direction::ToClient, secret.bytes()).unwrap();
+        assert!(!flash.ready_for_injection(Direction::ToServer));
+        assert!(flash.ready_for_injection(Direction::ToClient));
+        let mut pending = VecDeque::from([
+            (Direction::ToServer, Packet::new(77)),
+            (Direction::ToClient, Packet::new(78)),
+            (Direction::ToServer, Packet::new(79)),
+        ]);
+        let ready = ready_injections(&mut pending, Some(&flash));
+        assert_eq!(
+            ready.iter().map(|(_, p)| p.header()).collect::<Vec<_>>(),
+            [78]
+        );
+        assert_eq!(
+            pending.iter().map(|(_, p)| p.header()).collect::<Vec<_>>(),
+            [77, 79]
+        );
+        let cipher = Rc4::new(b"fixture-key").unwrap();
+        let mut encrypted = Packet::new(80).bytes().to_vec();
+        cipher.clone().apply(&mut encrypted);
+        assert!(flash
+            .feed(Direction::ToServer, &encrypted)
+            .unwrap()
+            .is_empty());
+        assert!(flash
+            .recover_with(&[cipher.state().0], &AtomicBool::new(false))
+            .unwrap());
+        assert!(ready_injections(&mut pending, Some(&flash)).is_empty());
+        assert_eq!(
+            flash.feed(Direction::ToServer, &[]).unwrap()[0]
+                .packet
+                .header(),
+            80
+        );
+        let ready = ready_injections(&mut pending, Some(&flash));
+        assert_eq!(
+            ready.iter().map(|(_, p)| p.header()).collect::<Vec<_>>(),
+            [77, 79]
+        );
+        assert!(pending.is_empty());
     }
 }
