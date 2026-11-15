@@ -1,5 +1,8 @@
 # Continuation state
 
+## Streaming Flash continuation
+
+Frame-length validation no longer copies or decrypts the whole buffer and retains tested strict/partial semantics. Next investigate reverse-only RC4 recovery cost, preserve ambiguity and cancellation, and repeat the release build. Real-client tests remain with the user.
 ## Unity producer continuation
 
 Unity producer and forwarder now retain ordered lifecycle events under synthetic saturation; a pending peer waits at most 15 seconds and stop interrupts it. Next investigate Flash reverse-only search cost and repeat the release build. Real-client and extension verification remains open.

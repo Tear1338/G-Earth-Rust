@@ -1,5 +1,8 @@
 # Rust migration architecture
 
+## Streaming Flash validation
+
+Candidate validation decrypts length prefixes incrementally and advances RC4 over complete bodies only when a subsequent length must be inspected. Strict full-buffer and partial-tail minimums remain distinct. The reverse-state search remains a separate potentially expensive operation.
 ## Unity producer backpressure
 
 Unity producer events use the bounded concurrent sink. Peer claim is serialized with closure and waits asynchronously for previous pending lifecycle events, with a 15-second limit and explicit-stop cancellation. A periodic flush and the separate bounded forwarder preserve synthetic lifecycle ordering; low-priority events and excess errors may still be lost.

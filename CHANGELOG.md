@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — Flash validation
+
+- Validate encrypted frame boundaries incrementally, avoiding whole-buffer copies and duplicate full decryption for partial-tail candidates.
+- Compare against full-decryption behavior on fragmented, malformed and multi-chunk synthetic streams.
 ## Unreleased — Unity producer saturation
 
 - Retain Unity communicator lifecycle events under producer saturation and defer new peers with bounded cancellable waiting.

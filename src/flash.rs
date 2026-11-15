@@ -549,69 +549,61 @@ impl FlashSession {
         Ok(())
     }
 }
-fn valid_frames(encrypted: &[u8], candidate: &Rc4) -> bool {
-    let mut prefix = encrypted[..4].to_vec();
-    let mut cipher = candidate.clone();
-    cipher.apply(&mut prefix);
-    let length = u32::from_be_bytes(prefix[..4].try_into().unwrap()) as usize;
-    if !(2..=MAX_FRAME).contains(&length) || length + 4 > encrypted.len() {
-        return false;
-    }
-    let mut decoded = encrypted.to_vec();
-    candidate.clone().apply(&mut decoded);
-    let mut at = 0;
-    let mut count = 0;
-    while at + 6 <= decoded.len() {
-        let n = u32::from_be_bytes(decoded[at..at + 4].try_into().unwrap()) as usize;
-        if !(2..=MAX_FRAME).contains(&n) || at + n + 4 > decoded.len() {
-            break;
-        }
-        at += n + 4;
-        count += 1;
-    }
-    at == decoded.len() && count > 0
-}
 // Validate newly buffered ciphertext too, while allowing an incomplete final
 // frame. The original sample already supplied at least one complete frame.
 fn valid_stream_prefix(encrypted: &[u8], candidate: &Rc4) -> bool {
     valid_stream_prefix_with_minimum(encrypted, candidate, 1)
 }
 fn valid_stream_prefix_with_minimum(encrypted: &[u8], candidate: &Rc4, minimum: usize) -> bool {
+    validate_frame_lengths(encrypted, candidate, minimum, Some(minimum))
+}
+fn validate_frame_lengths(
+    encrypted: &[u8],
+    candidate: &Rc4,
+    complete_minimum: usize,
+    partial_minimum: Option<usize>,
+) -> bool {
     if encrypted.len() < 6 {
         return false;
     }
-    let mut first_length = [0u8; 4];
-    first_length.copy_from_slice(&encrypted[..4]);
-    candidate.clone().apply(&mut first_length);
-    let length = u32::from_be_bytes(first_length) as usize;
-    if !(2..=MAX_FRAME).contains(&length) || length + 4 > encrypted.len() {
-        return false;
-    }
-    let mut decoded = encrypted.to_vec();
-    candidate.clone().apply(&mut decoded);
+    let mut cipher = candidate.clone();
     let mut at = 0;
     let mut complete = 0;
-    while at < decoded.len() {
-        if decoded.len() - at < 4 {
-            return complete >= minimum;
+    let mut scratch = [0u8; 4096];
+    loop {
+        let remaining = encrypted.len() - at;
+        if remaining == 0 {
+            return complete >= complete_minimum;
         }
-        let length = u32::from_be_bytes(decoded[at..at + 4].try_into().unwrap()) as usize;
+        if remaining < 4 {
+            return partial_minimum.is_some_and(|minimum| complete >= minimum);
+        }
+        let mut prefix: [u8; 4] = encrypted[at..at + 4].try_into().unwrap();
+        cipher.apply(&mut prefix);
+        let length = u32::from_be_bytes(prefix) as usize;
         if !(2..=MAX_FRAME).contains(&length) {
             return false;
         }
-        if decoded.len() - at < length + 4 {
-            return complete >= minimum;
+        if remaining < length + 4 {
+            return partial_minimum.is_some_and(|minimum| complete >= minimum);
         }
         at += length + 4;
         complete += 1;
+        // Do not advance through a body unless another complete length prefix
+        // follows it. Cipher output does not depend on the input bytes.
+        if encrypted.len() - at >= 4 {
+            let mut left = length;
+            while left > 0 {
+                let chunk = left.min(scratch.len());
+                cipher.apply(&mut scratch[..chunk]);
+                left -= chunk;
+            }
+        }
     }
-    complete >= minimum
 }
 // A partial tail is accepted below capacity only after two complete frames.
 fn candidate_matches(encrypted: &[u8], candidate: &Rc4, partial_minimum: Option<usize>) -> bool {
-    valid_frames(encrypted, candidate)
-        || partial_minimum
-            .is_some_and(|minimum| valid_stream_prefix_with_minimum(encrypted, candidate, minimum))
+    validate_frame_lengths(encrypted, candidate, 1, partial_minimum)
 }
 fn rewind_cancellable(
     cipher: &mut Rc4,
@@ -773,6 +765,88 @@ fn recover_candidates(
 mod discovery_tests {
     use super::*;
     use crate::packet::Packet;
+
+    fn reference_frame_validation(
+        encrypted: &[u8],
+        cipher: &Rc4,
+        partial: Option<usize>,
+        complete_minimum: usize,
+    ) -> bool {
+        if encrypted.len() < 6 {
+            return false;
+        }
+        let mut decoded = encrypted.to_vec();
+        cipher.clone().apply(&mut decoded);
+        let mut at = 0;
+        let mut complete = 0;
+        while at < decoded.len() {
+            if decoded.len() - at < 4 {
+                return partial.is_some_and(|minimum| complete >= minimum);
+            }
+            let length = u32::from_be_bytes(decoded[at..at + 4].try_into().unwrap()) as usize;
+            if !(2..=MAX_FRAME).contains(&length) {
+                return false;
+            }
+            if decoded.len() - at < length + 4 {
+                return partial.is_some_and(|minimum| complete >= minimum);
+            }
+            at += length + 4;
+            complete += 1;
+        }
+        complete >= complete_minimum
+    }
+
+    #[test]
+    fn streamed_frame_validation_matches_full_decryption_reference() {
+        for key_index in 0..8 {
+            let cipher = Rc4::new(format!("validation-{key_index}").as_bytes()).unwrap();
+            let mut plain = Vec::new();
+            for payload in [2usize, 7, 31] {
+                plain.extend_from_slice(&(payload as u32).to_be_bytes());
+                plain.extend((0..payload).map(|value| (value + key_index) as u8));
+            }
+            for variant in 0..4 {
+                let mut sample = plain.clone();
+                match variant {
+                    1 => sample.extend_from_slice(&1u32.to_be_bytes()),
+                    2 => sample[..4].copy_from_slice(&1u32.to_be_bytes()),
+                    3 => sample[6..10].copy_from_slice(&u32::MAX.to_be_bytes()),
+                    _ => {}
+                }
+                let mut encrypted = sample.clone();
+                cipher.clone().apply(&mut encrypted);
+                for end in 0..=encrypted.len() {
+                    let bytes = &encrypted[..end];
+                    for minimum in [1, 2] {
+                        assert_eq!(
+                            valid_stream_prefix_with_minimum(bytes, &cipher, minimum),
+                            reference_frame_validation(bytes, &cipher, Some(minimum), minimum),
+                            "key={key_index} variant={variant} end={end} minimum={minimum}"
+                        );
+                        assert_eq!(candidate_matches(bytes, &cipher, Some(minimum)), reference_frame_validation(bytes, &cipher, Some(minimum), 1), "candidate key={key_index} variant={variant} end={end} minimum={minimum}");
+                    }
+                    assert_eq!(
+                        candidate_matches(bytes, &cipher, None),
+                        reference_frame_validation(bytes, &cipher, None, 1)
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn streamed_validation_advances_across_multiple_scratch_chunks() {
+        let cipher = Rc4::new(b"large-validation").unwrap();
+        let mut plain = 9000u32.to_be_bytes().to_vec();
+        plain.extend(vec![42; 9000]);
+        plain.extend_from_slice(Packet::new(7).bytes());
+        let mut encrypted = plain;
+        cipher.clone().apply(&mut encrypted);
+        assert!(candidate_matches(&encrypted, &cipher, None));
+        encrypted.pop();
+        assert!(valid_stream_prefix(&encrypted, &cipher));
+        assert!(!candidate_matches(&encrypted, &cipher, Some(2)));
+    }
 
     fn outgoing_fixture() -> (Rc4, Rc4, Vec<u8>) {
         let cancel = AtomicBool::new(false);

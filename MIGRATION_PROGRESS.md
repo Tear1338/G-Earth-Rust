@@ -1,5 +1,8 @@
 # G-Earth Rust migration progress
 
+## Streaming Flash frame validation
+
+Flash candidate validation now decrypts frame-length fields incrementally instead of copying and decrypting the entire ciphertext, and avoids advancing through the final body when no later length is needed. It checks strict and partial-tail policies in one pass. A deterministic comparison with a full-decryption reference covers valid, fragmented, malformed and multi-chunk fixtures. Flash discovery, simulated process and relay tests passed; the desktop/web library suite passed 138 with 7 ignored, Clippy and debug build passed. No end-to-end performance measurement or real-client verification was performed. Reverse-only RC4 state reconstruction can still be expensive; the previous release build predates this change.
 ## Release verification at 3aeb791
 
 Windows GNU desktop/web release build succeeded at code commit `3aeb7910bfb162e7403e48407477bc6024686ab3`. The full desktop/web library suite passed 136 tests with 7 ignored; the local Node/WASM Unity fixture passed. Real-client and extension compatibility remains unverified. Flash validation currently copies and decrypts whole buffers, potentially twice, even when only frame lengths are required; compare a streaming validator against the current rules on complete, partial and malformed synthetic streams before changing it. Reverse-only RC4 state reconstruction remains separately expensive.
@@ -544,4 +547,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Optimize Flash frame validation without copying and decrypting entire buffers: compare a streaming frame-length validator against current strict and partial-tail semantics across deterministic complete, fragmented and malformed fixtures. Separately investigate worst-case outgoing RC4 reverse-only recovery; preserve cancellation and ambiguity detection. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.
+Investigate worst-case outgoing Flash RC4 reverse-only recovery when no fresh candidate exists: measure representative search cost, preserve ambiguity detection and cancellation, and add deterministic late-candidate fixtures before implementing any optimization. Repeat the Windows desktop/web release build for current code. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.

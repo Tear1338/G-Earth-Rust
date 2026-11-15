@@ -1,5 +1,8 @@
 # Compatibility with 1.5.4-beta-29
 
+## Flash frame-validation evidence
+
+Deterministic fixtures compare streaming frame-length checks with full decryption for strict and partial-tail acceptance across complete, truncated and malformed streams. This is not an end-to-end benchmark or real-client validation.
 ## Unity lifecycle saturation evidence
 
 Synthetic fixtures exercise ordered lifecycle events through the Unity producer sink and forwarding queue, deferred peer admission, and cancellation. The local Node/WASM hook fixture also passed. This is not validation with a real Habbo client or extension.

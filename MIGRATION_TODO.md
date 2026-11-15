@@ -1,5 +1,10 @@
 # Migration tasks
 
+## Flash frame validation
+
+- [x] Validate encrypted frame lengths incrementally without copying the entire buffer; compare strict and partial cases with full-decryption fixtures.
+- [ ] Investigate the remaining cost of reverse-only RC4 state recovery and cancellation under large inputs.
+- [ ] Repeat release and await user-run real-client and extension evidence.
 ## Unity event delivery
 
 - [x] Retain ordered Unity producer lifecycle events under saturation, defer peer admission with bounded cancellable waiting, and test the producer and forwarder together.
