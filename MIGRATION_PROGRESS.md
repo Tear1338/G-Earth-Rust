@@ -1,5 +1,9 @@
 # G-Earth Rust migration progress
 
+## Release and Java mutation baseline at 43f33ba
+
+Windows GNU desktop/web release build succeeded at code commit `43f33ba916c5479eb7cb37a8b0009452e0602eb2`. A fresh mutation oracle generated with the installed beta-29 Java API passed the Rust byte/cursor comparison. Common and several nested Java class intersections are already supported; the remaining explicitly rejected intersection path needs a concrete reproducer before changing parser behavior. Real-client and extension compatibility remains unverified.
+
 ## Session metadata under event saturation
 
 The shared bounded event sink now retains `Identified` and `PacketIdentifiers` along with lifecycle events. Repeated metadata of the same kind within a session is coalesced to the latest update without crossing a queued disconnection; four error slots leave space for lifecycle and metadata. Synthetic tests cover saturation, coalescing, cross-session boundaries, Unity producer ordering and Nitro catalog delivery before lifecycle events. The full desktop/web library suite passed 146 tests with seven ignored before the additional Nitro fixture; that fixture, relay/process tests, the local Unity Node/WASM fixture, Clippy and debug build passed. Intermediate metadata and excess errors can still be dropped; real-client behavior remains unverified. The most recent release build predates this change.
