@@ -1,5 +1,9 @@
 # G-Earth Rust migration progress
 
+## Release verification at 3aeb791
+
+Windows GNU desktop/web release build succeeded at code commit `3aeb7910bfb162e7403e48407477bc6024686ab3`. The full desktop/web library suite passed 136 tests with 7 ignored; the local Node/WASM Unity fixture passed. Real-client and extension compatibility remains unverified. Flash validation currently copies and decrypts whole buffers, potentially twice, even when only frame lengths are required; compare a streaming validator against the current rules on complete, partial and malformed synthetic streams before changing it. Reverse-only RC4 state reconstruction remains separately expensive.
+
 ## Unity producer and forwarding under saturation
 
 The Unity communicator now uses the concurrent bounded control-event sink and periodically flushes it. Peer admission checks pending lifecycle events under the same lock as peer closure, and asynchronously retries for at most 15 seconds; explicit stop interrupts the wait. On unexpected server exit the worker flushes until delivery or explicit stop. Synthetic tests cover producer saturation, ordered delivery through the producer and forwarder, deferred peer admission and stop during waiting. The Node/WASM Unity hook fixture also passed over local authenticated WSS; it is not a real Habbo client. Unity tests, desktop/web Clippy and debug build passed. Repeat release for current code; real clients and extensions remain unverified.
@@ -540,4 +544,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Investigate the remaining worst-case cost of Flash outgoing RC4 reverse-only discovery when no fresh candidate exists; preserve cancellation and ambiguity detection and add deterministic fixtures before optimizing. Repeat the Windows desktop/web release build for the current code. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.
+Optimize Flash frame validation without copying and decrypting entire buffers: compare a streaming frame-length validator against current strict and partial-tail semantics across deterministic complete, fragmented and malformed fixtures. Separately investigate worst-case outgoing RC4 reverse-only recovery; preserve cancellation and ambiguity detection. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.
