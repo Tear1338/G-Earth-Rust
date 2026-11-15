@@ -7,7 +7,6 @@ use crate::{
     socks::SocksConfig,
 };
 use crate::{packet::PacketFormat, shockwave::ShockwaveTransport};
-use std::cell::RefCell;
 use std::collections::VecDeque;
 use std::io::{self, Read, Write};
 use std::net::{SocketAddr, TcpListener, TcpStream, ToSocketAddrs};
@@ -121,19 +120,25 @@ pub enum Event {
 // Keep lifecycle events (and following errors) ordered until the consumer
 // catches up; ordinary packet and status events may still be dropped.
 const MAX_PENDING_CONTROL_EVENTS: usize = 8;
-struct RelayEventSink {
+pub(crate) struct RelayEventSink {
     sender: SyncSender<Event>,
-    pending: RefCell<VecDeque<Event>>,
+    pending: Mutex<VecDeque<Event>>,
 }
 impl RelayEventSink {
-    fn new(sender: SyncSender<Event>) -> Self {
+    pub(crate) fn new(sender: SyncSender<Event>) -> Self {
         Self {
             sender,
-            pending: RefCell::new(VecDeque::new()),
+            pending: Mutex::new(VecDeque::new()),
         }
     }
-    fn flush(&self) -> bool {
-        let mut pending = self.pending.borrow_mut();
+    pub(crate) fn flush(&self) -> bool {
+        let mut pending = self
+            .pending
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.flush_locked(&mut pending)
+    }
+    fn flush_locked(&self, pending: &mut VecDeque<Event>) -> bool {
         while let Some(event) = pending.pop_front() {
             match self.sender.try_send(event) {
                 Ok(()) => {}
@@ -151,25 +156,33 @@ impl RelayEventSink {
     }
     // Match SyncSender's ownership-preserving error without allocating per event.
     #[allow(clippy::result_large_err)]
-    fn try_send(&self, event: Event) -> Result<(), mpsc::TrySendError<Event>> {
-        if self.flush() {
+    pub(crate) fn try_send(&self, event: Event) -> Result<(), mpsc::TrySendError<Event>> {
+        let mut pending = self
+            .pending
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if self.flush_locked(&mut pending) {
             match self.sender.try_send(event) {
                 Ok(()) => return Ok(()),
                 Err(mpsc::TrySendError::Disconnected(event)) => {
                     return Err(mpsc::TrySendError::Disconnected(event))
                 }
-                Err(mpsc::TrySendError::Full(event)) => return self.queue(event),
+                Err(mpsc::TrySendError::Full(event)) => return Self::queue(&mut pending, event),
             }
         }
-        self.queue(event)
+        Self::queue(&mut pending, event)
     }
     #[allow(clippy::result_large_err)]
-    fn queue(&self, event: Event) -> Result<(), mpsc::TrySendError<Event>> {
-        let mut pending = self.pending.borrow_mut();
+    fn queue(pending: &mut VecDeque<Event>, event: Event) -> Result<(), mpsc::TrySendError<Event>> {
+        let capacity = if matches!(event, Event::Error(_)) {
+            MAX_PENDING_CONTROL_EVENTS - 2
+        } else {
+            MAX_PENDING_CONTROL_EVENTS
+        };
         if matches!(
             event,
             Event::Connected(_) | Event::Disconnected | Event::Error(_)
-        ) && pending.len() < MAX_PENDING_CONTROL_EVENTS
+        ) && pending.len() < capacity
         {
             pending.push_back(event);
             Ok(())
@@ -3079,6 +3092,37 @@ mod tests {
         assert!(matches!(receiver.try_recv(), Ok(Event::Disconnected)));
         assert!(events.flush());
         assert!(matches!(receiver.try_recv(), Ok(Event::Error(_))));
+    }
+    #[test]
+    fn event_sink_reserves_lifecycle_space_after_concurrent_errors() {
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let events = Arc::new(RelayEventSink::new(sender));
+        events.try_send(Event::Status("older".into())).unwrap();
+        let threads: Vec<_> = (0..16)
+            .map(|number| {
+                let events = events.clone();
+                thread::spawn(move || events.try_send(Event::Error(number.to_string())).is_ok())
+            })
+            .collect();
+        assert_eq!(
+            threads
+                .into_iter()
+                .map(|worker| worker.join().unwrap())
+                .filter(|accepted| *accepted)
+                .count(),
+            6
+        );
+        events.try_send(Event::Connected("fixture".into())).unwrap();
+        events.try_send(Event::Disconnected).unwrap();
+        assert!(matches!(receiver.try_recv(), Ok(Event::Status(_))));
+        let mut received = Vec::new();
+        while !events.flush() {
+            received.push(receiver.try_recv().unwrap());
+        }
+        received.extend(receiver.try_iter());
+        assert_eq!(received.len(), 8);
+        assert!(matches!(received[6], Event::Connected(_)));
+        assert!(matches!(received[7], Event::Disconnected));
     }
     #[test]
     fn retained_errors_coalesce_without_displacing_queued_events() {

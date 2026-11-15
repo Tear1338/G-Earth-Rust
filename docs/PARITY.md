@@ -1,5 +1,8 @@
 # Compatibility with 1.5.4-beta-29
 
+## Event queue preparation
+
+Concurrent synthetic producers preserve reserved lifecycle capacity. Nitro and Unity still require integration and real-client behavior remains unverified.
 ## TCP lifecycle saturation evidence
 
 A local synthetic saturated event channel preserves TCP disconnection before the protocol error and permits a subsequent reconnect after control events drain. This does not establish live-client parity. Web and Unity producer queues have separate behavior and remain to audit.

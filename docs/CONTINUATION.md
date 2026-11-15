@@ -1,5 +1,8 @@
 # Continuation state
 
+## Concurrent producer preparation
+
+The bounded TCP event sink now supports concurrent producers and reserves two lifecycle slots. Integrate it into Nitro with a nonblocking periodic flush and lifecycle admission control; then address both Unity queues.
 ## TCP lifecycle continuation
 
 TCP now retains ordered lifecycle events and errors in a bounded worker queue under consumer saturation. Next audit Web/Unity producer and forwarding queues for the same loss, and investigate remaining Flash reverse-only scan costs. Repeat the desktop/web release build for the new code; real-client tests remain with the user.

@@ -1,5 +1,9 @@
 # Migration tasks
 
+## Concurrent event preparation
+
+- [x] Make the bounded event sink safe for concurrent producers and reserve lifecycle capacity under error flood.
+- [ ] Integrate and test the sink in Nitro and Unity; their producers still drop events.
 ## TCP lifecycle saturation
 
 - [x] Retain and flush ordered TCP lifecycle notifications without blocking active forwarding; test a saturated channel and reconnect.

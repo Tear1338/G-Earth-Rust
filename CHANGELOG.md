@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased — event queue preparation
+
+- Make the bounded TCP event sink safe for concurrent producers and reserve space for lifecycle events during error floods.
 ## Unreleased — TCP event saturation
 
 - Retain ordered TCP connection lifecycle notifications and errors across a full consumer queue, without stalling an active relay.

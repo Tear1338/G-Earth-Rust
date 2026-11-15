@@ -1,5 +1,8 @@
 # G-Earth Rust migration progress
 
+## Concurrent event sink preparation
+
+The bounded TCP control-event sink is now safe for concurrent producers: one mutex serializes flushing and insertion, and two of eight pending slots are reserved for lifecycle transitions even during an error flood. A concurrent synthetic test exercises the reservation. TCP tests, synthetic Flash process, Clippy and desktop/web debug build pass. Nitro and Unity have not yet been connected to this sink; their event loss remains open. The latest release build predates this preparation.
 ## Release verification at a075c1f
 
 Windows GNU desktop/web release build succeeded at code commit `a075c1fd68132f9c388ecd6e5efe4d7f2c30ff32`. Desktop/web library tests passed 130 with 7 ignored; the TCP relay suite passed 19 and the synthetic Flash process test passed. This does not verify real clients or extensions.

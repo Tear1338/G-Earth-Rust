@@ -1,5 +1,8 @@
 # Rust migration architecture
 
+## Concurrent control-event sink
+
+The TCP sink serializes enqueue and flushing under one mutex and reserves two of eight pending slots for lifecycle events. It can be reused by concurrent producers, but Nitro and Unity are not yet wired to it.
 ## TCP event backpressure
 
 A worker-local bounded queue retains lifecycle events and errors when the consumer channel is full. The active forwarding loop periodically flushes without waiting; the listener postpones accepting the next connection while prior control events remain pending. Low-priority events remain lossy, and errors beyond queue capacity use the existing coalesced fallback. This mechanism applies to TCP only.
