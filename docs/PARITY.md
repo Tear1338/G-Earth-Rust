@@ -1,5 +1,8 @@
 # Compatibility with 1.5.4-beta-29
 
+## Flash two-pass evidence
+
+Synthetic multi-page tests cover a fresh state after a reverse-only page, a reverse-only fallback, ambiguity, buffer growth and moving ciphertext. The additional scan is Rust-specific and real-client compatibility has not been verified.
 ## Flash frame-validation evidence
 
 Deterministic fixtures compare streaming frame-length checks with full decryption for strict and partial-tail acceptance across complete, truncated and malformed streams. This is not an end-to-end benchmark or real-client validation.

@@ -102,6 +102,9 @@ struct Side {
     waiting: Option<Instant>,
     last_scan: Option<Instant>,
     scan_address: usize,
+    // Outgoing discovery checks every page for fresh states before the
+    // expensive reverse-state pass.
+    reverse_phase: bool,
     bootstrap_limit: Option<usize>,
     candidates: CandidateAccumulator,
 }
@@ -345,7 +348,8 @@ impl FlashSession {
         if !side.encrypted || side.reader.is_some() || side.buffer.len() < 6 {
             return Ok(false);
         }
-        let fresh_known = side.candidates.priority == 2;
+        let skip_reverse = side.candidates.priority == 2
+            || (direction == Direction::ToServer && !side.reverse_phase);
         if ACTIVE_DISCOVERY_WORKERS
             .try_update(Ordering::AcqRel, Ordering::Acquire, |n| {
                 (n < MAX_DISCOVERY_WORKERS).then_some(n + 1)
@@ -405,7 +409,7 @@ impl FlashSession {
                     &worker_cancel,
                     None,
                     Some(if sample.at_capacity { 1 } else { 2 }),
-                    fresh_known,
+                    skip_reverse,
                 ) {
                     Ok(outcome) => {
                         let _ =
@@ -481,15 +485,22 @@ impl FlashSession {
                     } else {
                         side.scan_address = 0;
                         if side.reader.is_none() {
+                            let no_fresh_candidate = side.candidates.priority == 0;
                             if let Some(cipher) = side.candidates.take_unique() {
                                 if valid_stream_prefix(&side.buffer, &cipher) {
                                     side.install(cipher);
                                 }
                             }
+                            let start_reverse = direction == Direction::ToServer
+                                && !side.reverse_phase
+                                && no_fresh_candidate
+                                && side.reader.is_none();
+                            side.reverse_phase = start_reverse;
+                            let grew = side.reader.is_none()
+                                && side.buffer.len() == side.bootstrap_limit()
+                                && side.grow_bootstrap();
                             if side.reader.is_none()
-                                && ((side.buffer.len() == side.bootstrap_limit()
-                                    && side.grow_bootstrap())
-                                    || side.buffer.len() > sampled_len)
+                                && (start_reverse || grew || side.buffer.len() > sampled_len)
                             {
                                 side.waiting = Some(now);
                             }
@@ -869,6 +880,138 @@ mod discovery_tests {
         panic!("no unambiguous fixture");
     }
 
+    fn finish_outgoing_discovery(session: &mut FlashSession) {
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while session.discovery[0].is_some() {
+            session
+                .poll_discovery(Direction::ToServer, Instant::now())
+                .unwrap();
+            assert!(Instant::now() < deadline, "discovery did not finish");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+    }
+
+    #[test]
+    fn fresh_pass_reaches_later_page_before_reverse_search() {
+        let (fresh, current, wire) = outgoing_fixture();
+        let mut session = FlashSession::default();
+        session.outgoing.encrypted = true;
+        session.outgoing.waiting = Some(Instant::now());
+        session.outgoing.feed(&wire).unwrap();
+        let first = current.state().0;
+        assert!(session
+            .start_discovery(Direction::ToServer, move |_| Ok(
+                gearth_platform::ScanResult {
+                    states: vec![first],
+                    bytes_read: 65536,
+                    complete: false,
+                    next_address: Some(65536),
+                }
+            ))
+            .unwrap());
+        finish_outgoing_discovery(&mut session);
+        assert_eq!(session.outgoing.candidates.priority, 0);
+        assert!(!session.outgoing.reverse_phase);
+        let second = fresh.state().0;
+        assert!(session
+            .start_discovery(Direction::ToServer, move |_| Ok(
+                gearth_platform::ScanResult {
+                    states: vec![second],
+                    bytes_read: 1024,
+                    complete: true,
+                    next_address: None,
+                }
+            ))
+            .unwrap());
+        finish_outgoing_discovery(&mut session);
+        assert_eq!(
+            session.outgoing.writer.as_ref().unwrap().state(),
+            fresh.state()
+        );
+    }
+
+    #[test]
+    fn reverse_pass_recovers_when_fresh_pass_finds_nothing() {
+        let (fresh, current, wire) = outgoing_fixture();
+        let mut session = FlashSession::default();
+        session.outgoing.encrypted = true;
+        session.outgoing.waiting = Some(Instant::now());
+        session.outgoing.feed(&wire).unwrap();
+        let table = current.state().0;
+        assert!(session
+            .start_discovery(Direction::ToServer, move |_| Ok(
+                gearth_platform::ScanResult {
+                    states: vec![table],
+                    bytes_read: 1024,
+                    complete: true,
+                    next_address: None,
+                }
+            ))
+            .unwrap());
+        finish_outgoing_discovery(&mut session);
+        assert!(session.outgoing.reader.is_none());
+        assert!(session.outgoing.reverse_phase);
+        assert!(session
+            .start_discovery(Direction::ToServer, move |_| Ok(
+                gearth_platform::ScanResult {
+                    states: vec![table],
+                    bytes_read: 1024,
+                    complete: true,
+                    next_address: None,
+                }
+            ))
+            .unwrap());
+        finish_outgoing_discovery(&mut session);
+        assert_eq!(
+            session.outgoing.writer.as_ref().unwrap().state(),
+            fresh.state()
+        );
+        assert!(!session.outgoing.reverse_phase);
+    }
+
+    #[test]
+    fn full_outgoing_buffer_grows_when_reverse_pass_is_scheduled() {
+        let mut session = FlashSession::default();
+        session.outgoing.encrypted = true;
+        session.outgoing.waiting = Some(Instant::now());
+        session.outgoing.feed(&vec![0; BOOTSTRAP_LIMIT]).unwrap();
+        assert!(session
+            .start_discovery(Direction::ToServer, |_| Ok(gearth_platform::ScanResult {
+                states: Vec::new(),
+                bytes_read: 1024,
+                complete: true,
+                next_address: None,
+            }))
+            .unwrap());
+        finish_outgoing_discovery(&mut session);
+        assert!(session.outgoing.reverse_phase);
+        assert_eq!(session.outgoing.bootstrap_limit(), BOOTSTRAP_LIMIT * 2);
+        assert!(session.input_capacity(Direction::ToServer) > 0);
+    }
+
+    #[test]
+    fn ambiguous_fresh_pass_does_not_fall_back_to_reverse() {
+        let (_, _, wire) = outgoing_fixture();
+        let mut session = FlashSession::default();
+        session.outgoing.encrypted = true;
+        session.outgoing.waiting = Some(Instant::now());
+        session.outgoing.feed(&wire).unwrap();
+        session.outgoing.candidates.priority = 2;
+        session.outgoing.candidates.ambiguous = true;
+        assert!(session
+            .start_discovery(Direction::ToServer, |_| Ok(gearth_platform::ScanResult {
+                states: Vec::new(),
+                bytes_read: 1024,
+                complete: true,
+                next_address: None,
+            }))
+            .unwrap());
+        finish_outgoing_discovery(&mut session);
+        assert!(session.outgoing.reader.is_none());
+        assert!(!session.outgoing.reverse_phase);
+        assert_eq!(session.outgoing.candidates.priority, 0);
+    }
+
     #[test]
     fn background_discovery_reaches_late_candidate_while_buffer_grows() {
         let mut fixture = None;
@@ -923,6 +1066,7 @@ mod discovery_tests {
         let (release_tx, release_rx) = mpsc::channel();
         let mut session = FlashSession::default();
         session.outgoing.encrypted = true;
+        session.outgoing.reverse_phase = true;
         session.outgoing.waiting = Some(Instant::now());
         session.outgoing.feed(&first_wire).unwrap();
         assert!(session

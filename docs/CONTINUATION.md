@@ -1,5 +1,8 @@
 # Continuation state
 
+## Flash discovery continuation
+
+Outgoing discovery checks all pages for fresh states before a reverse-only fallback pass. Next investigate bounded work and progress visibility for very large reverse-only pages, retaining cancellation and ambiguity detection. Repeat the release build; real-client testing remains with the user.
 ## Streaming Flash continuation
 
 Frame-length validation no longer copies or decrypts the whole buffer and retains tested strict/partial semantics. Next investigate reverse-only RC4 recovery cost, preserve ambiguity and cancellation, and repeat the release build. Real-client tests remain with the user.

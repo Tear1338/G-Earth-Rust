@@ -1,5 +1,8 @@
 # Rust migration architecture
 
+## Two-pass Flash discovery
+
+Outgoing discovery first scans all pages for fresh states, then scans again for reverse candidates only if no fresh candidate exists. Ambiguous fresh states remain unresolved and do not trigger reverse fallback. The second scan adds memory work for reverse-only sessions; expensive reverse trials and real-client behavior remain unverified.
 ## Streaming Flash validation
 
 Candidate validation decrypts length prefixes incrementally and advances RC4 over complete bodies only when a subsequent length must be inspected. Strict full-buffer and partial-tail minimums remain distinct. The reverse-state search remains a separate potentially expensive operation.

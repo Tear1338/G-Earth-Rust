@@ -1,5 +1,8 @@
 # G-Earth Rust migration progress
 
+## Two-pass outgoing Flash discovery
+
+Outgoing discovery now scans every memory page for fresh RC4 tables before beginning a reverse-state pass. This prevents expensive reverse trials on early pages from delaying a fresh state on a later page. If no fresh state is found, a second scan performs the existing reverse search; the extra scan is a tradeoff, and reverse-only search can still be very costly. Fresh ambiguity does not fall through to reverse candidates. Synthetic fixtures cover late fresh tables, reverse-only fallback, ambiguous fresh results, growing bootstrap buffers, cancellation and moving ciphertext; the simulated Flash process and relay tests passed. The desktop/web library suite passed 142 tests with 7 ignored, and Clippy/debug build passed. No end-to-end performance or real-client verification was performed; the latest release build predates this change.
 ## Release and RC4 reverse-search measurement at 5d781c0
 
 Windows GNU desktop/web release build succeeded at code commit `5d781c0caa21e4ff77fef107b3824a91e90571dd`. An isolated optimized probe using the actual RC4 rewind measured approximately 64 ms for 256 candidate counters on one 64 KiB table, 529 ms for eight tables, and 1,046 ms for one 1 MiB table. These are single local measurements during compilation, not end-to-end client benchmarks. Current discovery can spend this work on an early memory page before inspecting a fresh table on a later page. Investigate scanning all pages for fresh candidates first, then a reverse pass only when none exist; preserve ambiguity, cancellation, backpressure and moving-buffer behavior, and document the extra scan when fresh states are absent. Real-client and extension compatibility remains unverified.
@@ -551,4 +554,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Implement and test a two-pass outgoing Flash discovery: scan all memory pages for fresh candidates before doing any reverse search, then scan for reverse candidates only if the fresh pass found none. Preserve ambiguity, cancellation, buffer growth and validation against new ciphertext; test a late fresh table and reverse-only fallback. Document the extra memory scan and measure representative cost. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.
+Investigate bounding outgoing Flash reverse-phase work per memory page: expose an appropriate table limit in the platform scanner and test resumption without skipping overlapping or late candidates, while preserving ambiguity and cancellation. Measure representative costs and repeat the Windows desktop/web release build. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.

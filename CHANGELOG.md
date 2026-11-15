@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — Flash discovery order
+
+- Search all memory pages for fresh outgoing RC4 states before attempting costly reverse-state trials.
+- Preserve reverse-only fallback, ambiguity rejection and bounded-buffer growth in synthetic tests.
 ## Unreleased — Flash validation
 
 - Validate encrypted frame boundaries incrementally, avoiding whole-buffer copies and duplicate full decryption for partial-tail candidates.

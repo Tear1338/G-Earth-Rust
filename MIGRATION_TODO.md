@@ -1,5 +1,10 @@
 # Migration tasks
 
+## Flash discovery ordering
+
+- [x] Scan all pages for fresh outgoing states before starting reverse-state trials; preserve ambiguity, buffer growth and reverse-only fallback.
+- [ ] Investigate bounding work per reverse scan page and progress visibility without skipping candidates or weakening ambiguity detection.
+- [ ] Repeat the release build and await user-run real-client and extension evidence.
 ## Flash frame validation
 
 - [x] Validate encrypted frame lengths incrementally without copying the entire buffer; compare strict and partial cases with full-decryption fixtures.
