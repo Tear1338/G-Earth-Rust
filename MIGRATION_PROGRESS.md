@@ -1,5 +1,8 @@
 # G-Earth Rust migration progress
 
+## Parallel Flash discovery test stability
+
+Flash discovery test fixtures now wait up to 15 seconds for a global worker slot rather than assuming the four-worker pool is empty; production admission remains unchanged. The 22 discovery tests passed five times with normal parallelism, and the CI-equivalent Windows `cargo test --locked --workspace --all-targets` passed, with environment-dependent tests still ignored. Desktop/web Clippy and debug build passed. This addresses the contention observed in CI run 43666623723 but cannot prove future runners will never be flaky. Real clients and extensions remain unverified; release must be repeated on the current commit.
 ## Java braced hex Unicode case folding
 
 Java Unicode case-insensitive braced hex literals and ranges now map external code points into the Latin-1 packet domain, distinguishing singleton and range semantics. A Java 21 scan identified nine external simple-fold equivalents; the beta-29 packet oracle covers 450 cases, and Java Pattern bitsets compare all 256 bytes for each singleton and 171 selected ranges. The Java mutation oracle, 39 mutation tests, 149 desktop/web library tests (7 ignored), Clippy and debug build passed. The Windows release build succeeded at the preceding code commit `b10462049e64c9160d7534f9126f4c6d876a6744`; the current code requires a fresh release build. CI run 43666623723 on an older documentation commit failed intermittently because Flash discovery tests raced for the global four-worker limit; a subsequent run passed, so fix test coordination and re-run parallel CI rather than treating the issue as resolved. Java `\R`, real clients and extensions remain unverified.
@@ -584,4 +587,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Fix intermittent Windows CI failures caused by parallel Flash discovery tests competing for the global four-worker limit: preserve production admission behavior, make the test fixtures wait safely for a slot, and run the CI-equivalent workspace/all-targets tests with normal parallelism. Then revisit Java `\R` matcher backtracking and progress within one expensive Flash reverse table. Repeat the Windows desktop/web release build. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.
+Investigate and implement Java regex `\R` at matcher level, preserving the documented differences between direct quantifiers and repeated enclosing groups on CRLF; compare deterministic beta-29 packet and Java Pattern fixtures before accepting the change. Separately investigate progress within one expensive Flash reverse table and repeat the Windows desktop/web release build. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.

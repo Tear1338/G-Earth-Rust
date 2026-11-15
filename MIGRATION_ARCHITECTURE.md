@@ -1,5 +1,8 @@
 # Rust migration architecture
 
+## Flash discovery test coordination
+
+Test-only discovery fixtures wait for the shared worker pool when occupied. The production four-worker admission limit and cancellation behavior remain unchanged.
 ## External Unicode case folding
 
 Braced hexadecimal regex literals use Java 21 simple-fold equivalents for external code points mapping into Latin-1. Character ranges follow Java range semantics, which can differ from singleton literals; direct Java Pattern bitsets and beta-29 packet fixtures cover representative boundaries.

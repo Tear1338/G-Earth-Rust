@@ -1,5 +1,8 @@
 # Continuation state
 
+## Flash test contention continuation
+
+Parallel Flash discovery fixtures now wait for available worker slots; five repetitions and the CI-equivalent Windows workspace/all-targets command passed. Next investigate Java `\R` at matcher level using the repeated-group CRLF counterexample, and repeat release.
 ## Unicode folding continuation
 
 Braced Unicode hex literals and ranges now support Java case folding into Latin-1, with singleton/range distinctions and differential fixtures. Next fix intermittent parallel Flash discovery test contention observed in Windows CI run 43666623723; then revisit Java `\R`.

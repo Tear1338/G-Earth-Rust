@@ -1,5 +1,8 @@
 # Compatibility with 1.5.4-beta-29
 
+## Flash test contention evidence
+
+The discovery suite passed five parallel repetitions and the Windows workspace/all-targets command passed after fixtures were made aware of the worker cap. This does not validate real client connections.
 ## External Unicode folding evidence
 
 Java 21 Pattern bitsets cover all 256 Latin-1 bytes for nine external braced literals and 171 selected ranges; a 450-case beta-29 packet corpus also passes. This does not establish full regex or real-extension parity.

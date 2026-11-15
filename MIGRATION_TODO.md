@@ -1,9 +1,14 @@
 # Migration tasks
 
+## Flash test stability
+
+- [x] Make parallel discovery fixtures wait safely for the global worker pool and run the CI-equivalent workspace/all-targets tests.
+- [ ] Compare and implement Java `\R` matcher backtracking, including quantification and repeated enclosing groups.
+- [ ] Repeat release and await user-run real-client/extension evidence.
 ## Unicode braced hex folding
 
 - [x] Implement and compare external Unicode case-folded hex literals and ranges over all Latin-1 byte values.
-- [ ] Fix intermittent parallel Flash discovery test contention for the global worker cap, and re-run the CI-equivalent command.
+- [x] Fix intermittent parallel Flash discovery test contention for the global worker cap, and run the CI-equivalent command.
 - [ ] Revisit Java `\R` matcher backtracking and repeat release.
 ## Java braced hexadecimal escapes
 

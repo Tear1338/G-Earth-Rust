@@ -1,5 +1,8 @@
 # Changelog
 
+## Unreleased — Flash test stability
+
+- Remove a parallel-test race for limited Flash discovery worker slots without changing production admission.
 ## Unreleased — Java external Unicode folding
 
 - Match Java case-insensitive braced hex literals and ranges that fold into Latin-1, including Java’s distinct range behavior.

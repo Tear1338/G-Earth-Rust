@@ -794,6 +794,43 @@ mod discovery_tests {
     use super::*;
     use crate::packet::Packet;
 
+    impl FlashSession {
+        // Production intentionally refuses a new worker when all slots are
+        // occupied. Independent parallel tests wait for a slot instead of
+        // assuming the process-wide pool is idle.
+        fn start_discovery_wait<F>(&mut self, direction: Direction, scan: F) -> io::Result<bool>
+        where
+            F: FnOnce(&AtomicBool) -> io::Result<gearth_platform::ScanResult> + Send + 'static,
+        {
+            let action = Arc::new(std::sync::Mutex::new(Some(scan)));
+            let deadline = Instant::now() + Duration::from_secs(15);
+            loop {
+                let pending = action.clone();
+                if self.start_discovery(direction, move |cancel| {
+                    let scan = pending
+                        .lock()
+                        .map_err(|_| io::Error::other("test scan lock poisoned"))?
+                        .take()
+                        .ok_or_else(|| io::Error::other("test scan already consumed"))?;
+                    scan(cancel)
+                })? {
+                    return Ok(true);
+                }
+                let running = self.discovery[Self::discovery_index(direction)].is_some();
+                let side = self.side(direction);
+                if running
+                    || !side.encrypted
+                    || side.reader.is_some()
+                    || side.buffer.len() < 6
+                    || Instant::now() >= deadline
+                {
+                    return Ok(false);
+                }
+                std::thread::sleep(Duration::from_millis(2));
+            }
+        }
+    }
+
     fn reference_frame_validation(
         encrypted: &[u8],
         cipher: &Rc4,
@@ -926,7 +963,7 @@ mod discovery_tests {
         session.outgoing.feed(&wire).unwrap();
         let first = current.state().0;
         assert!(session
-            .start_discovery(Direction::ToServer, move |_| Ok(
+            .start_discovery_wait(Direction::ToServer, move |_| Ok(
                 gearth_platform::ScanResult {
                     states: vec![first],
                     bytes_read: 65536,
@@ -940,7 +977,7 @@ mod discovery_tests {
         assert!(!session.outgoing.reverse_phase);
         let second = fresh.state().0;
         assert!(session
-            .start_discovery(Direction::ToServer, move |_| Ok(
+            .start_discovery_wait(Direction::ToServer, move |_| Ok(
                 gearth_platform::ScanResult {
                     states: vec![second],
                     bytes_read: 1024,
@@ -965,7 +1002,7 @@ mod discovery_tests {
         session.outgoing.feed(&wire).unwrap();
         let table = current.state().0;
         assert!(session
-            .start_discovery(Direction::ToServer, move |_| Ok(
+            .start_discovery_wait(Direction::ToServer, move |_| Ok(
                 gearth_platform::ScanResult {
                     states: vec![table],
                     bytes_read: 1024,
@@ -978,7 +1015,7 @@ mod discovery_tests {
         assert!(session.outgoing.reader.is_none());
         assert!(session.outgoing.reverse_phase);
         assert!(session
-            .start_discovery(Direction::ToServer, move |_| Ok(
+            .start_discovery_wait(Direction::ToServer, move |_| Ok(
                 gearth_platform::ScanResult {
                     states: vec![table],
                     bytes_read: 1024,
@@ -1006,7 +1043,7 @@ mod discovery_tests {
         session.outgoing.feed(&wire).unwrap();
         let table = current.state().0;
         assert!(session
-            .start_discovery(Direction::ToServer, move |_| Ok(
+            .start_discovery_wait(Direction::ToServer, move |_| Ok(
                 gearth_platform::ScanResult {
                     states: vec![table],
                     bytes_read: 1024,
@@ -1020,7 +1057,7 @@ mod discovery_tests {
         assert_eq!(session.outgoing.scan_address, 1024);
         assert!(session.outgoing.last_scan.is_none());
         assert!(session
-            .start_discovery(Direction::ToServer, move |_| Ok(
+            .start_discovery_wait(Direction::ToServer, move |_| Ok(
                 gearth_platform::ScanResult {
                     states: vec![table],
                     bytes_read: 1024,
@@ -1043,7 +1080,7 @@ mod discovery_tests {
         session.outgoing.waiting = Some(Instant::now());
         session.outgoing.feed(&vec![0; BOOTSTRAP_LIMIT]).unwrap();
         assert!(session
-            .start_discovery(Direction::ToServer, |_| Ok(gearth_platform::ScanResult {
+            .start_discovery_wait(Direction::ToServer, |_| Ok(gearth_platform::ScanResult {
                 states: Vec::new(),
                 bytes_read: 1024,
                 complete: true,
@@ -1066,7 +1103,7 @@ mod discovery_tests {
         session.outgoing.candidates.priority = 2;
         session.outgoing.candidates.ambiguous = true;
         assert!(session
-            .start_discovery(Direction::ToServer, |_| Ok(gearth_platform::ScanResult {
+            .start_discovery_wait(Direction::ToServer, |_| Ok(gearth_platform::ScanResult {
                 states: Vec::new(),
                 bytes_read: 1024,
                 complete: true,
@@ -1137,7 +1174,7 @@ mod discovery_tests {
         session.outgoing.waiting = Some(Instant::now());
         session.outgoing.feed(&first_wire).unwrap();
         assert!(session
-            .start_discovery(Direction::ToServer, move |cancel| {
+            .start_discovery_wait(Direction::ToServer, move |cancel| {
                 started_tx.send(()).unwrap();
                 while !cancel.load(Ordering::Acquire) {
                     if release_rx.recv_timeout(Duration::from_millis(5)).is_ok() {
@@ -1282,7 +1319,7 @@ mod discovery_tests {
         session.outgoing.feed(&wire).unwrap();
         let table = fresh.state().0;
         assert!(session
-            .start_discovery(Direction::ToServer, move |_| Ok(
+            .start_discovery_wait(Direction::ToServer, move |_| Ok(
                 gearth_platform::ScanResult {
                     states: vec![table],
                     bytes_read: 65536,
@@ -1303,7 +1340,7 @@ mod discovery_tests {
         assert!(session.outgoing.reader.is_none());
         let table = current.state().0;
         assert!(session
-            .start_discovery(Direction::ToServer, move |_| Ok(
+            .start_discovery_wait(Direction::ToServer, move |_| Ok(
                 gearth_platform::ScanResult {
                     states: vec![table],
                     bytes_read: 1024,
@@ -1334,7 +1371,7 @@ mod discovery_tests {
         session.outgoing.feed(&wire).unwrap();
         let table = fresh.state().0;
         assert!(session
-            .start_discovery(Direction::ToServer, move |_| Ok(
+            .start_discovery_wait(Direction::ToServer, move |_| Ok(
                 gearth_platform::ScanResult {
                     states: vec![table],
                     bytes_read: 65536,
@@ -1356,7 +1393,7 @@ mod discovery_tests {
         current.apply(&mut bad_tail);
         session.outgoing.feed(&bad_tail).unwrap();
         assert!(session
-            .start_discovery(Direction::ToServer, |_| Ok(gearth_platform::ScanResult {
+            .start_discovery_wait(Direction::ToServer, |_| Ok(gearth_platform::ScanResult {
                 states: Vec::new(),
                 bytes_read: 1024,
                 complete: true,
@@ -1384,7 +1421,7 @@ mod discovery_tests {
         session.outgoing.feed(&wire).unwrap();
         let table = fresh.state().0;
         assert!(session
-            .start_discovery(Direction::ToServer, move |_| Ok(
+            .start_discovery_wait(Direction::ToServer, move |_| Ok(
                 gearth_platform::ScanResult {
                     states: vec![table],
                     bytes_read: 65536,
@@ -1406,7 +1443,7 @@ mod discovery_tests {
             "incomplete scan must not install a key"
         );
         assert!(session
-            .start_discovery(Direction::ToServer, |_| Ok(gearth_platform::ScanResult {
+            .start_discovery_wait(Direction::ToServer, |_| Ok(gearth_platform::ScanResult {
                 states: Vec::new(),
                 bytes_read: 1024,
                 complete: true,
@@ -1440,7 +1477,7 @@ mod discovery_tests {
         session.outgoing.waiting = Instant::now().checked_sub(Duration::from_secs(16));
         session.outgoing.feed(&wire).unwrap();
         assert!(session
-            .start_discovery(Direction::ToServer, |_| Ok(gearth_platform::ScanResult {
+            .start_discovery_wait(Direction::ToServer, |_| Ok(gearth_platform::ScanResult {
                 states: Vec::new(),
                 bytes_read: 65536,
                 complete: false,
@@ -1459,7 +1496,7 @@ mod discovery_tests {
         assert!(session.outgoing.waiting.unwrap().elapsed() < Duration::from_secs(1));
         let table = fresh.state().0;
         assert!(session
-            .start_discovery(Direction::ToServer, move |_| Ok(
+            .start_discovery_wait(Direction::ToServer, move |_| Ok(
                 gearth_platform::ScanResult {
                     states: vec![table],
                     bytes_read: 1024,
@@ -1513,7 +1550,7 @@ mod discovery_tests {
         let (release_tx, release_rx) = mpsc::channel();
         let table = key.state().0;
         assert!(session
-            .start_discovery(Direction::ToClient, move |cancel| {
+            .start_discovery_wait(Direction::ToClient, move |cancel| {
                 started_tx.send(()).unwrap();
                 while !cancel.load(Ordering::Acquire) {
                     if release_rx.recv_timeout(Duration::from_millis(5)).is_ok() {
@@ -1619,7 +1656,7 @@ mod discovery_tests {
             .is_empty());
         let table = key.state().0;
         assert!(session
-            .start_discovery(Direction::ToClient, move |_| Ok(
+            .start_discovery_wait(Direction::ToClient, move |_| Ok(
                 gearth_platform::ScanResult {
                     states: vec![table],
                     bytes_read: 1024,
@@ -1682,7 +1719,7 @@ mod discovery_tests {
         assert_eq!(input.position() as usize, BOOTSTRAP_LIMIT);
         let table = key.state().0;
         assert!(session
-            .start_discovery(Direction::ToClient, move |_| Ok(
+            .start_discovery_wait(Direction::ToClient, move |_| Ok(
                 gearth_platform::ScanResult {
                     states: vec![table],
                     bytes_read: 1024,
@@ -1718,7 +1755,7 @@ mod discovery_tests {
         }
         let table = key.state().0;
         assert!(session
-            .start_discovery(Direction::ToClient, move |_| Ok(
+            .start_discovery_wait(Direction::ToClient, move |_| Ok(
                 gearth_platform::ScanResult {
                     states: vec![table],
                     bytes_read: 1024,
@@ -1770,7 +1807,7 @@ mod discovery_tests {
         session.outgoing.encrypted = true;
         session.outgoing.buffer = vec![0; 6];
         assert!(session
-            .start_discovery(Direction::ToServer, move |cancel| {
+            .start_discovery_wait(Direction::ToServer, move |cancel| {
                 started_tx.send(()).unwrap();
                 while !cancel.load(Ordering::Acquire) {
                     std::thread::sleep(Duration::from_millis(1));
@@ -1786,7 +1823,7 @@ mod discovery_tests {
         session.incoming.encrypted = true;
         session.incoming.feed(&wire).unwrap();
         assert!(session
-            .start_discovery(Direction::ToClient, move |_| Ok(
+            .start_discovery_wait(Direction::ToClient, move |_| Ok(
                 gearth_platform::ScanResult {
                     states: vec![incoming.state().0],
                     bytes_read: 1024,
@@ -1822,7 +1859,7 @@ mod discovery_tests {
         session.outgoing.encrypted = true;
         session.outgoing.buffer = vec![0; 6];
         assert!(session
-            .start_discovery(Direction::ToServer, move |cancel| {
+            .start_discovery_wait(Direction::ToServer, move |cancel| {
                 started_tx.send(()).unwrap();
                 while !cancel.load(Ordering::Acquire) {
                     std::thread::sleep(Duration::from_millis(1));
