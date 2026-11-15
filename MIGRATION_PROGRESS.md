@@ -1,5 +1,8 @@
 # G-Earth Rust migration progress
 
+## Nitro lifecycle events under saturation
+
+Nitro now uses the concurrent bounded control-event sink. A periodic async flush keeps active traffic independent of the consumer; new peer activation waits without holding its lock when previous lifecycle events remain pending. The queue check and peer claim are serialized with close to avoid an admission race; stop or peer closure cancels the wait. On unexpected proxy exit the worker continues flushing until delivery or explicit stop. Synthetic fixtures check ordered Connected/Disconnected delivery, reconnect readiness, stale session rejection and cancellation. Desktop/web library tests passed 132 with 7 ignored before the final shutdown-flush adjustment; Nitro tests, Clippy and debug build checked afterward. Unity producer and forwarder saturation remains open. The latest release build predates this change; real-client compatibility remains unverified.
 ## Concurrent event sink preparation
 
 The bounded TCP control-event sink is now safe for concurrent producers: one mutex serializes flushing and insertion, and two of eight pending slots are reserved for lifecycle transitions even during an error flood. A concurrent synthetic test exercises the reservation. TCP tests, synthetic Flash process, Clippy and desktop/web debug build pass. Nitro and Unity have not yet been connected to this sink; their event loss remains open. The latest release build predates this preparation.
@@ -531,4 +534,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Fix lost Nitro lifecycle events in src/web_proxy.rs under a saturated producer queue, with concurrent-producer ordering, bounded retention, a nonblocking flush, and deterministic disconnect/reconnect fixtures. Then address the Unity producer and its second forwarding queue, followed by the remaining cost of Flash RC4 reverse searches without a fresh candidate. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.
+Fix Unity lifecycle event loss in src/unity_server.rs producer queues and src/unity_connection.rs forwarding: preserve bounded ordered Connected/Disconnected delivery under saturation, coordinate concurrent peer admission and cancellation, and test both stages and reconnect. Then investigate remaining Flash RC4 reverse-only search cost and repeat the desktop/web release build. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.

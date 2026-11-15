@@ -1,5 +1,8 @@
 # Rust migration architecture
 
+## Nitro event backpressure
+
+Nitro producers use the bounded concurrent event sink. An async task flushes without waiting on the consumer; activation serializes its queue check with peer closure and waits asynchronously when the previous lifecycle is pending. Cancellation remains possible. Low-priority events and errors beyond the bounded queue may still be dropped. Unity has a separate producer and forwarding path.
 ## Concurrent control-event sink
 
 The TCP sink serializes enqueue and flushing under one mutex and reserves two of eight pending slots for lifecycle events. It can be reused by concurrent producers, but Nitro and Unity are not yet wired to it.

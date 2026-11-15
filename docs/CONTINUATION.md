@@ -1,5 +1,8 @@
 # Continuation state
 
+## Nitro event continuation
+
+Nitro uses the concurrent bounded sink, async flush and serialized admission. Next integrate equivalent bounded delivery into Unity server producers and its additional forwarder, with ordered saturation/reconnect tests; then examine Flash reverse-only scan cost. Repeat the release build for current code.
 ## Concurrent producer preparation
 
 The bounded TCP event sink now supports concurrent producers and reserves two lifecycle slots. Integrate it into Nitro with a nonblocking periodic flush and lifecycle admission control; then address both Unity queues.

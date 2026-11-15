@@ -4,7 +4,7 @@ use crate::{
     nitro::{Decoded, Hotels, Modifier},
     packet::{Direction, FrameDecoder, Message, Packet, PacketFormat},
     packet_info::PacketInfoManager,
-    relay::Event,
+    relay::{Event, RelayEventSink},
     rules::Rules,
     web_ca::ProxyIdentity,
 };
@@ -25,7 +25,7 @@ use std::{
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, AtomicI32, AtomicUsize, Ordering},
-        mpsc::{self, Receiver, SyncSender},
+        mpsc::{self, Receiver},
         Arc, Mutex,
     },
     thread::{self, JoinHandle},
@@ -233,7 +233,7 @@ struct Shared {
     active: Mutex<Option<Arc<Peer>>>,
     rules: Mutex<Rules>,
     pipeline: Mutex<()>,
-    events: SyncSender<Event>,
+    events: RelayEventSink,
     index: AtomicI32,
     stop: AtomicBool,
 }
@@ -314,22 +314,38 @@ impl Shared {
             .filter(|p| p.ready.load(Ordering::Acquire) && !p.closed.load(Ordering::Acquire))
     }
     async fn activate(self: &Arc<Self>, peer: &Arc<Peer>, uri: &Uri) -> io::Result<()> {
-        {
-            let mut active = self
-                .active
-                .lock()
-                .map_err(|_| io::Error::other("web active lock poisoned"))?;
-            if peer.closed.load(Ordering::Acquire) || self.stop.load(Ordering::Acquire) {
-                return Err(io::Error::new(
-                    io::ErrorKind::Interrupted,
-                    "Nitro connection already closed",
-                ));
+        // Bound the control backlog by deferring new sessions until the
+        // previous lifecycle has entered the consumer channel. Never hold
+        // a peer lock or block a Tokio worker while waiting for the UI.
+        loop {
+            let claimed = {
+                let mut active = self
+                    .active
+                    .lock()
+                    .map_err(|_| io::Error::other("web active lock poisoned"))?;
+                if peer.closed.load(Ordering::Acquire) || self.stop.load(Ordering::Acquire) {
+                    return Err(io::Error::new(
+                        io::ErrorKind::Interrupted,
+                        "Nitro connection already closed",
+                    ));
+                }
+                if active.as_ref().is_some_and(|p| p.key != peer.key) {
+                    return Err(io::Error::other("another Nitro client is already active"));
+                }
+                // close() publishes Disconnected under this same lock; check
+                // its queue before claiming, without a gap for another close.
+                if self.events.flush() {
+                    *active = Some(peer.clone());
+                    peer.active.store(true, Ordering::Release);
+                    true
+                } else {
+                    false
+                }
+            };
+            if claimed {
+                break;
             }
-            if active.as_ref().is_some_and(|p| p.key != peer.key) {
-                return Err(io::Error::other("another Nitro client is already active"));
-            }
-            *active = Some(peer.clone());
-            peer.active.store(true, Ordering::Release);
+            tokio::time::sleep(Duration::from_millis(5)).await;
         }
         let mut database = self.options.packet_info.clone();
         let mut publish_database = false;
@@ -827,7 +843,7 @@ impl WebProxy {
             active: Mutex::new(None),
             rules: Mutex::new(Rules::default()),
             pipeline: Mutex::new(()),
-            events,
+            events: RelayEventSink::new(events),
             index: AtomicI32::new(0),
             stop: AtomicBool::new(false),
         });
@@ -847,6 +863,7 @@ impl WebProxy {
             let mut builder=Proxy::builder().with_listener(listener).with_ca(ca).with_http_connector(connector).with_websocket_connector(Connector::Rustls(Arc::new(tls))).with_http_handler(Handler(actor.clone(),0,None)).with_websocket_handler(Handler(actor.clone(),0,None));
             if let Some(socks)=actor.options.upstream_socks.clone(){builder=builder.with_upstream_dialer(crate::web_socks::dialer(socks));}
             let proxy=builder.build().map_err(io::Error::other)?;
+            let flush_actor=actor.clone(); tokio::spawn(async move { while !flush_actor.stop.load(Ordering::Acquire) { flush_actor.events.flush(); tokio::time::sleep(Duration::from_millis(5)).await; } });
             let _=ready.send(());let _=actor.events.try_send(Event::Listening(address));tokio::select!{result=proxy.start()=>result.map_err(io::Error::other),_=shutdown=>Ok(())}
         });
                 runtime.shutdown_timeout(Duration::from_secs(1));
@@ -856,6 +873,11 @@ impl WebProxy {
                 let _ = actor.events.try_send(Event::Error(e.to_string()));
             }
             actor.close_all();
+            // On an unexpected proxy exit, retain final lifecycle events until
+            // they reach the consumer. Explicit stop still cancels promptly.
+            while !actor.stop.load(Ordering::Acquire) && !actor.events.flush() {
+                thread::sleep(Duration::from_millis(5));
+            }
         });
         let mut proxy = Self {
             state,
@@ -1157,7 +1179,7 @@ mod lifecycle_tests {
             active: Mutex::new(None),
             rules: Mutex::new(Rules::default()),
             pipeline: Mutex::new(()),
-            events,
+            events: RelayEventSink::new(events),
             index: AtomicI32::new(0),
             stop: AtomicBool::new(false),
         });
@@ -1213,7 +1235,7 @@ mod lifecycle_tests {
                 active: Mutex::new(None),
                 rules: Mutex::new(Rules::default()),
                 pipeline: Mutex::new(()),
-                events,
+                events: RelayEventSink::new(events),
                 index: AtomicI32::new(0),
                 stop: AtomicBool::new(false),
             });
@@ -1285,7 +1307,7 @@ mod lifecycle_tests {
             active: Mutex::new(None),
             rules: Mutex::new(Rules::default()),
             pipeline: Mutex::new(()),
-            events,
+            events: RelayEventSink::new(events),
             index: AtomicI32::new(0),
             stop: AtomicBool::new(false),
         });
@@ -1499,7 +1521,7 @@ mod lifecycle_tests {
             active: Mutex::new(None),
             rules: Mutex::new(Rules::default()),
             pipeline: Mutex::new(()),
-            events,
+            events: RelayEventSink::new(events),
             index: AtomicI32::new(0),
             stop: AtomicBool::new(false),
         });
@@ -1663,7 +1685,7 @@ mod lifecycle_tests {
                     result
                 }));
                 let (events, receiver) = mpsc::sync_channel(16);
-                let state = Arc::new(Shared { options, hartico_key: Mutex::new(None), city_keys: Mutex::new(None), peers: Mutex::new(HashMap::new()), active: Mutex::new(None), rules: Mutex::new(Rules::default()), pipeline: Mutex::new(()), events, index: AtomicI32::new(0), stop: AtomicBool::new(false) });
+                let state = Arc::new(Shared { options, hartico_key: Mutex::new(None), city_keys: Mutex::new(None), peers: Mutex::new(HashMap::new()), active: Mutex::new(None), rules: Mutex::new(Rules::default()), pipeline: Mutex::new(()), events: RelayEventSink::new(events), index: AtomicI32::new(0), stop: AtomicBool::new(false) });
                 let peer = Arc::new(Peer::new(PeerKey { client: "127.0.0.1:1234".parse().unwrap(), uri: "ws://fixture".into() }, Modifier::new(&crate::nitro::HotelKind::Plain).unwrap()));
                 let worker_state = state.clone(); let worker_peer = peer.clone();
                 let task = tokio::spawn(async move { worker_state.activate(&worker_peer, &"ws://fixture".parse().unwrap()).await });
@@ -1806,7 +1828,7 @@ mod lifecycle_tests {
                 result
             }));
             let (events, receiver) = mpsc::sync_channel(32);
-            let state = Arc::new(Shared { options, hartico_key: Mutex::new(None), city_keys: Mutex::new(None), peers: Mutex::new(HashMap::new()), active: Mutex::new(None), rules: Mutex::new(Rules::default()), pipeline: Mutex::new(()), events, index: AtomicI32::new(0), stop: AtomicBool::new(false) });
+            let state = Arc::new(Shared { options, hartico_key: Mutex::new(None), city_keys: Mutex::new(None), peers: Mutex::new(HashMap::new()), active: Mutex::new(None), rules: Mutex::new(Rules::default()), pipeline: Mutex::new(()), events: RelayEventSink::new(events), index: AtomicI32::new(0), stop: AtomicBool::new(false) });
             let peer = |port| Arc::new(Peer::new(PeerKey { client: format!("127.0.0.1:{port}").parse().unwrap(), uri: "ws://fixture".into() }, Modifier::new(&crate::nitro::HotelKind::Plain).unwrap()));
             let old = peer(1234); let new = peer(1235);
             let old_state = state.clone(); let old_peer = old.clone();
@@ -1867,7 +1889,7 @@ mod lifecycle_tests {
                 active: Mutex::new(None),
                 rules: Mutex::new(Rules::default()),
                 pipeline: Mutex::new(()),
-                events,
+                events: RelayEventSink::new(events),
                 index: AtomicI32::new(0),
                 stop: AtomicBool::new(false),
             });
@@ -1944,7 +1966,7 @@ mod lifecycle_tests {
             active: Mutex::new(None),
             rules: Mutex::new(Rules::default()),
             pipeline: Mutex::new(()),
-            events,
+            events: RelayEventSink::new(events),
             index: AtomicI32::new(0),
             stop: AtomicBool::new(false),
         };
@@ -1978,7 +2000,102 @@ mod lifecycle_tests {
         host.stop();
     }
     #[test]
-    fn nitro_schedule_context_survives_lost_events_and_rejects_stale_peers() {
+    fn nitro_activation_waits_for_previous_lifecycle_and_can_be_cancelled() {
+        let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), PathBuf::new());
+        options.fetch_packet_info = false;
+        let (sender, receiver) = mpsc::sync_channel(1);
+        let events = RelayEventSink::new(sender);
+        events.try_send(Event::Status("older".into())).unwrap();
+        events.try_send(Event::Disconnected).unwrap();
+        let state = Arc::new(Shared {
+            options,
+            hartico_key: Mutex::new(None),
+            city_keys: Mutex::new(None),
+            peers: Mutex::new(HashMap::new()),
+            active: Mutex::new(None),
+            rules: Mutex::new(Rules::default()),
+            pipeline: Mutex::new(()),
+            events,
+            index: AtomicI32::new(0),
+            stop: AtomicBool::new(false),
+        });
+        let peer = Arc::new(Peer::new(
+            PeerKey {
+                client: "127.0.0.1:1001".parse().unwrap(),
+                uri: "ws://fixture".into(),
+            },
+            Modifier::new(&crate::nitro::HotelKind::Plain).unwrap(),
+        ));
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let task_state = state.clone();
+            let task_peer = peer.clone();
+            let task = tokio::spawn(async move {
+                task_state
+                    .activate(&task_peer, &"ws://fixture".parse().unwrap())
+                    .await
+            });
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            assert!(!task.is_finished());
+            assert!(state.active().is_none());
+            assert!(matches!(receiver.try_recv(), Ok(Event::Status(_))));
+            tokio::time::timeout(Duration::from_secs(2), task)
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+            assert!(matches!(receiver.try_recv(), Ok(Event::Disconnected)));
+            state.close(&peer);
+        });
+
+        let (sender, _receiver) = mpsc::sync_channel(1);
+        let events = RelayEventSink::new(sender);
+        events.try_send(Event::Status("older".into())).unwrap();
+        events.try_send(Event::Disconnected).unwrap();
+        let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), PathBuf::new());
+        options.fetch_packet_info = false;
+        let state = Arc::new(Shared {
+            options,
+            hartico_key: Mutex::new(None),
+            city_keys: Mutex::new(None),
+            peers: Mutex::new(HashMap::new()),
+            active: Mutex::new(None),
+            rules: Mutex::new(Rules::default()),
+            pipeline: Mutex::new(()),
+            events,
+            index: AtomicI32::new(0),
+            stop: AtomicBool::new(false),
+        });
+        let peer = Arc::new(Peer::new(
+            PeerKey {
+                client: "127.0.0.1:1002".parse().unwrap(),
+                uri: "ws://fixture".into(),
+            },
+            Modifier::new(&crate::nitro::HotelKind::Plain).unwrap(),
+        ));
+        runtime.block_on(async {
+            let task_state = state.clone();
+            let task_peer = peer.clone();
+            let task = tokio::spawn(async move {
+                task_state
+                    .activate(&task_peer, &"ws://fixture".parse().unwrap())
+                    .await
+            });
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            peer.closed.store(true, Ordering::Release);
+            assert_eq!(
+                tokio::time::timeout(Duration::from_secs(2), task)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .unwrap_err()
+                    .kind(),
+                io::ErrorKind::Interrupted
+            );
+        });
+    }
+    #[test]
+    fn nitro_schedule_context_survives_saturated_events_and_rejects_stale_peers() {
         use crate::packet_info::PacketInfo;
         let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), PathBuf::new());
         options.fetch_packet_info = false;
@@ -1993,7 +2110,7 @@ mod lifecycle_tests {
                 source: "fixture".into(),
             }],
         );
-        let (events, _receiver) = mpsc::sync_channel(1);
+        let (events, receiver) = mpsc::sync_channel(1);
         events.try_send(Event::Status("fill queue".into())).unwrap();
         let state = Arc::new(Shared {
             options,
@@ -2003,7 +2120,7 @@ mod lifecycle_tests {
             active: Mutex::new(None),
             rules: Mutex::new(Rules::default()),
             pipeline: Mutex::new(()),
-            events,
+            events: RelayEventSink::new(events),
             index: AtomicI32::new(0),
             stop: AtomicBool::new(false),
         });
@@ -2031,7 +2148,7 @@ mod lifecycle_tests {
                 .unwrap();
             let context = proxy
                 .schedule_context()
-                .expect("ready metadata despite dropped events");
+                .expect("ready metadata despite saturated events");
             assert_eq!(context.version, NITRO_REVISION);
             assert_eq!(context.packets.entries()[0].header, 444);
             if let Some(old) = &previous {
@@ -2075,6 +2192,20 @@ mod lifecycle_tests {
             assert_eq!(packet.header(), 445);
             previous = Some(refreshed);
             state.close(&peer);
+            let mut delivered = Vec::new();
+            while !state.events.flush() {
+                delivered.push(receiver.try_recv().unwrap());
+            }
+            delivered.extend(receiver.try_iter());
+            let connected = delivered
+                .iter()
+                .position(|event| matches!(event, Event::Connected(_)))
+                .unwrap();
+            let disconnected = delivered
+                .iter()
+                .position(|event| matches!(event, Event::Disconnected))
+                .unwrap();
+            assert!(connected < disconnected);
         }
     }
 }

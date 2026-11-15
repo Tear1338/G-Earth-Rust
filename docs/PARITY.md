@@ -1,5 +1,8 @@
 # Compatibility with 1.5.4-beta-29
 
+## Nitro lifecycle saturation evidence
+
+Synthetic Nitro fixtures preserve Connected before Disconnected across a saturated event channel and cover deferred or cancelled activation and stale-session rejection. These tests do not prove behavior with a real client. Unity still has separate bounded queues to audit and fix.
 ## Event queue preparation
 
 Concurrent synthetic producers preserve reserved lifecycle capacity. Nitro and Unity still require integration and real-client behavior remains unverified.

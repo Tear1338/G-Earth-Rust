@@ -1,5 +1,10 @@
 # Migration tasks
 
+## Nitro event saturation
+
+- [x] Preserve ordered Nitro lifecycle events under producer queue saturation, with bounded concurrent admission, periodic flush and cancellable waiting.
+- [ ] Address Unity producer saturation and its separate forwarder eviction policy.
+- [ ] Repeat the release build for current code; real-client verification remains with the user.
 ## Concurrent event preparation
 
 - [x] Make the bounded event sink safe for concurrent producers and reserve lifecycle capacity under error flood.

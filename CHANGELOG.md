@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — Nitro event saturation
+
+- Retain Nitro lifecycle events across a full consumer queue, with concurrent producer ordering, bounded admission and cancellable asynchronous waiting.
+- Add saturated reconnect and cancellation fixtures.
 ## Unreleased — event queue preparation
 
 - Make the bounded TCP event sink safe for concurrent producers and reserve space for lifecycle events during error floods.
