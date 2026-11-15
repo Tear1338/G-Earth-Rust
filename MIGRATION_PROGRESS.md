@@ -1,5 +1,9 @@
 # G-Earth Rust migration progress
 
+## Release verification at b836a83
+
+Windows GNU desktop/web release build succeeded at code commit `b836a83a8ee8cee565f54c5ce25e9aaab1ad4446`. The desktop/web library suite passed 142 tests with 7 ignored, and simulated Flash process and relay tests passed. Real-client and extension compatibility remains unverified.
+
 ## Two-pass outgoing Flash discovery
 
 Outgoing discovery now scans every memory page for fresh RC4 tables before beginning a reverse-state pass. This prevents expensive reverse trials on early pages from delaying a fresh state on a later page. If no fresh state is found, a second scan performs the existing reverse search; the extra scan is a tradeoff, and reverse-only search can still be very costly. Fresh ambiguity does not fall through to reverse candidates. Synthetic fixtures cover late fresh tables, reverse-only fallback, ambiguous fresh results, growing bootstrap buffers, cancellation and moving ciphertext; the simulated Flash process and relay tests passed. The desktop/web library suite passed 142 tests with 7 ignored, and Clippy/debug build passed. No end-to-end performance or real-client verification was performed; the latest release build predates this change.
