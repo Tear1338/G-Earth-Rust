@@ -1,5 +1,7 @@
 # Continuation state
 
+Windows Flash memory scans now resume after time/byte/table caps, retain overlap and combine candidate ambiguity across a complete pass. Controlled-process page tests, synthetic Flash relay, Windows platform (14 passed, one ignored), desktop/web library (122 passed, seven ignored), Flash/core/relay tests, both Clippy configurations and debug build pass. Next address encrypted bootstrap buffer backpressure and oversized first frames. Real-client tests belong to the user and remain unverified.
+
 Flash RC4 discovery now uses bounded cancellable per-direction workers and defers injections until keys and buffered frames are ready. Windows synthetic child-process relay passed repeatedly; desktop/web library (118 passed, seven ignored), Flash/core/relay/desktop tests, both Clippy configurations and debug build pass. Next make Windows memory scanning resume after its current time/byte/table caps; it still restarts from zero. The user will perform real-client tests.
 
 Rust outgoing RC4 reverse search no longer stops at candidate 64; a previously failing deterministic fixture now passes. Windows Flash, relay and library tests, both Clippy configurations and debug build pass. This is incomplete: the synchronous five-second budget can still miss late candidates and stall relay I/O. Next implement incremental, cancellable search preserving ambiguity and buffered ciphertext; the user will test real clients.

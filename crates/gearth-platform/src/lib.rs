@@ -21,6 +21,8 @@ pub struct ScanResult {
     pub states: Vec<[u8; 256]>,
     pub bytes_read: usize,
     pub complete: bool,
+    /// Address to resume an incomplete scan; None when the scan reached its end.
+    pub next_address: Option<usize>,
 }
 pub fn tcp_owner(
     local: std::net::SocketAddr,
@@ -37,6 +39,13 @@ pub fn tcp_owner(
     }
 }
 pub fn find_tables(bytes: &[u8], address: usize) -> Vec<[u8; 256]> {
+    find_tables_with_offsets(bytes, address)
+        .into_iter()
+        .map(|(_, state)| state)
+        .collect()
+}
+#[cfg_attr(not(windows), allow(dead_code))]
+fn find_tables_with_offsets(bytes: &[u8], address: usize) -> Vec<(usize, [u8; 256])> {
     let mut result = Vec::new();
     let first = (4 - address % 4) % 4;
     for offset in (first..bytes.len().saturating_sub(1023)).step_by(4) {
@@ -73,8 +82,8 @@ pub fn find_tables(bytes: &[u8], address: usize) -> Vec<[u8; 256]> {
                 valid = false;
             }
         }
-        if valid && !result.contains(&state) {
-            result.push(state);
+        if valid && !result.iter().any(|(_, existing)| *existing == state) {
+            result.push((offset, state));
             if result.len() == MAX_TABLES {
                 break;
             }
@@ -187,6 +196,10 @@ pub fn habbo_processes() -> io::Result<Vec<ClientProcess>> {
     }
 }
 pub fn scan_habbo(pid: u32, cancel: &AtomicBool) -> io::Result<ScanResult> {
+    scan_habbo_from(pid, 0, cancel)
+}
+/// Resume a bounded read-only scan at an address previously returned by the scanner.
+pub fn scan_habbo_from(pid: u32, address: usize, cancel: &AtomicBool) -> io::Result<ScanResult> {
     #[cfg(windows)]
     {
         let known = habbo_processes()?;
@@ -196,11 +209,11 @@ pub fn scan_habbo(pid: u32, cancel: &AtomicBool) -> io::Result<ScanResult> {
                 "select a running Habbo or Flash player process",
             ));
         }
-        windows::scan(pid, cancel, None)
+        windows::scan(pid, cancel, Some((address, usize::MAX)))
     }
     #[cfg(not(windows))]
     {
-        let _ = (pid, cancel);
+        let _ = (pid, address, cancel);
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
             "automatic Flash memory discovery currently requires Windows",

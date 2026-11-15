@@ -1,5 +1,7 @@
 # Migration tasks
 
+Test and implement bounded Flash input backpressure during asynchronous key discovery: a full 64 KiB encrypted bootstrap buffer currently causes an error rather than pausing socket reads. Assess a first encrypted frame larger than the bootstrap limit separately. The user will test real clients.
+
 Make Windows Flash memory scanning resumable across its five-second, 1 GiB and table-count limits. Preserve overlap and cancellation, test candidates beyond the first page and prevent restarting forever at address zero. The user will conduct actual-client testing.
 
 Implement incremental, cancellable outgoing RC4 snapshot recovery across the entire candidate list without restarting at index zero after the time budget or blocking relay I/O. Preserve ambiguity detection, buffered ciphertext and cancellation; add deterministic late-candidate and moving-buffer fixtures. Real client tests are the user’s responsibility.

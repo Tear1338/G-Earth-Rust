@@ -1,5 +1,7 @@
 # Compatibility with 1.5.4-beta-29
 
+Windows Flash memory scans now resume past bounded pages and aggregate ambiguous candidates until a complete pass; controlled memory and synthetic child-process fixtures pass. Large encrypted bootstrap handling, actual Habbo key discovery and performance remain unverified.
+
 Flash discovery now searches all returned candidates off the relay thread with per-direction cancellation and handles buffered ciphertext growth and early injections in synthetic tests. Windows memory scan pagination, actual Habbo key discovery and real-client compatibility remain unverified.
 
 Beta-29 Rc4Obtainer iterates all candidate RC4 tables; Rust no longer truncates outgoing reverse search at 64, verified with the correct snapshot at index 64. Rust still has a synchronous five-second deadline and may not reach all candidates; live connection compatibility remains unverified.

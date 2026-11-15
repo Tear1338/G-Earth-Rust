@@ -67,6 +67,23 @@ pub(super) fn scan(
     cancel: &AtomicBool,
     range: Option<(usize, usize)>,
 ) -> io::Result<ScanResult> {
+    scan_with_limits(
+        pid,
+        cancel,
+        range,
+        1024 * 1024 * 1024,
+        Duration::from_secs(5),
+        MAX_TABLES,
+    )
+}
+fn scan_with_limits(
+    pid: u32,
+    cancel: &AtomicBool,
+    range: Option<(usize, usize)>,
+    max_bytes: usize,
+    max_time: Duration,
+    max_tables: usize,
+) -> io::Result<ScanResult> {
     // SAFETY: Read-only process handle. Every read targets a live, sized Rust allocation;
     // remote addresses are passed to Windows and never dereferenced in Rust.
     unsafe {
@@ -78,7 +95,7 @@ pub(super) fn scan(
         let mut result = ScanResult::default();
         let mut address = range.map_or(0, |r| r.0);
         let end = range.map_or(usize::MAX, |r| r.1);
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + max_time;
         while address < end {
             if cancel.load(Ordering::Acquire) {
                 return Err(io::Error::new(
@@ -86,10 +103,11 @@ pub(super) fn scan(
                     "memory discovery cancelled",
                 ));
             }
-            if result.bytes_read >= 1024 * 1024 * 1024
+            if result.bytes_read >= max_bytes
                 || Instant::now() > deadline
-                || result.states.len() >= MAX_TABLES
+                || result.states.len() >= max_tables
             {
+                result.next_address = Some(address);
                 return Ok(result);
             }
             let mut info: MEMORY_BASIC_INFORMATION = zeroed();
@@ -130,7 +148,8 @@ pub(super) fn scan(
                             "memory discovery cancelled",
                         ));
                     }
-                    if Instant::now() > deadline || result.bytes_read >= 1024 * 1024 * 1024 {
+                    if Instant::now() > deadline || result.bytes_read >= max_bytes {
+                        result.next_address = Some(at);
                         return Ok(result);
                     }
                     let size = (limit - at).min(65536 + 1020);
@@ -145,10 +164,13 @@ pub(super) fn scan(
                     );
                     result.bytes_read += read;
                     bytes.truncate(read);
-                    for state in find_tables(&bytes, at) {
+                    for (offset, state) in find_tables_with_offsets(&bytes, at) {
                         if !result.states.contains(&state) {
                             result.states.push(state);
-                            if result.states.len() == MAX_TABLES {
+                            if result.states.len() == max_tables {
+                                result.next_address = at
+                                    .checked_add(offset)
+                                    .and_then(|value| value.checked_add(4));
                                 return Ok(result);
                             }
                         }
@@ -270,6 +292,126 @@ mod tests {
             .any(|s| s[0] == words[0] as u8 && s[1] == words[1] as u8));
         std::hint::black_box(words);
     }
+    #[test]
+    fn bounded_scans_resume_past_first_page_without_losing_overlap() {
+        let mut words = vec![0u32; 65536];
+        let mut table: Vec<u32> = (0..256).collect();
+        for i in 0..256 {
+            let j = (i * 73 + table[i] as usize + 19) % 256;
+            table.swap(i, j);
+        }
+        let target_offset = 40000;
+        words[target_offset..target_offset + 256].copy_from_slice(&table);
+        let mut crossing: Vec<u32> = (0..256).collect();
+        for i in 0..256 {
+            let j = (i * 41 + crossing[i] as usize + 7) % 256;
+            crossing.swap(i, j);
+        }
+        let crossing_offset = (65536 - 512) / 4;
+        words[crossing_offset..crossing_offset + 256].copy_from_slice(&crossing);
+        let crossing_expected = crossing
+            .iter()
+            .map(|value| *value as u8)
+            .collect::<Vec<_>>();
+        let start = words.as_ptr() as usize;
+        let end = start + words.len() * std::mem::size_of::<u32>();
+        let expected = table.iter().map(|value| *value as u8).collect::<Vec<_>>();
+        let cancel = AtomicBool::new(false);
+        let mut cursor = start;
+        let mut pages = 0;
+        let mut found = false;
+        loop {
+            let result = scan_with_limits(
+                std::process::id(),
+                &cancel,
+                Some((cursor, end)),
+                1,
+                Duration::from_secs(5),
+                MAX_TABLES,
+            )
+            .unwrap();
+            pages += 1;
+            if pages == 1 {
+                assert!(!result
+                    .states
+                    .iter()
+                    .any(|state| state.as_slice() == expected));
+                assert!(
+                    result
+                        .states
+                        .iter()
+                        .any(|state| state.as_slice() == crossing_expected),
+                    "table crossing the page boundary was missed"
+                );
+            }
+            found |= result
+                .states
+                .iter()
+                .any(|state| state.as_slice() == expected);
+            if result.complete {
+                assert!(result.next_address.is_none());
+                break;
+            }
+            let next = result.next_address.expect("incomplete scan needs a cursor");
+            assert!(next > cursor && next < end);
+            cursor = next;
+        }
+        assert!(pages >= 3);
+        assert!(found, "later-page table was not found");
+        std::hint::black_box(words);
+    }
+
+    #[test]
+    fn table_limit_resumes_within_the_same_memory_chunk() {
+        let mut words = vec![0u32; 4096];
+        let make_table = |seed: usize| {
+            let mut table: Vec<u32> = (0..256).collect();
+            for i in 0..256 {
+                let j = (i * 73 + table[i] as usize + seed) % 256;
+                table.swap(i, j);
+            }
+            table
+        };
+        let first = make_table(19);
+        let second = make_table(37);
+        words[128..384].copy_from_slice(&first);
+        words[1024..1280].copy_from_slice(&second);
+        let start = words.as_ptr() as usize;
+        let end = start + words.len() * std::mem::size_of::<u32>();
+        let cancel = AtomicBool::new(false);
+        let first_page = scan_with_limits(
+            std::process::id(),
+            &cancel,
+            Some((start, end)),
+            usize::MAX,
+            Duration::from_secs(5),
+            1,
+        )
+        .unwrap();
+        assert_eq!(first_page.states.len(), 1);
+        assert_eq!(
+            first_page.states[0].as_slice(),
+            first.iter().map(|value| *value as u8).collect::<Vec<_>>()
+        );
+        let cursor = first_page.next_address.unwrap();
+        assert!(cursor > start && cursor < start + 65536);
+        let second_page = scan_with_limits(
+            std::process::id(),
+            &cancel,
+            Some((cursor, end)),
+            usize::MAX,
+            Duration::from_secs(5),
+            1,
+        )
+        .unwrap();
+        assert_eq!(second_page.states.len(), 1);
+        assert_eq!(
+            second_page.states[0].as_slice(),
+            second.iter().map(|value| *value as u8).collect::<Vec<_>>()
+        );
+        std::hint::black_box(words);
+    }
+
     #[test]
     fn cancellation_is_checked_before_memory_is_read() {
         assert_eq!(

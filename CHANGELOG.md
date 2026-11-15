@@ -1,5 +1,7 @@
 # Changelog
 
+- Resume bounded Windows Flash memory scans and preserve candidate ambiguity across pages.
+
 - Run Flash RC4 discovery in cancellable per-direction workers and defer injections until keys and buffered traffic are ready.
 
 - Search outgoing Flash RC4 candidate tables beyond the first 64 within the existing time budget.

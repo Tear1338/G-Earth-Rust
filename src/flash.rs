@@ -26,14 +26,66 @@ impl Drop for DiscoveryTask {
 }
 enum DiscoveryEvent {
     Scanned((usize, usize, bool)),
-    Found(Vec<u8>, Box<Rc4>),
-    Done(usize),
+    Candidate(Vec<u8>, Box<RecoveryOutcome>),
+    Done {
+        sampled_len: usize,
+        next_address: Option<usize>,
+    },
     Failed(io::Error),
 }
 struct DiscoverySlot;
 impl Drop for DiscoverySlot {
     fn drop(&mut self) {
         ACTIVE_DISCOVERY_WORKERS.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+// Fresh-table candidates have the same preference as the original single-page
+// search. Ambiguity at the highest observed priority prevents installation.
+#[derive(Default)]
+struct CandidateAccumulator {
+    priority: u8,
+    ambiguous: bool,
+    cipher: Option<Rc4>,
+}
+struct RecoveryOutcome {
+    priority: u8,
+    ambiguous: bool,
+    cipher: Option<Rc4>,
+}
+impl CandidateAccumulator {
+    fn merge(&mut self, outcome: RecoveryOutcome) {
+        if outcome.priority == 0 || outcome.priority < self.priority {
+            return;
+        }
+        if outcome.priority > self.priority {
+            self.priority = outcome.priority;
+            self.ambiguous = outcome.ambiguous;
+            self.cipher = outcome.cipher;
+            return;
+        }
+        if outcome.ambiguous || self.ambiguous {
+            self.ambiguous = true;
+            self.cipher = None;
+        } else if let Some(candidate) = outcome.cipher {
+            if self
+                .cipher
+                .as_ref()
+                .is_some_and(|existing| existing.state() != candidate.state())
+            {
+                self.ambiguous = true;
+                self.cipher = None;
+            } else {
+                self.cipher = Some(candidate);
+            }
+        }
+    }
+    fn take_unique(&mut self) -> Option<Rc4> {
+        let previous = std::mem::take(self);
+        if previous.ambiguous {
+            None
+        } else {
+            previous.cipher
+        }
     }
 }
 #[derive(Default)]
@@ -44,6 +96,8 @@ struct Side {
     writer: Option<Rc4>,
     waiting: Option<Instant>,
     last_scan: Option<Instant>,
+    scan_address: usize,
+    candidates: CandidateAccumulator,
 }
 impl Side {
     fn feed(&mut self, bytes: &[u8]) -> io::Result<()> {
@@ -283,23 +337,32 @@ impl FlashSession {
                         return;
                     }
                 };
+                if scan.complete != scan.next_address.is_none() {
+                    let _ = sender.send(DiscoveryEvent::Failed(io::Error::other(
+                        "inconsistent Flash memory scan cursor",
+                    )));
+                    return;
+                }
                 let _ = sender.send(DiscoveryEvent::Scanned((
                     scan.states.len(),
                     scan.bytes_read,
                     scan.complete,
                 )));
                 let length = sample.len();
-                match recover_state_inner(&scan.states, &sample, direction, &worker_cancel, None) {
-                    Ok(Some(cipher)) => {
-                        let _ = sender.send(DiscoveryEvent::Found(sample, Box::new(cipher)));
+                let next_address = scan.next_address;
+                match recover_candidates(&scan.states, &sample, direction, &worker_cancel, None) {
+                    Ok(outcome) => {
+                        let _ = sender.send(DiscoveryEvent::Candidate(sample, Box::new(outcome)));
                     }
-                    Ok(None) => {}
                     Err(error) => {
                         let _ = sender.send(DiscoveryEvent::Failed(error));
                         return;
                     }
                 }
-                let _ = sender.send(DiscoveryEvent::Done(length));
+                let _ = sender.send(DiscoveryEvent::Done {
+                    sampled_len: length,
+                    next_address,
+                });
             });
         if let Err(error) = worker {
             ACTIVE_DISCOVERY_WORKERS.fetch_sub(1, Ordering::AcqRel);
@@ -323,17 +386,39 @@ impl FlashSession {
             };
             match event {
                 DiscoveryEvent::Scanned(stats) => self.scan_stats = Some(stats),
-                DiscoveryEvent::Found(sample, cipher) => {
+                DiscoveryEvent::Candidate(sample, outcome) => {
                     let side = self.side(direction);
                     if side.encrypted && side.reader.is_none() && side.buffer.starts_with(&sample) {
-                        side.install(*cipher);
+                        side.candidates.merge(*outcome);
                     }
                 }
-                DiscoveryEvent::Done(sampled_len) => {
+                DiscoveryEvent::Done {
+                    sampled_len,
+                    next_address,
+                } => {
                     self.discovery[index] = None;
                     let side = self.side(direction);
-                    if side.reader.is_none() && side.buffer.len() > sampled_len {
-                        side.waiting = Some(now);
+                    if let Some(next) = next_address {
+                        if next <= side.scan_address {
+                            return Err(io::Error::other("Flash memory scan did not advance"));
+                        }
+                        side.scan_address = next;
+                        if side.reader.is_none() {
+                            side.waiting = Some(now);
+                        }
+                    } else {
+                        side.scan_address = 0;
+                        if side.reader.is_none() {
+                            if let Some(cipher) = side.candidates.take_unique() {
+                                if valid_stream_prefix(&side.buffer, &cipher) {
+                                    side.install(cipher);
+                                } else {
+                                    side.waiting = Some(now);
+                                }
+                            } else if side.buffer.len() > sampled_len {
+                                side.waiting = Some(now);
+                            }
+                        }
                     }
                     break;
                 }
@@ -375,13 +460,14 @@ impl FlashSession {
                     .is_none_or(|t| now.duration_since(t) >= Duration::from_millis(100))
             {
                 side.last_scan = Some(now);
+                let address = side.scan_address;
                 self.start_discovery(direction, move |cancel| {
                     let pid = if pid == 0 {
                         let processes = gearth_platform::habbo_processes()?;
                         if processes.len() != 1 { return Err(io::Error::other("Unable to identify the connecting client; select the Habbo process before attaching")); }
                         processes[0].pid
                     } else { pid };
-                    gearth_platform::scan_habbo(pid, cancel)
+                    gearth_platform::scan_habbo_from(pid, address, cancel)
                 })?;
             }
         }
@@ -410,27 +496,55 @@ fn valid_frames(encrypted: &[u8], candidate: &Rc4) -> bool {
     }
     at == decoded.len() && count > 0
 }
+// Validate newly buffered ciphertext too, while allowing an incomplete final
+// frame. The original sample already supplied at least one complete frame.
+fn valid_stream_prefix(encrypted: &[u8], candidate: &Rc4) -> bool {
+    let mut decoded = encrypted.to_vec();
+    candidate.clone().apply(&mut decoded);
+    let mut at = 0;
+    let mut complete = 0;
+    while at < decoded.len() {
+        if decoded.len() - at < 4 {
+            return complete > 0;
+        }
+        let length = u32::from_be_bytes(decoded[at..at + 4].try_into().unwrap()) as usize;
+        if !(2..=MAX_FRAME).contains(&length) {
+            return false;
+        }
+        if decoded.len() - at < length + 4 {
+            return complete > 0;
+        }
+        at += length + 4;
+        complete += 1;
+    }
+    complete > 0
+}
 pub fn recover_state(
     states: &[[u8; 256]],
     encrypted: &[u8],
     direction: Direction,
     cancel: &AtomicBool,
 ) -> io::Result<Option<Rc4>> {
-    recover_state_inner(
+    let outcome = recover_candidates(
         states,
         encrypted,
         direction,
         cancel,
         Some(Instant::now() + Duration::from_secs(5)),
-    )
+    )?;
+    if outcome.ambiguous {
+        Ok(None)
+    } else {
+        Ok(outcome.cipher)
+    }
 }
-fn recover_state_inner(
+fn recover_candidates(
     states: &[[u8; 256]],
     encrypted: &[u8],
     direction: Direction,
     cancel: &AtomicBool,
     deadline: Option<Instant>,
-) -> io::Result<Option<Rc4>> {
+) -> io::Result<RecoveryOutcome> {
     if cancel.load(Ordering::Acquire) {
         return Err(io::Error::new(
             io::ErrorKind::Interrupted,
@@ -438,7 +552,11 @@ fn recover_state_inner(
         ));
     }
     if encrypted.len() < 6 || encrypted.len() > BOOTSTRAP_LIMIT {
-        return Ok(None);
+        return Ok(RecoveryOutcome {
+            priority: 0,
+            ambiguous: false,
+            cipher: None,
+        });
     }
     // Flash commonly retains the fresh shared-secret table for the opposite direction.
     // Prefer that exact table over reversing a snapshot with an unknown j counter.
@@ -456,13 +574,28 @@ fn recover_state_inner(
                 .as_ref()
                 .is_some_and(|c: &Rc4| c.state() != candidate.state())
             {
-                return Ok(None);
+                return Ok(RecoveryOutcome {
+                    priority: 2,
+                    ambiguous: true,
+                    cipher: None,
+                });
             }
             fresh = Some(candidate);
         }
     }
-    if fresh.is_some() || direction == Direction::ToClient {
-        return Ok(fresh);
+    if let Some(cipher) = fresh {
+        return Ok(RecoveryOutcome {
+            priority: 2,
+            ambiguous: false,
+            cipher: Some(cipher),
+        });
+    }
+    if direction == Direction::ToClient {
+        return Ok(RecoveryOutcome {
+            priority: 0,
+            ambiguous: false,
+            cipher: None,
+        });
     }
     let mut found = None;
     for state in states.iter().take(gearth_platform::MAX_TABLES) {
@@ -474,7 +607,11 @@ fn recover_state_inner(
                 ));
             }
             if deadline.is_some_and(|deadline| Instant::now() > deadline) {
-                return Ok(None);
+                return Ok(RecoveryOutcome {
+                    priority: 0,
+                    ambiguous: false,
+                    cipher: None,
+                });
             }
             let mut candidate = Rc4::from_state(*state, encrypted.len() as u8, y as u8)
                 .map_err(io::Error::other)?;
@@ -489,12 +626,20 @@ fn recover_state_inner(
                 .as_ref()
                 .is_some_and(|c: &Rc4| c.state() != candidate.state())
             {
-                return Ok(None);
+                return Ok(RecoveryOutcome {
+                    priority: 1,
+                    ambiguous: true,
+                    cipher: None,
+                });
             }
             found = Some(candidate);
         }
     }
-    Ok(found)
+    Ok(RecoveryOutcome {
+        priority: if found.is_some() { 1 } else { 0 },
+        ambiguous: false,
+        cipher: found,
+    })
 }
 
 #[cfg(test)]
@@ -550,6 +695,7 @@ mod discovery_tests {
                             states: tables,
                             bytes_read: 100,
                             complete: true,
+                            next_address: None,
                         });
                     }
                 }
@@ -596,6 +742,160 @@ mod discovery_tests {
     }
 
     #[test]
+    fn rejects_candidate_when_new_ciphertext_contradicts_it() {
+        let (fresh, mut current, first_wire) = outgoing_fixture();
+        let mut bad_tail = 1u32.to_be_bytes();
+        current.apply(&mut bad_tail);
+        let mut combined = first_wire.clone();
+        combined.extend_from_slice(&bad_tail);
+        assert!(!valid_stream_prefix(&combined, &fresh));
+        let mut valid_tail = Packet::new(78).bytes().to_vec();
+        let mut tail_cipher = fresh.clone();
+        tail_cipher.apply(&mut first_wire.clone());
+        tail_cipher.apply(&mut valid_tail);
+        let mut partial = first_wire;
+        partial.extend_from_slice(&valid_tail[..2]);
+        assert!(valid_stream_prefix(&partial, &fresh));
+    }
+
+    #[test]
+    fn candidates_remain_ambiguous_across_pages() {
+        let first = Rc4::new(b"first-candidate").unwrap();
+        let second = Rc4::new(b"second-candidate").unwrap();
+        let outcome = |priority, cipher: Rc4| RecoveryOutcome {
+            priority,
+            ambiguous: false,
+            cipher: Some(cipher),
+        };
+        let mut candidates = CandidateAccumulator::default();
+        candidates.merge(outcome(1, first.clone()));
+        candidates.merge(outcome(1, second.clone()));
+        assert!(candidates.take_unique().is_none());
+        candidates.merge(outcome(1, first.clone()));
+        candidates.merge(outcome(1, first.clone()));
+        assert_eq!(candidates.take_unique().unwrap().state(), first.state());
+        candidates.merge(RecoveryOutcome {
+            priority: 1,
+            ambiguous: true,
+            cipher: None,
+        });
+        candidates.merge(outcome(2, second.clone()));
+        assert_eq!(candidates.take_unique().unwrap().state(), second.state());
+        candidates.merge(outcome(2, first));
+        candidates.merge(outcome(2, second));
+        assert!(candidates.take_unique().is_none());
+    }
+
+    #[test]
+    fn candidate_is_not_installed_until_memory_scan_completes() {
+        let (fresh, _current, wire) = outgoing_fixture();
+        let mut session = FlashSession::default();
+        session.outgoing.encrypted = true;
+        session.outgoing.waiting = Some(Instant::now());
+        session.outgoing.feed(&wire).unwrap();
+        let table = fresh.state().0;
+        assert!(session
+            .start_discovery(Direction::ToServer, move |_| Ok(
+                gearth_platform::ScanResult {
+                    states: vec![table],
+                    bytes_read: 65536,
+                    complete: false,
+                    next_address: Some(65536),
+                }
+            ))
+            .unwrap());
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while session.discovery[0].is_some() {
+            session
+                .poll_discovery(Direction::ToServer, Instant::now())
+                .unwrap();
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(
+            session.outgoing.reader.is_none(),
+            "incomplete scan must not install a key"
+        );
+        assert!(session
+            .start_discovery(Direction::ToServer, |_| Ok(gearth_platform::ScanResult {
+                states: Vec::new(),
+                bytes_read: 1024,
+                complete: true,
+                next_address: None,
+            }))
+            .unwrap());
+        while session.discovery[0].is_some() {
+            session
+                .poll_discovery(Direction::ToServer, Instant::now())
+                .unwrap();
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(
+            session.outgoing.reader.as_ref().unwrap().state().1,
+            wire.len() as u8
+        );
+        assert_eq!(
+            session.feed(Direction::ToServer, &[]).unwrap()[0]
+                .packet
+                .header(),
+            77
+        );
+    }
+
+    #[test]
+    fn incomplete_memory_page_advances_before_the_next_key_search() {
+        let (fresh, _current, wire) = outgoing_fixture();
+        let mut session = FlashSession::default();
+        session.outgoing.encrypted = true;
+        session.outgoing.waiting = Instant::now().checked_sub(Duration::from_secs(16));
+        session.outgoing.feed(&wire).unwrap();
+        assert!(session
+            .start_discovery(Direction::ToServer, |_| Ok(gearth_platform::ScanResult {
+                states: Vec::new(),
+                bytes_read: 65536,
+                complete: false,
+                next_address: Some(65536),
+            }))
+            .unwrap());
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while session.discovery[0].is_some() {
+            session
+                .poll_discovery(Direction::ToServer, Instant::now())
+                .unwrap();
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(session.outgoing.scan_address, 65536);
+        assert!(session.outgoing.waiting.unwrap().elapsed() < Duration::from_secs(1));
+        let table = fresh.state().0;
+        assert!(session
+            .start_discovery(Direction::ToServer, move |_| Ok(
+                gearth_platform::ScanResult {
+                    states: vec![table],
+                    bytes_read: 1024,
+                    complete: true,
+                    next_address: None,
+                }
+            ))
+            .unwrap());
+        while session.discovery[0].is_some() {
+            session
+                .poll_discovery(Direction::ToServer, Instant::now())
+                .unwrap();
+            assert!(Instant::now() < deadline);
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert_eq!(session.outgoing.scan_address, 0);
+        assert_eq!(
+            session.feed(Direction::ToServer, &[]).unwrap()[0]
+                .packet
+                .header(),
+            77
+        );
+    }
+
+    #[test]
     fn slow_outgoing_search_does_not_block_incoming_key() {
         let (started_tx, started_rx) = mpsc::channel();
         let (done_tx, done_rx) = mpsc::channel();
@@ -624,6 +924,7 @@ mod discovery_tests {
                     states: vec![incoming.state().0],
                     bytes_read: 1024,
                     complete: true,
+                    next_address: None,
                 }
             ))
             .unwrap());
