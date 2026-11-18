@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — incremental Flash reverse-search state
+
+- Preserve reverse RC4 search progress across bounded rewind slices, with a resume and cancellation fixture. Worker scheduling is unchanged.
+
+
 ## Unreleased — Java line-ending regex
 
 - Support Java packet regex `\R` within the Latin-1 packet domain, with differential coverage of CRLF fallback and repetition.

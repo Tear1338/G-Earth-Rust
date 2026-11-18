@@ -1,5 +1,10 @@
 # Rust migration architecture
 
+## Incremental Flash reverse-search state
+
+Reverse trials retain the table index, RC4 counter, partial rewind and found candidate. Slices require the exact same table snapshot and ciphertext; the current discovery worker executes them consecutively, so scheduling and candidate validation still need separate bounds.
+
+
 ## Java line-ending regex representation
 
 The packet regex VM represents `\R` with a synthetic alternation for CRLF and the single-character Latin-1 line endings. It preserves Java continuation fallback and treats direct repetitions and deterministic repeated groups atomically as required by the tested OpenJDK behavior. This does not establish parity for all regex compositions.

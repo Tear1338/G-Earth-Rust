@@ -1,5 +1,10 @@
 # Compatibility with 1.5.4-beta-29
 
+## Flash reverse-search slice evidence
+
+A synthetic fixture confirms that reverse RC4 search can resume within one table and produce the same candidate after cancellation. The production worker still runs slices consecutively; live Flash behavior and scheduling fairness remain unverified.
+
+
 ## Latest evidence: Java `\R`
 
 The installed beta-29 packet oracle agrees on 480 targeted and 1,700 short-input cases covering line endings, groups, quantifiers and assertions. These cases do not prove full regex parity; real client, protocol and extension compatibility remains unverified.

@@ -655,6 +655,85 @@ fn rewind_cancellable(
     }
     Ok(true)
 }
+// Incremental reverse search. The caller must retain the same table snapshot and
+// ciphertext until completion; partial candidates are deliberately not exposed.
+#[derive(Default)]
+struct ReverseSearch {
+    table: usize,
+    y: u16,
+    current: Option<(Rc4, usize)>,
+    found: Option<Rc4>,
+}
+impl ReverseSearch {
+    fn step(
+        &mut self,
+        states: &[[u8; 256]],
+        encrypted: &[u8],
+        cancel: &AtomicBool,
+        deadline: Option<Instant>,
+        partial_minimum: Option<usize>,
+        mut budget: usize,
+    ) -> io::Result<Option<RecoveryOutcome>> {
+        while budget > 0 && self.table < states.len().min(gearth_platform::MAX_TABLES) {
+            if cancel.load(Ordering::Acquire) {
+                return Err(io::Error::new(
+                    io::ErrorKind::Interrupted,
+                    "key discovery cancelled",
+                ));
+            }
+            if deadline.is_some_and(|limit| Instant::now() > limit) {
+                return Ok(None);
+            }
+            if self.current.is_none() {
+                let cipher =
+                    Rc4::from_state(states[self.table], encrypted.len() as u8, self.y as u8)
+                        .map_err(io::Error::other)?;
+                self.current = Some((cipher, encrypted.len()));
+            }
+            let (cipher, remaining) = self.current.as_mut().expect("initialized reverse state");
+            let chunk = (*remaining).min(budget).min(4096);
+            if !rewind_cancellable(cipher, chunk, cancel, deadline)? {
+                return Ok(None);
+            }
+            *remaining -= chunk;
+            budget -= chunk;
+            if *remaining != 0 {
+                continue;
+            }
+            let (candidate, _) = self.current.take().expect("completed reverse state");
+            let (_, x, y) = candidate.state();
+            if x == 0 && y == 0 && candidate_matches(encrypted, &candidate, partial_minimum) {
+                if self
+                    .found
+                    .as_ref()
+                    .is_some_and(|c| c.state() != candidate.state())
+                {
+                    return Ok(Some(RecoveryOutcome {
+                        priority: 1,
+                        ambiguous: true,
+                        cipher: None,
+                    }));
+                }
+                self.found = Some(candidate);
+            }
+            self.y += 1;
+            if self.y == 256 {
+                self.y = 0;
+                self.table += 1;
+            }
+        }
+        if self.table == states.len().min(gearth_platform::MAX_TABLES) {
+            let found = self.found.take();
+            Ok(Some(RecoveryOutcome {
+                priority: u8::from(found.is_some()),
+                ambiguous: false,
+                cipher: found,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+}
 pub fn recover_state(
     states: &[[u8; 256]],
     encrypted: &[u8],
@@ -738,55 +817,21 @@ fn recover_candidates(
             cipher: None,
         });
     }
-    let mut found = None;
-    for state in states.iter().take(gearth_platform::MAX_TABLES) {
-        for y in 0..256 {
-            if cancel.load(Ordering::Acquire) {
-                return Err(io::Error::new(
-                    io::ErrorKind::Interrupted,
-                    "key discovery cancelled",
-                ));
-            }
-            if deadline.is_some_and(|deadline| Instant::now() > deadline) {
-                return Ok(RecoveryOutcome {
-                    priority: 0,
-                    ambiguous: false,
-                    cipher: None,
-                });
-            }
-            let mut candidate = Rc4::from_state(*state, encrypted.len() as u8, y as u8)
-                .map_err(io::Error::other)?;
-            if !rewind_cancellable(&mut candidate, encrypted.len(), cancel, deadline)? {
-                return Ok(RecoveryOutcome {
-                    priority: 0,
-                    ambiguous: false,
-                    cipher: None,
-                });
-            }
-            let (_, x, y) = candidate.state();
-            if x != 0 || y != 0 || !candidate_matches(encrypted, &candidate, partial_minimum) {
-                continue;
-            }
-            // Different reverse states can reproduce frame lengths yet corrupt the final body byte.
-            // Wait for additional evidence rather than silently selecting the first match.
-            if found
-                .as_ref()
-                .is_some_and(|c: &Rc4| c.state() != candidate.state())
-            {
-                return Ok(RecoveryOutcome {
-                    priority: 1,
-                    ambiguous: true,
-                    cipher: None,
-                });
-            }
-            found = Some(candidate);
+    let mut search = ReverseSearch::default();
+    loop {
+        if let Some(outcome) =
+            search.step(states, encrypted, cancel, deadline, partial_minimum, 65536)?
+        {
+            return Ok(outcome);
+        }
+        if deadline.is_some_and(|limit| Instant::now() > limit) {
+            return Ok(RecoveryOutcome {
+                priority: 0,
+                ambiguous: false,
+                cipher: None,
+            });
         }
     }
-    Ok(RecoveryOutcome {
-        priority: if found.is_some() { 1 } else { 0 },
-        ambiguous: false,
-        cipher: found,
-    })
 }
 
 #[cfg(test)]
@@ -1778,6 +1823,47 @@ mod discovery_tests {
         assert!(session.incoming.grow_bootstrap());
         assert_eq!(session.incoming.bootstrap_limit(), BOOTSTRAP_MAX);
         assert!(!session.incoming.grow_bootstrap());
+    }
+
+    #[test]
+    fn reverse_search_resumes_inside_a_table_and_preserves_result() {
+        let (fresh, current, wire) = outgoing_fixture();
+        let tables = [current.state().0];
+        let cancel = AtomicBool::new(false);
+        let expected = recover_candidates(
+            &tables,
+            &wire,
+            Direction::ToServer,
+            &cancel,
+            None,
+            None,
+            false,
+        )
+        .unwrap();
+        let mut search = ReverseSearch::default();
+        assert!(search
+            .step(&tables, &wire, &cancel, None, None, 1)
+            .unwrap()
+            .is_none());
+        assert_eq!(search.current.as_ref().unwrap().1, wire.len() - 1);
+        cancel.store(true, Ordering::Release);
+        assert_eq!(
+            search
+                .step(&tables, &wire, &cancel, None, None, 7)
+                .err()
+                .unwrap()
+                .kind(),
+            io::ErrorKind::Interrupted
+        );
+        cancel.store(false, Ordering::Release);
+        let result = loop {
+            if let Some(outcome) = search.step(&tables, &wire, &cancel, None, None, 7).unwrap() {
+                break outcome;
+            }
+        };
+        assert_eq!(result.priority, expected.priority);
+        assert_eq!(result.ambiguous, expected.ambiguous);
+        assert_eq!(result.cipher.unwrap().state(), fresh.state());
     }
 
     #[test]

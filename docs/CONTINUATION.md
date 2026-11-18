@@ -1,5 +1,10 @@
 # Continuation state
 
+## Next: schedule incremental Flash search
+
+Reverse-state search now supports partial rewind slices, but the worker runs them consecutively. Persist the exact scan snapshot, ciphertext and accumulator between jobs, then test cancellation, buffer growth, ambiguity and worker fairness. Frame validation also remains unsliced.
+
+
 ## Latest validated release
 
 Windows desktop/web release succeeded at `b7c5f6cc42fc2e42f605fa40a152ac620008c620`. Expanded Java `\R` oracle coverage passes. Next investigate resumable Flash reverse search within a table, preserving its ciphertext sample and ambiguity detection; the user handles live tests.

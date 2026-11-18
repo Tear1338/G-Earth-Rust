@@ -1,5 +1,11 @@
 # Migration tasks
 
+## Latest: incremental Flash reverse search
+
+- [x] Preserve the reverse search state across bounded rewind slices and test resume/cancellation.
+- [ ] Persist the snapshot and search state across worker jobs, retain ambiguity and validate sample growth; bound frame validation and test fairness. Rebuild release and await user-run live tests.
+
+
 ## Latest: release and expanded regex fixtures
 
 - [x] Build Windows desktop/web release at `b7c5f6cc42fc2e42f605fa40a152ac620008c620`; compare 3,400 short-input `\R` combinations against beta-29.
