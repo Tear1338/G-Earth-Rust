@@ -1,5 +1,10 @@
 # Continuation state
 
+## Latest validated release
+
+Windows desktop/web release succeeded at `b7c5f6cc42fc2e42f605fa40a152ac620008c620`. Expanded Java `\R` oracle coverage passes. Next investigate resumable Flash reverse search within a table, preserving its ciphertext sample and ambiguity detection; the user handles live tests.
+
+
 ## Next continuation
 
 The packet regex VM now supports tested Java `\R` forms. Rebuild the Windows desktop/web release for the current commit; then investigate incremental progress within a single costly Flash reverse table and compare additional complex regex compositions with beta-29. Leave live tests to the user and record them as unverified until evidence is available.

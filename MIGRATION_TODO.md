@@ -1,5 +1,11 @@
 # Migration tasks
 
+## Latest: release and expanded regex fixtures
+
+- [x] Build Windows desktop/web release at `b7c5f6cc42fc2e42f605fa40a152ac620008c620`; compare 3,400 short-input `\R` combinations against beta-29.
+- [ ] Bound and resume work inside a Flash reverse table without losing candidates; live client and extension compatibility remains unverified.
+
+
 ## Latest: Java line-ending regex
 
 - [x] Implement and compare `\R` on targeted and short-input beta-29 packet fixtures, including CRLF backtracking, direct and grouped repetition.

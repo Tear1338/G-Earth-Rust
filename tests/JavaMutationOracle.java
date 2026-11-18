@@ -1302,7 +1302,7 @@ public class JavaMutationOracle {
             finally { System.setOut(original); }
             emit("substring_line_ending_" + i, sample);
         }
-        String[] lineEndingCombinations = {"\\R", "\\R\\n", "\\R?\\n", "\\R*\\n", "\\R+?\\n", "(?:\\R)?\\n", "(?:\\R)*\\n", "(?:\\R)+\\n", "(?:\\R){1,2}\\n", "(?:x\\R)*\\n", "(?:\\R\\n)+", "(\\R)+\\n", "(?:(\\R))+\\n", "(?:\\R|x)+\\n", "(?:x|\\R)*\\n", "(?=\\R)\\R", "(?<=\\R)\\n", "\\R++\\n", "(?:\\R){0,1}\\n", "(?:\\R){1,2}?\\n"};
+        String[] lineEndingCombinations = {"\\R", "\\R\\n", "\\R?\\n", "\\R*\\n", "\\R+?\\n", "(?:\\R)?\\n", "(?:\\R)*\\n", "(?:\\R)+\\n", "(?:\\R){1,2}\\n", "(?:x\\R)*\\n", "(?:\\R\\n)+", "(\\R)+\\n", "(?:(\\R))+\\n", "(?:\\R|x)+\\n", "(?:x|\\R)*\\n", "(?=\\R)\\R", "(?<=\\R)\\n", "\\R++\\n", "(?:\\R){0,1}\\n", "(?:\\R){1,2}?\\n", "(?:\\R?)+\\n", "(?:\\R*)+\\n", "(?:(?:\\R))+\\n", "(?:\\R\\R)?\\n", "(?:\\R\\R)+\\n", "(?:\\R|\\n)+\\n", "(?:\\R|\\r)*\\n", "(?:x?\\R)+\\n", "(?:\\R?x)+\\n", "(?:\\R+)+\\n", "(?:\\R??)+\\n", "(?:\\R){2,3}+\\n", "(?:(?:\\R)?)+\\n", "(?=\\R\\n)\\R", "(?<!\\R)\\n", "(?>\\R)\\n", "(\\R)(\\R)?", "(?:\\R|x){1,2}?\\n", "(?i)\\R+\\n", "(?s)\\R."};
         char[] lineEndingAlphabet = {'\r', '\n', '\u0085', 'x'};
         for (int i = 0; i < lineEndingCombinations.length * 85; i++) {
             String pattern = lineEndingCombinations[i % lineEndingCombinations.length];

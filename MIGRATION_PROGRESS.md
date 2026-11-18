@@ -1,5 +1,10 @@
 # G-Earth Rust migration progress
 
+## Release and expanded line-ending fixtures
+
+Windows GNU desktop/web release built successfully at code commit `b7c5f6cc42fc2e42f605fa40a152ac620008c620`. The beta-29 packet oracle also passes 3,400 short-input combinations across 40 patterns, including nested repetitions, possessive quantifiers, atomic groups and assertions, plus 480 targeted cases. This is limited evidence rather than complete regex parity. Real clients, protocols and extensions remain unverified.
+
+
 ## Java line-ending regex escape
 
 Java `\R` is now modeled as CRLF or a single Latin-1 line-ending character with continuation-aware fallback and Java-style direct and deterministic-group repetition. The beta-29 packet oracle passed 480 targeted cases and 1,700 short-input combinations; these are evidence for the covered forms, not full regex parity. Forty mutation tests, 153 desktop/web library tests (7 ignored), Clippy and the desktop/web debug build passed. The Windows desktop/web release build succeeded at prior commit `d8e350aecaa7cca89d8a77da95908d268007b53d`; the present change requires a new release build. Real clients, protocols and extensions remain unverified; the user will perform live tests.
@@ -612,4 +617,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Build the current Windows desktop/web release, then investigate resumable progress inside one expensive Flash reverse table and compare additional complex `\R` regex compositions against beta-29. The user will conduct real-client tests themselves; record clients, protocols and extensions as unverified until evidence is provided.
+Investigate resumable progress inside one expensive Flash reverse table, preserving the original ciphertext sample and all candidates until ambiguity is resolved; add cancellation, sample-growth and fairness tests. The user will conduct real-client tests themselves; record clients, protocols and extensions as unverified until evidence is provided.
