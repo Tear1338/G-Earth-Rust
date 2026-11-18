@@ -1291,6 +1291,31 @@ public class JavaMutationOracle {
             finally { System.setOut(original); }
             emit("substring_previous_match_" + i, sample);
         }
+        String[] lineEndingCases = {"\\R", "\\R\\n", "\\R?\\n", "\\R+\\n", "(?:\\R)?\\n", "(?:\\R)+\\n", "(?:x\\R)*\\n", "(?:\\R\\n)+", "(?:\\R){1}\\n", "(?:\\R){0,1}\\n", "(?:\\R){1,2}?\\n", "(\\R)+\\n", "(?:(\\R))+\\n", "(?:\\R|x)+\\n", "(?=\\R)\\R", "(?<=\\R)\\n", "\\R++\\n", "(?x)\\R #comment\n +", "\\Q\\R\\E", "(?d)\\R"};
+        String[] lineEndingInputs = {"\r\n", "\r\n\n", "\r\r\n", "x\r\n", "x\r\n\n", "\u0085", "\r\nx", "\u000b\u000c"};
+        for (int i = 0; i < 480; i++) {
+            String pattern = lineEndingCases[i % lineEndingCases.length];
+            String input = lineEndingInputs[(i / lineEndingCases.length) % lineEndingInputs.length];
+            HPacket sample = new HPacket(9); sample.appendString(input + pattern + input); sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try { System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream())); sample.replaceXSubstrings(pattern, "[$0]", 1); }
+            finally { System.setOut(original); }
+            emit("substring_line_ending_" + i, sample);
+        }
+        String[] lineEndingCombinations = {"\\R", "\\R\\n", "\\R?\\n", "\\R*\\n", "\\R+?\\n", "(?:\\R)?\\n", "(?:\\R)*\\n", "(?:\\R)+\\n", "(?:\\R){1,2}\\n", "(?:x\\R)*\\n", "(?:\\R\\n)+", "(\\R)+\\n", "(?:(\\R))+\\n", "(?:\\R|x)+\\n", "(?:x|\\R)*\\n", "(?=\\R)\\R", "(?<=\\R)\\n", "\\R++\\n", "(?:\\R){0,1}\\n", "(?:\\R){1,2}?\\n"};
+        char[] lineEndingAlphabet = {'\r', '\n', '\u0085', 'x'};
+        for (int i = 0; i < lineEndingCombinations.length * 85; i++) {
+            String pattern = lineEndingCombinations[i % lineEndingCombinations.length];
+            int n = i / lineEndingCombinations.length, length = n < 1 ? 0 : n < 5 ? 1 : n < 21 ? 2 : 3;
+            int digits = n - (length == 0 ? 0 : length == 1 ? 1 : length == 2 ? 5 : 21);
+            StringBuilder input = new StringBuilder();
+            for (int j = 0; j < length; j++) { input.append(lineEndingAlphabet[digits % 4]); digits /= 4; }
+            HPacket sample = new HPacket(9); sample.appendString(input + pattern + input.toString()); sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try { System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream())); sample.replaceXSubstrings(pattern, "[$0]", 1); }
+            finally { System.setOut(original); }
+            emit("substring_line_combinations_" + i, sample);
+        }
         char[] propertyAlphabet = {'a', 'A', 'b', 'B', '0', '9', ' ', '\t', '\n', 'é', 'É', 'ö', 'Ö', 'ß', '\u00a0', '\u0085'};
         for (int i = 0; i < 450; i++) {
             String[] entry = propertyCases[i % propertyCases.length]; String pattern = entry[0];

@@ -3174,6 +3174,107 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
         check(&format!("substring_previous_match_{i}"), &packet);
     }
+    let line_ending_cases = [
+        "\\R",
+        "\\R\\n",
+        "\\R?\\n",
+        "\\R+\\n",
+        "(?:\\R)?\\n",
+        "(?:\\R)+\\n",
+        "(?:x\\R)*\\n",
+        "(?:\\R\\n)+",
+        "(?:\\R){1}\\n",
+        "(?:\\R){0,1}\\n",
+        "(?:\\R){1,2}?\\n",
+        "(\\R)+\\n",
+        "(?:(\\R))+\\n",
+        "(?:\\R|x)+\\n",
+        "(?=\\R)\\R",
+        "(?<=\\R)\\n",
+        "\\R++\\n",
+        "(?x)\\R #comment\n +",
+        "\\Q\\R\\E",
+        "(?d)\\R",
+    ];
+    let line_ending_inputs = [
+        "\r\n",
+        "\r\n\n",
+        "\r\r\n",
+        "x\r\n",
+        "x\r\n\n",
+        "\u{0085}",
+        "\r\nx",
+        "\u{000b}\u{000c}",
+    ];
+    for i in 0..480 {
+        let pattern = line_ending_cases[i % line_ending_cases.len()];
+        let input = line_ending_inputs[(i / line_ending_cases.len()) % line_ending_inputs.len()];
+        let mut packet = Packet::new(9);
+        packet
+            .put_string(&format!("{input}{pattern}{input}"))
+            .unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, "[$0]", Some(1))
+            .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
+        check(&format!("substring_line_ending_{i}"), &packet);
+    }
+    let line_combinations = [
+        "\\R",
+        "\\R\\n",
+        "\\R?\\n",
+        "\\R*\\n",
+        "\\R+?\\n",
+        "(?:\\R)?\\n",
+        "(?:\\R)*\\n",
+        "(?:\\R)+\\n",
+        "(?:\\R){1,2}\\n",
+        "(?:x\\R)*\\n",
+        "(?:\\R\\n)+",
+        "(\\R)+\\n",
+        "(?:(\\R))+\\n",
+        "(?:\\R|x)+\\n",
+        "(?:x|\\R)*\\n",
+        "(?=\\R)\\R",
+        "(?<=\\R)\\n",
+        "\\R++\\n",
+        "(?:\\R){0,1}\\n",
+        "(?:\\R){1,2}?\\n",
+    ];
+    let alphabet = ['\r', '\n', '\u{85}', 'x'];
+    for i in 0..line_combinations.len() * 85 {
+        let pattern = line_combinations[i % line_combinations.len()];
+        let n = i / line_combinations.len();
+        let length = if n < 1 {
+            0
+        } else if n < 5 {
+            1
+        } else if n < 21 {
+            2
+        } else {
+            3
+        };
+        let mut digits = n - match length {
+            0 => 0,
+            1 => 1,
+            2 => 5,
+            _ => 21,
+        };
+        let mut input = String::new();
+        for _ in 0..length {
+            input.push(alphabet[digits % 4]);
+            digits /= 4;
+        }
+        let mut packet = Packet::new(9);
+        packet
+            .put_string(&format!("{input}{pattern}{input}"))
+            .unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, "[$0]", Some(1))
+            .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
+        check(&format!("substring_line_combinations_{i}"), &packet);
+    }
     let property_cases = [
         ("(\\p{L}+)", "$1/$0"),
         ("(\\pL+)", "$1/$0"),

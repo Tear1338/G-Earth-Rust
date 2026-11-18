@@ -1,5 +1,11 @@
 # Migration tasks
 
+## Latest: Java line-ending regex
+
+- [x] Implement and compare `\R` on targeted and short-input beta-29 packet fixtures, including CRLF backtracking, direct and grouped repetition.
+- [ ] Broaden regex parity coverage and investigate progress within one expensive Flash reverse table. Rebuild the current desktop/web release. Live clients and extensions remain unverified.
+
+
 ## Java previous-match anchor
 
 - [x] Implement `\G` previous-match anchoring with zero-width and quantified behavior in selected beta-29 fixtures.

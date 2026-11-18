@@ -1,5 +1,10 @@
 # Continuation state
 
+## Next continuation
+
+The packet regex VM now supports tested Java `\R` forms. Rebuild the Windows desktop/web release for the current commit; then investigate incremental progress within a single costly Flash reverse table and compare additional complex regex compositions with beta-29. Leave live tests to the user and record them as unverified until evidence is available.
+
+
 ## Java previous-match continuation
 
 The bounded matcher supports Java `\G` with per-field previous-match state and selected quantified cases. Next revisit matcher-level `\R` variable-width repetition; repeat the combined desktop/web release build and preserve unverified live-client status.

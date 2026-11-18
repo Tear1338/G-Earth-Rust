@@ -1,5 +1,10 @@
 # Compatibility with 1.5.4-beta-29
 
+## Latest evidence: Java `\R`
+
+The installed beta-29 packet oracle agrees on 480 targeted and 1,700 short-input cases covering line endings, groups, quantifiers and assertions. These cases do not prove full regex parity; real client, protocol and extension compatibility remains unverified.
+
+
 ## Java previous-match anchor evidence
 
 An 800-case beta-29 packet corpus covers `\G`, alternatives, assertions, zero-width progress and selected quantifiers. Other regex behavior and real-extension compatibility remain unverified.

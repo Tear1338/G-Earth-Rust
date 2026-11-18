@@ -1,5 +1,10 @@
 # Rust migration architecture
 
+## Java line-ending regex representation
+
+The packet regex VM represents `\R` with a synthetic alternation for CRLF and the single-character Latin-1 line endings. It preserves Java continuation fallback and treats direct repetitions and deterministic repeated groups atomically as required by the tested OpenJDK behavior. This does not establish parity for all regex compositions.
+
+
 ## Java previous-match regex anchor
 
 `\G` uses the previous successful match end within the current field. Its state resets per field and is shared across bounded matcher branches and assertions; zero-width repetition checks whether the anchor holds before accepting a positive minimum.

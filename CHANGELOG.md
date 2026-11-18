@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — Java line-ending regex
+
+- Support Java packet regex `\R` within the Latin-1 packet domain, with differential coverage of CRLF fallback and repetition.
+
+
 ## Unreleased — Java previous-match anchor
 
 - Support Java `\G` in bounded packet regex replacement, including zero-width and selected quantified cases.

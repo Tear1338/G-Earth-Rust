@@ -640,6 +640,15 @@ fn java_reluctant_repetition_does_not_rescan_the_remaining_field() {
 }
 
 #[test]
+fn java_line_ending_escape_rejects_character_classes_transactionally() {
+    let mut packet = Packet::new(9);
+    packet.put_string("[\\R] \r\n").unwrap();
+    let before = packet.clone();
+    assert!(packet.replace_substrings_java("[\\R]", "x", None).is_err());
+    assert_eq!(packet, before);
+}
+
+#[test]
 fn java_bounded_regex_repetition_rejects_invalid_bounds_transactionally() {
     let mut packet = Packet::new(9);
     packet.put_string("(a{2}) aaa").unwrap();

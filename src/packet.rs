@@ -2289,6 +2289,8 @@ struct AlternationNode {
     capture: Option<usize>,
     assertion: Option<(bool, bool)>, // (positive, behind)
     atomic: bool,
+    // Java's LineEnding node has two widths but reports itself deterministic.
+    line_ending: bool,
     possessive: bool,
     assertion_group_start: usize,
     assertion_group_end: usize,
@@ -2432,6 +2434,9 @@ fn alternation_widths(
             });
         }
         widths[id] = combined.unwrap_or_default();
+        if node.line_ending {
+            widths[id].deterministic = true;
+        }
     }
     widths
 }
@@ -4669,6 +4674,7 @@ impl Packet {
         let mut has_backreferences = false;
         let mut has_assertions = false;
         let mut has_previous_match = false;
+        let mut has_line_endings = false;
         let mut alternatives = Vec::new();
         let mut group_branches = Vec::new();
         let mut group_nodes = Vec::new();
@@ -4948,6 +4954,28 @@ impl Packet {
                         last_closed_group = None;
                         continue;
                     }
+                    if c == 'R' {
+                        let start = atoms.len();
+                        let node =
+                            push_alternation_node(&mut alternative_nodes, &mut node_stack, start);
+                        atoms.push(FixedRegexAtom::Literal(b'\r'));
+                        atoms.push(FixedRegexAtom::Literal(b'\n'));
+                        alternative_nodes[node].splits.push(atoms.len());
+                        let mut class = Box::new([false; 256]);
+                        for byte in [b'\n', 0x0b, 0x0c, b'\r', 0x85] {
+                            class[usize::from(byte)] = true;
+                        }
+                        atoms.push(FixedRegexAtom::Class(class));
+                        alternative_nodes[node].end = atoms.len();
+                        alternative_nodes[node].line_ending = true;
+                        node_stack.pop();
+                        last_noncapturing = Some((start, atoms.len(), node));
+                        has_line_endings = true;
+                        dynamic = true;
+                        quantifiable = false;
+                        last_closed_group = None;
+                        continue;
+                    }
                     if matches!(c, 'A' | 'z' | 'Z' | 'b' | 'B' | 'G') {
                         atoms.push(match c {
                             'G' => FixedRegexAtom::PreviousMatchEnd(std::cell::Cell::new(0)),
@@ -5091,6 +5119,9 @@ impl Packet {
                                 let (_, _, node) = prior_noncapturing.unwrap();
                                 node
                             };
+                            if alternative_nodes[node].line_ending {
+                                alternative_nodes[node].atomic = true;
+                            }
                             if possessive {
                                 possessive_group_nodes.push((node, groups.len()));
                             }
@@ -5231,7 +5262,7 @@ impl Packet {
         let has_nested_alternation = alternative_nodes
             .iter()
             .skip(1)
-            .any(|node| !node.splits.is_empty());
+            .any(|node| !node.line_ending && !node.splits.is_empty());
         for &(node, end) in &possessive_group_nodes {
             alternative_nodes[node].possessive = true;
             alternative_nodes[node].assertion_group_start =
@@ -5242,6 +5273,7 @@ impl Packet {
             || !possessive_group_nodes.is_empty()
             || has_assertions
             || has_previous_match
+            || has_line_endings
             || has_backreferences
             || has_nested_alternation
             || group_repeats.len() > 1
@@ -5594,6 +5626,29 @@ impl Packet {
                 &repeated_atoms,
                 &atom_optional,
             );
+            if has_line_endings {
+                let mut contains_line_ending = vec![false; alternative_nodes.len()];
+                for id in 0..alternative_nodes.len() {
+                    if alternative_nodes[id].line_ending {
+                        let mut current = Some(id);
+                        while let Some(index) = current {
+                            contains_line_ending[index] = true;
+                            current = alternative_nodes[index].parent;
+                        }
+                    }
+                }
+                for (id, node) in alternative_nodes.iter_mut().enumerate() {
+                    if let Some((min, limit, _, _, _)) = node.repeat {
+                        if contains_line_ending[id]
+                            && widths[id].deterministic
+                            && (node.line_ending || !(min == 0 && limit == Some(1)))
+                            && node.assertion.is_none()
+                        {
+                            node.atomic = true;
+                        }
+                    }
+                }
+            }
             for (node, width) in alternative_nodes.iter().zip(&widths) {
                 if node.assertion.is_some_and(|(_, behind)| behind) && width.unknown {
                     return Err(error("lookbehind has no obvious maximum length"));

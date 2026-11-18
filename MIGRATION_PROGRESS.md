@@ -1,5 +1,10 @@
 # G-Earth Rust migration progress
 
+## Java line-ending regex escape
+
+Java `\R` is now modeled as CRLF or a single Latin-1 line-ending character with continuation-aware fallback and Java-style direct and deterministic-group repetition. The beta-29 packet oracle passed 480 targeted cases and 1,700 short-input combinations; these are evidence for the covered forms, not full regex parity. Forty mutation tests, 153 desktop/web library tests (7 ignored), Clippy and the desktop/web debug build passed. The Windows desktop/web release build succeeded at prior commit `d8e350aecaa7cca89d8a77da95908d268007b53d`; the present change requires a new release build. Real clients, protocols and extensions remain unverified; the user will perform live tests.
+
+
 ## Java previous-match anchor
 
 Java-style packet regex replacement now supports `\G` as a zero-width previous-match-end anchor. Each field starts with position zero; successful matches update the anchor, while zero-width progress and quantified anchors are handled without looping indefinitely. A fresh 800-case beta-29 packet oracle covers repeated matches, alternatives, assertions, direct quantifiers, COMMENTS mode and quoting; a deterministic unit fixture checks zero-width progression. The 39 mutation tests, 153 desktop/web library tests (7 ignored), Clippy and desktop/web debug build passed. GitHub Actions run 43669208184 succeeded for prior commit `31d70a4`, including Windows desktop release; the local combined desktop/web release result for that commit could not be recovered after the environment restart. The current change needs a new release build. Java `\R`, real clients and extensions remain unverified.
@@ -607,4 +612,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Investigate and implement Java regex `\R` at matcher level, preserving CRLF fallback and Java Ques/Curly/GroupCurly behavior for direct and enclosing repetitions; compare deterministic Java Pattern and beta-29 packet fixtures before accepting changes. Separately investigate progress within one expensive Flash reverse table and repeat the combined Windows desktop/web release build. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.
+Build the current Windows desktop/web release, then investigate resumable progress inside one expensive Flash reverse table and compare additional complex `\R` regex compositions against beta-29. The user will conduct real-client tests themselves; record clients, protocols and extensions as unverified until evidence is provided.
