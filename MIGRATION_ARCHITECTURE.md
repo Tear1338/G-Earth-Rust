@@ -1,5 +1,8 @@
 # Rust migration architecture
 
+## Java previous-match regex anchor
+
+`\G` uses the previous successful match end within the current field. Its state resets per field and is shared across bounded matcher branches and assertions; zero-width repetition checks whether the anchor holds before accepting a positive minimum.
 ## Four-digit Unicode regex escapes
 
 Java `\uXXXX` parses UTF-16 units and combines adjacent escaped high/low surrogate pairs before class-range construction. Values outside the Latin-1 packet domain use the existing Java case-fold mapping.

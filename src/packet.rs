@@ -364,6 +364,7 @@ enum FixedRegexAtom {
     Dot,
     DotUnix,
     DotAll,
+    PreviousMatchEnd(std::cell::Cell<usize>),
     Start,
     StartLine,
     StartLineUnix,
@@ -1208,7 +1209,8 @@ fn atom_accepts(atom: &FixedRegexAtom, byte: u8) -> bool {
         FixedRegexAtom::Dot => !matches!(byte, b'\n' | b'\r' | 0x85),
         FixedRegexAtom::DotUnix => byte != b'\n',
         FixedRegexAtom::DotAll => true,
-        FixedRegexAtom::Start
+        FixedRegexAtom::PreviousMatchEnd(_)
+        | FixedRegexAtom::Start
         | FixedRegexAtom::End
         | FixedRegexAtom::EndUnix
         | FixedRegexAtom::EndStrict
@@ -1226,6 +1228,7 @@ fn atom_accepts(atom: &FixedRegexAtom, byte: u8) -> bool {
 
 fn atom_width(atom: &FixedRegexAtom, input: &[u8], position: usize) -> Option<usize> {
     match atom {
+        FixedRegexAtom::PreviousMatchEnd(previous) => (position == previous.get()).then_some(0),
         FixedRegexAtom::Start => (position == 0).then_some(0),
         FixedRegexAtom::EndStrict => (position == input.len()).then_some(0),
         FixedRegexAtom::StartLine => {
@@ -1747,6 +1750,41 @@ fn replace_alternatives(
 #[cfg(test)]
 mod regex_budget_tests {
     use super::*;
+
+    #[test]
+    fn previous_match_anchor_tracks_successes_and_zero_width_progress() {
+        let atoms = [
+            FixedRegexAtom::PreviousMatchEnd(std::cell::Cell::new(0)),
+            FixedRegexAtom::Literal(b'a'),
+        ];
+        let mut comparisons = 0;
+        let program = [NestedInstruction::Atom(0), NestedInstruction::Atom(1)];
+        assert_eq!(
+            replace_nested_pattern("aaab", &atoms, &program, &[], 0, "X", &mut comparisons)
+                .unwrap(),
+            "XXXb"
+        );
+        let program = [NestedInstruction::Atom(0)];
+        assert_eq!(
+            replace_nested_pattern("ab", &atoms, &program, &[], 0, "X", &mut comparisons).unwrap(),
+            "Xab"
+        );
+        let program = [NestedInstruction::Split(1, 2), NestedInstruction::Atom(0)];
+        assert_eq!(
+            replace_nested_pattern("ab", &atoms, &program, &[], 0, "X", &mut comparisons).unwrap(),
+            "XaXbX"
+        );
+        let program = [NestedInstruction::Repeat {
+            index: 0,
+            min: 1,
+            limit: None,
+            greedy: true,
+        }];
+        assert_eq!(
+            replace_nested_pattern("ab", &atoms, &program, &[], 0, "X", &mut comparisons).unwrap(),
+            "Xab"
+        );
+    }
 
     #[test]
     fn java_unicode_escape_combines_only_valid_surrogate_pairs() {
@@ -2352,7 +2390,8 @@ fn alternation_widths(
                             unknown: true,
                             deterministic: true,
                         },
-                        FixedRegexAtom::Start
+                        FixedRegexAtom::PreviousMatchEnd(_)
+                        | FixedRegexAtom::Start
                         | FixedRegexAtom::StartLine
                         | FixedRegexAtom::StartLineUnix
                         | FixedRegexAtom::End
@@ -2894,7 +2933,9 @@ fn vm_repeat_width(
     captures: &[Option<(usize, usize)>],
     sticky: &[Option<(usize, usize)>],
 ) -> Option<usize> {
-    if let FixedRegexAtom::Backref {
+    if matches!(atom, FixedRegexAtom::PreviousMatchEnd(_)) {
+        Some(0)
+    } else if let FixedRegexAtom::Backref {
         group,
         prefer_current,
         ..
@@ -2996,7 +3037,12 @@ fn run_nested_program(
                 limit,
                 greedy,
             } => {
-                let unit_width = vm_repeat_width(&atoms[index], &captures, &sticky);
+                let unit_width = if matches!(&atoms[index], FixedRegexAtom::PreviousMatchEnd(previous) if *position != previous.get())
+                {
+                    None
+                } else {
+                    vm_repeat_width(&atoms[index], &captures, &sticky)
+                };
                 if unit_width.is_none() && min > 0 {
                     0
                 } else if unit_width.is_none() || unit_width == Some(0) {
@@ -3397,6 +3443,16 @@ fn replace_nested_pattern(
     let mut copied = 0;
     let mut offset = 0;
     let mut sticky = vec![None; capture_count];
+    let previous_matches: Vec<_> = atoms
+        .iter()
+        .filter_map(|atom| match atom {
+            FixedRegexAtom::PreviousMatchEnd(previous) => Some(previous),
+            _ => None,
+        })
+        .collect();
+    for previous in &previous_matches {
+        previous.set(0);
+    }
     while offset <= input.len() {
         if let Some((end, mut groups)) = match_nested_repeat_with_sticky(
             &input,
@@ -3423,6 +3479,9 @@ fn replace_nested_pattern(
             output.extend_from_slice(&input[copied..offset]);
             output.extend_from_slice(&expanded);
             copied = end;
+            for previous in &previous_matches {
+                previous.set(end);
+            }
             sticky.fill(None);
             offset = if end == offset { offset + 1 } else { end };
         } else {
@@ -4609,6 +4668,7 @@ impl Packet {
         let mut dynamic = case_insensitive;
         let mut has_backreferences = false;
         let mut has_assertions = false;
+        let mut has_previous_match = false;
         let mut alternatives = Vec::new();
         let mut group_branches = Vec::new();
         let mut group_nodes = Vec::new();
@@ -4888,8 +4948,9 @@ impl Packet {
                         last_closed_group = None;
                         continue;
                     }
-                    if matches!(c, 'A' | 'z' | 'Z' | 'b' | 'B') {
+                    if matches!(c, 'A' | 'z' | 'Z' | 'b' | 'B' | 'G') {
                         atoms.push(match c {
+                            'G' => FixedRegexAtom::PreviousMatchEnd(std::cell::Cell::new(0)),
                             'A' => FixedRegexAtom::Start,
                             'z' => FixedRegexAtom::EndStrict,
                             'Z' if unix_lines => FixedRegexAtom::EndUnix,
@@ -4900,7 +4961,8 @@ impl Packet {
                             _ => FixedRegexAtom::End,
                         });
                         dynamic = true;
-                        quantifiable = false;
+                        has_previous_match |= c == 'G';
+                        quantifiable = c == 'G';
                         last_closed_group = None;
                         continue;
                     }
@@ -5179,6 +5241,7 @@ impl Packet {
         let use_tree_vm = !possessive_atom_indices.is_empty()
             || !possessive_group_nodes.is_empty()
             || has_assertions
+            || has_previous_match
             || has_backreferences
             || has_nested_alternation
             || group_repeats.len() > 1

@@ -1,5 +1,8 @@
 # Compatibility with 1.5.4-beta-29
 
+## Java previous-match anchor evidence
+
+An 800-case beta-29 packet corpus covers `\G`, alternatives, assertions, zero-width progress and selected quantifiers. Other regex behavior and real-extension compatibility remain unverified.
 ## Unicode escape evidence
 
 A 480-case beta-29 packet corpus covers selected `\uXXXX` values, flags and surrogate boundaries; malformed escape and range tests pass. Full Java regex and live-extension parity remain unverified.

@@ -1,5 +1,8 @@
 # Continuation state
 
+## Java previous-match continuation
+
+The bounded matcher supports Java `\G` with per-field previous-match state and selected quantified cases. Next revisit matcher-level `\R` variable-width repetition; repeat the combined desktop/web release build and preserve unverified live-client status.
 ## Unicode escape continuation
 
 Four-digit Unicode escapes now parse external code points and escaped surrogate pairs before range construction, with Java packet fixtures. Next investigate `\R` matcher-level backtracking, preserving its distinction between direct and enclosing repetition.

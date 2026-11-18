@@ -1,5 +1,12 @@
 # G-Earth Rust migration progress
 
+## Java previous-match anchor
+
+Java-style packet regex replacement now supports `\G` as a zero-width previous-match-end anchor. Each field starts with position zero; successful matches update the anchor, while zero-width progress and quantified anchors are handled without looping indefinitely. A fresh 800-case beta-29 packet oracle covers repeated matches, alternatives, assertions, direct quantifiers, COMMENTS mode and quoting; a deterministic unit fixture checks zero-width progression. The 39 mutation tests, 153 desktop/web library tests (7 ignored), Clippy and desktop/web debug build passed. GitHub Actions run 43669208184 succeeded for prior commit `31d70a4`, including Windows desktop release; the local combined desktop/web release result for that commit could not be recovered after the environment restart. The current change needs a new release build. Java `\R`, real clients and extensions remain unverified.
+## `\R` continuation analysis
+
+OpenJDK 21 `LineEnding` tries CRLF and then CR through its continuation; direct quantifiers invoke their atom independently, and deterministic repeated groups can use GroupCurly, changing where the CR alternative remains available. The current Rust VM repeats fixed-width atoms and cannot model this safely by textual expansion. `\R` remains unsupported. Continue independently with Java `\G` previous-match anchoring, then return to variable-width repetition; do not infer completion from the other regex fixes.
+
 ## Java four-digit Unicode regex escapes
 
 Java-style `\uXXXX` now supports code points outside Latin-1 and combines adjacent valid surrogate escapes before interpreting classes and ranges, using the previously verified Java Unicode folding rules. A 480-case beta-29 packet corpus covers selected external values, flags, classes, surrogate pairs and COMMENTS mode; malformed surrogate and range fixtures remain transactional. The Java mutation oracle, 39 mutation tests, 152 desktop/web library tests (7 ignored), Clippy and debug build passed. Windows desktop/web release succeeded at the preceding code commit `eb6f1fe365619ecc7f0c337b522c175e337632d9`; current code needs a new release build. Java `\R`, real clients and extensions remain unverified.
@@ -600,4 +607,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Investigate Java `\R` matcher-level backtracking using OpenJDK LineEnding and repetition semantics; design bounded variable-width choices that preserve direct versus enclosing quantifier behavior, then compare deterministic beta-29 packet fixtures. Separately investigate progress within one expensive Flash reverse table and repeat the Windows desktop/web release build. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.
+Investigate and implement Java regex `\R` at matcher level, preserving CRLF fallback and Java Ques/Curly/GroupCurly behavior for direct and enclosing repetitions; compare deterministic Java Pattern and beta-29 packet fixtures before accepting changes. Separately investigate progress within one expensive Flash reverse table and repeat the combined Windows desktop/web release build. The user will conduct real-client tests themselves; record those as unverified until evidence is provided.

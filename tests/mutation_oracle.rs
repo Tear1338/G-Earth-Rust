@@ -3135,6 +3135,45 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
         check(&format!("substring_unicode_escape_{i}"), &packet);
     }
+    let previous_match_cases = [
+        "\\G.",
+        "\\G",
+        "\\G?",
+        "\\G+",
+        "\\G*",
+        "\\G{2}",
+        "\\G|a",
+        "(?=\\G).",
+        "(?<=\\G).",
+        "(?:\\G.)+",
+        "(\\G.)",
+        "a|\\G",
+        "\\G??",
+        "\\G++",
+        "\\G{0,3}",
+        "\\G{2,3}?",
+        "(?:x|\\G.)*",
+        "\\Q\\G\\E",
+        "(?i)\\G[A-Z]",
+        "(?x)\\G #comment\n .",
+    ];
+    let previous_match_alphabet = ['a', 'b', 'c', ' ', '0', '\n', 'é'];
+    for i in 0..800 {
+        let pattern = previous_match_cases[i % previous_match_cases.len()];
+        let mut value = format!("aba {pattern} aab ");
+        for j in 0..12 {
+            value.push(
+                previous_match_alphabet[(i * 5 + j * 3 + j * j) % previous_match_alphabet.len()],
+            );
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&value).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, "[$0]", Some(1))
+            .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
+        check(&format!("substring_previous_match_{i}"), &packet);
+    }
     let property_cases = [
         ("(\\p{L}+)", "$1/$0"),
         ("(\\pL+)", "$1/$0"),

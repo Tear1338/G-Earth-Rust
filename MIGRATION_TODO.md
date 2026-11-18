@@ -1,5 +1,10 @@
 # Migration tasks
 
+## Java previous-match anchor
+
+- [x] Implement `\G` previous-match anchoring with zero-width and quantified behavior in selected beta-29 fixtures.
+- [ ] Implement Java `\R` matcher-level variable-width backtracking, including direct and enclosing repetition.
+- [ ] Repeat combined desktop/web release and await user-run real-client/extension evidence.
 ## Java Unicode regex escapes
 
 - [x] Support four-digit Unicode escapes beyond Latin-1, Unicode case folding and paired surrogate range endpoints in selected Java oracle cases.

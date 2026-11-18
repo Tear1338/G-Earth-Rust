@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — Java previous-match anchor
+
+- Support Java `\G` in bounded packet regex replacement, including zero-width and selected quantified cases.
+- Add beta-29 differential and zero-width progression fixtures.
 ## Unreleased — Java Unicode regex escapes
 
 - Support four-digit Unicode escapes beyond Latin-1, including adjacent surrogate pairs and Java case folding.
