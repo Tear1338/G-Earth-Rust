@@ -1,5 +1,10 @@
 # Continuation state
 
+## Latest validated Windows release
+
+Windows desktop/web release and workspace/all-targets tests passed at `1e32d7c1716affc1821d71be7c5681731578e6ba`, with environment-dependent tests ignored. Next inspect repeated validation, synchronous installation and worker fairness. Live compatibility remains unverified.
+
+
 ## Next: Flash installation and fairness
 
 Final validation now yields across workers and repeats on buffer growth. Investigate repeated validation, synchronous installation/decryption and fairness; rebuild Windows release for current code. Live tests are the user’s responsibility.

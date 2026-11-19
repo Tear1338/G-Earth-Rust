@@ -1,5 +1,10 @@
 # G-Earth Rust migration progress
 
+## Release after asynchronous Flash verification
+
+Windows GNU desktop/web release and the locked workspace/all-targets test suite passed at `1e32d7c1716affc1821d71be7c5681731578e6ba`; platform- and oracle-dependent tests marked ignored were not run in that suite. Live clients, protocols and extensions remain unverified.
+
+
 ## Asynchronous Flash final validation
 
 Final candidate verification now runs in resumable workers. If ciphertext grows while a snapshot is checked, a new snapshot is validated before installation; a synthetic large-frame test verifies both valid and invalid appended tails. The 161 desktop/web library tests (7 ignored) passed before a subsequent retry-throttle adjustment; all 30 Flash tests, Clippy and the debug build passed after it. Restarting validation under continuous growth can repeat work, and copying, process scanning and installing/decrypting the buffered stream are not bounded by this worker budget. Release and CI passed at preceding commit `0209ee3`; live clients, protocols and extensions remain unverified.
@@ -657,4 +662,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Build Windows desktop/web release for the current asynchronous Flash verification. Investigate repeated validation during buffer growth, synchronous installation/decryption and worker fairness; test cancellation and real-session-independent concurrency. The user handles live tests; clients, protocols and extensions remain unverified.
+Investigate repeated validation during buffer growth, synchronous installation/decryption and worker fairness; test cancellation and real-session-independent concurrency. The user handles live tests; clients, protocols and extensions remain unverified.

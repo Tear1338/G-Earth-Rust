@@ -1,5 +1,8 @@
 # Migration tasks
 
+The sections below are chronological records: unchecked items in older sections may already be addressed by newer entries. Consult the latest section and `MIGRATION_PROGRESS.md` for current work.
+
+
 ## Latest: asynchronous Flash final validation
 
 - [x] Move final candidate validation into resumable workers and recheck growing ciphertext before installation.
