@@ -1,5 +1,10 @@
 # Continuation state
 
+## Next: Flash installation and scan latency
+
+Discovery now queues regularly polling waiters, expiring idle requests after one second. Investigate long process scans and synchronous buffered decryption on installation; rebuild Windows release and retain live compatibility as unverified.
+
+
 ## Next: Flash worker starvation
 
 The four-slot contention fixture passes in an isolated process, and Windows desktop/web release succeeded at `0b1f57f`. The current pool does not guarantee fairness. Design and test cancellation-safe scheduling and inspect synchronous buffered decryption.

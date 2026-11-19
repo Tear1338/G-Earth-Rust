@@ -1,5 +1,10 @@
 # Compatibility with 1.5.4-beta-29
 
+## Flash scheduling evidence
+
+Synthetic tests cover ordered worker admission, reacquisition, abandoned and expired waiters, and contention between two requests. Long scans, wall-clock fairness and live clients remain unverified.
+
+
 ## Flash verification backpressure evidence
 
 Synthetic tests cover direction-specific pause, acceptance, rejection and cancellation. The effect on real clients and fairness under worker contention remains unverified.

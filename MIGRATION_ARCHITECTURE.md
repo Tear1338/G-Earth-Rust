@@ -1,5 +1,10 @@
 # Rust migration architecture
 
+## Flash discovery scheduling
+
+A process-wide queue orders active waiting directions for the four discovery workers. Weak request references allow dropped sessions to disappear; requests not polled for one second expire and re-enter on their next attempt. Operating-system scheduling and worker duration are not time-bounded by the queue.
+
+
 ## Flash verification backpressure
 
 The relay pauses reads only for the direction undergoing final verification; it resumes them when a key is installed or rejected. Direct buffer growth remains guarded by snapshot revalidation.

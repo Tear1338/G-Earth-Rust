@@ -1,5 +1,11 @@
 # Migration tasks
 
+## Latest: Flash worker queue
+
+- [x] Queue active worker requests in arrival order and discard abandoned/inactive waiters; test ordering and isolated contention.
+- [ ] Evaluate long-running scans and synchronous installation/decryption; rebuild release and await user-run live compatibility evidence.
+
+
 ## Latest: worker contention fixture
 
 - [x] Confirm a waiting verification proceeds when one of four worker slots is released; isolate the fixture from parallel tests. Windows release built at `0b1f57f`.

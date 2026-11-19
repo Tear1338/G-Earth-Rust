@@ -1,5 +1,10 @@
 # G-Earth Rust migration progress
 
+## Flash discovery worker queue
+
+Worker acquisition now queues active waiting directions in arrival order. Requests held only weakly are removed when their session disappears; an inactive request expires after one second so it cannot indefinitely block the head. A deterministic queue fixture covers ordering, reacquisition, abandonment and expiry; an isolated four-slot contention test covers two waiters. The workspace/all-targets suite, 164 desktop/web library tests (7 ignored), Clippy and debug build passed; the strengthened contention fixture was rerun separately. This mitigates starvation among regularly polling sessions but is not a wall-clock guarantee: scans and operating-system scheduling can still delay workers, and inactivity causes re-enqueueing. Windows release at `0b1f57f` predates this change; real clients, protocols and extensions remain unverified.
+
+
 ## Flash worker contention and Windows release
 
 Windows GNU desktop/web release succeeded at `0b1f57fef49ba4eb004ce2005cd41f369cb2501c`. An isolated subprocess fixture occupies all four worker slots and confirms a waiting verification proceeds after one is released; the locked workspace/all-targets suite and Clippy pass, with environment-dependent tests ignored. The pool has no fairness queue, so this single scenario does not rule out starvation under continuous contention. Real clients, protocols and extensions remain unverified.
@@ -672,4 +677,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Design and test starvation-resistant scheduling for Flash worker slots, including abandoned waiters and cancellation; investigate synchronous buffered decryption performed on installation. The user handles live tests; clients, protocols and extensions remain unverified.
+Build Windows desktop/web release for the current Flash worker queue. Investigate long process scans and the synchronous buffered decryption performed on installation; measure bounds and add deterministic cancellation and contention tests. The user handles live tests; clients, protocols and extensions remain unverified.

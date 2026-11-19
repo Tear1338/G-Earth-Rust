@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — Flash worker admission order
+
+- Queue active Flash discovery requests and discard abandoned or inactive waiters to reduce starvation under contention.
+
+
 ## Unreleased — Flash verification backpressure
 
 - Pause reads in the direction awaiting final candidate verification, avoiding repeated checks of a changing relay buffer.

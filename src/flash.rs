@@ -4,10 +4,11 @@ use crate::{
     packet::{Direction, Packet, MAX_FRAME},
 };
 use std::{
+    collections::VecDeque,
     io,
     sync::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
-        mpsc, Arc,
+        mpsc, Arc, Mutex, OnceLock, Weak,
     },
     time::{Duration, Instant},
 };
@@ -24,6 +25,36 @@ fn reverse_page_table_limit(buffer_len: usize) -> usize {
     (REVERSE_PAGE_BYTES / buffer_len.max(1)).clamp(1, REVERSE_PAGE_TABLES)
 }
 static ACTIVE_DISCOVERY_WORKERS: AtomicUsize = AtomicUsize::new(0);
+static DISCOVERY_QUEUE: OnceLock<Mutex<DiscoveryQueue>> = OnceLock::new();
+// A session that stops polling must not permanently hold the front of the queue.
+const WAITER_IDLE_LIMIT: Duration = Duration::from_secs(1);
+#[derive(Default)]
+struct DiscoveryQueue {
+    waiters: VecDeque<(Weak<()>, Instant)>,
+}
+impl DiscoveryQueue {
+    fn is_turn(&mut self, waiter: &Arc<()>, now: Instant) -> bool {
+        self.waiters.retain(|(entry, seen)| {
+            entry.strong_count() > 0 && now.saturating_duration_since(*seen) < WAITER_IDLE_LIMIT
+        });
+        let weak = Arc::downgrade(waiter);
+        if let Some((_, seen)) = self
+            .waiters
+            .iter_mut()
+            .find(|(entry, _)| entry.ptr_eq(&weak))
+        {
+            *seen = now;
+        } else {
+            self.waiters.push_back((weak.clone(), now));
+        }
+        self.waiters
+            .front()
+            .is_some_and(|(entry, _)| entry.ptr_eq(&weak))
+    }
+    fn admitted(&mut self) {
+        self.waiters.pop_front();
+    }
+}
 
 struct DiscoveryTask {
     cancel: Arc<AtomicBool>,
@@ -122,6 +153,7 @@ struct Side {
     pending_search: Option<SearchJob>,
     pending_verification: Option<VerificationJob>,
     verification_active: bool,
+    worker_waiter: Option<Arc<()>>,
 }
 impl Side {
     fn bootstrap_limit(&self) -> usize {
@@ -181,6 +213,7 @@ impl Side {
         self.pending_search = None;
         self.pending_verification = None;
         self.verification_active = false;
+        self.worker_waiter = None;
     }
 }
 pub struct DecodedPacket {
@@ -371,14 +404,27 @@ impl FlashSession {
         }
         let skip_reverse = side.candidates.priority == 2
             || (direction == Direction::ToServer && !side.reverse_phase);
-        if ACTIVE_DISCOVERY_WORKERS
-            .try_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-                (n < MAX_DISCOVERY_WORKERS).then_some(n + 1)
-            })
-            .is_err()
+        let waiter = self
+            .side(direction)
+            .worker_waiter
+            .get_or_insert_with(|| Arc::new(()))
+            .clone();
+        let mut queue = DISCOVERY_QUEUE
+            .get_or_init(|| Mutex::new(DiscoveryQueue::default()))
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if !queue.is_turn(&waiter, Instant::now())
+            || ACTIVE_DISCOVERY_WORKERS
+                .try_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+                    (n < MAX_DISCOVERY_WORKERS).then_some(n + 1)
+                })
+                .is_err()
         {
             return Ok(false);
         }
+        queue.admitted();
+        drop(queue);
+        self.side(direction).worker_waiter = None;
         let pending_search = self.side(direction).pending_search.take();
         let pending_verification = self.side(direction).pending_verification.take();
         let cancel = Arc::new(AtomicBool::new(false));
@@ -595,6 +641,8 @@ impl FlashSession {
             self.incoming.pending_verification = None;
             self.outgoing.verification_active = false;
             self.incoming.verification_active = false;
+            self.outgoing.worker_waiter = None;
+            self.incoming.worker_waiter = None;
             return Err(io::Error::new(
                 io::ErrorKind::Interrupted,
                 "key discovery cancelled",
@@ -2574,6 +2622,29 @@ mod discovery_tests {
     }
 
     #[test]
+    fn discovery_queue_orders_active_waiters_and_prunes_abandoned_ones() {
+        let mut queue = DiscoveryQueue::default();
+        let now = Instant::now();
+        let first = Arc::new(());
+        let second = Arc::new(());
+        let third = Arc::new(());
+        assert!(queue.is_turn(&first, now));
+        assert!(!queue.is_turn(&second, now));
+        assert!(!queue.is_turn(&third, now));
+        assert!(queue.is_turn(&first, now));
+        queue.admitted();
+        assert!(!queue.is_turn(&first, now));
+        assert!(queue.is_turn(&second, now));
+        drop(second);
+        assert!(queue.is_turn(&third, now));
+        queue.admitted();
+        assert!(queue.is_turn(&first, now));
+        let later = now + WAITER_IDLE_LIMIT;
+        assert!(queue.is_turn(&third, later));
+        assert!(!queue.is_turn(&first, later));
+    }
+
+    #[test]
     fn waiting_verification_proceeds_after_a_worker_slot_is_released() {
         const ISOLATED_ENV: &str = "GEARTH_FLASH_POOL_ISOLATED_TEST";
         if std::env::var_os(ISOLATED_ENV).is_none() {
@@ -2622,9 +2693,40 @@ mod discovery_tests {
             )))
             .unwrap());
         assert_eq!(waiting.input_capacity(Direction::ToServer), 0);
+        let mut later = FlashSession::default();
+        later.outgoing.encrypted = true;
+        later.outgoing.feed(&waiting.outgoing.buffer).unwrap();
+        later.outgoing.pending_verification = Some(VerificationJob::new(
+            fresh.clone(),
+            later.outgoing.buffer.clone(),
+        ));
+        later.outgoing.verification_active = true;
+        assert!(!later
+            .start_discovery(Direction::ToServer, |_| Err(io::Error::other(
+                "must not scan"
+            )))
+            .unwrap());
         drop(holders.pop());
         released_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while ACTIVE_DISCOVERY_WORKERS.load(Ordering::Acquire) == MAX_DISCOVERY_WORKERS {
+            assert!(Instant::now() < deadline, "worker slot was not released");
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(
+            !later
+                .start_discovery(Direction::ToServer, |_| Err(io::Error::other(
+                    "must not scan"
+                )))
+                .unwrap(),
+            "later waiter must not overtake"
+        );
         finish_outgoing_discovery(&mut waiting);
+        finish_outgoing_discovery(&mut later);
+        assert_eq!(
+            later.outgoing.writer.as_ref().unwrap().state(),
+            fresh.state()
+        );
         assert_eq!(
             waiting.outgoing.writer.as_ref().unwrap().state(),
             fresh.state()
