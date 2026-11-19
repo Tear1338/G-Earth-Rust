@@ -1,5 +1,10 @@
 # Continuation state
 
+## Latest Windows release
+
+The combined desktop/web Windows release and the locked workspace/all-targets tests passed at `8bf3b644f5d3b7e7809df4a495f56df6bcc76a4f`. Investigate bounded frame validation and fairness; user-run live tests remain outstanding.
+
+
 ## Next: bound Flash candidate validation
 
 Reverse discovery now resumes across workers after bounded rewind slices. Measure or split fresh-state checks and candidate frame validation, and test fairness with concurrent sessions. The most recent release predates this change; the user handles live tests.

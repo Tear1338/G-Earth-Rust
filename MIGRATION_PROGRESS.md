@@ -1,5 +1,10 @@
 # G-Earth Rust migration progress
 
+## Windows release and workspace verification
+
+Windows GNU desktop/web release built successfully at `8bf3b644f5d3b7e7809df4a495f56df6bcc76a4f`. The locked workspace/all-targets test suite passed; tests marked ignored include platform-dependent and Java-oracle fixtures, while the `\R` oracle was separately run earlier. Live client, protocol and extension compatibility remains unverified.
+
+
 ## Flash reverse search across workers
 
 Reverse discovery now yields after at most 1,048,576 RC4 rewind steps, keeping the scan snapshot, ciphertext and search state for the next worker. Candidate ambiguity remains until the page completes; a synthetic test crosses worker boundaries, grows the ciphertext between jobs and verifies the final packets. Additional fixtures check cancellation and retained ambiguity. The 155 desktop/web library tests (7 ignored), Clippy and debug build passed before the additional ambiguity fixture, which also passed separately. This bounds rewind work, not wall-clock time: fresh-state checks and candidate frame validation remain unsliced, and worker fairness is not proven. Release at `b7c5f6c` predates this change; real clients, protocols and extensions remain unverified.
@@ -627,4 +632,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Build release for the current Flash worker changes. Investigate bounding fresh-state checks and candidate frame validation separately, then test concurrent-session fairness. Recheck GitHub CI. The user handles live tests; clients, protocols and extensions remain unverified.
+Investigate bounding fresh-state checks and candidate frame validation separately, then test concurrent-session fairness. Recheck GitHub CI for `8bf3b64`. The user handles live tests; clients, protocols and extensions remain unverified.
