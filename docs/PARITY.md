@@ -1,5 +1,10 @@
 # Compatibility with 1.5.4-beta-29
 
+## Fresh-state worker evidence
+
+A synthetic encrypted frame larger than one worker slice resumes across workers before a candidate is installed. Cancellation during partial prefix validation is covered. Live Flash behavior remains unverified.
+
+
 ## Reverse validation slice evidence
 
 Synthetic tests cover interruption and resumption within an encrypted frame prefix, cancellation and candidate equality. Fresh scanning, final verification, fairness and live behavior remain open.

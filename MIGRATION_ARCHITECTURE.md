@@ -1,5 +1,10 @@
 # Rust migration architecture
 
+## Flash fresh-state worker slices
+
+Fresh and reverse candidate checks share the worker RC4 budget. Pending jobs retain their table snapshot, ciphertext, current validation state and accumulated candidate; no candidate is delivered until its search phase finishes. Final buffer validation and process scanning are separate.
+
+
 ## Reverse worker validation budget
 
 Reverse jobs share their per-worker RC4 step budget between rewind and incremental candidate validation. The pending state retains the candidate and validator across jobs; fresh-state checks and final buffer verification are separate.

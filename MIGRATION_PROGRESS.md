@@ -1,5 +1,10 @@
 # G-Earth Rust migration progress
 
+## Budgeted fresh-state Flash discovery
+
+Fresh-state candidate validation now uses the same resumable worker budget as reverse discovery. A synthetic frame larger than one slice confirms that the search resumes in another worker without installing a candidate early; a separate fixture covers cancellation during prefix validation. The 160 desktop/web library tests (7 ignored), Clippy and desktop/web debug build passed. Final buffer validation and memory scanning remain outside this budget, and scheduling fairness and wall-clock bounds are not established. Windows desktop/web release at `8bf3b64` predates this code; real clients, protocols and extensions remain unverified.
+
+
 ## Bounded reverse candidate validation
 
 Reverse workers now count both RC4 rewinding and candidate frame validation against the same slice budget. A targeted fixture interrupts validation within an encrypted prefix, verifies cancellation and resumes to the original candidate; existing sliced and Flash fixtures also pass. The 158 desktop/web library tests (7 ignored), Clippy and desktop/web debug build passed. Fresh-state checks and final buffer validation are still outside this bound, and no wall-clock or fairness guarantee is established. The Windows desktop/web release at `8bf3b64` predates this change; real clients, protocols and extensions remain unverified.
@@ -642,4 +647,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Integrate fresh-state candidate checks into resumable Flash worker jobs, then address final buffer validation and test concurrent-session fairness, cancellation, ambiguity and sample growth. Build release for the resulting code. The user handles live tests; clients, protocols and extensions remain unverified.
+Investigate moving final Flash buffer validation into resumable, cancellable worker jobs without installing stale candidates; test sample growth, ambiguity and concurrent-session fairness. Measure process-scan work and rebuild release for the resulting code. The user handles live tests; clients, protocols and extensions remain unverified.

@@ -1,5 +1,10 @@
 # Continuation state
 
+## Next: final Flash buffer validation
+
+Fresh and reverse candidate validation now yield between workers. The last revalidation of the current buffer still runs synchronously; investigate bounding it and test concurrent-session fairness and cancellation.
+
+
 ## Next: bound fresh Flash discovery
 
 Reverse worker slices now cover candidate validation as well as rewinding. Fresh-state checks and final buffer verification remain unsliced; integrate those with cancellation and fairness tests before claiming a time bound.

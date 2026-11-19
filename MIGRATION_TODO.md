@@ -1,5 +1,11 @@
 # Migration tasks
 
+## Latest: sliced fresh-state search
+
+- [x] Preserve fresh candidate validation across workers; test a large frame and cancellation.
+- [ ] Address final buffer validation and measure memory-scan scheduling/fairness; rebuild release and await user-run live tests.
+
+
 ## Latest: reverse candidate validation
 
 - [x] Include reverse candidate frame validation in the worker slice budget and cover interruption/cancellation.

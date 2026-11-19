@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — sliced Flash fresh-state search
+
+- Resume fresh-state candidate validation across workers and preserve cancellation and candidate ordering.
+
+
 ## Unreleased — bounded reverse candidate validation
 
 - Share the reverse-worker budget between RC4 rewinding and candidate frame validation, preserving partial validation across jobs.
