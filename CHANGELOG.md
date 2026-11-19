@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — Flash reverse worker slices
+
+- Yield between bounded reverse RC4 rewind slices while retaining candidates and the original ciphertext sample; cover buffer growth and cancellation.
+
+
 ## Unreleased — incremental Flash reverse-search state
 
 - Preserve reverse RC4 search progress across bounded rewind slices, with a resume and cancellation fixture. Worker scheduling is unchanged.

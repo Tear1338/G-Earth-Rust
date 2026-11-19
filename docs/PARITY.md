@@ -1,5 +1,10 @@
 # Compatibility with 1.5.4-beta-29
 
+## Flash worker slice evidence
+
+Synthetic Flash recovery resumes across workers and preserves candidates when buffered ciphertext grows; cancellation and ambiguity are covered separately. There is no wall-clock bound or real-client compatibility evidence.
+
+
 ## Flash reverse-search slice evidence
 
 A synthetic fixture confirms that reverse RC4 search can resume within one table and produce the same candidate after cancellation. The production worker still runs slices consecutively; live Flash behavior and scheduling fairness remain unverified.

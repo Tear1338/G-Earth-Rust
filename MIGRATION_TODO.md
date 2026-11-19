@@ -1,5 +1,11 @@
 # Migration tasks
 
+## Latest: Flash worker slices
+
+- [x] Preserve reverse-search snapshot and state between workers, including cancellation, sample growth and ambiguity fixtures.
+- [ ] Bound or measure fresh-state and candidate frame-validation work, investigate scheduling fairness, and rebuild release. Live client and extension behavior remains unverified.
+
+
 ## Latest: incremental Flash reverse search
 
 - [x] Preserve the reverse search state across bounded rewind slices and test resume/cancellation.

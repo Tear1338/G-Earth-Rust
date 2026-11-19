@@ -18,6 +18,8 @@ const MAX_DISCOVERY_WORKERS: usize = 4;
 // very large sample, and the sample can grow after this limit is selected.
 const REVERSE_PAGE_BYTES: usize = 8 * BOOTSTRAP_LIMIT;
 const REVERSE_PAGE_TABLES: usize = 8;
+// Rewind operations per worker invocation; frame validation remains unsliced.
+const REVERSE_SLICE_BYTES: usize = 1024 * 1024;
 fn reverse_page_table_limit(buffer_len: usize) -> usize {
     (REVERSE_PAGE_BYTES / buffer_len.max(1)).clamp(1, REVERSE_PAGE_TABLES)
 }
@@ -35,6 +37,7 @@ impl Drop for DiscoveryTask {
 enum DiscoveryEvent {
     Scanned((usize, usize, bool), mpsc::SyncSender<CiphertextSample>),
     Candidate(Vec<u8>, Box<RecoveryOutcome>),
+    Partial(Box<ReverseJob>),
     Done {
         sampled_len: usize,
         next_address: Option<usize>,
@@ -114,6 +117,7 @@ struct Side {
     reverse_phase: bool,
     bootstrap_limit: Option<usize>,
     candidates: CandidateAccumulator,
+    pending_reverse: Option<ReverseJob>,
 }
 impl Side {
     fn bootstrap_limit(&self) -> usize {
@@ -170,6 +174,7 @@ impl Side {
         reader.apply(&mut self.buffer);
         self.reader = Some(reader);
         self.waiting = None;
+        self.pending_reverse = None;
     }
 }
 pub struct DecodedPacket {
@@ -365,6 +370,7 @@ impl FlashSession {
         {
             return Ok(false);
         }
+        let pending_reverse = self.side(direction).pending_reverse.take();
         let cancel = Arc::new(AtomicBool::new(false));
         let worker_cancel = cancel.clone();
         let (sender, events) = mpsc::channel();
@@ -372,6 +378,10 @@ impl FlashSession {
             .name("gearth-flash-discovery".into())
             .spawn(move || {
                 let _slot = DiscoverySlot;
+                if let Some(job) = pending_reverse {
+                    job.run_slice(&sender, &worker_cancel);
+                    return;
+                }
                 let scan = match scan(&worker_cancel) {
                     Ok(scan) => scan,
                     Err(error) => {
@@ -409,28 +419,46 @@ impl FlashSession {
                 };
                 let length = sample.bytes.len();
                 let next_address = scan.next_address;
+                let partial_minimum = Some(if sample.at_capacity { 1 } else { 2 });
+                // Prefer fresh states before scheduling reverse-only work.
                 match recover_candidates(
                     &scan.states,
                     &sample.bytes,
                     direction,
                     &worker_cancel,
                     None,
-                    Some(if sample.at_capacity { 1 } else { 2 }),
-                    skip_reverse,
+                    partial_minimum,
+                    true,
                 ) {
+                    Ok(outcome)
+                        if outcome.priority == 0
+                            && direction == Direction::ToServer
+                            && !skip_reverse =>
+                    {
+                        ReverseJob {
+                            states: scan.states,
+                            sample: sample.bytes,
+                            partial_minimum,
+                            next_address,
+                            search: ReverseSearch::default(),
+                        }
+                        .run_slice(&sender, &worker_cancel);
+                    }
                     Ok(outcome) => {
-                        let _ =
-                            sender.send(DiscoveryEvent::Candidate(sample.bytes, Box::new(outcome)));
+                        if sender
+                            .send(DiscoveryEvent::Candidate(sample.bytes, Box::new(outcome)))
+                            .is_ok()
+                        {
+                            let _ = sender.send(DiscoveryEvent::Done {
+                                sampled_len: length,
+                                next_address,
+                            });
+                        }
                     }
                     Err(error) => {
                         let _ = sender.send(DiscoveryEvent::Failed(error));
-                        return;
                     }
                 }
-                let _ = sender.send(DiscoveryEvent::Done {
-                    sampled_len: length,
-                    next_address,
-                });
             });
         if let Err(error) = worker {
             ACTIVE_DISCOVERY_WORKERS.fetch_sub(1, Ordering::AcqRel);
@@ -474,6 +502,16 @@ impl FlashSession {
                     if side.encrypted && side.reader.is_none() && side.buffer.starts_with(&sample) {
                         side.candidates.merge(*outcome);
                     }
+                }
+                DiscoveryEvent::Partial(job) => {
+                    self.discovery[index] = None;
+                    let side = self.side(direction);
+                    if side.reader.is_none() && side.buffer.starts_with(&job.sample) {
+                        side.pending_reverse = Some(*job);
+                        side.last_scan = None;
+                        side.waiting = Some(now);
+                    }
+                    break;
                 }
                 DiscoveryEvent::Done {
                     sampled_len,
@@ -531,6 +569,8 @@ impl FlashSession {
     pub fn discover(&mut self, pid: u32, cancel: &AtomicBool) -> io::Result<()> {
         if cancel.load(Ordering::Acquire) {
             self.discovery = [None, None];
+            self.outgoing.pending_reverse = None;
+            self.incoming.pending_reverse = None;
             return Err(io::Error::new(
                 io::ErrorKind::Interrupted,
                 "key discovery cancelled",
@@ -663,6 +703,44 @@ struct ReverseSearch {
     y: u16,
     current: Option<(Rc4, usize)>,
     found: Option<Rc4>,
+}
+struct ReverseJob {
+    states: Vec<[u8; 256]>,
+    sample: Vec<u8>,
+    partial_minimum: Option<usize>,
+    next_address: Option<usize>,
+    search: ReverseSearch,
+}
+impl ReverseJob {
+    fn run_slice(mut self, sender: &mpsc::Sender<DiscoveryEvent>, cancel: &AtomicBool) {
+        match self.search.step(
+            &self.states,
+            &self.sample,
+            cancel,
+            None,
+            self.partial_minimum,
+            REVERSE_SLICE_BYTES,
+        ) {
+            Ok(Some(outcome)) => {
+                let sampled_len = self.sample.len();
+                if sender
+                    .send(DiscoveryEvent::Candidate(self.sample, Box::new(outcome)))
+                    .is_ok()
+                {
+                    let _ = sender.send(DiscoveryEvent::Done {
+                        sampled_len,
+                        next_address: self.next_address,
+                    });
+                }
+            }
+            Ok(None) => {
+                let _ = sender.send(DiscoveryEvent::Partial(Box::new(self)));
+            }
+            Err(error) => {
+                let _ = sender.send(DiscoveryEvent::Failed(error));
+            }
+        }
+    }
 }
 impl ReverseSearch {
     fn step(
@@ -981,7 +1059,14 @@ mod discovery_tests {
 
     fn finish_outgoing_discovery(session: &mut FlashSession) {
         let deadline = Instant::now() + Duration::from_secs(5);
-        while session.discovery[0].is_some() {
+        while session.discovery[0].is_some() || session.outgoing.pending_reverse.is_some() {
+            if session.discovery[0].is_none() {
+                assert!(session
+                    .start_discovery_wait(Direction::ToServer, |_| {
+                        Err(io::Error::other("resumption must not rescan memory"))
+                    })
+                    .unwrap());
+            }
             session
                 .poll_discovery(Direction::ToServer, Instant::now())
                 .unwrap();
@@ -1247,13 +1332,31 @@ mod discovery_tests {
             .is_empty());
         release_tx.send(()).unwrap();
         let deadline = Instant::now() + Duration::from_secs(10);
-        while session.discovery[0].is_some() {
+        let mut resumptions = 0;
+        let mut third_wire = Packet::new(79).bytes().to_vec();
+        current.clone().apply(&mut third_wire);
+        while session.discovery[0].is_some() || session.outgoing.pending_reverse.is_some() {
+            if session.discovery[0].is_none() {
+                resumptions += 1;
+                if resumptions == 1 {
+                    assert!(session
+                        .feed(Direction::ToServer, &third_wire)
+                        .unwrap()
+                        .is_empty());
+                }
+                assert!(session
+                    .start_discovery_wait(Direction::ToServer, |_| {
+                        Err(io::Error::other("resumption must not rescan memory"))
+                    })
+                    .unwrap());
+            }
             session
                 .poll_discovery(Direction::ToServer, Instant::now())
                 .unwrap();
             assert!(Instant::now() < deadline, "discovery did not finish");
             std::thread::sleep(Duration::from_millis(1));
         }
+        assert!(resumptions > 0, "the fixture must cross a worker boundary");
         assert_eq!(
             session.outgoing.writer.as_ref().unwrap().state(),
             fresh.state()
@@ -1264,7 +1367,7 @@ mod discovery_tests {
                 .iter()
                 .map(|packet| packet.packet.header())
                 .collect::<Vec<_>>(),
-            [77, 78]
+            [77, 78, 79]
         );
         assert!(packets.iter().all(|packet| packet.encrypted));
     }
@@ -1864,6 +1967,44 @@ mod discovery_tests {
         assert_eq!(result.priority, expected.priority);
         assert_eq!(result.ambiguous, expected.ambiguous);
         assert_eq!(result.cipher.unwrap().state(), fresh.state());
+    }
+
+    #[test]
+    fn reverse_search_keeps_ambiguity_across_slices() {
+        let (_, current, wire) = outgoing_fixture();
+        let tables = [current.state().0];
+        let cancel = AtomicBool::new(false);
+        let mut search = ReverseSearch {
+            found: Some(Rc4::new(b"different-candidate").unwrap()),
+            ..Default::default()
+        };
+        let mut slices = 0;
+        let outcome = loop {
+            slices += 1;
+            if let Some(outcome) = search.step(&tables, &wire, &cancel, None, None, 7).unwrap() {
+                break outcome;
+            }
+        };
+        assert!(slices > 1);
+        assert_eq!(outcome.priority, 1);
+        assert!(outcome.ambiguous);
+        assert!(outcome.cipher.is_none());
+    }
+
+    #[test]
+    fn cancelling_discovery_discards_pending_reverse_job() {
+        let (_, current, wire) = outgoing_fixture();
+        let mut session = FlashSession::default();
+        session.outgoing.pending_reverse = Some(ReverseJob {
+            states: vec![current.state().0],
+            sample: wire,
+            partial_minimum: None,
+            next_address: None,
+            search: ReverseSearch::default(),
+        });
+        let error = session.discover(1, &AtomicBool::new(true)).unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::Interrupted);
+        assert!(session.outgoing.pending_reverse.is_none());
     }
 
     #[test]

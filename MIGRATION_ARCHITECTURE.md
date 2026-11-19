@@ -1,5 +1,10 @@
 # Rust migration architecture
 
+## Flash reverse worker slices
+
+Each reverse discovery job performs at most 1,048,576 rewind steps before returning its immutable scan snapshot, ciphertext, search cursor and candidate accumulator to the session. The next worker resumes that same snapshot; fresh checks and frame validation are not included in this bound.
+
+
 ## Incremental Flash reverse-search state
 
 Reverse trials retain the table index, RC4 counter, partial rewind and found candidate. Slices require the exact same table snapshot and ciphertext; the current discovery worker executes them consecutively, so scheduling and candidate validation still need separate bounds.

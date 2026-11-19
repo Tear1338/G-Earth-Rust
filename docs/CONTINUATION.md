@@ -1,5 +1,10 @@
 # Continuation state
 
+## Next: bound Flash candidate validation
+
+Reverse discovery now resumes across workers after bounded rewind slices. Measure or split fresh-state checks and candidate frame validation, and test fairness with concurrent sessions. The most recent release predates this change; the user handles live tests.
+
+
 ## Next: schedule incremental Flash search
 
 Reverse-state search now supports partial rewind slices, but the worker runs them consecutively. Persist the exact scan snapshot, ciphertext and accumulator between jobs, then test cancellation, buffer growth, ambiguity and worker fairness. Frame validation also remains unsliced.

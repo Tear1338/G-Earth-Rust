@@ -1,5 +1,10 @@
 # G-Earth Rust migration progress
 
+## Flash reverse search across workers
+
+Reverse discovery now yields after at most 1,048,576 RC4 rewind steps, keeping the scan snapshot, ciphertext and search state for the next worker. Candidate ambiguity remains until the page completes; a synthetic test crosses worker boundaries, grows the ciphertext between jobs and verifies the final packets. Additional fixtures check cancellation and retained ambiguity. The 155 desktop/web library tests (7 ignored), Clippy and debug build passed before the additional ambiguity fixture, which also passed separately. This bounds rewind work, not wall-clock time: fresh-state checks and candidate frame validation remain unsliced, and worker fairness is not proven. Release at `b7c5f6c` predates this change; real clients, protocols and extensions remain unverified.
+
+
 ## Incremental Flash reverse-search foundation
 
 The reverse-state loop now stores the table, candidate counter, partially rewound RC4 state and found candidate between work slices. A fixture resumes after one byte, checks cancellation, then compares the final result with the existing search. The 23 Flash tests, 154 desktop/web library tests (7 ignored), Clippy and desktop/web debug build pass. The current worker still runs slices consecutively, so this does not yet bound worker occupancy or solve fairness; frame validation is also not sliced. Windows desktop/web release at `b7c5f6c` predates this code change. Real-client, protocol and extension compatibility remains unverified.
@@ -622,4 +627,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Persist the exact Flash scan snapshot, ciphertext and incremental reverse-search state between worker jobs; preserve candidate ambiguity and validate cancellation, buffer growth and worker fairness. Bound the separate frame-validation work. Rebuild release for the resulting code. The user handles live tests; clients, protocols and extensions remain unverified.
+Build release for the current Flash worker changes. Investigate bounding fresh-state checks and candidate frame validation separately, then test concurrent-session fairness. Recheck GitHub CI. The user handles live tests; clients, protocols and extensions remain unverified.
