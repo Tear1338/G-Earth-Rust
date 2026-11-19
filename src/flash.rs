@@ -2574,6 +2574,69 @@ mod discovery_tests {
     }
 
     #[test]
+    fn waiting_verification_proceeds_after_a_worker_slot_is_released() {
+        const ISOLATED_ENV: &str = "GEARTH_FLASH_POOL_ISOLATED_TEST";
+        if std::env::var_os(ISOLATED_ENV).is_none() {
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "flash::discovery_tests::waiting_verification_proceeds_after_a_worker_slot_is_released", "--nocapture"])
+                .env(ISOLATED_ENV, "1")
+                .output().unwrap();
+            assert!(
+                output.status.success(),
+                "isolated contention test failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
+        let (started_tx, started_rx) = mpsc::channel();
+        let (released_tx, released_rx) = mpsc::channel();
+        let mut holders = Vec::new();
+        for _ in 0..MAX_DISCOVERY_WORKERS {
+            let mut session = FlashSession::default();
+            session.outgoing.encrypted = true;
+            session.outgoing.buffer = vec![0; 6];
+            let started = started_tx.clone();
+            let released = released_tx.clone();
+            assert!(session
+                .start_discovery_wait(Direction::ToServer, move |cancel| {
+                    started.send(()).unwrap();
+                    while !cancel.load(Ordering::Acquire) {
+                        std::thread::sleep(Duration::from_millis(1));
+                    }
+                    released.send(()).unwrap();
+                    Err(io::Error::new(io::ErrorKind::Interrupted, "cancelled"))
+                })
+                .unwrap());
+            started_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+            holders.push(session);
+        }
+        let (fresh, _, wire) = outgoing_fixture();
+        let mut waiting = FlashSession::default();
+        waiting.outgoing.encrypted = true;
+        waiting.outgoing.feed(&wire).unwrap();
+        waiting.outgoing.pending_verification = Some(VerificationJob::new(fresh.clone(), wire));
+        waiting.outgoing.verification_active = true;
+        assert!(!waiting
+            .start_discovery(Direction::ToServer, |_| Err(io::Error::other(
+                "must not scan"
+            )))
+            .unwrap());
+        assert_eq!(waiting.input_capacity(Direction::ToServer), 0);
+        drop(holders.pop());
+        released_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+        finish_outgoing_discovery(&mut waiting);
+        assert_eq!(
+            waiting.outgoing.writer.as_ref().unwrap().state(),
+            fresh.state()
+        );
+        assert!(holders.iter().all(|session| session.discovery[0].is_some()));
+        drop(holders);
+        for _ in 1..MAX_DISCOVERY_WORKERS {
+            released_rx.recv_timeout(Duration::from_secs(3)).unwrap();
+        }
+    }
+
+    #[test]
     fn slow_outgoing_search_does_not_block_incoming_key() {
         let (started_tx, started_rx) = mpsc::channel();
         let (done_tx, done_rx) = mpsc::channel();

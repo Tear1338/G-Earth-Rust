@@ -1,5 +1,10 @@
 # G-Earth Rust migration progress
 
+## Flash worker contention and Windows release
+
+Windows GNU desktop/web release succeeded at `0b1f57fef49ba4eb004ce2005cd41f369cb2501c`. An isolated subprocess fixture occupies all four worker slots and confirms a waiting verification proceeds after one is released; the locked workspace/all-targets suite and Clippy pass, with environment-dependent tests ignored. The pool has no fairness queue, so this single scenario does not rule out starvation under continuous contention. Real clients, protocols and extensions remain unverified.
+
+
 ## Flash verification backpressure
 
 During final candidate verification, socket reads pause only in that direction; they resume on acceptance or rejection. This keeps the snapshot stable in the relay while preserving revalidation for direct buffer growth. Synthetic tests cover the normal transition, opposite-direction capacity, valid/invalid candidates and cancellation. The 162 desktop/web library tests (7 ignored), Clippy and desktop/web debug build passed. This may delay incoming bytes while verification waits for a worker; scheduling fairness, synchronous installation and real-client behavior remain unverified. Windows desktop/web release at `1e32d7c` predates this change.
@@ -667,4 +672,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Test Flash worker fairness under contention and investigate the synchronous buffered decryption performed on installation. Build Windows desktop/web release for the latest backpressure code. The user handles live tests; clients, protocols and extensions remain unverified.
+Design and test starvation-resistant scheduling for Flash worker slots, including abandoned waiters and cancellation; investigate synchronous buffered decryption performed on installation. The user handles live tests; clients, protocols and extensions remain unverified.

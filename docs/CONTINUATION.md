@@ -1,5 +1,10 @@
 # Continuation state
 
+## Next: Flash worker starvation
+
+The four-slot contention fixture passes in an isolated process, and Windows desktop/web release succeeded at `0b1f57f`. The current pool does not guarantee fairness. Design and test cancellation-safe scheduling and inspect synchronous buffered decryption.
+
+
 ## Next: Flash fairness and installation
 
 The relay pauses the relevant direction during final verification. Test worker fairness under contention and investigate synchronous installation/decryption; rebuild release. Live client verification is left to the user.

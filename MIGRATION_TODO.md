@@ -1,5 +1,11 @@
 # Migration tasks
 
+## Latest: worker contention fixture
+
+- [x] Confirm a waiting verification proceeds when one of four worker slots is released; isolate the fixture from parallel tests. Windows release built at `0b1f57f`.
+- [ ] Design starvation-resistant scheduling and inspect synchronous buffered decryption; live compatibility remains unverified.
+
+
 ## Latest: Flash verification backpressure
 
 - [x] Pause reads in the verified direction until candidate acceptance or rejection, with synthetic transition and cancellation coverage.
