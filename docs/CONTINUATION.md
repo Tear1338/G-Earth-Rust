@@ -1,5 +1,10 @@
 # Continuation state
 
+## Next: bound fresh Flash discovery
+
+Reverse worker slices now cover candidate validation as well as rewinding. Fresh-state checks and final buffer verification remain unsliced; integrate those with cancellation and fairness tests before claiming a time bound.
+
+
 ## Next: schedule Flash frame-validation slices
 
 The frame validator can resume inside encrypted prefixes and bodies but callers still run slices consecutively. Integrate it into reverse and fresh discovery worker budgets, preserving exact snapshots, ambiguity and cancellation, then test concurrent fairness.

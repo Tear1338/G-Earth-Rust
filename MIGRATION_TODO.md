@@ -1,5 +1,11 @@
 # Migration tasks
 
+## Latest: reverse candidate validation
+
+- [x] Include reverse candidate frame validation in the worker slice budget and cover interruption/cancellation.
+- [ ] Bound fresh-state and final buffer validation, test worker fairness, rebuild release, and await user-run real-client and extension evidence.
+
+
 ## Latest: resumable Flash frame validation
 
 - [x] Implement sliced frame validation and compare against full decryption at each input boundary.

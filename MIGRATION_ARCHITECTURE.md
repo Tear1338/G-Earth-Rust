@@ -1,5 +1,10 @@
 # Rust migration architecture
 
+## Reverse worker validation budget
+
+Reverse jobs share their per-worker RC4 step budget between rewind and incremental candidate validation. The pending state retains the candidate and validator across jobs; fresh-state checks and final buffer verification are separate.
+
+
 ## Incremental Flash frame validation
 
 The frame validator retains the RC4 state, partial frame-length prefix, body skip and completed-frame count. Existing callers execute slices consecutively; the state can be integrated into worker scheduling in a later step.

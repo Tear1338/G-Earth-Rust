@@ -1,5 +1,10 @@
 # G-Earth Rust migration progress
 
+## Bounded reverse candidate validation
+
+Reverse workers now count both RC4 rewinding and candidate frame validation against the same slice budget. A targeted fixture interrupts validation within an encrypted prefix, verifies cancellation and resumes to the original candidate; existing sliced and Flash fixtures also pass. The 158 desktop/web library tests (7 ignored), Clippy and desktop/web debug build passed. Fresh-state checks and final buffer validation are still outside this bound, and no wall-clock or fairness guarantee is established. The Windows desktop/web release at `8bf3b64` predates this change; real clients, protocols and extensions remain unverified.
+
+
 ## Resumable Flash frame validator
 
 Frame-length validation now retains cipher position, partially decrypted length prefix and remaining body between slices. A deterministic fixture compares 1-, 3- and 7-byte slices at every input boundary with full decryption. The 157 desktop/web library tests (7 ignored), Clippy and desktop/web debug build passed. Current callers still run slices consecutively; worker-level budgeting and fresh-state search must be integrated before claiming a bound. CI for `8bf3b64` passed; Windows desktop/web release succeeded at that preceding code commit. Live clients, protocols and extensions remain unverified.
@@ -637,4 +642,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Integrate the resumable frame validator into reverse and fresh Flash discovery worker budgets without losing candidate ambiguity; test cancellation, growing samples and concurrent-session fairness. Build release for the resulting code. The user handles live tests; clients, protocols and extensions remain unverified.
+Integrate fresh-state candidate checks into resumable Flash worker jobs, then address final buffer validation and test concurrent-session fairness, cancellation, ambiguity and sample growth. Build release for the resulting code. The user handles live tests; clients, protocols and extensions remain unverified.

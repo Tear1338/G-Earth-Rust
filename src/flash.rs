@@ -18,7 +18,7 @@ const MAX_DISCOVERY_WORKERS: usize = 4;
 // very large sample, and the sample can grow after this limit is selected.
 const REVERSE_PAGE_BYTES: usize = 8 * BOOTSTRAP_LIMIT;
 const REVERSE_PAGE_TABLES: usize = 8;
-// Rewind operations per worker invocation; frame validation remains unsliced.
+// Rewind and frame-validation RC4 steps per reverse worker invocation.
 const REVERSE_SLICE_BYTES: usize = 1024 * 1024;
 fn reverse_page_table_limit(buffer_len: usize) -> usize {
     (REVERSE_PAGE_BYTES / buffer_len.max(1)).clamp(1, REVERSE_PAGE_TABLES)
@@ -651,19 +651,22 @@ impl FrameValidator {
         }
     }
     fn step(&mut self, encrypted: &[u8], mut budget: usize) -> Option<bool> {
+        self.step_limited(encrypted, &mut budget)
+    }
+    fn step_limited(&mut self, encrypted: &[u8], budget: &mut usize) -> Option<bool> {
         if encrypted.len() < 6 {
             return Some(false);
         }
         let mut scratch = [0u8; 4096];
         loop {
             if self.body_remaining != 0 {
-                if budget == 0 {
+                if *budget == 0 {
                     return None;
                 }
-                let count = self.body_remaining.min(budget).min(scratch.len());
+                let count = self.body_remaining.min(*budget).min(scratch.len());
                 self.cipher.apply(&mut scratch[..count]);
                 self.body_remaining -= count;
-                budget -= count;
+                *budget -= count;
                 continue;
             }
             let remaining = encrypted.len() - self.at;
@@ -673,16 +676,16 @@ impl FrameValidator {
             if remaining < 4 {
                 return Some(self.partial_minimum.is_some_and(|n| self.complete >= n));
             }
-            if budget == 0 {
+            if *budget == 0 {
                 return None;
             }
-            let count = (4 - self.prefix_done).min(budget);
+            let count = (4 - self.prefix_done).min(*budget);
             let start = self.prefix_done;
             self.prefix[start..start + count]
                 .copy_from_slice(&encrypted[self.at + start..self.at + start + count]);
             self.cipher.apply(&mut self.prefix[start..start + count]);
             self.prefix_done += count;
-            budget -= count;
+            *budget -= count;
             if self.prefix_done < 4 {
                 continue;
             }
@@ -748,6 +751,7 @@ struct ReverseSearch {
     table: usize,
     y: u16,
     current: Option<(Rc4, usize)>,
+    validation: Option<(Rc4, FrameValidator)>,
     found: Option<Rc4>,
 }
 struct ReverseJob {
@@ -808,37 +812,52 @@ impl ReverseSearch {
             if deadline.is_some_and(|limit| Instant::now() > limit) {
                 return Ok(None);
             }
-            if self.current.is_none() {
-                let cipher =
-                    Rc4::from_state(states[self.table], encrypted.len() as u8, self.y as u8)
-                        .map_err(io::Error::other)?;
-                self.current = Some((cipher, encrypted.len()));
-            }
-            let (cipher, remaining) = self.current.as_mut().expect("initialized reverse state");
-            let chunk = (*remaining).min(budget).min(4096);
-            if !rewind_cancellable(cipher, chunk, cancel, deadline)? {
-                return Ok(None);
-            }
-            *remaining -= chunk;
-            budget -= chunk;
-            if *remaining != 0 {
-                continue;
-            }
-            let (candidate, _) = self.current.take().expect("completed reverse state");
-            let (_, x, y) = candidate.state();
-            if x == 0 && y == 0 && candidate_matches(encrypted, &candidate, partial_minimum) {
-                if self
-                    .found
-                    .as_ref()
-                    .is_some_and(|c| c.state() != candidate.state())
-                {
-                    return Ok(Some(RecoveryOutcome {
-                        priority: 1,
-                        ambiguous: true,
-                        cipher: None,
-                    }));
+            if let Some((_, validator)) = &mut self.validation {
+                let Some(matches) = validator.step_limited(encrypted, &mut budget) else {
+                    return Ok(None);
+                };
+                let (candidate, _) = self
+                    .validation
+                    .take()
+                    .expect("completed candidate validation");
+                if matches {
+                    if self
+                        .found
+                        .as_ref()
+                        .is_some_and(|c| c.state() != candidate.state())
+                    {
+                        return Ok(Some(RecoveryOutcome {
+                            priority: 1,
+                            ambiguous: true,
+                            cipher: None,
+                        }));
+                    }
+                    self.found = Some(candidate);
                 }
-                self.found = Some(candidate);
+            } else {
+                if self.current.is_none() {
+                    let cipher =
+                        Rc4::from_state(states[self.table], encrypted.len() as u8, self.y as u8)
+                            .map_err(io::Error::other)?;
+                    self.current = Some((cipher, encrypted.len()));
+                }
+                let (cipher, remaining) = self.current.as_mut().expect("initialized reverse state");
+                let chunk = (*remaining).min(budget).min(4096);
+                if !rewind_cancellable(cipher, chunk, cancel, deadline)? {
+                    return Ok(None);
+                }
+                *remaining -= chunk;
+                budget -= chunk;
+                if *remaining != 0 {
+                    continue;
+                }
+                let (candidate, _) = self.current.take().expect("completed reverse state");
+                let (_, x, y) = candidate.state();
+                if x == 0 && y == 0 {
+                    let validator = FrameValidator::new(&candidate, 1, partial_minimum);
+                    self.validation = Some((candidate, validator));
+                    continue;
+                }
             }
             self.y += 1;
             if self.y == 256 {
@@ -2043,6 +2062,40 @@ mod discovery_tests {
         assert_eq!(result.priority, expected.priority);
         assert_eq!(result.ambiguous, expected.ambiguous);
         assert_eq!(result.cipher.unwrap().state(), fresh.state());
+    }
+
+    #[test]
+    fn reverse_search_slices_candidate_validation_and_honors_cancellation() {
+        let (fresh, current, wire) = outgoing_fixture();
+        let tables = [current.state().0];
+        let cancel = AtomicBool::new(false);
+        let mut search = ReverseSearch {
+            y: 255,
+            validation: Some((fresh.clone(), FrameValidator::new(&fresh, 1, None))),
+            ..Default::default()
+        };
+        assert!(search
+            .step(&tables, &wire, &cancel, None, None, 1)
+            .unwrap()
+            .is_none());
+        assert_eq!(search.validation.as_ref().unwrap().1.prefix_done, 1);
+        cancel.store(true, Ordering::Release);
+        assert_eq!(
+            search
+                .step(&tables, &wire, &cancel, None, None, 1)
+                .err()
+                .unwrap()
+                .kind(),
+            io::ErrorKind::Interrupted
+        );
+        cancel.store(false, Ordering::Release);
+        let outcome = loop {
+            if let Some(outcome) = search.step(&tables, &wire, &cancel, None, None, 1).unwrap() {
+                break outcome;
+            }
+        };
+        assert_eq!(outcome.cipher.unwrap().state(), fresh.state());
+        assert!(!outcome.ambiguous);
     }
 
     #[test]

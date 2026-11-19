@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — bounded reverse candidate validation
+
+- Share the reverse-worker budget between RC4 rewinding and candidate frame validation, preserving partial validation across jobs.
+
+
 ## Unreleased — resumable Flash frame validator
 
 - Preserve frame-validation progress through partial encrypted prefixes and frame bodies; compare short slices with full decryption.
