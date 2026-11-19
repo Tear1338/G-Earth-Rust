@@ -1,5 +1,10 @@
 # Compatibility with 1.5.4-beta-29
 
+## RC4 scanner parity evidence
+
+The beta-29 Linux source accepts regular permutations; a synthetic identity state now survives discovery and decrypts a frame. Extra false candidates and real-client performance remain unmeasured. Native Linux socket ownership fixtures passed in CI run 44433005283; its G-Presets retry remains pending.
+
+
 ## Linux owner lookup evidence
 
 Synthetic endpoint parsing passes and Linux-target Clippy succeeds. Native Linux socket and shared-owner fixtures await CI; IPv6, network namespaces and real clients remain unverified. The Linux self-memory scan fixture passed in CI run 44432148968.

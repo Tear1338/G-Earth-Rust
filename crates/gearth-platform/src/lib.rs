@@ -53,6 +53,7 @@ pub fn find_tables(bytes: &[u8], address: usize) -> Vec<[u8; 256]> {
 #[cfg_attr(not(windows), allow(dead_code))]
 fn find_tables_with_offsets(bytes: &[u8], address: usize) -> Vec<(usize, [u8; 256])> {
     let mut result = Vec::new();
+    let mut seen_states = std::collections::HashSet::new();
     let first = (4 - address % 4) % 4;
     for offset in (first..bytes.len().saturating_sub(1023)).step_by(4) {
         // Reject most windows before inspecting all 256 words.
@@ -77,18 +78,7 @@ fn find_tables_with_offsets(bytes: &[u8], address: usize) -> Vec<(usize, [u8; 25
             seen[value as usize] = true;
             state[i] = value as u8;
         }
-        // OS lookup tables can also be permutations (often a repeated identity table).
-        // RC4 states are shuffled; reject strongly linear tables before the candidate cap.
-        if valid {
-            let mut deltas = [0u16; 256];
-            for pair in state.windows(2) {
-                deltas[pair[1].wrapping_sub(pair[0]) as usize] += 1;
-            }
-            if deltas.iter().any(|count| *count > 32) {
-                valid = false;
-            }
-        }
-        if valid && !result.iter().any(|(_, existing)| *existing == state) {
+        if valid && seen_states.insert(state) {
             result.push((offset, state));
             if result.len() == MAX_TABLES {
                 break;
@@ -273,6 +263,21 @@ mod tests {
             );
         }
     }
+    #[test]
+    fn retains_linear_permutations_once_in_discovery_order() {
+        let identity: Vec<u8> = (0u32..256).flat_map(u32::to_le_bytes).collect();
+        let reverse: Vec<u8> = (0u32..256).rev().flat_map(u32::to_le_bytes).collect();
+        let mut memory = identity.clone();
+        memory.extend_from_slice(&[255; 16]);
+        memory.extend_from_slice(&reverse);
+        memory.extend_from_slice(&[255; 16]);
+        memory.extend_from_slice(&identity);
+        let tables = find_tables(&memory, 0);
+        assert_eq!(tables.len(), 2);
+        assert_eq!(tables[0], std::array::from_fn(|i| i as u8));
+        assert_eq!(tables[1], std::array::from_fn(|i| 255 - i as u8));
+    }
+
     #[test]
     fn finds_aligned_word_permutations_and_rejects_duplicates() {
         let mut words: Vec<u32> = (0..256).collect();

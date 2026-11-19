@@ -1,5 +1,11 @@
 # Migration tasks
 
+## Latest: RC4 permutation discovery
+
+- [x] Retain regular permutations accepted by beta-29 Linux, compare a decrypting identity-state fixture and deduplicate candidates without changing order.
+- [ ] Confirm rerun of G-Presets CI, benchmark representative scan workloads, cover Linux IPv6 and network namespaces, and rebuild release. Live compatibility remains unverified.
+
+
 ## Latest: Linux TCP owner
 
 - [x] Add IPv4 owner lookup among visible Habbo/Flash candidates and conservative shared/inaccessible handling; cross-target compilation passes.

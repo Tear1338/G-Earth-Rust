@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — RC4 permutation discovery
+
+- Preserve regular RC4 permutations instead of filtering them before stream validation, with ordered hash-based deduplication.
+
+
 ## Unreleased — Linux Flash socket owner
 
 - Identify a visible Linux Flash process from matching IPv4 connection endpoints and socket descriptors, without selecting ambiguous owners.

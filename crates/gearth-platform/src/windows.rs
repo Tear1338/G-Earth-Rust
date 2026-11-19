@@ -98,6 +98,7 @@ fn scan_with_limits(
         }
         let process = Handle(raw);
         let mut result = ScanResult::default();
+        let mut seen_states = std::collections::HashSet::new();
         let mut address = range.map_or(0, |r| r.0);
         let end = range.map_or(usize::MAX, |r| r.1);
         let deadline = Instant::now() + max_time;
@@ -170,7 +171,7 @@ fn scan_with_limits(
                     result.bytes_read += read;
                     bytes.truncate(read);
                     for (offset, state) in find_tables_with_offsets(&bytes, at) {
-                        if !result.states.contains(&state) {
+                        if seen_states.insert(state) {
                             result.states.push(state);
                             if result.states.len() == max_tables {
                                 result.next_address = at

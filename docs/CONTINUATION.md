@@ -1,5 +1,10 @@
 # Continuation state
 
+## Next: CI retry and Linux IPv6
+
+Regular RC4 states now survive scanning; monitor G-Presets CI retry after a transient 404, benchmark realistic scan candidate volume and investigate Linux IPv6/network-namespace support. Windows release must be rebuilt for this code; live tests belong to the user.
+
+
 ## Next: Linux socket CI
 
 IPv4 socket-owner lookup now checks visible Flash candidate descriptors and declines ambiguous or inaccessible cases. Confirm native Linux CI fixtures for real loopback sockets and shared ownership; investigate IPv6 and the shared RC4 table heuristic.

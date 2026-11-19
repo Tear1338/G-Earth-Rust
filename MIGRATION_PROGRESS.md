@@ -1,5 +1,10 @@
 # G-Earth Rust migration progress
 
+## RC4 permutation discovery parity
+
+The beta-29 Linux scanner accepts any 256-value permutation; Rust previously rejected strongly regular states. A synthetic identity-state regression failed before the fix and now scans and decrypts a frame. The shared Windows/Linux scanner retains all permutations and uses hash-based deduplication while preserving discovery order; more false candidates can increase work, and no representative performance benchmark has been run. Windows workspace/all-targets tests and debug build, platform/Flash tests, Windows Clippy and Linux-target Clippy pass. Linux native loopback owner and shared-owner tests passed in CI run 44433005283; its G-Presets job initially received a transient 404 and has been rerun. Windows desktop/web release succeeded at preceding commit `7c26b0e`. Real clients, protocols and extensions remain unverified.
+
+
 ## Linux TCP owner identification
 
 Linux can now associate an IPv4 connection with a visible Habbo/Flash candidate using `/proc/net/tcp` and process socket descriptors. Shared owners or inaccessible candidate descriptors return no owner; IPv6 and other network namespaces remain unsupported. Synthetic endpoint parsing, Windows platform tests, Linux-target Clippy and the Windows desktop/web debug build passed. Native Linux socket and shared-owner fixtures are added but await CI. The Linux self-memory test passed in CI run 44432148968, and Windows desktop/web release succeeded at preceding code commit `3966341`. Real clients, protocols and extensions remain unverified.
@@ -692,4 +697,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Confirm Linux CI runs the controlled loopback socket-owner and shared-owner tests, correcting any failures. Then implement or document IPv6 and network-namespace limitations and compare the shared RC4 table heuristic against beta-29. Build release for current code. The user handles live tests; clients, protocols and extensions remain unverified.
+Check G-Presets CI retry for run 44433005283 and address any persistent failure. Build Windows desktop/web release for the current RC4 scanner, then benchmark candidate volume and implement or document Linux IPv6/network-namespace ownership. The user handles live tests; clients, protocols and extensions remain unverified.

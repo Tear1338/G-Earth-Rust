@@ -195,6 +195,7 @@ fn scan_memory(
         ));
     }
     let mut result = ScanResult::default();
+    let mut seen_states = std::collections::HashSet::new();
     for &(start, end) in ranges {
         if end <= address {
             continue;
@@ -228,7 +229,7 @@ fn scan_memory(
             result.bytes_read += read;
             bytes.truncate(read);
             for (offset, state) in find_tables_with_offsets(&bytes, at) {
-                if !result.states.contains(&state) {
+                if seen_states.insert(state) {
                     result.states.push(state);
                     if result.states.len() == max_tables {
                         result.next_address = at

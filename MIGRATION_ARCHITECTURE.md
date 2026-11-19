@@ -1,5 +1,10 @@
 # Rust migration architecture
 
+## RC4 candidate deduplication
+
+Shared process scanners retain all 256-value permutations, including regular ones accepted by the beta-29 Linux path. Hash sets deduplicate within each chunk and scan page while preserving the first occurrence in output order; candidate validation still decides whether a state fits the encrypted stream.
+
+
 ## Linux socket ownership
 
 IPv4 owner lookup matches both connection endpoints in `/proc/net/tcp` and searches visible candidate processes’ socket descriptors. Ambiguous or permission-incomplete results are not assigned. IPv6 and cross-namespace sockets are not handled.

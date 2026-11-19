@@ -48,6 +48,34 @@ fn recovers_both_states_without_exposing_or_guessing_the_key() {
     .is_none());
 }
 #[test]
+fn scanner_retains_a_linear_rc4_state_that_decrypts_a_frame() {
+    let state = std::array::from_fn(|i| i as u8);
+    let cipher = Rc4::from_state(state, 0, 0).unwrap();
+    let mut memory = Vec::with_capacity(1024);
+    for value in 0u32..256 {
+        memory.extend_from_slice(&value.to_le_bytes());
+    }
+    let tables = gearth_platform::find_tables(&memory, 0);
+    assert!(
+        tables.contains(&state),
+        "valid RC4 permutation was filtered before validation"
+    );
+    let mut packet = Packet::new(77);
+    packet.put_i32(42).unwrap();
+    let mut encrypted = packet.bytes().to_vec();
+    cipher.clone().apply(&mut encrypted);
+    let recovered = recover_state(
+        &tables,
+        &encrypted,
+        Direction::ToClient,
+        &AtomicBool::new(false),
+    )
+    .unwrap()
+    .unwrap();
+    assert_eq!(recovered.state(), cipher.state());
+}
+
+#[test]
 fn fragmented_handshake_and_coalesced_encrypted_tail_preserve_stream_counters() {
     let mut session = FlashSession::default();
     let cancel = AtomicBool::new(false);
