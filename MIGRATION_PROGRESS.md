@@ -1,5 +1,15 @@
 # G-Earth Rust migration progress
 
+## Asynchronous Flash final validation
+
+Final candidate verification now runs in resumable workers. If ciphertext grows while a snapshot is checked, a new snapshot is validated before installation; a synthetic large-frame test verifies both valid and invalid appended tails. The 161 desktop/web library tests (7 ignored) passed before a subsequent retry-throttle adjustment; all 30 Flash tests, Clippy and the debug build passed after it. Restarting validation under continuous growth can repeat work, and copying, process scanning and installing/decrypting the buffered stream are not bounded by this worker budget. Release and CI passed at preceding commit `0209ee3`; live clients, protocols and extensions remain unverified.
+
+
+## Windows release after sliced fresh search
+
+The Windows GNU desktop/web release built successfully at `0209ee37fde7b5a0ba270db0c92e1b8291f7b27d`. Live clients, protocols and extensions remain unverified.
+
+
 ## Budgeted fresh-state Flash discovery
 
 Fresh-state candidate validation now uses the same resumable worker budget as reverse discovery. A synthetic frame larger than one slice confirms that the search resumes in another worker without installing a candidate early; a separate fixture covers cancellation during prefix validation. The 160 desktop/web library tests (7 ignored), Clippy and desktop/web debug build passed. Final buffer validation and memory scanning remain outside this budget, and scheduling fairness and wall-clock bounds are not established. Windows desktop/web release at `8bf3b64` predates this code; real clients, protocols and extensions remain unverified.
@@ -647,4 +657,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Investigate moving final Flash buffer validation into resumable, cancellable worker jobs without installing stale candidates; test sample growth, ambiguity and concurrent-session fairness. Measure process-scan work and rebuild release for the resulting code. The user handles live tests; clients, protocols and extensions remain unverified.
+Build Windows desktop/web release for the current asynchronous Flash verification. Investigate repeated validation during buffer growth, synchronous installation/decryption and worker fairness; test cancellation and real-session-independent concurrency. The user handles live tests; clients, protocols and extensions remain unverified.

@@ -1,5 +1,11 @@
 # Migration tasks
 
+## Latest: asynchronous Flash final validation
+
+- [x] Move final candidate validation into resumable workers and recheck growing ciphertext before installation.
+- [ ] Investigate repeated revalidation, synchronous installation/decryption and concurrent-session fairness; rebuild release and await user-run live tests.
+
+
 ## Latest: sliced fresh-state search
 
 - [x] Preserve fresh candidate validation across workers; test a large frame and cancellation.

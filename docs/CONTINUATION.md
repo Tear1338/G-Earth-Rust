@@ -1,5 +1,10 @@
 # Continuation state
 
+## Next: Flash installation and fairness
+
+Final validation now yields across workers and repeats on buffer growth. Investigate repeated validation, synchronous installation/decryption and fairness; rebuild Windows release for current code. Live tests are the user’s responsibility.
+
+
 ## Next: final Flash buffer validation
 
 Fresh and reverse candidate validation now yield between workers. The last revalidation of the current buffer still runs synchronously; investigate bounding it and test concurrent-session fairness and cancellation.

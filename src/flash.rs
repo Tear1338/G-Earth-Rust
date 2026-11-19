@@ -38,6 +38,8 @@ enum DiscoveryEvent {
     Scanned((usize, usize, bool), mpsc::SyncSender<CiphertextSample>),
     Candidate(Vec<u8>, Box<RecoveryOutcome>),
     Partial(Box<SearchJob>),
+    VerificationPartial(Box<VerificationJob>),
+    Verified(Box<VerificationJob>, bool),
     Done {
         sampled_len: usize,
         next_address: Option<usize>,
@@ -118,6 +120,7 @@ struct Side {
     bootstrap_limit: Option<usize>,
     candidates: CandidateAccumulator,
     pending_search: Option<SearchJob>,
+    pending_verification: Option<VerificationJob>,
 }
 impl Side {
     fn bootstrap_limit(&self) -> usize {
@@ -175,6 +178,7 @@ impl Side {
         self.reader = Some(reader);
         self.waiting = None;
         self.pending_search = None;
+        self.pending_verification = None;
     }
 }
 pub struct DecodedPacket {
@@ -371,6 +375,7 @@ impl FlashSession {
             return Ok(false);
         }
         let pending_search = self.side(direction).pending_search.take();
+        let pending_verification = self.side(direction).pending_verification.take();
         let cancel = Arc::new(AtomicBool::new(false));
         let worker_cancel = cancel.clone();
         let (sender, events) = mpsc::channel();
@@ -378,6 +383,10 @@ impl FlashSession {
             .name("gearth-flash-discovery".into())
             .spawn(move || {
                 let _slot = DiscoverySlot;
+                if let Some(job) = pending_verification {
+                    job.run_slice(&sender, &worker_cancel);
+                    return;
+                }
                 if let Some(job) = pending_search {
                     job.run_slice(&sender, &worker_cancel);
                     return;
@@ -481,6 +490,37 @@ impl FlashSession {
                     }
                     break;
                 }
+                DiscoveryEvent::VerificationPartial(job) => {
+                    self.discovery[index] = None;
+                    let side = self.side(direction);
+                    if side.reader.is_none() && side.buffer.starts_with(&job.sample) {
+                        side.pending_verification = Some(*job);
+                        side.last_scan = None;
+                        side.waiting = Some(now);
+                    }
+                    break;
+                }
+                DiscoveryEvent::Verified(job, valid) => {
+                    self.discovery[index] = None;
+                    let side = self.side(direction);
+                    if side.reader.is_none() && valid && side.buffer.starts_with(&job.sample) {
+                        if side.buffer.len() == job.sample.len() {
+                            side.install(job.cipher);
+                        } else {
+                            side.pending_verification =
+                                Some(VerificationJob::new(job.cipher, side.buffer.clone()));
+                            side.last_scan = None;
+                            side.waiting = Some(now);
+                        }
+                    } else if side.reader.is_none() {
+                        if side.buffer.len() == side.bootstrap_limit() && side.grow_bootstrap() {
+                            side.waiting = Some(now);
+                        }
+                        // Avoid an immediate rescan loop for a rejected candidate.
+                        side.last_scan = Some(now);
+                    }
+                    break;
+                }
                 DiscoveryEvent::Done {
                     sampled_len,
                     next_address,
@@ -505,9 +545,12 @@ impl FlashSession {
                         if side.reader.is_none() {
                             let no_fresh_candidate = side.candidates.priority == 0;
                             if let Some(cipher) = side.candidates.take_unique() {
-                                if valid_stream_prefix(&side.buffer, &cipher) {
-                                    side.install(cipher);
-                                }
+                                side.pending_verification =
+                                    Some(VerificationJob::new(cipher, side.buffer.clone()));
+                                side.reverse_phase = false;
+                                side.last_scan = None;
+                                side.waiting = Some(now);
+                                break;
                             }
                             let start_reverse = direction == Direction::ToServer
                                 && !side.reverse_phase
@@ -539,6 +582,8 @@ impl FlashSession {
             self.discovery = [None, None];
             self.outgoing.pending_search = None;
             self.incoming.pending_search = None;
+            self.outgoing.pending_verification = None;
+            self.incoming.pending_verification = None;
             return Err(io::Error::new(
                 io::ErrorKind::Interrupted,
                 "key discovery cancelled",
@@ -587,9 +632,11 @@ impl FlashSession {
 }
 // Validate newly buffered ciphertext too, while allowing an incomplete final
 // frame. The original sample already supplied at least one complete frame.
+#[cfg(test)]
 fn valid_stream_prefix(encrypted: &[u8], candidate: &Rc4) -> bool {
     valid_stream_prefix_with_minimum(encrypted, candidate, 1)
 }
+#[cfg(test)]
 fn valid_stream_prefix_with_minimum(encrypted: &[u8], candidate: &Rc4, minimum: usize) -> bool {
     validate_frame_lengths(encrypted, candidate, minimum, Some(minimum))
 }
@@ -780,6 +827,38 @@ impl FreshSearch {
             }))
         } else {
             Ok(None)
+        }
+    }
+}
+struct VerificationJob {
+    cipher: Rc4,
+    sample: Vec<u8>,
+    validator: FrameValidator,
+}
+impl VerificationJob {
+    fn new(cipher: Rc4, sample: Vec<u8>) -> Self {
+        let validator = FrameValidator::new(&cipher, 1, Some(1));
+        Self {
+            cipher,
+            sample,
+            validator,
+        }
+    }
+    fn run_slice(mut self, sender: &mpsc::Sender<DiscoveryEvent>, cancel: &AtomicBool) {
+        if cancel.load(Ordering::Acquire) {
+            let _ = sender.send(DiscoveryEvent::Failed(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "key discovery cancelled",
+            )));
+            return;
+        }
+        match self.validator.step(&self.sample, DISCOVERY_SLICE_BYTES) {
+            Some(valid) => {
+                let _ = sender.send(DiscoveryEvent::Verified(Box::new(self), valid));
+            }
+            None => {
+                let _ = sender.send(DiscoveryEvent::VerificationPartial(Box::new(self)));
+            }
         }
     }
 }
@@ -1210,7 +1289,10 @@ mod discovery_tests {
 
     fn finish_outgoing_discovery(session: &mut FlashSession) {
         let deadline = Instant::now() + Duration::from_secs(5);
-        while session.discovery[0].is_some() || session.outgoing.pending_search.is_some() {
+        while session.discovery[0].is_some()
+            || session.outgoing.pending_search.is_some()
+            || session.outgoing.pending_verification.is_some()
+        {
             if session.discovery[0].is_none() {
                 assert!(session
                     .start_discovery_wait(Direction::ToServer, |_| {
@@ -1486,7 +1568,10 @@ mod discovery_tests {
         let mut resumptions = 0;
         let mut third_wire = Packet::new(79).bytes().to_vec();
         current.clone().apply(&mut third_wire);
-        while session.discovery[0].is_some() || session.outgoing.pending_search.is_some() {
+        while session.discovery[0].is_some()
+            || session.outgoing.pending_search.is_some()
+            || session.outgoing.pending_verification.is_some()
+        {
             if session.discovery[0].is_none() {
                 resumptions += 1;
                 if resumptions == 1 {
@@ -1628,7 +1713,17 @@ mod discovery_tests {
             ))
             .unwrap());
         let deadline = Instant::now() + Duration::from_secs(3);
-        while session.discovery[0].is_some() {
+        while session.discovery[0].is_some()
+            || session.outgoing.pending_search.is_some()
+            || session.outgoing.pending_verification.is_some()
+        {
+            if session.discovery[0].is_none() {
+                assert!(session
+                    .start_discovery_wait(Direction::ToServer, |_| Err(io::Error::other(
+                        "pending work must not rescan"
+                    )))
+                    .unwrap());
+            }
             session
                 .poll_discovery(Direction::ToServer, Instant::now())
                 .unwrap();
@@ -1648,7 +1743,17 @@ mod discovery_tests {
                 }
             ))
             .unwrap());
-        while session.discovery[0].is_some() {
+        while session.discovery[0].is_some()
+            || session.outgoing.pending_search.is_some()
+            || session.outgoing.pending_verification.is_some()
+        {
+            if session.discovery[0].is_none() {
+                assert!(session
+                    .start_discovery_wait(Direction::ToServer, |_| Err(io::Error::other(
+                        "pending work must not rescan"
+                    )))
+                    .unwrap());
+            }
             session
                 .poll_discovery(Direction::ToServer, Instant::now())
                 .unwrap();
@@ -1680,7 +1785,17 @@ mod discovery_tests {
             ))
             .unwrap());
         let deadline = Instant::now() + Duration::from_secs(3);
-        while session.discovery[0].is_some() {
+        while session.discovery[0].is_some()
+            || session.outgoing.pending_search.is_some()
+            || session.outgoing.pending_verification.is_some()
+        {
+            if session.discovery[0].is_none() {
+                assert!(session
+                    .start_discovery_wait(Direction::ToServer, |_| Err(io::Error::other(
+                        "pending work must not rescan"
+                    )))
+                    .unwrap());
+            }
             session
                 .poll_discovery(Direction::ToServer, Instant::now())
                 .unwrap();
@@ -1699,7 +1814,17 @@ mod discovery_tests {
                 next_address: None,
             }))
             .unwrap());
-        while session.discovery[0].is_some() {
+        while session.discovery[0].is_some()
+            || session.outgoing.pending_search.is_some()
+            || session.outgoing.pending_verification.is_some()
+        {
+            if session.discovery[0].is_none() {
+                assert!(session
+                    .start_discovery_wait(Direction::ToServer, |_| Err(io::Error::other(
+                        "pending work must not rescan"
+                    )))
+                    .unwrap());
+            }
             session
                 .poll_discovery(Direction::ToServer, Instant::now())
                 .unwrap();
@@ -1730,7 +1855,17 @@ mod discovery_tests {
             ))
             .unwrap());
         let deadline = Instant::now() + Duration::from_secs(3);
-        while session.discovery[0].is_some() {
+        while session.discovery[0].is_some()
+            || session.outgoing.pending_search.is_some()
+            || session.outgoing.pending_verification.is_some()
+        {
+            if session.discovery[0].is_none() {
+                assert!(session
+                    .start_discovery_wait(Direction::ToServer, |_| Err(io::Error::other(
+                        "pending work must not rescan"
+                    )))
+                    .unwrap());
+            }
             session
                 .poll_discovery(Direction::ToServer, Instant::now())
                 .unwrap();
@@ -1749,7 +1884,17 @@ mod discovery_tests {
                 next_address: None,
             }))
             .unwrap());
-        while session.discovery[0].is_some() {
+        while session.discovery[0].is_some()
+            || session.outgoing.pending_search.is_some()
+            || session.outgoing.pending_verification.is_some()
+        {
+            if session.discovery[0].is_none() {
+                assert!(session
+                    .start_discovery_wait(Direction::ToServer, |_| Err(io::Error::other(
+                        "pending work must not rescan"
+                    )))
+                    .unwrap());
+            }
             session
                 .poll_discovery(Direction::ToServer, Instant::now())
                 .unwrap();
@@ -1784,7 +1929,17 @@ mod discovery_tests {
             }))
             .unwrap());
         let deadline = Instant::now() + Duration::from_secs(3);
-        while session.discovery[0].is_some() {
+        while session.discovery[0].is_some()
+            || session.outgoing.pending_search.is_some()
+            || session.outgoing.pending_verification.is_some()
+        {
+            if session.discovery[0].is_none() {
+                assert!(session
+                    .start_discovery_wait(Direction::ToServer, |_| Err(io::Error::other(
+                        "pending work must not rescan"
+                    )))
+                    .unwrap());
+            }
             session
                 .poll_discovery(Direction::ToServer, Instant::now())
                 .unwrap();
@@ -1804,7 +1959,17 @@ mod discovery_tests {
                 }
             ))
             .unwrap());
-        while session.discovery[0].is_some() {
+        while session.discovery[0].is_some()
+            || session.outgoing.pending_search.is_some()
+            || session.outgoing.pending_verification.is_some()
+        {
+            if session.discovery[0].is_none() {
+                assert!(session
+                    .start_discovery_wait(Direction::ToServer, |_| Err(io::Error::other(
+                        "pending work must not rescan"
+                    )))
+                    .unwrap());
+            }
             session
                 .poll_discovery(Direction::ToServer, Instant::now())
                 .unwrap();
@@ -1890,7 +2055,17 @@ mod discovery_tests {
         assert_eq!(input.position() as usize, BOOTSTRAP_LIMIT);
         release_tx.send(()).unwrap();
         let deadline = Instant::now() + Duration::from_secs(3);
-        while session.discovery[1].is_some() {
+        while session.discovery[1].is_some()
+            || session.incoming.pending_search.is_some()
+            || session.incoming.pending_verification.is_some()
+        {
+            if session.discovery[1].is_none() {
+                assert!(session
+                    .start_discovery_wait(Direction::ToClient, |_| Err(io::Error::other(
+                        "pending work must not rescan"
+                    )))
+                    .unwrap());
+            }
             session
                 .poll_discovery(Direction::ToClient, Instant::now())
                 .unwrap();
@@ -1965,7 +2140,17 @@ mod discovery_tests {
             ))
             .unwrap());
         let deadline = Instant::now() + Duration::from_secs(3);
-        while session.discovery[1].is_some() {
+        while session.discovery[1].is_some()
+            || session.incoming.pending_search.is_some()
+            || session.incoming.pending_verification.is_some()
+        {
+            if session.discovery[1].is_none() {
+                assert!(session
+                    .start_discovery_wait(Direction::ToClient, |_| Err(io::Error::other(
+                        "pending work must not rescan"
+                    )))
+                    .unwrap());
+            }
             session
                 .poll_discovery(Direction::ToClient, Instant::now())
                 .unwrap();
@@ -2028,7 +2213,17 @@ mod discovery_tests {
             ))
             .unwrap());
         let deadline = Instant::now() + Duration::from_secs(5);
-        while session.discovery[1].is_some() {
+        while session.discovery[1].is_some()
+            || session.incoming.pending_search.is_some()
+            || session.incoming.pending_verification.is_some()
+        {
+            if session.discovery[1].is_none() {
+                assert!(session
+                    .start_discovery_wait(Direction::ToClient, |_| Err(io::Error::other(
+                        "pending work must not rescan"
+                    )))
+                    .unwrap());
+            }
             session
                 .poll_discovery(Direction::ToClient, Instant::now())
                 .unwrap();
@@ -2063,7 +2258,17 @@ mod discovery_tests {
                 }
             ))
             .unwrap());
-        while session.discovery[1].is_some() {
+        while session.discovery[1].is_some()
+            || session.incoming.pending_search.is_some()
+            || session.incoming.pending_verification.is_some()
+        {
+            if session.discovery[1].is_none() {
+                assert!(session
+                    .start_discovery_wait(Direction::ToClient, |_| Err(io::Error::other(
+                        "pending work must not rescan"
+                    )))
+                    .unwrap());
+            }
             session
                 .poll_discovery(Direction::ToClient, Instant::now())
                 .unwrap();
@@ -2118,6 +2323,49 @@ mod discovery_tests {
         assert_eq!(result.priority, expected.priority);
         assert_eq!(result.ambiguous, expected.ambiguous);
         assert_eq!(result.cipher.unwrap().state(), fresh.state());
+    }
+
+    #[test]
+    fn final_verification_rechecks_ciphertext_added_between_workers() {
+        for valid_tail in [false, true] {
+            let fresh = Rc4::new(b"verification-growth-fixture").unwrap();
+            let length = DISCOVERY_SLICE_BYTES + 32;
+            let mut wire = Vec::with_capacity(length + 16);
+            wire.extend_from_slice(&(length as u32).to_be_bytes());
+            wire.resize(length + 4, 0);
+            wire.extend_from_slice(&2u32.to_be_bytes());
+            wire.extend_from_slice(&[0, 1]);
+            let mut stream = fresh.clone();
+            stream.apply(&mut wire);
+            let mut tail = if valid_tail {
+                Packet::new(79).bytes().to_vec()
+            } else {
+                1u32.to_be_bytes().to_vec()
+            };
+            stream.apply(&mut tail);
+            let mut session = FlashSession::default();
+            session.outgoing.encrypted = true;
+            session.outgoing.bootstrap_limit = Some(BOOTSTRAP_MAX);
+            session.outgoing.feed(&wire).unwrap();
+            session.outgoing.pending_verification = Some(VerificationJob::new(fresh.clone(), wire));
+            assert!(session
+                .start_discovery_wait(Direction::ToServer, |_| Err(io::Error::other(
+                    "must not scan"
+                )))
+                .unwrap());
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while session.discovery[0].is_some() {
+                session
+                    .poll_discovery(Direction::ToServer, Instant::now())
+                    .unwrap();
+                assert!(Instant::now() < deadline);
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            assert!(session.outgoing.pending_verification.is_some());
+            session.outgoing.feed(&tail).unwrap();
+            finish_outgoing_discovery(&mut session);
+            assert_eq!(session.outgoing.writer.is_some(), valid_tail);
+        }
     }
 
     #[test]
@@ -2260,8 +2508,9 @@ mod discovery_tests {
 
     #[test]
     fn cancelling_discovery_discards_pending_search_job() {
-        let (_, current, wire) = outgoing_fixture();
+        let (fresh, current, wire) = outgoing_fixture();
         let mut session = FlashSession::default();
+        session.incoming.pending_verification = Some(VerificationJob::new(fresh, wire.clone()));
         session.outgoing.pending_search = Some(SearchJob {
             states: vec![current.state().0],
             sample: wire,
@@ -2274,6 +2523,7 @@ mod discovery_tests {
         let error = session.discover(1, &AtomicBool::new(true)).unwrap_err();
         assert_eq!(error.kind(), io::ErrorKind::Interrupted);
         assert!(session.outgoing.pending_search.is_none());
+        assert!(session.incoming.pending_verification.is_none());
     }
 
     #[test]
@@ -2329,7 +2579,17 @@ mod discovery_tests {
             ))
             .unwrap());
         let deadline = Instant::now() + Duration::from_secs(3);
-        while session.discovery[1].is_some() {
+        while session.discovery[1].is_some()
+            || session.incoming.pending_search.is_some()
+            || session.incoming.pending_verification.is_some()
+        {
+            if session.discovery[1].is_none() {
+                assert!(session
+                    .start_discovery_wait(Direction::ToClient, |_| Err(io::Error::other(
+                        "pending work must not rescan"
+                    )))
+                    .unwrap());
+            }
             session
                 .poll_discovery(Direction::ToClient, Instant::now())
                 .unwrap();

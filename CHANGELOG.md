@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — asynchronous Flash final validation
+
+- Revalidate candidates in worker slices and recheck the buffer if ciphertext arrives during verification.
+
+
 ## Unreleased — sliced Flash fresh-state search
 
 - Resume fresh-state candidate validation across workers and preserve cancellation and candidate ordering.

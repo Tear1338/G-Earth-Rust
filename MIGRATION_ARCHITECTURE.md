@@ -1,5 +1,10 @@
 # Rust migration architecture
 
+## Flash final validation workers
+
+After scanning completes, a candidate and the current ciphertext snapshot are verified in bounded worker slices. Growth triggers a new snapshot and validation before installation; memory scanning, copying and final buffer decryption are separate work.
+
+
 ## Flash fresh-state worker slices
 
 Fresh and reverse candidate checks share the worker RC4 budget. Pending jobs retain their table snapshot, ciphertext, current validation state and accumulated candidate; no candidate is delivered until its search phase finishes. Final buffer validation and process scanning are separate.

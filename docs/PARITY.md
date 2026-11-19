@@ -1,5 +1,10 @@
 # Compatibility with 1.5.4-beta-29
 
+## Flash final verification evidence
+
+Synthetic tests cover verification across workers and valid or invalid ciphertext appended during the check. Real-client behavior, scheduling fairness and wall-clock bounds remain unverified.
+
+
 ## Fresh-state worker evidence
 
 A synthetic encrypted frame larger than one worker slice resumes across workers before a candidate is installed. Cancellation during partial prefix validation is covered. Live Flash behavior remains unverified.
