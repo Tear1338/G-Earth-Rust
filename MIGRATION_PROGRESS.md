@@ -1,5 +1,15 @@
 # G-Earth Rust migration progress
 
+## Linux read-only Flash discovery
+
+Linux process lookup and resumable read-only `/proc/<pid>/maps` and `mem` scanning now cover candidate selection, private writable anonymous/heap regions, page and table limits, overlap and cancellation. Beta-29 Java source at tag `1.5.4-beta-29` was compared; Rust keeps its existing permutation heuristic and bounded paging. Four fake-proc/scan fixtures passed on Windows; Linux-target `cargo check --tests` and Clippy passed. A Linux-only controlled `/proc/self/mem` test was added but has not run locally because the available WSL environment lacks a native Rust compiler; wait for Linux CI. Access can be denied by OS permissions. Linux TCP owner lookup, macOS discovery and real-client compatibility remain open. Windows desktop/web release at `560e929` predates this change.
+
+
+## Windows release and remaining Linux discovery gap
+
+Windows GNU desktop/web release succeeded at `560e929cfcf6f1bc93965ffbb499d5cde8c42982`. A local optimized RC4-only microbenchmark processed 16 MiB in 31–35 ms on this machine (three runs; not an end-to-end relay benchmark). The original beta-29 Linux implementation scans `/proc` for candidate processes and private writable memory, while Rust automatic Flash discovery is currently Windows-only. Implement and test Linux read-only discovery independently; real clients and extensions remain unverified.
+
+
 ## Flash discovery worker queue
 
 Worker acquisition now queues active waiting directions in arrival order. Requests held only weakly are removed when their session disappears; an inactive request expires after one second so it cannot indefinitely block the head. A deterministic queue fixture covers ordering, reacquisition, abandonment and expiry; an isolated four-slot contention test covers two waiters. The workspace/all-targets suite, 164 desktop/web library tests (7 ignored), Clippy and debug build passed; the strengthened contention fixture was rerun separately. This mitigates starvation among regularly polling sessions but is not a wall-clock guarantee: scans and operating-system scheduling can still delay workers, and inactivity causes re-enqueueing. Windows release at `0b1f57f` predates this change; real clients, protocols and extensions remain unverified.
@@ -677,4 +687,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Build Windows desktop/web release for the current Flash worker queue. Investigate long process scans and the synchronous buffered decryption performed on installation; measure bounds and add deterministic cancellation and contention tests. The user handles live tests; clients, protocols and extensions remain unverified.
+Confirm Linux CI runs the controlled `/proc/self/mem` test for the Linux Flash scanner and correct any platform failures. Then investigate Linux TCP owner identification and the shared permutation heuristic; rebuild release. The user handles live tests; real clients, protocols and extensions remain unverified.

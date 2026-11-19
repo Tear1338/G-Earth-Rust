@@ -1,5 +1,10 @@
 # Compatibility with 1.5.4-beta-29
 
+## Linux Flash discovery evidence
+
+Synthetic fixtures cover candidate commands, mapping selection, scan overlap, pagination and cancellation; cross-target Linux compilation and Clippy pass. Native `/proc/self/mem` CI and real-client operation are still unverified; Linux TCP owner identification remains open.
+
+
 ## Flash scheduling evidence
 
 Synthetic tests cover ordered worker admission, reacquisition, abandoned and expired waiters, and contention between two requests. Long scans, wall-clock fairness and live clients remain unverified.

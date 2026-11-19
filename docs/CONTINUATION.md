@@ -1,5 +1,10 @@
 # Continuation state
 
+## Next: native Linux discovery validation
+
+The Linux `/proc` process and memory scanner has synthetic Windows-hosted fixtures and Linux-target compile/Clippy checks. Confirm Linux CI runs its self-memory test, then investigate TCP owner identification and the shared table heuristic. The user handles live tests.
+
+
 ## Next: Flash installation and scan latency
 
 Discovery now queues regularly polling waiters, expiring idle requests after one second. Investigate long process scans and synchronous buffered decryption on installation; rebuild Windows release and retain live compatibility as unverified.

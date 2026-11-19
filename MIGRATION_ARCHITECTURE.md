@@ -1,5 +1,10 @@
 # Rust migration architecture
 
+## Linux Flash discovery
+
+Linux candidate process lookup and read-only memory scanning use `/proc`, selecting private writable anonymous or heap mappings. The scanner resumes from an address with bounded pages, overlap and cancellation; OS permissions may prevent access. TCP owner identification remains unimplemented on Linux.
+
+
 ## Flash discovery scheduling
 
 A process-wide queue orders active waiting directions for the four discovery workers. Weak request references allow dropped sessions to disappear; requests not polled for one second expire and re-enter on their next attempt. Operating-system scheduling and worker duration are not time-bounded by the queue.

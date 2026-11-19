@@ -1,5 +1,11 @@
 # Migration tasks
 
+## Latest: Linux Flash discovery
+
+- [x] Add read-only Linux process selection and resumable `/proc` memory scan, with fake-proc, overlap, pagination and cancellation fixtures. Linux-target cross-check and Clippy pass.
+- [ ] Verify native Linux CI including `/proc/self/mem`, review Linux TCP owner identification and scanner heuristics, rebuild release, and await user-run real-client evidence. macOS discovery remains open.
+
+
 ## Latest: Flash worker queue
 
 - [x] Queue active worker requests in arrival order and discard abandoned/inactive waiters; test ordering and isolated contention.

@@ -4,6 +4,8 @@ use std::{io, sync::atomic::AtomicBool};
 mod file_dialog;
 mod hotkeys;
 mod ip_mapping;
+#[cfg(any(target_os = "linux", test))]
+mod linux;
 mod process_tree;
 #[cfg(windows)]
 pub use file_dialog::{choose_file, FileKind};
@@ -187,7 +189,11 @@ pub fn habbo_processes() -> io::Result<Vec<ClientProcess>> {
     {
         windows::processes()
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        linux::processes_from(std::path::Path::new("/proc"))
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
@@ -226,7 +232,19 @@ pub fn scan_habbo_from_with_limit(
         }
         windows::scan_limited(pid, cancel, Some((address, usize::MAX)), max_tables)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        let root = std::path::Path::new("/proc");
+        let known = linux::processes_from(root)?;
+        if !known.iter().any(|process| process.pid == pid) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "select a running Habbo or Flash player process",
+            ));
+        }
+        linux::scan_from(root, pid, address, cancel, max_tables)
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         let _ = (pid, address, cancel, max_tables);
         Err(io::Error::new(

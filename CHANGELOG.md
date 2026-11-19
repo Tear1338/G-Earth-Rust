@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — Linux Flash discovery
+
+- Add Linux process discovery and resumable read-only `/proc` memory scanning, with synthetic fixtures and a native Linux self-memory test.
+
+
 ## Unreleased — Flash worker admission order
 
 - Queue active Flash discovery requests and discard abandoned or inactive waiters to reduce starvation under contention.
