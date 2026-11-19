@@ -1,5 +1,10 @@
 # Rust migration architecture
 
+## Flash verification backpressure
+
+The relay pauses reads only for the direction undergoing final verification; it resumes them when a key is installed or rejected. Direct buffer growth remains guarded by snapshot revalidation.
+
+
 ## Flash final validation workers
 
 After scanning completes, a candidate and the current ciphertext snapshot are verified in bounded worker slices. Growth triggers a new snapshot and validation before installation; memory scanning, copying and final buffer decryption are separate work.

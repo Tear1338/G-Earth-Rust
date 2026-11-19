@@ -1,5 +1,10 @@
 # Compatibility with 1.5.4-beta-29
 
+## Flash verification backpressure evidence
+
+Synthetic tests cover direction-specific pause, acceptance, rejection and cancellation. The effect on real clients and fairness under worker contention remains unverified.
+
+
 ## Flash final verification evidence
 
 Synthetic tests cover verification across workers and valid or invalid ciphertext appended during the check. Real-client behavior, scheduling fairness and wall-clock bounds remain unverified.

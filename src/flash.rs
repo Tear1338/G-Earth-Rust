@@ -121,6 +121,7 @@ struct Side {
     candidates: CandidateAccumulator,
     pending_search: Option<SearchJob>,
     pending_verification: Option<VerificationJob>,
+    verification_active: bool,
 }
 impl Side {
     fn bootstrap_limit(&self) -> usize {
@@ -179,6 +180,7 @@ impl Side {
         self.waiting = None;
         self.pending_search = None;
         self.pending_verification = None;
+        self.verification_active = false;
     }
 }
 pub struct DecodedPacket {
@@ -286,6 +288,9 @@ impl FlashSession {
             &self.incoming
         };
         if side.encrypted && side.reader.is_none() {
+            if side.verification_active {
+                return 0;
+            }
             side.bootstrap_limit().saturating_sub(side.buffer.len())
         } else {
             usize::MAX
@@ -497,6 +502,8 @@ impl FlashSession {
                         side.pending_verification = Some(*job);
                         side.last_scan = None;
                         side.waiting = Some(now);
+                    } else {
+                        side.verification_active = false;
                     }
                     break;
                 }
@@ -513,6 +520,7 @@ impl FlashSession {
                             side.waiting = Some(now);
                         }
                     } else if side.reader.is_none() {
+                        side.verification_active = false;
                         if side.buffer.len() == side.bootstrap_limit() && side.grow_bootstrap() {
                             side.waiting = Some(now);
                         }
@@ -547,6 +555,7 @@ impl FlashSession {
                             if let Some(cipher) = side.candidates.take_unique() {
                                 side.pending_verification =
                                     Some(VerificationJob::new(cipher, side.buffer.clone()));
+                                side.verification_active = true;
                                 side.reverse_phase = false;
                                 side.last_scan = None;
                                 side.waiting = Some(now);
@@ -584,6 +593,8 @@ impl FlashSession {
             self.incoming.pending_search = None;
             self.outgoing.pending_verification = None;
             self.incoming.pending_verification = None;
+            self.outgoing.verification_active = false;
+            self.incoming.verification_active = false;
             return Err(io::Error::new(
                 io::ErrorKind::Interrupted,
                 "key discovery cancelled",
@@ -1884,23 +1895,16 @@ mod discovery_tests {
                 next_address: None,
             }))
             .unwrap());
-        while session.discovery[0].is_some()
-            || session.outgoing.pending_search.is_some()
-            || session.outgoing.pending_verification.is_some()
-        {
-            if session.discovery[0].is_none() {
-                assert!(session
-                    .start_discovery_wait(Direction::ToServer, |_| Err(io::Error::other(
-                        "pending work must not rescan"
-                    )))
-                    .unwrap());
-            }
+        while session.discovery[0].is_some() {
             session
                 .poll_discovery(Direction::ToServer, Instant::now())
                 .unwrap();
             assert!(Instant::now() < deadline);
             std::thread::sleep(Duration::from_millis(1));
         }
+        assert!(session.outgoing.verification_active);
+        assert_eq!(session.input_capacity(Direction::ToServer), 0);
+        finish_outgoing_discovery(&mut session);
         assert_eq!(
             session.outgoing.reader.as_ref().unwrap().state().1,
             wire.len() as u8
@@ -2326,6 +2330,28 @@ mod discovery_tests {
     }
 
     #[test]
+    fn final_verification_pauses_only_its_direction_and_resumes_reads() {
+        for valid in [true, false] {
+            let (fresh, mut current, mut wire) = outgoing_fixture();
+            if !valid {
+                let mut bad_tail = 1u32.to_be_bytes();
+                current.apply(&mut bad_tail);
+                wire.extend_from_slice(&bad_tail);
+            }
+            let mut session = FlashSession::default();
+            session.outgoing.encrypted = true;
+            session.outgoing.feed(&wire).unwrap();
+            session.outgoing.pending_verification = Some(VerificationJob::new(fresh, wire));
+            session.outgoing.verification_active = true;
+            assert_eq!(session.input_capacity(Direction::ToServer), 0);
+            assert_eq!(session.input_capacity(Direction::ToClient), usize::MAX);
+            finish_outgoing_discovery(&mut session);
+            assert!(session.input_capacity(Direction::ToServer) > 0);
+            assert_eq!(session.outgoing.reader.is_some(), valid);
+        }
+    }
+
+    #[test]
     fn final_verification_rechecks_ciphertext_added_between_workers() {
         for valid_tail in [false, true] {
             let fresh = Rc4::new(b"verification-growth-fixture").unwrap();
@@ -2511,6 +2537,7 @@ mod discovery_tests {
         let (fresh, current, wire) = outgoing_fixture();
         let mut session = FlashSession::default();
         session.incoming.pending_verification = Some(VerificationJob::new(fresh, wire.clone()));
+        session.incoming.verification_active = true;
         session.outgoing.pending_search = Some(SearchJob {
             states: vec![current.state().0],
             sample: wire,
@@ -2524,6 +2551,7 @@ mod discovery_tests {
         assert_eq!(error.kind(), io::ErrorKind::Interrupted);
         assert!(session.outgoing.pending_search.is_none());
         assert!(session.incoming.pending_verification.is_none());
+        assert!(!session.incoming.verification_active);
     }
 
     #[test]

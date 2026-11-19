@@ -1,5 +1,10 @@
 # Continuation state
 
+## Next: Flash fairness and installation
+
+The relay pauses the relevant direction during final verification. Test worker fairness under contention and investigate synchronous installation/decryption; rebuild release. Live client verification is left to the user.
+
+
 ## Latest validated Windows release
 
 Windows desktop/web release and workspace/all-targets tests passed at `1e32d7c1716affc1821d71be7c5681731578e6ba`, with environment-dependent tests ignored. Next inspect repeated validation, synchronous installation and worker fairness. Live compatibility remains unverified.

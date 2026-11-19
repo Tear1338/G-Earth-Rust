@@ -1,5 +1,11 @@
 # Migration tasks
 
+## Latest: Flash verification backpressure
+
+- [x] Pause reads in the verified direction until candidate acceptance or rejection, with synthetic transition and cancellation coverage.
+- [ ] Investigate worker fairness, synchronous installation and real-client effects; rebuild release and await user-run live tests.
+
+
 The sections below are chronological records: unchecked items in older sections may already be addressed by newer entries. Consult the latest section and `MIGRATION_PROGRESS.md` for current work.
 
 

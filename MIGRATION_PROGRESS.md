@@ -1,5 +1,10 @@
 # G-Earth Rust migration progress
 
+## Flash verification backpressure
+
+During final candidate verification, socket reads pause only in that direction; they resume on acceptance or rejection. This keeps the snapshot stable in the relay while preserving revalidation for direct buffer growth. Synthetic tests cover the normal transition, opposite-direction capacity, valid/invalid candidates and cancellation. The 162 desktop/web library tests (7 ignored), Clippy and desktop/web debug build passed. This may delay incoming bytes while verification waits for a worker; scheduling fairness, synchronous installation and real-client behavior remain unverified. Windows desktop/web release at `1e32d7c` predates this change.
+
+
 ## Release after asynchronous Flash verification
 
 Windows GNU desktop/web release and the locked workspace/all-targets test suite passed at `1e32d7c1716affc1821d71be7c5681731578e6ba`; platform- and oracle-dependent tests marked ignored were not run in that suite. Live clients, protocols and extensions remain unverified.
@@ -662,4 +667,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Investigate repeated validation during buffer growth, synchronous installation/decryption and worker fairness; test cancellation and real-session-independent concurrency. The user handles live tests; clients, protocols and extensions remain unverified.
+Test Flash worker fairness under contention and investigate the synchronous buffered decryption performed on installation. Build Windows desktop/web release for the latest backpressure code. The user handles live tests; clients, protocols and extensions remain unverified.

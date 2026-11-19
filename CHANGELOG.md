@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — Flash verification backpressure
+
+- Pause reads in the direction awaiting final candidate verification, avoiding repeated checks of a changing relay buffer.
+
+
 ## Unreleased — asynchronous Flash final validation
 
 - Revalidate candidates in worker slices and recheck the buffer if ciphertext arrives during verification.
