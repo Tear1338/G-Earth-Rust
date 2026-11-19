@@ -1,5 +1,10 @@
 # Compatibility with 1.5.4-beta-29
 
+## Linux owner lookup evidence
+
+Synthetic endpoint parsing passes and Linux-target Clippy succeeds. Native Linux socket and shared-owner fixtures await CI; IPv6, network namespaces and real clients remain unverified. The Linux self-memory scan fixture passed in CI run 44432148968.
+
+
 ## Linux Flash discovery evidence
 
 Synthetic fixtures cover candidate commands, mapping selection, scan overlap, pagination and cancellation; cross-target Linux compilation and Clippy pass. Native `/proc/self/mem` CI and real-client operation are still unverified; Linux TCP owner identification remains open.

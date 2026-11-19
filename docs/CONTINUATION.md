@@ -1,5 +1,10 @@
 # Continuation state
 
+## Next: Linux socket CI
+
+IPv4 socket-owner lookup now checks visible Flash candidate descriptors and declines ambiguous or inaccessible cases. Confirm native Linux CI fixtures for real loopback sockets and shared ownership; investigate IPv6 and the shared RC4 table heuristic.
+
+
 ## Next: native Linux discovery validation
 
 The Linux `/proc` process and memory scanner has synthetic Windows-hosted fixtures and Linux-target compile/Clippy checks. Confirm Linux CI runs its self-memory test, then investigate TCP owner identification and the shared table heuristic. The user handles live tests.

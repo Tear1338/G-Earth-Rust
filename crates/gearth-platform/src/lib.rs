@@ -34,7 +34,11 @@ pub fn tcp_owner(
     {
         windows::tcp_owner(local, remote)
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "linux")]
+    {
+        linux::tcp_owner(local, remote)
+    }
+    #[cfg(not(any(windows, target_os = "linux")))]
     {
         let _ = (local, remote);
         Ok(None)

@@ -1,5 +1,10 @@
 # G-Earth Rust migration progress
 
+## Linux TCP owner identification
+
+Linux can now associate an IPv4 connection with a visible Habbo/Flash candidate using `/proc/net/tcp` and process socket descriptors. Shared owners or inaccessible candidate descriptors return no owner; IPv6 and other network namespaces remain unsupported. Synthetic endpoint parsing, Windows platform tests, Linux-target Clippy and the Windows desktop/web debug build passed. Native Linux socket and shared-owner fixtures are added but await CI. The Linux self-memory test passed in CI run 44432148968, and Windows desktop/web release succeeded at preceding code commit `3966341`. Real clients, protocols and extensions remain unverified.
+
+
 ## Linux read-only Flash discovery
 
 Linux process lookup and resumable read-only `/proc/<pid>/maps` and `mem` scanning now cover candidate selection, private writable anonymous/heap regions, page and table limits, overlap and cancellation. Beta-29 Java source at tag `1.5.4-beta-29` was compared; Rust keeps its existing permutation heuristic and bounded paging. Four fake-proc/scan fixtures passed on Windows; Linux-target `cargo check --tests` and Clippy passed. A Linux-only controlled `/proc/self/mem` test was added but has not run locally because the available WSL environment lacks a native Rust compiler; wait for Linux CI. Access can be denied by OS permissions. Linux TCP owner lookup, macOS discovery and real-client compatibility remain open. Windows desktop/web release at `560e929` predates this change.
@@ -687,4 +692,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Confirm Linux CI runs the controlled `/proc/self/mem` test for the Linux Flash scanner and correct any platform failures. Then investigate Linux TCP owner identification and the shared permutation heuristic; rebuild release. The user handles live tests; real clients, protocols and extensions remain unverified.
+Confirm Linux CI runs the controlled loopback socket-owner and shared-owner tests, correcting any failures. Then implement or document IPv6 and network-namespace limitations and compare the shared RC4 table heuristic against beta-29. Build release for current code. The user handles live tests; clients, protocols and extensions remain unverified.

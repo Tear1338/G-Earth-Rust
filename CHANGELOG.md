@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — Linux Flash socket owner
+
+- Identify a visible Linux Flash process from matching IPv4 connection endpoints and socket descriptors, without selecting ambiguous owners.
+
+
 ## Unreleased — Linux Flash discovery
 
 - Add Linux process discovery and resumable read-only `/proc` memory scanning, with synthetic fixtures and a native Linux self-memory test.

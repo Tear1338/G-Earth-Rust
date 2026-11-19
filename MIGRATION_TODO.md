@@ -1,5 +1,11 @@
 # Migration tasks
 
+## Latest: Linux TCP owner
+
+- [x] Add IPv4 owner lookup among visible Habbo/Flash candidates and conservative shared/inaccessible handling; cross-target compilation passes.
+- [ ] Confirm native socket and ambiguity fixtures in Linux CI; investigate IPv6, network namespaces and shared table heuristics. Rebuild release and await user-run live tests.
+
+
 ## Latest: Linux Flash discovery
 
 - [x] Add read-only Linux process selection and resumable `/proc` memory scan, with fake-proc, overlap, pagination and cancellation fixtures. Linux-target cross-check and Clippy pass.

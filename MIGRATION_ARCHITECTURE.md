@@ -1,5 +1,10 @@
 # Rust migration architecture
 
+## Linux socket ownership
+
+IPv4 owner lookup matches both connection endpoints in `/proc/net/tcp` and searches visible candidate processes’ socket descriptors. Ambiguous or permission-incomplete results are not assigned. IPv6 and cross-namespace sockets are not handled.
+
+
 ## Linux Flash discovery
 
 Linux candidate process lookup and read-only memory scanning use `/proc`, selecting private writable anonymous or heap mappings. The scanner resumes from an address with bounded pages, overlap and cancellation; OS permissions may prevent access. TCP owner identification remains unimplemented on Linux.

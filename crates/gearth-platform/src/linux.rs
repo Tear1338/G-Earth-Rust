@@ -34,6 +34,117 @@ pub(super) fn processes_from(root: &Path) -> io::Result<Vec<ClientProcess>> {
     Ok(result)
 }
 
+#[cfg(target_os = "linux")]
+use std::net::SocketAddr;
+use std::net::{Ipv4Addr, SocketAddrV4};
+
+fn parse_proc_v4(value: &str) -> Option<SocketAddrV4> {
+    let (address, port) = value.split_once(':')?;
+    if address.len() != 8 || port.len() != 4 {
+        return None;
+    }
+    let address = u32::from_str_radix(address, 16).ok()?;
+    let port = u16::from_str_radix(port, 16).ok()?;
+    Some(SocketAddrV4::new(
+        Ipv4Addr::from(address.to_ne_bytes()),
+        port,
+    ))
+}
+fn matching_socket_inodes(table: &str, local: SocketAddrV4, remote: SocketAddrV4) -> Vec<u64> {
+    table
+        .lines()
+        .filter_map(|line| {
+            let fields: Vec<_> = line.split_whitespace().collect();
+            if fields.len() <= 9
+                || parse_proc_v4(fields[1])? != local
+                || parse_proc_v4(fields[2])? != remote
+            {
+                return None;
+            }
+            let inode = fields[9].parse::<u64>().ok()?;
+            (inode != 0).then_some(inode)
+        })
+        .collect()
+}
+#[cfg(target_os = "linux")]
+fn socket_link_inode(path: &Path) -> io::Result<Option<u64>> {
+    let target = fs::read_link(path)?;
+    Ok(target
+        .to_str()
+        .and_then(|text| text.strip_prefix("socket:["))
+        .and_then(|text| text.strip_suffix(']'))
+        .and_then(|text| text.parse().ok()))
+}
+#[cfg(target_os = "linux")]
+fn tcp_owner_from(
+    root: &Path,
+    local: SocketAddr,
+    remote: SocketAddr,
+    candidates: &[u32],
+) -> io::Result<Option<u32>> {
+    let (SocketAddr::V4(local), SocketAddr::V4(remote)) = (local, remote) else {
+        return Ok(None);
+    };
+    let table = fs::read_to_string(root.join("net/tcp"))?;
+    let inodes = matching_socket_inodes(&table, local, remote);
+    if inodes.is_empty() {
+        return Ok(None);
+    }
+    let mut owner = None;
+    let mut inaccessible = false;
+    for pid in candidates {
+        let entries = match fs::read_dir(root.join(pid.to_string()).join("fd")) {
+            Ok(entries) => entries,
+            Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
+                inaccessible = true;
+                continue;
+            }
+            Err(_) => continue,
+        };
+        let mut matches = false;
+        for entry in entries {
+            let entry = match entry {
+                Ok(entry) => entry,
+                Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
+                    inaccessible = true;
+                    continue;
+                }
+                Err(_) => continue,
+            };
+            match socket_link_inode(&entry.path()) {
+                Ok(Some(inode)) if inodes.contains(&inode) => {
+                    matches = true;
+                    break;
+                }
+                Err(error) if error.kind() == io::ErrorKind::PermissionDenied => {
+                    inaccessible = true
+                }
+                _ => {}
+            }
+        }
+        if matches {
+            if owner.is_some_and(|previous| previous != *pid) {
+                return Ok(None);
+            }
+            owner = Some(*pid);
+        }
+    }
+    if inaccessible {
+        Ok(None)
+    } else {
+        Ok(owner)
+    }
+}
+#[cfg(target_os = "linux")]
+pub(super) fn tcp_owner(local: SocketAddr, remote: SocketAddr) -> io::Result<Option<u32>> {
+    let root = Path::new("/proc");
+    let candidates: Vec<_> = processes_from(root)?
+        .into_iter()
+        .map(|process| process.pid)
+        .collect();
+    tcp_owner_from(root, local, remote, &candidates)
+}
+
 use crate::{find_tables_with_offsets, ScanResult};
 use std::{
     fs::File,
@@ -173,6 +284,82 @@ pub(super) fn scan_from(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn socket_table_matches_endpoints_and_ignores_invalid_rows() {
+        let local = SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 3000);
+        let remote = SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 4000);
+        let a = u32::from_ne_bytes(local.ip().octets());
+        let table = format!("header\n0: {a:08X}:0BB8 {a:08X}:0FA0 01 0:0 0:0 0 1000 0 12345\n1: {a:08X}:0BB8 {a:08X}:0FA0 01 0:0 0:0 0 1000 0 0\nmalformed\n");
+        assert_eq!(matching_socket_inodes(&table, local, remote), [12345]);
+        assert!(matching_socket_inodes(&table, remote, local).is_empty());
+        assert!(parse_proc_v4("bad:0001").is_none());
+        assert!(parse_proc_v4("0100007F:10000").is_none());
+    }
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn refuses_a_socket_shared_by_multiple_candidate_processes() {
+        use std::os::unix::fs::symlink;
+        let root = std::env::temp_dir().join(format!(
+            "gearth-sockets-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&root).unwrap();
+        fs::create_dir(root.join("net")).unwrap();
+        for pid in [7, 12] {
+            fs::create_dir(root.join(pid.to_string())).unwrap();
+            fs::create_dir(root.join(pid.to_string()).join("fd")).unwrap();
+        }
+        let local = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 3000);
+        let remote = SocketAddrV4::new(Ipv4Addr::LOCALHOST, 4000);
+        let address = u32::from_ne_bytes(local.ip().octets());
+        fs::write(
+            root.join("net/tcp"),
+            format!("0: {address:08X}:0BB8 {address:08X}:0FA0 01 0:0 0:0 0 1000 0 12345\n"),
+        )
+        .unwrap();
+        for pid in [7, 12] {
+            symlink("socket:[12345]", root.join(pid.to_string()).join("fd/3")).unwrap();
+        }
+        assert_eq!(
+            tcp_owner_from(&root, local.into(), remote.into(), &[7, 12]).unwrap(),
+            None
+        );
+        fs::remove_file(root.join("12/fd/3")).unwrap();
+        assert_eq!(
+            tcp_owner_from(&root, local.into(), remote.into(), &[7, 12]).unwrap(),
+            Some(7)
+        );
+        fs::remove_file(root.join("7/fd/3")).unwrap();
+        fs::remove_file(root.join("net/tcp")).unwrap();
+        for pid in [7, 12] {
+            fs::remove_dir(root.join(pid.to_string()).join("fd")).unwrap();
+            fs::remove_dir(root.join(pid.to_string())).unwrap();
+        }
+        fs::remove_dir(root.join("net")).unwrap();
+        fs::remove_dir(root).unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn identifies_a_controlled_live_socket_owner() {
+        use std::net::{TcpListener, TcpStream};
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (_server, _) = listener.accept().unwrap();
+        let owner = tcp_owner_from(
+            Path::new("/proc"),
+            client.local_addr().unwrap(),
+            client.peer_addr().unwrap(),
+            &[std::process::id()],
+        )
+        .unwrap();
+        assert_eq!(owner, Some(std::process::id()));
+    }
+
     #[test]
     fn parses_private_anonymous_maps_and_rejects_invalid_ranges() {
         let maps = "1000-2000 rw-p 00000000 00:00 0\n2000-3000 rw-p 00000000 00:00 0 [heap]\n3000-4000 r--p 00000000 00:00 0\n4000-5000 rw-s 00000000 00:00 0\n5000-6000 rw-p 00000000 08:01 3 /mapped\n7000-6000 rw-p 00000000 00:00 0\ninvalid\n";
