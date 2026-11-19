@@ -625,47 +625,93 @@ fn valid_stream_prefix(encrypted: &[u8], candidate: &Rc4) -> bool {
 fn valid_stream_prefix_with_minimum(encrypted: &[u8], candidate: &Rc4, minimum: usize) -> bool {
     validate_frame_lengths(encrypted, candidate, minimum, Some(minimum))
 }
+// The same sample must be used for every slice. `at` points to the next
+// frame; `body_remaining` advances the cipher between complete frames.
+struct FrameValidator {
+    cipher: Rc4,
+    at: usize,
+    complete: usize,
+    complete_minimum: usize,
+    partial_minimum: Option<usize>,
+    body_remaining: usize,
+    prefix: [u8; 4],
+    prefix_done: usize,
+}
+impl FrameValidator {
+    fn new(candidate: &Rc4, complete_minimum: usize, partial_minimum: Option<usize>) -> Self {
+        Self {
+            cipher: candidate.clone(),
+            at: 0,
+            complete: 0,
+            complete_minimum,
+            partial_minimum,
+            body_remaining: 0,
+            prefix: [0; 4],
+            prefix_done: 0,
+        }
+    }
+    fn step(&mut self, encrypted: &[u8], mut budget: usize) -> Option<bool> {
+        if encrypted.len() < 6 {
+            return Some(false);
+        }
+        let mut scratch = [0u8; 4096];
+        loop {
+            if self.body_remaining != 0 {
+                if budget == 0 {
+                    return None;
+                }
+                let count = self.body_remaining.min(budget).min(scratch.len());
+                self.cipher.apply(&mut scratch[..count]);
+                self.body_remaining -= count;
+                budget -= count;
+                continue;
+            }
+            let remaining = encrypted.len() - self.at;
+            if remaining == 0 {
+                return Some(self.complete >= self.complete_minimum);
+            }
+            if remaining < 4 {
+                return Some(self.partial_minimum.is_some_and(|n| self.complete >= n));
+            }
+            if budget == 0 {
+                return None;
+            }
+            let count = (4 - self.prefix_done).min(budget);
+            let start = self.prefix_done;
+            self.prefix[start..start + count]
+                .copy_from_slice(&encrypted[self.at + start..self.at + start + count]);
+            self.cipher.apply(&mut self.prefix[start..start + count]);
+            self.prefix_done += count;
+            budget -= count;
+            if self.prefix_done < 4 {
+                continue;
+            }
+            let length = u32::from_be_bytes(self.prefix) as usize;
+            self.prefix_done = 0;
+            if !(2..=MAX_FRAME).contains(&length) {
+                return Some(false);
+            }
+            if remaining < length + 4 {
+                return Some(self.partial_minimum.is_some_and(|n| self.complete >= n));
+            }
+            self.at += length + 4;
+            self.complete += 1;
+            if encrypted.len() - self.at >= 4 {
+                self.body_remaining = length;
+            }
+        }
+    }
+}
 fn validate_frame_lengths(
     encrypted: &[u8],
     candidate: &Rc4,
     complete_minimum: usize,
     partial_minimum: Option<usize>,
 ) -> bool {
-    if encrypted.len() < 6 {
-        return false;
-    }
-    let mut cipher = candidate.clone();
-    let mut at = 0;
-    let mut complete = 0;
-    let mut scratch = [0u8; 4096];
+    let mut validator = FrameValidator::new(candidate, complete_minimum, partial_minimum);
     loop {
-        let remaining = encrypted.len() - at;
-        if remaining == 0 {
-            return complete >= complete_minimum;
-        }
-        if remaining < 4 {
-            return partial_minimum.is_some_and(|minimum| complete >= minimum);
-        }
-        let mut prefix: [u8; 4] = encrypted[at..at + 4].try_into().unwrap();
-        cipher.apply(&mut prefix);
-        let length = u32::from_be_bytes(prefix) as usize;
-        if !(2..=MAX_FRAME).contains(&length) {
-            return false;
-        }
-        if remaining < length + 4 {
-            return partial_minimum.is_some_and(|minimum| complete >= minimum);
-        }
-        at += length + 4;
-        complete += 1;
-        // Do not advance through a body unless another complete length prefix
-        // follows it. Cipher output does not depend on the input bytes.
-        if encrypted.len() - at >= 4 {
-            let mut left = length;
-            while left > 0 {
-                let chunk = left.min(scratch.len());
-                cipher.apply(&mut scratch[..chunk]);
-                left -= chunk;
-            }
+        if let Some(result) = validator.step(encrypted, 65536) {
+            return result;
         }
     }
 }
@@ -1016,6 +1062,36 @@ mod discovery_tests {
                     assert_eq!(
                         candidate_matches(bytes, &cipher, None),
                         reference_frame_validation(bytes, &cipher, None, 1)
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn sliced_frame_validation_matches_reference_at_all_boundaries() {
+        let cipher = Rc4::new(b"frame-slice-fixture").unwrap();
+        let mut plain = Vec::new();
+        for length in [2usize, 7, 31] {
+            plain.extend_from_slice(&(length as u32).to_be_bytes());
+            plain.extend((0..length).map(|i| i as u8));
+        }
+        let mut wire = plain;
+        cipher.clone().apply(&mut wire);
+        for end in 0..=wire.len() {
+            let bytes = &wire[..end];
+            for partial in [None, Some(1), Some(2)] {
+                let expected = reference_frame_validation(bytes, &cipher, partial, 1);
+                for budget in [1, 3, 7] {
+                    let mut validator = FrameValidator::new(&cipher, 1, partial);
+                    let actual = loop {
+                        if let Some(result) = validator.step(bytes, budget) {
+                            break result;
+                        }
+                    };
+                    assert_eq!(
+                        actual, expected,
+                        "end={end} partial={partial:?} budget={budget}"
                     );
                 }
             }

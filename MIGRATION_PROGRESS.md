@@ -1,5 +1,10 @@
 # G-Earth Rust migration progress
 
+## Resumable Flash frame validator
+
+Frame-length validation now retains cipher position, partially decrypted length prefix and remaining body between slices. A deterministic fixture compares 1-, 3- and 7-byte slices at every input boundary with full decryption. The 157 desktop/web library tests (7 ignored), Clippy and desktop/web debug build passed. Current callers still run slices consecutively; worker-level budgeting and fresh-state search must be integrated before claiming a bound. CI for `8bf3b64` passed; Windows desktop/web release succeeded at that preceding code commit. Live clients, protocols and extensions remain unverified.
+
+
 ## Windows release and workspace verification
 
 Windows GNU desktop/web release built successfully at `8bf3b644f5d3b7e7809df4a495f56df6bcc76a4f`. The locked workspace/all-targets test suite passed; tests marked ignored include platform-dependent and Java-oracle fixtures, while the `\R` oracle was separately run earlier. Live client, protocol and extension compatibility remains unverified.
@@ -632,4 +637,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Investigate bounding fresh-state checks and candidate frame validation separately, then test concurrent-session fairness. Recheck GitHub CI for `8bf3b64`. The user handles live tests; clients, protocols and extensions remain unverified.
+Integrate the resumable frame validator into reverse and fresh Flash discovery worker budgets without losing candidate ambiguity; test cancellation, growing samples and concurrent-session fairness. Build release for the resulting code. The user handles live tests; clients, protocols and extensions remain unverified.

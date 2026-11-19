@@ -1,5 +1,10 @@
 # Rust migration architecture
 
+## Incremental Flash frame validation
+
+The frame validator retains the RC4 state, partial frame-length prefix, body skip and completed-frame count. Existing callers execute slices consecutively; the state can be integrated into worker scheduling in a later step.
+
+
 ## Flash reverse worker slices
 
 Each reverse discovery job performs at most 1,048,576 rewind steps before returning its immutable scan snapshot, ciphertext, search cursor and candidate accumulator to the session. The next worker resumes that same snapshot; fresh checks and frame validation are not included in this bound.

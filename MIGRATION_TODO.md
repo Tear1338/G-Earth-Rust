@@ -1,5 +1,11 @@
 # Migration tasks
 
+## Latest: resumable Flash frame validation
+
+- [x] Implement sliced frame validation and compare against full decryption at each input boundary.
+- [ ] Integrate validator state into worker budgets and fresh-state scanning, test cancellation, ambiguity and fairness; rebuild release. Live compatibility remains unverified.
+
+
 ## Latest: Flash worker slices
 
 - [x] Preserve reverse-search snapshot and state between workers, including cancellation, sample growth and ambiguity fixtures.

@@ -1,5 +1,10 @@
 # Continuation state
 
+## Next: schedule Flash frame-validation slices
+
+The frame validator can resume inside encrypted prefixes and bodies but callers still run slices consecutively. Integrate it into reverse and fresh discovery worker budgets, preserving exact snapshots, ambiguity and cancellation, then test concurrent fairness.
+
+
 ## Latest Windows release
 
 The combined desktop/web Windows release and the locked workspace/all-targets tests passed at `8bf3b644f5d3b7e7809df4a495f56df6bcc76a4f`. Investigate bounded frame validation and fairness; user-run live tests remain outstanding.

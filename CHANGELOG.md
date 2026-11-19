@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — resumable Flash frame validator
+
+- Preserve frame-validation progress through partial encrypted prefixes and frame bodies; compare short slices with full decryption.
+
+
 ## Unreleased — Flash reverse worker slices
 
 - Yield between bounded reverse RC4 rewind slices while retaining candidates and the original ciphertext sample; cover buffer growth and cancellation.

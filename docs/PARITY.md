@@ -1,5 +1,10 @@
 # Compatibility with 1.5.4-beta-29
 
+## Flash sliced frame validation
+
+Synthetic full-decryption comparisons cover 1-, 3- and 7-byte slices at every boundary of a multi-frame stream. This does not establish real-client compatibility or a worker time bound.
+
+
 ## Flash worker slice evidence
 
 Synthetic Flash recovery resumes across workers and preserves candidates when buffered ciphertext grows; cancellation and ambiguity are covered separately. There is no wall-clock bound or real-client compatibility evidence.
