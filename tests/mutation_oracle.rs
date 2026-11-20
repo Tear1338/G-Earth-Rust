@@ -3348,6 +3348,26 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap_or_else(|e| panic!("case {i} pattern {pattern}: {e:?}"));
         check(&format!("substring_nested_context_{i}"), &packet);
     }
+    let nonlatin_patterns = ["雪", "🐱", "[雪", "A雪"];
+    for (i, pattern) in nonlatin_patterns.iter().enumerate() {
+        let mut packet = Packet::new(9);
+        packet.put_string("hello A?").unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, "x", Some(1))
+            .unwrap();
+        check(&format!("substring_nonlatin_pattern_{i}"), &packet);
+    }
+    let nonlatin_replacements = ["雪", "🐱", "A雪B", "\\雪", "[$0]🐱"];
+    for (i, replacement) in nonlatin_replacements.iter().enumerate() {
+        let mut packet = Packet::new(9);
+        packet.put_string("A A").unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java("A", replacement, Some(1))
+            .unwrap();
+        check(&format!("substring_nonlatin_replacement_{i}"), &packet);
+    }
     let named_cases = [
         "\\N{LATIN CAPITAL LETTER A}",
         "\\N{ latin capital letter a }",

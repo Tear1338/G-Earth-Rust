@@ -1,5 +1,9 @@
 # Compatibility with 1.5.4-beta-29
 
+## Java Unicode substring mutation evidence
+
+Nine beta-29 packet comparisons cover unmatched non-Latin-1 patterns and unmappable replacement characters, including a supplementary character. Wider regex and live client compatibility remain open.
+
 ## Java named-character evidence
 
 The JDK 21 generator checks 288,767 canonical names; the Rust table resolves every entry. Fifty-two beta-29 packet comparisons cover selected syntax and case-folding combinations. This does not prove all regex combinations or compatibility with real clients and extensions.

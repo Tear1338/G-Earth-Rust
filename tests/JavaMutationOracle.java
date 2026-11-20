@@ -1345,6 +1345,22 @@ public class JavaMutationOracle {
             finally { System.setOut(original); }
             emit("substring_nested_context_" + i, sample);
         }
+        String[] nonLatinPatterns = {"雪", "🐱", "[雪", "A雪"};
+        for (int i = 0; i < nonLatinPatterns.length; i++) {
+            HPacket sample = new HPacket(9); sample.appendString("hello A?"); sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try { System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream())); sample.replaceXSubstrings(nonLatinPatterns[i], "x", 1); }
+            finally { System.setOut(original); }
+            emit("substring_nonlatin_pattern_" + i, sample);
+        }
+        String[] nonLatinReplacements = {"雪", "🐱", "A雪B", "\\雪", "[$0]🐱"};
+        for (int i = 0; i < nonLatinReplacements.length; i++) {
+            HPacket sample = new HPacket(9); sample.appendString("A A"); sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try { System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream())); sample.replaceXSubstrings("A", nonLatinReplacements[i], 1); }
+            finally { System.setOut(original); }
+            emit("substring_nonlatin_replacement_" + i, sample);
+        }
         String[] namedCases = {"\\N{LATIN CAPITAL LETTER A}", "\\N{ latin capital letter a }", "(?x)\\N{LATIN CAPITAL LETTER A}", "(?x)\\N { LATIN CAPITAL LETTER A }", "[\\N{LATIN CAPITAL LETTER A}-\\N{LATIN CAPITAL LETTER C}]", "(?iu)\\N{KELVIN SIGN}", "(?iu)[\\N{KELVIN SIGN}]", "\\N{CJK UNIFIED IDEOGRAPHS 4E00}", "\\N{HIGH SURROGATES D800}", "\\N{NULL}", "(\\N{LATIN SMALL LETTER A})+", "\\Q\\N{LATIN CAPITAL LETTER A}\\E", "(?x)[\\N{LATIN CAPITAL LETTER A}]"};
         String[] namedInputs = {"AaBCkK", "", "\u0000\u00e9", "abcABC"};
         for (int i = 0; i < namedCases.length * namedInputs.length; i++) {

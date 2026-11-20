@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — Unicode packet mutation
+
+- Preserve Java behavior for substring patterns and replacements outside ISO-8859-1.
+
 ## Unreleased — Java named characters
 
 - Support Java named-character regex escapes in packet mutation, including tested character classes and COMMENTS mode.

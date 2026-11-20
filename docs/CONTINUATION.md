@@ -1,5 +1,9 @@
 # Continuation state
 
+## Next: complete Unicode mutation validation
+
+Workspace tests, desktop/web Clippy and debug compilation passed for the ISO-8859-1 substring fix. Build release and inspect CI; continue with a reproduced Java regex gap while the stateful `\b{g}` issue remains open. Live tests are the user’s responsibility.
+
 ## Next: Java regex state and release
 
 Complete and verify Windows desktop/web release and CI for named-character escapes. Then reproduce a further unsupported Java-valid regex independently while investigating how `Matcher.last` changes across quantifiers and assertions for `\b{g}`. The user will perform live client tests.

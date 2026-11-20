@@ -1,5 +1,10 @@
 # Migration tasks
 
+## Latest: non-Latin-1 substring mutation
+
+- [x] Compare non-Latin-1 patterns and replacement strings with beta-29 and reproduce Java ISO-8859-1 replacement behavior.
+- [ ] Complete validation, rebuild release and investigate remaining Java regex and platform gaps. Live testing is performed by the user.
+
 ## Latest: Java named-character escapes
 
 - [x] Generate the JDK 21 character-name table and support selected Java `\N{...}` patterns with differential packet fixtures.

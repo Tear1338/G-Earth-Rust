@@ -863,6 +863,25 @@ fn java_backreferences_reject_unsupported_cases_transactionally() {
         assert_eq!(packet.bytes(), before);
     }
 }
+
+#[test]
+fn java_substring_mutation_handles_unmappable_unicode() {
+    let mut packet = Packet::new(9);
+    packet.put_string("A A").unwrap();
+    let before = packet.bytes().to_vec();
+    assert_eq!(
+        packet.replace_substrings_java("[雪", "x", Some(1)).unwrap(),
+        0
+    );
+    assert_eq!(packet.bytes(), before);
+    assert_eq!(
+        packet
+            .replace_substrings_java("A", "[$0]🐱", Some(1))
+            .unwrap(),
+        1
+    );
+    assert_eq!(packet.read_string_at(6).unwrap(), "[A]? [A]?");
+}
 #[test]
 fn lookbehind_with_unknown_maximum_rejects_without_mutation() {
     for pattern in [

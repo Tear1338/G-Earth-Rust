@@ -1,5 +1,9 @@
 # G-Earth Rust migration progress
 
+## Java non-Latin-1 substring mutation
+
+The beta-29 API first checks for the literal pattern in ISO-8859-1 packet strings. A pattern containing an unmappable character therefore cannot match, even if its regex syntax is malformed; Rust now returns no changes instead of an encoding error. Unmappable replacement characters are encoded as Java does. Nine Java packet comparisons and 42 mutation tests passed. Workspace/all-targets, desktop/web Clippy and debug build passed. Windows desktop/web release and all eight CI jobs passed for preceding commit `49d185d79fff2eaa57ce69ba91b6f22cdcb4f4ea`. Real clients, protocols and extensions remain unverified.
+
 ## Java named-character regex escapes
 
 Java 21 canonical character names are generated into an embedded, lazily decompressed table of 288,767 entries. Every generated name round-trips through the Rust lookup, and 52 beta-29 packet cases cover literals, classes, ranges, COMMENTS mode, Unicode folding, non-Latin-1 values and quoting. The workspace/all-targets suite and 167 desktop/web library tests passed (7 ignored); the Java packet oracle passed. Desktop/web Clippy and debug build passed; release is running. CI now regenerates and compares the JDK 21 table, but has not run for this change. Real clients, protocols and extensions remain unverified. The prior commit `7941949` passed Windows desktop/web release and CI run 44652097312.
@@ -741,4 +745,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Complete the Windows desktop/web release and CI checks for named-character escapes. Then reproduce another unsupported Java-valid regex while investigating how to preserve `Matcher.last` through quantifiers, assertions and backtracking for `\b{g}`. Use differential fixtures and retain bounded work. The user handles live tests; clients, protocols and extensions remain unverified.
+Build Windows desktop/web release for the non-Latin-1 substring fix and inspect its CI. Reproduce another unsupported Java-valid regex while investigating how to preserve `Matcher.last` through quantifiers, assertions and backtracking for `\b{g}`. Use differential fixtures and retain bounded work. The user handles live tests; clients, protocols and extensions remain unverified.

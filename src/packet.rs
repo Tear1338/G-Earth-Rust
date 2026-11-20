@@ -4708,7 +4708,15 @@ impl Packet {
         if pattern.len() > usize::from(u16::MAX) * 2 {
             return Err(error("short string too long"));
         }
-        let pattern_bytes = latin1_encode(pattern)?;
+        // Java checks String.contains before compiling the regex. Packet
+        // strings are ISO-8859-1, so a non-Latin-1 pattern cannot occur.
+        let Ok(pattern_bytes) = latin1_encode(pattern) else {
+            return Ok(0);
+        };
+        // replaceString uses Java's ISO-8859-1 encoder, which replaces each
+        // unmappable Unicode scalar with '?'. Regex replacement syntax is ASCII.
+        let replacement = latin1_decode(&latin1_encode_java(replacement));
+        let replacement = replacement.as_str();
         let normalized_pattern = normalize_regex_comments(pattern);
         let mut pattern_source = normalized_pattern.as_str();
         let mut case_insensitive = false;
