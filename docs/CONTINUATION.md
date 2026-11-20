@@ -1,5 +1,10 @@
 # Continuation state
 
+## Next: native dual-stack socket verification
+
+Linux ownership now checks both TCP tables for mapped addresses. Inspect the Ubuntu CI logs for explicit native IPv6 and both dual-stack fixture markers, then investigate scoped addresses and network namespaces. Rebuild Windows release; live tests belong to the user.
+
+
 ## Next: native Linux IPv6 verification
 
 Unscoped IPv6 socket-owner parsing now supports `/proc/net/tcp6`. Confirm the native loopback and scoped-address fixtures in Linux CI, then inspect mapped IPv4 sockets and namespace behavior. Rebuild release for this change; live tests belong to the user.

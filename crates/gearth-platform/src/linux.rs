@@ -88,6 +88,48 @@ fn matching_socket_inodes(table: &str, local: SocketAddr, remote: SocketAddr) ->
         })
         .collect()
 }
+fn socket_table_queries(
+    local: SocketAddr,
+    remote: SocketAddr,
+) -> Vec<(&'static str, SocketAddr, SocketAddr)> {
+    let mut queries: Vec<(&str, SocketAddr, SocketAddr)> = Vec::new();
+    match (local, remote) {
+        (SocketAddr::V4(local), SocketAddr::V4(remote)) => {
+            queries.push(("net/tcp", local.into(), remote.into()));
+            // An IPv6 socket connected through IPv4 mapping appears in tcp6
+            // even when the IPv4 listener reports IPv4 endpoint addresses.
+            queries.push((
+                "net/tcp6",
+                SocketAddrV6::new(local.ip().to_ipv6_mapped(), local.port(), 0, 0).into(),
+                SocketAddrV6::new(remote.ip().to_ipv6_mapped(), remote.port(), 0, 0).into(),
+            ));
+        }
+        (SocketAddr::V6(local), SocketAddr::V6(remote))
+            if local.scope_id() == 0 && remote.scope_id() == 0 =>
+        {
+            let normalized_local = SocketAddrV6::new(*local.ip(), local.port(), 0, 0);
+            let normalized_remote = SocketAddrV6::new(*remote.ip(), remote.port(), 0, 0);
+            queries.push((
+                "net/tcp6",
+                normalized_local.into(),
+                normalized_remote.into(),
+            ));
+            // A dual-stack listener can expose an IPv4 client as mapped IPv6,
+            // while the client's socket is recorded in /proc/net/tcp.
+            if let (Some(local_ip), Some(remote_ip)) =
+                (local.ip().to_ipv4_mapped(), remote.ip().to_ipv4_mapped())
+            {
+                queries.push((
+                    "net/tcp",
+                    SocketAddrV4::new(local_ip, local.port()).into(),
+                    SocketAddrV4::new(remote_ip, remote.port()).into(),
+                ));
+            }
+        }
+        _ => return Vec::new(),
+    }
+    queries
+}
 #[cfg(target_os = "linux")]
 fn socket_link_inode(path: &Path) -> io::Result<Option<u64>> {
     let target = fs::read_link(path)?;
@@ -104,25 +146,16 @@ fn tcp_owner_from(
     remote: SocketAddr,
     candidates: &[u32],
 ) -> io::Result<Option<u32>> {
-    let (table_name, local, remote): (&str, SocketAddr, SocketAddr) = match (local, remote) {
-        (SocketAddr::V4(local), SocketAddr::V4(remote)) => ("net/tcp", local.into(), remote.into()),
-        (SocketAddr::V6(local), SocketAddr::V6(remote))
-            if local.scope_id() == 0 && remote.scope_id() == 0 =>
-        {
-            (
-                "net/tcp6",
-                SocketAddrV6::new(*local.ip(), local.port(), 0, 0).into(),
-                SocketAddrV6::new(*remote.ip(), remote.port(), 0, 0).into(),
-            )
-        }
-        _ => return Ok(None),
-    };
-    let table = match fs::read_to_string(root.join(table_name)) {
-        Ok(table) => table,
-        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error),
-    };
-    let inodes = matching_socket_inodes(&table, local, remote);
+    let queries = socket_table_queries(local, remote);
+    let mut inodes = Vec::new();
+    for (table_name, local, remote) in queries {
+        let table = match fs::read_to_string(root.join(table_name)) {
+            Ok(table) => table,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(error),
+        };
+        inodes.extend(matching_socket_inodes(&table, local, remote));
+    }
     if inodes.is_empty() {
         return Ok(None);
     }
@@ -355,6 +388,31 @@ mod tests {
         assert!(parse_proc_v6("not-an-address:0001").is_none());
         assert!(parse_proc_v6("éééééééééééééééé:0001").is_none());
     }
+    #[test]
+    fn mapped_ipv4_endpoints_query_both_linux_socket_tables() {
+        let local = SocketAddrV6::new(Ipv4Addr::LOCALHOST.to_ipv6_mapped(), 3000, 0, 0);
+        let remote = SocketAddrV6::new(Ipv4Addr::LOCALHOST.to_ipv6_mapped(), 4000, 0, 0);
+        let queries = socket_table_queries(local.into(), remote.into());
+        assert_eq!(queries.len(), 2);
+        assert_eq!(queries[0].0, "net/tcp6");
+        assert_eq!(
+            queries[1],
+            (
+                "net/tcp",
+                SocketAddrV4::new(Ipv4Addr::LOCALHOST, 3000).into(),
+                SocketAddrV4::new(Ipv4Addr::LOCALHOST, 4000).into()
+            )
+        );
+        let ipv4_queries = socket_table_queries(
+            SocketAddrV4::new(Ipv4Addr::LOCALHOST, 3000).into(),
+            SocketAddrV4::new(Ipv4Addr::LOCALHOST, 4000).into(),
+        );
+        assert_eq!(ipv4_queries.len(), 2);
+        assert_eq!(ipv4_queries[1], ("net/tcp6", local.into(), remote.into()));
+        let scoped = SocketAddrV6::new(*local.ip(), local.port(), 0, 1);
+        assert!(socket_table_queries(scoped.into(), remote.into()).is_empty());
+    }
+
     #[cfg(target_os = "linux")]
     #[test]
     fn declines_ipv6_scope_ids_without_guessing() {
@@ -364,6 +422,91 @@ mod tests {
             tcp_owner_from(Path::new("/nonexistent"), local.into(), remote.into(), &[]).unwrap(),
             None
         );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn identifies_mapped_ipv6_clients_seen_by_an_ipv4_listener_when_available() {
+        use std::net::{TcpListener, TcpStream};
+        let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).unwrap();
+        let mapped = SocketAddrV6::new(
+            Ipv4Addr::LOCALHOST.to_ipv6_mapped(),
+            listener.local_addr().unwrap().port(),
+            0,
+            0,
+        );
+        let client = match TcpStream::connect(mapped) {
+            Ok(client) => client,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::AddrNotAvailable
+                        | io::ErrorKind::Unsupported
+                        | io::ErrorKind::ConnectionRefused
+                ) =>
+            {
+                eprintln!("IPv4-mapped IPv6 client unavailable: {error}");
+                return;
+            }
+            Err(error) => panic!("IPv4-mapped IPv6 connection failed: {error}"),
+        };
+        let (server, _) = listener.accept().unwrap();
+        let owner = tcp_owner_from(
+            Path::new("/proc"),
+            server.peer_addr().unwrap(),
+            server.local_addr().unwrap(),
+            &[std::process::id()],
+        )
+        .unwrap();
+        assert_eq!(owner, Some(std::process::id()));
+        println!("IPv4-mapped IPv6 client ownership verified");
+        std::hint::black_box(client);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn identifies_ipv4_clients_seen_by_a_dual_stack_listener_when_available() {
+        use std::net::{TcpListener, TcpStream};
+        let listener = match TcpListener::bind((Ipv6Addr::UNSPECIFIED, 0)) {
+            Ok(listener) => listener,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::AddrNotAvailable | io::ErrorKind::Unsupported
+                ) =>
+            {
+                eprintln!("IPv6 listener unavailable: {error}");
+                return;
+            }
+            Err(error) => panic!("IPv6 listener failed: {error}"),
+        };
+        let client = match TcpStream::connect((
+            Ipv4Addr::LOCALHOST,
+            listener.local_addr().unwrap().port(),
+        )) {
+            Ok(client) => client,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::ConnectionRefused | io::ErrorKind::AddrNotAvailable
+                ) =>
+            {
+                eprintln!("Dual-stack listener unavailable: {error}");
+                return;
+            }
+            Err(error) => panic!("IPv4 connection failed: {error}"),
+        };
+        let (server, _) = listener.accept().unwrap();
+        let owner = tcp_owner_from(
+            Path::new("/proc"),
+            server.peer_addr().unwrap(),
+            server.local_addr().unwrap(),
+            &[std::process::id()],
+        )
+        .unwrap();
+        assert_eq!(owner, Some(std::process::id()));
+        println!("Dual-stack loopback ownership verified");
+        std::hint::black_box(client);
     }
 
     #[cfg(target_os = "linux")]
@@ -393,6 +536,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(owner, Some(std::process::id()));
+        println!("IPv6 loopback ownership verified");
     }
 
     #[cfg(target_os = "linux")]

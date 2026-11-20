@@ -1,5 +1,11 @@
 # Migration tasks
 
+## Latest: Linux dual-stack ownership
+
+- [x] Query both IPv4 and IPv6 tables for IPv4-mapped connections in either direction, with synthetic query-selection fixtures.
+- [ ] Confirm both native dual-stack fixtures actually execute in Linux CI, assess scoped IPv6 and network namespaces, and rebuild release. Live compatibility remains unverified.
+
+
 ## Latest: Linux IPv6 socket ownership
 
 - [x] Parse Linux IPv6 socket tables and conservatively reject nonzero scope IDs; cover parsing and malformed input.

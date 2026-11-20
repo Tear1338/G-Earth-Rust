@@ -1,5 +1,15 @@
 # G-Earth Rust migration progress
 
+## Linux dual-stack socket ownership
+
+Linux owner lookup now queries both IPv4 and IPv6 tables for IPv4-mapped endpoint pairs, covering both an IPv4 client accepted by a dual-stack listener and an IPv6-mapped client accepted by an IPv4 listener. Synthetic query-selection fixtures, the Windows workspace/all-targets suite, Windows and Linux-target Clippy, and the Windows desktop/web debug build pass. Native loopback fixtures and CI log markers are added but await Linux CI. Nonzero IPv6 scope IDs and cross-network-namespace lookup remain unsupported. Windows desktop/web release at `4c745e3` predates this code; real clients, protocols and extensions remain unverified.
+
+
+## Windows release after Linux IPv6 support
+
+Windows GNU desktop/web release succeeded at `4c745e3754cb84c3e4c381f72c83a522931af639`. Linux native CI remains in progress; real clients, protocols and extensions remain unverified.
+
+
 ## Linux IPv6 socket ownership
 
 Linux socket-owner lookup now parses `/proc/net/tcp6` for unscoped IPv6 endpoints, while preserving IPv4 behavior and refusing scoped IPv6 addresses rather than guessing. Windows-hosted parser fixtures, Linux-target Clippy, Windows platform tests and the desktop/web debug build pass. The native IPv6 loopback and scope tests are pending Linux CI; the loopback fixture reports if IPv6 is unavailable. Cross-network-namespace lookup and IPv4-mapped dual-stack behavior remain unverified. Windows desktop/web release and CI passed at preceding code commit `0cfa724`; real clients, protocols and extensions remain unverified.
@@ -702,4 +712,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Confirm Linux CI executes the IPv6 loopback and scoped-address fixtures and correct any platform failures. Investigate IPv4-mapped dual-stack sockets and network namespaces; rebuild Windows desktop/web release for the current code. The user handles live tests; clients, protocols and extensions remain unverified.
+Inspect Ubuntu CI logs for explicit native IPv6 and both dual-stack socket fixture markers; correct failures or record unavailable configurations. Investigate scoped IPv6 and cross-network-namespace ownership, and build Windows desktop/web release. The user handles live tests; clients, protocols and extensions remain unverified.

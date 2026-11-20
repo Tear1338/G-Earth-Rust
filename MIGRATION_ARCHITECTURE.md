@@ -1,5 +1,10 @@
 # Rust migration architecture
 
+## Linux dual-stack socket ownership
+
+IPv4 endpoint pairs and IPv4-mapped IPv6 pairs are checked against both Linux TCP tables to account for either socket family. Ownership is still declined when candidate descriptors are ambiguous or inaccessible; scoped and cross-namespace cases remain open.
+
+
 ## Linux IPv6 ownership
 
 Unscoped IPv6 endpoint pairs use `/proc/net/tcp6` and the existing candidate-descriptor ownership check. Scope IDs are not represented in this lookup and nonzero scopes are rejected; cross-namespace and mapped-address behavior remain open.

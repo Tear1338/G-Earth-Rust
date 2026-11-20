@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — Linux dual-stack ownership
+
+- Match IPv4-mapped connections across both Linux TCP tables and expose native socket fixture outcomes in CI logs.
+
+
 ## Unreleased — Linux IPv6 socket owner
 
 - Identify unscoped IPv6 Flash sockets from `/proc/net/tcp6`, retaining conservative handling for scoped and ambiguous addresses.

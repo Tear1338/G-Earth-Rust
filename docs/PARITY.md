@@ -1,5 +1,10 @@
 # Compatibility with 1.5.4-beta-29
 
+## Linux dual-stack ownership evidence
+
+Synthetic query selection and Linux-target compilation pass for IPv4-mapped endpoint pairs. CI now prints whether native loopback fixtures executed or were unavailable. Scoped addresses, network namespaces and real clients remain unverified.
+
+
 ## Linux IPv6 owner evidence
 
 Synthetic IPv6 table parsing and Linux-target compilation pass. Native loopback and scoped-address fixtures await Linux CI; IPv4-mapped sockets, network namespaces and real-client compatibility remain unverified.
