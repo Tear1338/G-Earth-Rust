@@ -668,16 +668,27 @@ fn java_bounded_regex_repetition_rejects_invalid_bounds_transactionally() {
 }
 
 #[test]
-fn java_repeated_capture_group_rejects_unsupported_nesting_transactionally() {
+fn java_repeated_capture_groups_handle_context_and_empty_matches() {
     let mut packet = Packet::new(9);
-    packet.put_string("(ab)* abab").unwrap();
-    let before = packet.clone();
-    for pattern in ["((ab)*)", "(a$)*", "()*", "(ab)*(c)", "a?(ab)*"] {
-        assert!(packet
-            .replace_substrings_java_groups(pattern, "x", None)
-            .is_err());
-        assert_eq!(packet, before);
-    }
+    packet.put_string("(ab)*(c)").unwrap();
+    assert_eq!(
+        packet
+            .replace_substrings_java("(ab)*(c)", "[$0]", Some(1))
+            .unwrap(),
+        1
+    );
+    packet.reset();
+    assert_eq!(packet.read_string().unwrap(), "(ab)*([c])");
+    let mut empty = Packet::new(9);
+    empty.put_string("()*").unwrap();
+    assert_eq!(
+        empty
+            .replace_substrings_java("()*", "[$0]", Some(1))
+            .unwrap(),
+        1
+    );
+    empty.reset();
+    assert_eq!(empty.read_string().unwrap(), "[]([])[]*[]");
     let mut large = Packet::new(9);
     large
         .put_string(&format!("(ÿÿ)*{}", "ÿÿ".repeat(20_000)))

@@ -5278,6 +5278,40 @@ impl Packet {
             || has_nested_alternation
             || group_repeats.len() > 1
             || group_repeats.iter().any(|entry| entry.6)
+            || group_repeat.is_some_and(|(start, end, _, _, _)| {
+                repeated_group_owner.is_some_and(|owner| {
+                    start == end
+                        || (0..groups.len()).any(|group| {
+                            let mut current = Some(group);
+                            while let Some(index) = current {
+                                if index == owner {
+                                    return false;
+                                }
+                                current = parents[index];
+                            }
+                            true
+                        })
+                        || optional.iter().any(|&(a, b, _)| a < start || b > end)
+                        || repeated.iter().any(|&(a, ..)| a < start || a >= end)
+                        || atoms[start..end].iter().any(|atom| {
+                            matches!(
+                                atom,
+                                FixedRegexAtom::Start
+                                    | FixedRegexAtom::StartLine
+                                    | FixedRegexAtom::StartLineUnix
+                                    | FixedRegexAtom::End
+                                    | FixedRegexAtom::EndUnix
+                                    | FixedRegexAtom::EndLine
+                                    | FixedRegexAtom::EndLineUnix
+                                    | FixedRegexAtom::EndStrict
+                                    | FixedRegexAtom::WordBoundary
+                                    | FixedRegexAtom::NonWordBoundary
+                                    | FixedRegexAtom::UnicodeWordBoundary
+                                    | FixedRegexAtom::UnicodeNonWordBoundary
+                            )
+                        })
+                })
+            })
             || (repeated_group_owner.is_none()
                 && group_repeats.iter().any(|&(start, end, ..)| {
                     optional.iter().any(|&(a, b, _)| a >= start && b <= end)

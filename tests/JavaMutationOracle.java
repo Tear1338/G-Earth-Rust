@@ -1291,6 +1291,43 @@ public class JavaMutationOracle {
             finally { System.setOut(original); }
             emit("substring_previous_match_" + i, sample);
         }
+        String[] repeatedContextCases = {"(ab)*(c)", "a?(ab)*", "(a$)*", "((ab)*)", "()*", "x(ab)*", "(ab)*x", "(ab)+(c)", "a?(ab)+", "((ab)+)", "(ab){1,2}(c)", "(a$)+", "(a?)*", "(a*)*", "(ab)*?c", "(a$)*?", "(ab)*(c)?", "(?:x)(ab)*", "(ab)*x?", "(ab)*(c*)"};
+        String[] repeatedContextInputs = {"", "a", "ab", "abab", "abc", "ababc", "xabab", "abx", "c", "aa", "ab\n", "aaa", "ababcc"};
+        for (int i = 0; i < repeatedContextCases.length * repeatedContextInputs.length * 2; i++) {
+            String pattern = repeatedContextCases[i % repeatedContextCases.length];
+            String input = repeatedContextInputs[(i / repeatedContextCases.length) % repeatedContextInputs.length];
+            String replacement = i / (repeatedContextCases.length * repeatedContextInputs.length) == 0 ? "[$0]" : "<$1>";
+            HPacket sample = new HPacket(9); sample.appendString(input + pattern + input); sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try { System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream())); sample.replaceXSubstrings(pattern, replacement, 1); }
+            finally { System.setOut(original); }
+            emit("substring_repeated_context_" + i, sample);
+        }
+        String[] repeatedSecondCaptureCases = {"(a?)(ab)*", "((ab)*)(c)", "(ab)*(c)", "(a$)*(b)", "a?((ab)*)", "(ab)+(c)", "(ab){1,2}(c)", "(ab)*(c)?", "(ab)*(c*)", "x((ab)*)"};
+        for (int i = 0; i < repeatedSecondCaptureCases.length * repeatedContextInputs.length; i++) {
+            String pattern = repeatedSecondCaptureCases[i % repeatedSecondCaptureCases.length];
+            String input = repeatedContextInputs[(i / repeatedSecondCaptureCases.length) % repeatedContextInputs.length];
+            HPacket sample = new HPacket(9); sample.appendString(input + pattern + input); sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try { System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream())); sample.replaceXSubstrings(pattern, "<$2>[$1]", 1); }
+            finally { System.setOut(original); }
+            emit("substring_repeated_second_" + i, sample);
+        }
+        char[] repeatedContextAlphabet = {'a', 'b', 'c'};
+        for (int i = 0; i < repeatedSecondCaptureCases.length * 121 * 2; i++) {
+            String pattern = repeatedSecondCaptureCases[i % repeatedSecondCaptureCases.length];
+            int n = (i / repeatedSecondCaptureCases.length) % 121;
+            int length = n < 1 ? 0 : n < 4 ? 1 : n < 13 ? 2 : n < 40 ? 3 : 4;
+            int digits = n - (length == 0 ? 0 : length == 1 ? 1 : length == 2 ? 4 : length == 3 ? 13 : 40);
+            StringBuilder input = new StringBuilder();
+            for (int j = 0; j < length; j++) { input.append(repeatedContextAlphabet[digits % 3]); digits /= 3; }
+            String replacement = i / (repeatedSecondCaptureCases.length * 121) == 0 ? "<$1>[$2]" : "[$0]";
+            HPacket sample = new HPacket(9); sample.appendString(input + pattern + input.toString()); sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try { System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream())); sample.replaceXSubstrings(pattern, replacement, 1); }
+            finally { System.setOut(original); }
+            emit("substring_repeated_exhaustive_" + i, sample);
+        }
         String[] lineEndingCases = {"\\R", "\\R\\n", "\\R?\\n", "\\R+\\n", "(?:\\R)?\\n", "(?:\\R)+\\n", "(?:x\\R)*\\n", "(?:\\R\\n)+", "(?:\\R){1}\\n", "(?:\\R){0,1}\\n", "(?:\\R){1,2}?\\n", "(\\R)+\\n", "(?:(\\R))+\\n", "(?:\\R|x)+\\n", "(?=\\R)\\R", "(?<=\\R)\\n", "\\R++\\n", "(?x)\\R #comment\n +", "\\Q\\R\\E", "(?d)\\R"};
         String[] lineEndingInputs = {"\r\n", "\r\n\n", "\r\r\n", "x\r\n", "x\r\n\n", "\u0085", "\r\nx", "\u000b\u000c"};
         for (int i = 0; i < 480; i++) {

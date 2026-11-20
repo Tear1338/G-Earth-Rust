@@ -3174,6 +3174,119 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap_or_else(|e| panic!("{pattern}: {e:?}"));
         check(&format!("substring_previous_match_{i}"), &packet);
     }
+    let repeated_context_cases = [
+        "(ab)*(c)",
+        "a?(ab)*",
+        "(a$)*",
+        "((ab)*)",
+        "()*",
+        "x(ab)*",
+        "(ab)*x",
+        "(ab)+(c)",
+        "a?(ab)+",
+        "((ab)+)",
+        "(ab){1,2}(c)",
+        "(a$)+",
+        "(a?)*",
+        "(a*)*",
+        "(ab)*?c",
+        "(a$)*?",
+        "(ab)*(c)?",
+        "(?:x)(ab)*",
+        "(ab)*x?",
+        "(ab)*(c*)",
+    ];
+    let repeated_context_inputs = [
+        "", "a", "ab", "abab", "abc", "ababc", "xabab", "abx", "c", "aa", "ab\n", "aaa", "ababcc",
+    ];
+    for i in 0..repeated_context_cases.len() * repeated_context_inputs.len() * 2 {
+        let pattern = repeated_context_cases[i % repeated_context_cases.len()];
+        let input = repeated_context_inputs
+            [(i / repeated_context_cases.len()) % repeated_context_inputs.len()];
+        let replacement = if i / (repeated_context_cases.len() * repeated_context_inputs.len()) == 0
+        {
+            "[$0]"
+        } else {
+            "<$1>"
+        };
+        let mut packet = Packet::new(9);
+        packet
+            .put_string(&format!("{input}{pattern}{input}"))
+            .unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, replacement, Some(1))
+            .unwrap_or_else(|e| panic!("case {i} pattern {pattern}: {e:?}"));
+        check(&format!("substring_repeated_context_{i}"), &packet);
+    }
+    let repeated_second_cases = [
+        "(a?)(ab)*",
+        "((ab)*)(c)",
+        "(ab)*(c)",
+        "(a$)*(b)",
+        "a?((ab)*)",
+        "(ab)+(c)",
+        "(ab){1,2}(c)",
+        "(ab)*(c)?",
+        "(ab)*(c*)",
+        "x((ab)*)",
+    ];
+    for i in 0..repeated_second_cases.len() * repeated_context_inputs.len() {
+        let pattern = repeated_second_cases[i % repeated_second_cases.len()];
+        let input = repeated_context_inputs
+            [(i / repeated_second_cases.len()) % repeated_context_inputs.len()];
+        let mut packet = Packet::new(9);
+        packet
+            .put_string(&format!("{input}{pattern}{input}"))
+            .unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, "<$2>[$1]", Some(1))
+            .unwrap_or_else(|e| panic!("case {i} pattern {pattern}: {e:?}"));
+        check(&format!("substring_repeated_second_{i}"), &packet);
+    }
+    let repeated_alphabet = ['a', 'b', 'c'];
+    for i in 0..repeated_second_cases.len() * 121 * 2 {
+        let pattern = repeated_second_cases[i % repeated_second_cases.len()];
+        let n = (i / repeated_second_cases.len()) % 121;
+        let length = if n < 1 {
+            0
+        } else if n < 4 {
+            1
+        } else if n < 13 {
+            2
+        } else if n < 40 {
+            3
+        } else {
+            4
+        };
+        let mut digits = n - match length {
+            0 => 0,
+            1 => 1,
+            2 => 4,
+            3 => 13,
+            _ => 40,
+        };
+        let mut input = String::new();
+        for _ in 0..length {
+            input.push(repeated_alphabet[digits % 3]);
+            digits /= 3;
+        }
+        let replacement = if i / (repeated_second_cases.len() * 121) == 0 {
+            "<$1>[$2]"
+        } else {
+            "[$0]"
+        };
+        let mut packet = Packet::new(9);
+        packet
+            .put_string(&format!("{input}{pattern}{input}"))
+            .unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, replacement, Some(1))
+            .unwrap_or_else(|e| panic!("case {i} pattern {pattern}: {e:?}"));
+        check(&format!("substring_repeated_exhaustive_{i}"), &packet);
+    }
     let line_ending_cases = [
         "\\R",
         "\\R\\n",

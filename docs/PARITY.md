@@ -1,5 +1,10 @@
 # Compatibility with 1.5.4-beta-29
 
+## Java repeated-capture evidence
+
+The beta-29 packet oracle agrees on 3,070 selected repeated-capture cases, including replacements referencing two groups. Regex parity is still partial. Linux CI explicitly exercised IPv6 loopback and both mapped dual-stack owner fixtures; real-client behavior remains unverified.
+
+
 ## Linux dual-stack ownership evidence
 
 Synthetic query selection and Linux-target compilation pass for IPv4-mapped endpoint pairs. CI now prints whether native loopback fixtures executed or were unavailable. Scoped addresses, network namespaces and real clients remain unverified.

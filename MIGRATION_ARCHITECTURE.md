@@ -1,5 +1,10 @@
 # Rust migration architecture
 
+## Repeated captures with surrounding context
+
+The packet regex compiler chooses the tree matcher when a repeated capture has surrounding captures or quantifiers, contains selected anchors, or is empty. Other unsupported regex constructions remain guarded; the Java fixture corpus defines the tested subset.
+
+
 ## Linux dual-stack socket ownership
 
 IPv4 endpoint pairs and IPv4-mapped IPv6 pairs are checked against both Linux TCP tables to account for either socket family. Ownership is still declined when candidate descriptors are ambiguous or inaccessible; scoped and cross-namespace cases remain open.

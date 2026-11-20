@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — repeated Java captures in context
+
+- Support selected repeated captures with surrounding groups, anchors, optional atoms and empty matches, with beta-29 differential fixtures.
+
+
 ## Unreleased — Linux dual-stack ownership
 
 - Match IPv4-mapped connections across both Linux TCP tables and expose native socket fixture outcomes in CI logs.

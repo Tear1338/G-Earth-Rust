@@ -1,5 +1,10 @@
 # Continuation state
 
+## Next: repeated-capture parity
+
+Selected repeated captures with surrounding context now use the tree matcher and match 3,070 beta-29 fixtures. Broaden nested and variable-width repetitions against Java, rebuild release and continue tracking scoped IPv6/network-namespace limitations. Live tests belong to the user.
+
+
 ## Next: native dual-stack socket verification
 
 Linux ownership now checks both TCP tables for mapped addresses. Inspect the Ubuntu CI logs for explicit native IPv6 and both dual-stack fixture markers, then investigate scoped addresses and network namespaces. Rebuild Windows release; live tests belong to the user.

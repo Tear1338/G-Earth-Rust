@@ -1,5 +1,10 @@
 # G-Earth Rust migration progress
 
+## Java repeated captures in surrounding context
+
+Selected Java regex patterns with repeated captures surrounded by other captures, optional atoms, anchors or empty groups now use the tree matcher instead of being rejected. The installed beta-29 packet oracle agrees on 3,070 additional cases, including first and second capture replacements and all short strings over a three-character alphabet for selected patterns; 40 mutation tests pass. The workspace/all-targets suite, 164 desktop/web library tests (7 ignored), Clippy and the desktop/web debug build also passed. This evidence covers those forms only: other regex structures remain unsupported. The Windows desktop/web release and full CI passed at preceding code commit `7f52485`; native Linux CI also explicitly verified IPv6 loopback and both mapped dual-stack fixtures. Scoped IPv6, cross-network-namespace attribution and real clients, protocols and extensions remain unverified.
+
+
 ## Linux dual-stack socket ownership
 
 Linux owner lookup now queries both IPv4 and IPv6 tables for IPv4-mapped endpoint pairs, covering both an IPv4 client accepted by a dual-stack listener and an IPv6-mapped client accepted by an IPv4 listener. Synthetic query-selection fixtures, the Windows workspace/all-targets suite, Windows and Linux-target Clippy, and the Windows desktop/web debug build pass. Native loopback fixtures and CI log markers are added but await Linux CI. Nonzero IPv6 scope IDs and cross-network-namespace lookup remain unsupported. Windows desktop/web release at `4c745e3` predates this code; real clients, protocols and extensions remain unverified.
@@ -712,4 +717,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Inspect Ubuntu CI logs for explicit native IPv6 and both dual-stack socket fixture markers; correct failures or record unavailable configurations. Investigate scoped IPv6 and cross-network-namespace ownership, and build Windows desktop/web release. The user handles live tests; clients, protocols and extensions remain unverified.
+Build Windows desktop/web release for the repeated-capture change. Compare further nested and variable-width repeated captures against beta-29, preserving existing limits and transactionality. Scoped IPv6 and cross-network-namespace ownership remain unresolved. The user handles live tests; clients, protocols and extensions remain unverified.

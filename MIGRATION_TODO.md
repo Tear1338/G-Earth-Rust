@@ -1,5 +1,11 @@
 # Migration tasks
 
+## Latest: repeated captures in context
+
+- [x] Route selected repeated captures with surrounding captures, optional atoms, anchors or empty groups through the tree matcher; compare 3,070 beta-29 packet fixtures.
+- [ ] Expand nested and variable-width repeated-capture parity, rebuild release, and await user-run real-client/extension evidence. Scoped IPv6 and cross-network-namespace ownership remain open.
+
+
 ## Latest: Linux dual-stack ownership
 
 - [x] Query both IPv4 and IPv6 tables for IPv4-mapped connections in either direction, with synthetic query-selection fixtures.
