@@ -215,6 +215,16 @@ impl Side {
         self.verification_active = false;
         self.worker_waiter = None;
     }
+    fn install_verified(&mut self, job: VerificationJob) {
+        self.writer = Some(job.cipher);
+        self.reader = Some(job.decryptor);
+        self.buffer = job.decrypted.expect("verified plaintext is complete");
+        self.waiting = None;
+        self.pending_search = None;
+        self.pending_verification = None;
+        self.verification_active = false;
+        self.worker_waiter = None;
+    }
 }
 pub struct DecodedPacket {
     pub packet: Packet,
@@ -558,7 +568,7 @@ impl FlashSession {
                     let side = self.side(direction);
                     if side.reader.is_none() && valid && side.buffer.starts_with(&job.sample) {
                         if side.buffer.len() == job.sample.len() {
-                            side.install(job.cipher);
+                            side.install_verified(*job);
                         } else {
                             side.pending_verification =
                                 Some(VerificationJob::new(job.cipher, side.buffer.clone()));
@@ -893,14 +903,20 @@ struct VerificationJob {
     cipher: Rc4,
     sample: Vec<u8>,
     validator: FrameValidator,
+    decryptor: Rc4,
+    decrypted: Option<Vec<u8>>,
+    decrypt_at: usize,
 }
 impl VerificationJob {
     fn new(cipher: Rc4, sample: Vec<u8>) -> Self {
         let validator = FrameValidator::new(&cipher, 1, Some(1));
         Self {
+            decryptor: cipher.clone(),
             cipher,
             sample,
             validator,
+            decrypted: None,
+            decrypt_at: 0,
         }
     }
     fn run_slice(mut self, sender: &mpsc::Sender<DiscoveryEvent>, cancel: &AtomicBool) {
@@ -911,13 +927,28 @@ impl VerificationJob {
             )));
             return;
         }
-        match self.validator.step(&self.sample, DISCOVERY_SLICE_BYTES) {
-            Some(valid) => {
-                let _ = sender.send(DiscoveryEvent::Verified(Box::new(self), valid));
+        let mut budget = DISCOVERY_SLICE_BYTES;
+        if self.decrypted.is_none() {
+            match self.validator.step_limited(&self.sample, &mut budget) {
+                Some(true) => self.decrypted = Some(self.sample.clone()),
+                Some(false) => {
+                    let _ = sender.send(DiscoveryEvent::Verified(Box::new(self), false));
+                    return;
+                }
+                None => {
+                    let _ = sender.send(DiscoveryEvent::VerificationPartial(Box::new(self)));
+                    return;
+                }
             }
-            None => {
-                let _ = sender.send(DiscoveryEvent::VerificationPartial(Box::new(self)));
-            }
+        }
+        let plaintext = self.decrypted.as_mut().unwrap();
+        let end = self.decrypt_at.saturating_add(budget).min(plaintext.len());
+        self.decryptor.apply(&mut plaintext[self.decrypt_at..end]);
+        self.decrypt_at = end;
+        if end == plaintext.len() {
+            let _ = sender.send(DiscoveryEvent::Verified(Box::new(self), true));
+        } else {
+            let _ = sender.send(DiscoveryEvent::VerificationPartial(Box::new(self)));
         }
     }
 }
@@ -2397,6 +2428,81 @@ mod discovery_tests {
             assert!(session.input_capacity(Direction::ToServer) > 0);
             assert_eq!(session.outgoing.reader.is_some(), valid);
         }
+    }
+
+    #[test]
+    fn final_verification_decrypts_in_bounded_slices_and_installs_both_states() {
+        let cipher = Rc4::new(b"sliced-final-decryption").unwrap();
+        let length = DISCOVERY_SLICE_BYTES * 2 + 7;
+        let mut plaintext = vec![0x5a; length + 4];
+        plaintext[..4].copy_from_slice(&(length as u32).to_be_bytes());
+        let mut ciphertext = plaintext.clone();
+        let mut expected_reader = cipher.clone();
+        expected_reader.apply(&mut ciphertext);
+        let (sender, receiver) = mpsc::channel();
+        let cancel = AtomicBool::new(false);
+        let mut job = VerificationJob::new(cipher.clone(), ciphertext.clone());
+        let mut decrypt_slices = 0;
+        loop {
+            let previous = job.decrypt_at;
+            job.run_slice(&sender, &cancel);
+            match receiver.recv().unwrap() {
+                DiscoveryEvent::VerificationPartial(next) => {
+                    assert!(next.decrypt_at - previous <= DISCOVERY_SLICE_BYTES);
+                    if next.decrypt_at > previous {
+                        decrypt_slices += 1;
+                    }
+                    assert_eq!(next.sample, ciphertext);
+                    job = *next;
+                }
+                DiscoveryEvent::Verified(next, true) => {
+                    assert!(next.decrypt_at - previous <= DISCOVERY_SLICE_BYTES);
+                    if next.decrypt_at > previous {
+                        decrypt_slices += 1;
+                    }
+                    assert!(decrypt_slices >= 3);
+                    let mut side = Side {
+                        buffer: ciphertext,
+                        ..Side::default()
+                    };
+                    side.install_verified(*next);
+                    assert_eq!(side.buffer, plaintext);
+                    assert_eq!(side.reader.unwrap().state(), expected_reader.state());
+                    assert_eq!(side.writer.unwrap().state(), cipher.state());
+                    break;
+                }
+                _ => panic!("unexpected verification result"),
+            }
+        }
+    }
+
+    #[test]
+    fn final_decryption_honors_cancellation_between_slices() {
+        let cipher = Rc4::new(b"cancel-final-decryption").unwrap();
+        let length = DISCOVERY_SLICE_BYTES + 7;
+        let mut wire = vec![0; length + 4];
+        wire[..4].copy_from_slice(&(length as u32).to_be_bytes());
+        cipher.clone().apply(&mut wire);
+        let (sender, receiver) = mpsc::channel();
+        let cancel = AtomicBool::new(false);
+        let mut job = VerificationJob::new(cipher, wire);
+        loop {
+            job.run_slice(&sender, &cancel);
+            match receiver.recv().unwrap() {
+                DiscoveryEvent::VerificationPartial(next) => {
+                    job = *next;
+                    if job.decrypt_at > 0 {
+                        break;
+                    }
+                }
+                _ => panic!("expected partial verification"),
+            }
+        }
+        cancel.store(true, Ordering::Release);
+        job.run_slice(&sender, &cancel);
+        assert!(
+            matches!(receiver.recv().unwrap(), DiscoveryEvent::Failed(error) if error.kind() == io::ErrorKind::Interrupted)
+        );
     }
 
     #[test]

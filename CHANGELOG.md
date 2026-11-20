@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — Flash bootstrap decryption
+
+- Move final asynchronous Flash bootstrap decryption to resumable worker slices after key verification.
+- Include the Unicode data license in Windows artifacts and development release assets.
+
 ## Unreleased — lazy substring regex validation
 
 - Avoid rejecting an invalid substring regex when no candidate field contains the pattern, matching Java’s validation order.

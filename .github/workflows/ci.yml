@@ -78,6 +78,7 @@ jobs:
           New-Item -ItemType Directory -Path package -Force | Out-Null
           Copy-Item -LiteralPath target/release/gearth-desktop.exe -Destination package/gearth-desktop.exe
           Copy-Item -LiteralPath README.md,LICENSE,LICENSE-APACHE-MAVEN,NOTICE-APACHE-MAVEN -Destination package
+          Copy-Item -LiteralPath resources/UNICODE-LICENSE.md -Destination package/UNICODE-LICENSE.md
           Copy-Item -LiteralPath docs -Destination package/docs -Recurse
       - uses: actions/upload-artifact@v4
         with:
@@ -303,12 +304,13 @@ jobs:
           zip -qr ../../formatted-source-and-lockfile.zip .
           cd ../..
           cp artifacts/G-Earth-Rust-Windows-development/gearth-desktop.exe G-Earth-Rust-Windows.exe
+          cp artifacts/G-Earth-Rust-Windows-development/UNICODE-LICENSE.md UNICODE-LICENSE.md
           cp artifacts/gearth-cli-windows-latest/gearth-rust.exe G-Earth-Rust-CLI-Windows.exe
           cp artifacts/gearth-cli-ubuntu-latest/gearth-rust gearth-cli-linux
           cp artifacts/packet-microbenchmark/*-benchmark.csv .
-          sha256sum G-Earth-Rust-Windows.exe G-Earth-Rust-CLI-Windows.exe gearth-cli-linux formatted-source-and-lockfile.zip > SHA256SUMS.txt
+          sha256sum G-Earth-Rust-Windows.exe G-Earth-Rust-CLI-Windows.exe gearth-cli-linux formatted-source-and-lockfile.zip UNICODE-LICENSE.md > SHA256SUMS.txt
           printf '%s\n' 'Development build of the incomplete Rust port. Read docs/PARITY.md before use. This is not a complete replacement for G-Earth beta-29; real client/firewall validation, Chrome TLS emulation and exact UI parity remain outstanding. No performance superiority has been established.' > release-notes.txt
-          gh release create "$BUILD_TAG" --target "$BUILD_COMMIT" --title "Rust development build $BUILD_TAG" --prerelease --notes-file release-notes.txt G-Earth-Rust-Windows.exe G-Earth-Rust-CLI-Windows.exe gearth-cli-linux formatted-source-and-lockfile.zip SHA256SUMS.txt java-benchmark.csv rust-benchmark.csv
+          gh release create "$BUILD_TAG" --target "$BUILD_COMMIT" --title "Rust development build $BUILD_TAG" --prerelease --notes-file release-notes.txt G-Earth-Rust-Windows.exe G-Earth-Rust-CLI-Windows.exe gearth-cli-linux formatted-source-and-lockfile.zip UNICODE-LICENSE.md SHA256SUMS.txt java-benchmark.csv rust-benchmark.csv
 
   web:
     env:

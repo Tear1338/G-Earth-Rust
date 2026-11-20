@@ -1,5 +1,9 @@
 # Rust migration architecture
 
+## Flash verified-buffer installation
+
+The asynchronous verification worker decrypts the verified ciphertext in resumable RC4 slices and transfers plaintext plus the advanced reader state to the relay. It retains encrypted and decrypted buffers during this phase; copying and allocation are not covered by the RC4 slice budget. The explicit synchronous recovery API remains synchronous.
+
 ## Lazy substring pattern validation
 
 Before compiling a packet substring regex, a bounded read-only scan looks for the raw pattern in candidate ISO-8859-1 strings. This mirrors Java’s ordering and avoids copying or changing the packet during the precheck.

@@ -1,5 +1,9 @@
 # Compatibility with 1.5.4-beta-29
 
+## Flash final decryption evidence
+
+Synthetic fixtures cover multi-slice final decryption, reader/writer state, cancellation and revalidation on growing ciphertext. This changes scheduling rather than the cryptographic protocol and does not establish real-client compatibility.
+
 ## Java lazy regex validation evidence
 
 Five beta-29 packet cases cover invalid patterns absent from candidate strings. The revised bounded precheck passes the mutation oracle and workspace tests; unsupported regex constructs and live compatibility remain open.

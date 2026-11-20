@@ -1,5 +1,11 @@
 # Migration tasks
 
+## Latest: Flash final decryption
+
+- [x] Move asynchronous Flash final-buffer decryption into resumable bounded RC4 worker slices; test state, cancellation and buffer-growth revalidation.
+- [x] Complete workspace and desktop/web validation.
+- [ ] Rebuild release and inspect CI. Measure memory/latency under real clients when the user tests.
+
 ## Latest: lazy Java regex validation
 
 - [x] Reproduce beta-29 behavior for invalid patterns absent from packet strings.

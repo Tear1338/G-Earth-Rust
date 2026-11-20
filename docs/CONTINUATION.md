@@ -1,5 +1,9 @@
 # Continuation state
 
+## Next: validate Flash final decryption
+
+Workspace and desktop/web checks passed for sliced final Flash decryption; commit and push, rebuild release and inspect CI. The worker temporarily holds an additional bounded plaintext copy. The user handles real-client tests.
+
 ## Next: validate lazy regex precheck
 
 The beta-29 mutation oracle, workspace tests, desktop/web Clippy and debug build pass with the read-only candidate precheck. Commit and push, then build release and inspect CI. Keep `\b{g}` matcher state and live client compatibility open.
