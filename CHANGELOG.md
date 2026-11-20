@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — Java grapheme clusters
+
+- Support selected Java `\X` regex behavior over Latin-1 packet strings, including CRLF, repetition and tested lookbehinds.
+
+
 ## Unreleased — repeated Java captures in context
 
 - Support selected repeated captures with surrounding groups, anchors, optional atoms and empty matches, with beta-29 differential fixtures.

@@ -3348,6 +3348,216 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap_or_else(|e| panic!("case {i} pattern {pattern}: {e:?}"));
         check(&format!("substring_nested_context_{i}"), &packet);
     }
+    let grapheme_cluster_cases = [
+        "\\X",
+        "\\X\\n",
+        "\\X?",
+        "\\X*",
+        "\\X+",
+        "\\X{2}",
+        "\\X{0,2}?",
+        "\\X++",
+        "(?:\\X)+",
+        "(\\X)",
+        "(?=\\X).",
+        "(?<=\\X).",
+        "(?<!\\X).",
+        "(?<=\\X{2})a",
+        "\\X|\\r",
+        "\\Q\\X\\E",
+        "(?x)\\X #comment\n .",
+        "\\X\\r\\n",
+        "(\\X)+",
+        "(?:\\X\\n)+",
+    ];
+    let grapheme_cluster_inputs = ["", "a", "ab", "\r\n", "a\r\nb", "\r\r\n", "\u{85}", "\n\r"];
+    for i in 0..grapheme_cluster_cases.len() * grapheme_cluster_inputs.len() {
+        let pattern = grapheme_cluster_cases[i % grapheme_cluster_cases.len()];
+        let input = grapheme_cluster_inputs
+            [(i / grapheme_cluster_cases.len()) % grapheme_cluster_inputs.len()];
+        let mut packet = Packet::new(9);
+        packet
+            .put_string(&format!("{input}{pattern}{input}"))
+            .unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, "[$0]", Some(1))
+            .unwrap_or_else(|e| panic!("case {i} pattern {pattern}: {e:?}"));
+        check(&format!("substring_grapheme_cluster_{i}"), &packet);
+    }
+    for first in 0..=255u8 {
+        let pattern = "\\X";
+        let mut input = pattern.to_owned();
+        for second in 0..=255u8 {
+            input.push(char::from(first));
+            input.push(char::from(second));
+            input.push('|');
+        }
+        let mut packet = Packet::new(9);
+        packet.put_string(&input).unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, "[$0]", Some(1))
+            .unwrap();
+        check(
+            &format!("substring_grapheme_cluster_pairs_{first}"),
+            &packet,
+        );
+    }
+    let grapheme_nested_cases = [
+        "(\\X)+\\n",
+        "(?:\\X)+\\n",
+        "\\X?\\n",
+        "\\X*\\n",
+        "\\X{1,2}?\\n",
+        "(?:\\X\\n)+",
+        "(?:\\X|a)+",
+        "(?<=\\X)a",
+        "(?<!\\X)a",
+        "(?<=\\X{1,2})a",
+        "(?<=\\X*)a",
+        "(\\X)\\1",
+        "(?:\\X?)+",
+        "(\\X*)+",
+        "(?=\\X)\\X",
+        "(?x)\\X+",
+        "(?>\\X)\\n",
+        "\\X\\R",
+        "\\R\\X",
+    ];
+    let grapheme_nested_alphabet = ['\r', '\n', '\u{85}', 'a'];
+    for i in 0..grapheme_nested_cases.len() * 85 {
+        let pattern = grapheme_nested_cases[i % grapheme_nested_cases.len()];
+        let n = i / grapheme_nested_cases.len();
+        let length = if n < 1 {
+            0
+        } else if n < 5 {
+            1
+        } else if n < 21 {
+            2
+        } else {
+            3
+        };
+        let mut digits = n - match length {
+            0 => 0,
+            1 => 1,
+            2 => 5,
+            _ => 21,
+        };
+        let mut input = String::new();
+        for _ in 0..length {
+            input.push(grapheme_nested_alphabet[digits % 4]);
+            digits /= 4;
+        }
+        let mut packet = Packet::new(9);
+        packet
+            .put_string(&format!("{input}{pattern}{input}"))
+            .unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, "[$0]", Some(1))
+            .unwrap_or_else(|e| panic!("case {i} pattern {pattern}: {e:?}"));
+        check(&format!("substring_grapheme_nested_{i}"), &packet);
+    }
+    let grapheme_capture_cases = [
+        "((\\X)b)+c",
+        "((\\X)?b)+c",
+        "((\\X)b)+?c",
+        "((\\X)b){1,2}c",
+        "((\\X)\\X)+c",
+        "((\\X)?)++c",
+        "((\\X)*)+c",
+        "((\\X)b)*(c)",
+        "((\\X)+)(c)",
+        "((\\X)|a)+(c)",
+    ];
+    for i in 0..grapheme_capture_cases.len() * 85 * 2 {
+        let pattern = grapheme_capture_cases[i % grapheme_capture_cases.len()];
+        let n = (i / grapheme_capture_cases.len()) % 85;
+        let length = if n < 1 {
+            0
+        } else if n < 5 {
+            1
+        } else if n < 21 {
+            2
+        } else {
+            3
+        };
+        let mut digits = n - match length {
+            0 => 0,
+            1 => 1,
+            2 => 5,
+            _ => 21,
+        };
+        let mut input = String::new();
+        for _ in 0..length {
+            input.push(grapheme_nested_alphabet[digits % 4]);
+            digits /= 4;
+        }
+        let replacement = if i / (grapheme_capture_cases.len() * 85) == 0 {
+            "[$0]"
+        } else {
+            "<$1>{$2}"
+        };
+        let mut packet = Packet::new(9);
+        packet
+            .put_string(&format!("{input}{pattern}{input}"))
+            .unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, replacement, Some(1))
+            .unwrap_or_else(|e| panic!("case {i} pattern {pattern}: {e:?}"));
+        check(&format!("substring_grapheme_capture_{i}"), &packet);
+    }
+    let grapheme_assertion_cases = [
+        "((a)(?=\\X)b)+c",
+        "((a)(?=\\X)b)*c",
+        "((a)(?!\\X)b)+c",
+        "((a)(?<=\\X)b)+c",
+        "((a)(?<!\\X)b)+c",
+        "((a)(?=\\X)b){1,2}c",
+        "((a)(?=\\X)b)+?c",
+        "((a)(?=\\X)b)*(c)",
+    ];
+    let grapheme_assertion_alphabet = ['a', 'b', '\r', '\n'];
+    for i in 0..grapheme_assertion_cases.len() * 85 * 2 {
+        let pattern = grapheme_assertion_cases[i % grapheme_assertion_cases.len()];
+        let n = (i / grapheme_assertion_cases.len()) % 85;
+        let length = if n < 1 {
+            0
+        } else if n < 5 {
+            1
+        } else if n < 21 {
+            2
+        } else {
+            3
+        };
+        let mut digits = n - match length {
+            0 => 0,
+            1 => 1,
+            2 => 5,
+            _ => 21,
+        };
+        let mut input = String::new();
+        for _ in 0..length {
+            input.push(grapheme_assertion_alphabet[digits % 4]);
+            digits /= 4;
+        }
+        let replacement = if i / (grapheme_assertion_cases.len() * 85) == 0 {
+            "[$0]"
+        } else {
+            "<$1>{$2}"
+        };
+        let mut packet = Packet::new(9);
+        packet
+            .put_string(&format!("{input}{pattern}{input}"))
+            .unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, replacement, Some(1))
+            .unwrap_or_else(|e| panic!("case {i} pattern {pattern}: {e:?}"));
+        check(&format!("substring_grapheme_assertion_{i}"), &packet);
+    }
     let line_ending_cases = [
         "\\R",
         "\\R\\n",

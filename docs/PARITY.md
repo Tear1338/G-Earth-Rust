@@ -1,5 +1,10 @@
 # Compatibility with 1.5.4-beta-29
 
+## Java grapheme-cluster evidence
+
+Beta-29 packet fixtures cover all Latin-1 byte pairs and 4,835 contextual `\X` cases, including captures and lookarounds. `\b{g}` and broader regex parity remain open; real clients and extensions are unverified.
+
+
 ## Java repeated-capture evidence
 
 The beta-29 packet oracle agrees on 3,070 selected repeated-capture cases, including replacements referencing two groups. Regex parity is still partial. Linux CI explicitly exercised IPv6 loopback and both mapped dual-stack owner fixtures; real-client behavior remains unverified.

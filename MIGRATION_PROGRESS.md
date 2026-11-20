@@ -1,5 +1,15 @@
 # G-Earth Rust migration progress
 
+## Java grapheme-cluster regex `\X`
+
+Selected Java `\X` matches are now supported over Latin-1 packet strings. The matcher keeps CRLF together, handles tested repetition and capture cases, and reproduces Java 21’s tested lookbehind width behavior. Beta-29 differential fixtures cover all 65,536 byte pairs plus 4,835 contextual cases; a separate exhaustive Java boundary probe also found CRLF to be the only two-byte cluster in this domain. The 41 mutation tests, workspace/all-targets suite, 164 desktop/web library tests (7 ignored), Clippy and desktop/web debug build passed. This is bounded evidence, not complete regex parity. `\b{g}` remains unsupported because its mutable `Matcher.last` behavior diverged in the removed experiment. The previous Java CI failure caused by HTTP 429 passed on rerun; Windows release at `30c8191` predates this code. Real clients, protocols and extensions remain unverified.
+
+
+## Deferred Java grapheme boundary
+
+Java `\b{g}` is still unsupported. A naive static Latin-1 boundary implementation disagreed with beta-29 even on `\b{g}.`, because OpenJDK `GraphemeBound` consults `Matcher.last`; direct quantifiers and assertions can update that state during matching. The experiment was removed after a failing differential test. Correct support requires reproducing this mutable state and backtracking semantics, not only CRLF boundary detection. Work continues independently on Java `\X`; real clients and extensions remain unverified.
+
+
 ## Nested repeated captures: expanded evidence
 
 An additional 2,400 beta-29 packet cases covering selected nested and variable-width repeated groups match the installed Java API, including replacements for groups zero, one and two. The existing mutation oracle, 40 mutation tests and Clippy passed. Windows desktop/web release and the full CI passed at code commit `30c81910cba6064556831c67a7922f4d6ee3e359`; this commit only adds fixtures and documentation. These tests do not establish full regex parity or real-client and extension compatibility.
@@ -727,4 +737,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Find another concrete Java-valid regex construct still rejected or mismatched by Rust, add a beta-29 differential reproducer, then implement and test it without weakening bounds. Scoped IPv6 and cross-network-namespace ownership remain unresolved. The user handles live tests; clients, protocols and extensions remain unverified.
+Build Windows desktop/web release for the current `\X` matcher. Investigate how to preserve Java `Matcher.last` through quantifiers, assertions and backtracking before implementing `\b{g}`; use differential fixtures and retain bounded work. The user handles live tests; clients, protocols and extensions remain unverified.

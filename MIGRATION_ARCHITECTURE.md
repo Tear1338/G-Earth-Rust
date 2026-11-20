@@ -1,5 +1,10 @@
 # Rust migration architecture
 
+## Java grapheme clusters
+
+For Latin-1 packet strings, the regex tree matcher represents `\X` as an atomic CRLF-or-single-byte alternative. Its width metadata mirrors tested OpenJDK 21 lookbehind behavior, and repeated capture handling accounts for the cluster node’s nondeterminism. The separate stateful boundary `\b{g}` is not implemented.
+
+
 ## Repeated captures with surrounding context
 
 The packet regex compiler chooses the tree matcher when a repeated capture has surrounding captures or quantifiers, contains selected anchors, or is empty. Other unsupported regex constructions remain guarded; the Java fixture corpus defines the tested subset.

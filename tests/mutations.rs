@@ -640,6 +640,36 @@ fn java_reluctant_repetition_does_not_rescan_the_remaining_field() {
 }
 
 #[test]
+fn java_grapheme_clusters_keep_crlf_together_and_match_lookbehind_rules() {
+    let mut packet = Packet::new(9);
+    packet.put_string("\\X\r\n").unwrap();
+    assert_eq!(
+        packet
+            .replace_substrings_java("\\X", "[$0]", Some(1))
+            .unwrap(),
+        1
+    );
+    packet.reset();
+    assert_eq!(packet.read_string().unwrap(), "[\\][X][\r\n]");
+
+    let mut behind = Packet::new(9);
+    behind.put_string("ba(?<=\\X)a").unwrap();
+    let before = behind.clone();
+    behind
+        .replace_substrings_java("(?<=\\X)a", "x", Some(1))
+        .unwrap();
+    assert_eq!(behind, before);
+
+    let mut invalid = Packet::new(9);
+    invalid.put_string("[\\X]").unwrap();
+    let before = invalid.clone();
+    assert!(invalid
+        .replace_substrings_java("[\\X]", "x", Some(1))
+        .is_err());
+    assert_eq!(invalid, before);
+}
+
+#[test]
 fn java_line_ending_escape_rejects_character_classes_transactionally() {
     let mut packet = Packet::new(9);
     packet.put_string("[\\R] \r\n").unwrap();

@@ -1,5 +1,15 @@
 # Continuation state
 
+## Next: stateful Java grapheme boundary
+
+Java `\X` is now supported for the tested Latin-1 cases. `\b{g}` remains unsupported: OpenJDK updates `Matcher.last` inside quantifiers and assertions, so static boundary matching diverges. Investigate a faithful bounded matcher state model; rebuild release and leave live tests to the user.
+
+
+## Grapheme regex continuation
+
+Java `\b{g}` depends on mutable matcher state during quantification; a static-boundary experiment failed and was removed. Compare `\X` independently against beta-29, then return to stateful boundary semantics. Live tests are the user’s responsibility.
+
+
 ## Next: another evidenced regex gap
 
 A 2,400-case nested-repeat packet corpus agrees with beta-29; Windows release and CI passed at `30c8191`. Find another Java-valid unsupported or mismatched regex and build a differential reproducer before changing the matcher. Live client and extension tests remain with the user.

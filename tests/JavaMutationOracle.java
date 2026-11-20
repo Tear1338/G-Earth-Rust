@@ -1345,6 +1345,70 @@ public class JavaMutationOracle {
             finally { System.setOut(original); }
             emit("substring_nested_context_" + i, sample);
         }
+        String[] graphemeClusterCases = {"\\X", "\\X\\n", "\\X?", "\\X*", "\\X+", "\\X{2}", "\\X{0,2}?", "\\X++", "(?:\\X)+", "(\\X)", "(?=\\X).", "(?<=\\X).", "(?<!\\X).", "(?<=\\X{2})a", "\\X|\\r", "\\Q\\X\\E", "(?x)\\X #comment\n .", "\\X\\r\\n", "(\\X)+", "(?:\\X\\n)+"};
+        String[] graphemeClusterInputs = {"", "a", "ab", "\r\n", "a\r\nb", "\r\r\n", "\u0085", "\n\r"};
+        for (int i = 0; i < graphemeClusterCases.length * graphemeClusterInputs.length; i++) {
+            String pattern = graphemeClusterCases[i % graphemeClusterCases.length];
+            String input = graphemeClusterInputs[(i / graphemeClusterCases.length) % graphemeClusterInputs.length];
+            HPacket sample = new HPacket(9); sample.appendString(input + pattern + input); sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try { System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream())); sample.replaceXSubstrings(pattern, "[$0]", 1); }
+            finally { System.setOut(original); }
+            emit("substring_grapheme_cluster_" + i, sample);
+        }
+        for (int first = 0; first < 256; first++) {
+            String pattern = "\\X";
+            StringBuilder input = new StringBuilder(pattern);
+            for (int second = 0; second < 256; second++) input.append((char)first).append((char)second).append('|');
+            HPacket sample = new HPacket(9); sample.appendString(input.toString()); sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try { System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream())); sample.replaceXSubstrings(pattern, "[$0]", 1); }
+            finally { System.setOut(original); }
+            emit("substring_grapheme_cluster_pairs_" + first, sample);
+        }
+        String[] graphemeNestedCases = {"(\\X)+\\n", "(?:\\X)+\\n", "\\X?\\n", "\\X*\\n", "\\X{1,2}?\\n", "(?:\\X\\n)+", "(?:\\X|a)+", "(?<=\\X)a", "(?<!\\X)a", "(?<=\\X{1,2})a", "(?<=\\X*)a", "(\\X)\\1", "(?:\\X?)+", "(\\X*)+", "(?=\\X)\\X", "(?x)\\X+", "(?>\\X)\\n", "\\X\\R", "\\R\\X"};
+        char[] graphemeNestedAlphabet = {'\r', '\n', '\u0085', 'a'};
+        for (int i = 0; i < graphemeNestedCases.length * 85; i++) {
+            String pattern = graphemeNestedCases[i % graphemeNestedCases.length];
+            int n = i / graphemeNestedCases.length, length = n < 1 ? 0 : n < 5 ? 1 : n < 21 ? 2 : 3;
+            int digits = n - (length == 0 ? 0 : length == 1 ? 1 : length == 2 ? 5 : 21);
+            StringBuilder input = new StringBuilder();
+            for (int j = 0; j < length; j++) { input.append(graphemeNestedAlphabet[digits % 4]); digits /= 4; }
+            HPacket sample = new HPacket(9); sample.appendString(input + pattern + input.toString()); sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try { System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream())); sample.replaceXSubstrings(pattern, "[$0]", 1); }
+            finally { System.setOut(original); }
+            emit("substring_grapheme_nested_" + i, sample);
+        }
+        String[] graphemeCaptureCases = {"((\\X)b)+c", "((\\X)?b)+c", "((\\X)b)+?c", "((\\X)b){1,2}c", "((\\X)\\X)+c", "((\\X)?)++c", "((\\X)*)+c", "((\\X)b)*(c)", "((\\X)+)(c)", "((\\X)|a)+(c)"};
+        for (int i = 0; i < graphemeCaptureCases.length * 85 * 2; i++) {
+            String pattern = graphemeCaptureCases[i % graphemeCaptureCases.length];
+            int n = (i / graphemeCaptureCases.length) % 85, length = n < 1 ? 0 : n < 5 ? 1 : n < 21 ? 2 : 3;
+            int digits = n - (length == 0 ? 0 : length == 1 ? 1 : length == 2 ? 5 : 21);
+            StringBuilder input = new StringBuilder();
+            for (int j = 0; j < length; j++) { input.append(graphemeNestedAlphabet[digits % 4]); digits /= 4; }
+            String replacement = i / (graphemeCaptureCases.length * 85) == 0 ? "[$0]" : "<$1>{$2}";
+            HPacket sample = new HPacket(9); sample.appendString(input + pattern + input.toString()); sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try { System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream())); sample.replaceXSubstrings(pattern, replacement, 1); }
+            finally { System.setOut(original); }
+            emit("substring_grapheme_capture_" + i, sample);
+        }
+        String[] graphemeAssertionCases = {"((a)(?=\\X)b)+c", "((a)(?=\\X)b)*c", "((a)(?!\\X)b)+c", "((a)(?<=\\X)b)+c", "((a)(?<!\\X)b)+c", "((a)(?=\\X)b){1,2}c", "((a)(?=\\X)b)+?c", "((a)(?=\\X)b)*(c)"};
+        char[] graphemeAssertionAlphabet = {'a', 'b', '\r', '\n'};
+        for (int i = 0; i < graphemeAssertionCases.length * 85 * 2; i++) {
+            String pattern = graphemeAssertionCases[i % graphemeAssertionCases.length];
+            int n = (i / graphemeAssertionCases.length) % 85, length = n < 1 ? 0 : n < 5 ? 1 : n < 21 ? 2 : 3;
+            int digits = n - (length == 0 ? 0 : length == 1 ? 1 : length == 2 ? 5 : 21);
+            StringBuilder input = new StringBuilder();
+            for (int j = 0; j < length; j++) { input.append(graphemeAssertionAlphabet[digits % 4]); digits /= 4; }
+            String replacement = i / (graphemeAssertionCases.length * 85) == 0 ? "[$0]" : "<$1>{$2}";
+            HPacket sample = new HPacket(9); sample.appendString(input + pattern + input.toString()); sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try { System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream())); sample.replaceXSubstrings(pattern, replacement, 1); }
+            finally { System.setOut(original); }
+            emit("substring_grapheme_assertion_" + i, sample);
+        }
         String[] lineEndingCases = {"\\R", "\\R\\n", "\\R?\\n", "\\R+\\n", "(?:\\R)?\\n", "(?:\\R)+\\n", "(?:x\\R)*\\n", "(?:\\R\\n)+", "(?:\\R){1}\\n", "(?:\\R){0,1}\\n", "(?:\\R){1,2}?\\n", "(\\R)+\\n", "(?:(\\R))+\\n", "(?:\\R|x)+\\n", "(?=\\R)\\R", "(?<=\\R)\\n", "\\R++\\n", "(?x)\\R #comment\n +", "\\Q\\R\\E", "(?d)\\R"};
         String[] lineEndingInputs = {"\r\n", "\r\n\n", "\r\r\n", "x\r\n", "x\r\n\n", "\u0085", "\r\nx", "\u000b\u000c"};
         for (int i = 0; i < 480; i++) {

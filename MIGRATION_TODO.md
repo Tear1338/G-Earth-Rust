@@ -1,5 +1,17 @@
 # Migration tasks
 
+## Latest: Java grapheme clusters
+
+- [x] Support selected `\X` clusters, repetitions, captures and lookbehinds over Latin-1; compare all byte pairs and 4,835 contextual beta-29 fixtures.
+- [ ] Model stateful `\b{g}` behavior and further regex structures, rebuild release, and await user-run live compatibility evidence.
+
+
+## Java grapheme regex
+
+- [ ] Model Java `\b{g}` including mutable `Matcher.last` during quantification and assertions; a static boundary experiment diverged.
+- [ ] Compare Java `\X` grapheme clusters and lookbehind behavior independently; real-client compatibility remains unverified.
+
+
 ## Latest: nested repeated-capture corpus
 
 - [x] Compare 2,400 additional selected nested and variable-width repeated-capture cases against beta-29; Windows desktop/web release and CI passed at `30c8191`.

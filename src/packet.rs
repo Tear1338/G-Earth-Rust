@@ -2291,6 +2291,7 @@ struct AlternationNode {
     atomic: bool,
     // Java's LineEnding node has two widths but reports itself deterministic.
     line_ending: bool,
+    grapheme_cluster: bool,
     possessive: bool,
     assertion_group_start: usize,
     assertion_group_end: usize,
@@ -2375,7 +2376,7 @@ fn alternation_widths(
                         widths[child]
                     };
                     if let Some((min, max, _, _, _)) = spec.repeat {
-                        part.repeat(min, max, !spec.possessive);
+                        part.repeat(min, max, !spec.possessive && !spec.grapheme_cluster);
                     }
                     if optional_nodes[child].is_some() {
                         part.min = 0;
@@ -2436,6 +2437,14 @@ fn alternation_widths(
         widths[id] = combined.unwrap_or_default();
         if node.line_ending {
             widths[id].deterministic = true;
+        } else if node.grapheme_cluster {
+            // OpenJDK XGrapheme.study increments minLength only.
+            widths[id] = RegexWidth {
+                min: 1,
+                max: 0,
+                unknown: false,
+                deterministic: false,
+            };
         }
     }
     widths
@@ -4675,6 +4684,7 @@ impl Packet {
         let mut has_assertions = false;
         let mut has_previous_match = false;
         let mut has_line_endings = false;
+        let mut has_grapheme_clusters = false;
         let mut alternatives = Vec::new();
         let mut group_branches = Vec::new();
         let mut group_nodes = Vec::new();
@@ -4951,6 +4961,25 @@ impl Packet {
                         has_backreferences = true;
                         dynamic = true;
                         quantifiable = true;
+                        last_closed_group = None;
+                        continue;
+                    }
+                    if c == 'X' {
+                        let start = atoms.len();
+                        let node =
+                            push_alternation_node(&mut alternative_nodes, &mut node_stack, start);
+                        atoms.push(FixedRegexAtom::Literal(b'\r'));
+                        atoms.push(FixedRegexAtom::Literal(b'\n'));
+                        alternative_nodes[node].splits.push(atoms.len());
+                        atoms.push(FixedRegexAtom::DotAll);
+                        alternative_nodes[node].end = atoms.len();
+                        alternative_nodes[node].grapheme_cluster = true;
+                        alternative_nodes[node].atomic = true;
+                        node_stack.pop();
+                        last_noncapturing = Some((start, atoms.len(), node));
+                        has_grapheme_clusters = true;
+                        dynamic = true;
+                        quantifiable = false;
                         last_closed_group = None;
                         continue;
                     }
@@ -5262,7 +5291,7 @@ impl Packet {
         let has_nested_alternation = alternative_nodes
             .iter()
             .skip(1)
-            .any(|node| !node.line_ending && !node.splits.is_empty());
+            .any(|node| !node.line_ending && !node.grapheme_cluster && !node.splits.is_empty());
         for &(node, end) in &possessive_group_nodes {
             alternative_nodes[node].possessive = true;
             alternative_nodes[node].assertion_group_start =
@@ -5274,6 +5303,7 @@ impl Packet {
             || has_assertions
             || has_previous_match
             || has_line_endings
+            || has_grapheme_clusters
             || has_backreferences
             || has_nested_alternation
             || group_repeats.len() > 1
@@ -5391,7 +5421,26 @@ impl Packet {
                     let variable_atom = repeated
                         .iter()
                         .any(|&(a, min, limit, _)| a >= start && a < end && limit != Some(min));
-                    if optional_inside || variable_atom || variable_group {
+                    let variable_grapheme =
+                        alternative_nodes.iter().enumerate().any(|(child, spec)| {
+                            if child <= node || child >= subtree_end[node] || !spec.grapheme_cluster
+                            {
+                                return false;
+                            }
+                            let mut parent = spec.parent;
+                            while let Some(index) = parent {
+                                if index == node {
+                                    return true;
+                                }
+                                // Java does not include assertion bodies in the enclosing group's width study.
+                                if alternative_nodes[index].assertion.is_some() {
+                                    return false;
+                                }
+                                parent = alternative_nodes[index].parent;
+                            }
+                            false
+                        });
+                    if optional_inside || variable_atom || variable_group || variable_grapheme {
                         // Java uses Loop rather than GroupCurly for non-deterministic bodies.
                         continue;
                     }
