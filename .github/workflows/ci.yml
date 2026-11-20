@@ -94,6 +94,12 @@ jobs:
           distribution: temurin
           java-version: '21'
       - uses: Swatinem/rust-cache@v2
+      - name: Verify JDK 21 character names
+        run: |
+          java tools/GenerateJavaCharacterNames.java /tmp/java21-character-names.gz
+          gzip -dc /tmp/java21-character-names.gz > /tmp/generated-character-names
+          gzip -dc resources/java21-character-names.gz > /tmp/embedded-character-names
+          cmp /tmp/generated-character-names /tmp/embedded-character-names
       - name: Download the pinned upstream release
         run: |
           curl --fail --location --retry 3 'https://github.com/G-Realm/G-Earth/releases/download/1.5.4-beta-29/G-Earth-windows-x64.zip' -o /tmp/gearth.zip

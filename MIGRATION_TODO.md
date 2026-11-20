@@ -1,5 +1,10 @@
 # Migration tasks
 
+## Latest: Java named-character escapes
+
+- [x] Generate the JDK 21 character-name table and support selected Java `\N{...}` patterns with differential packet fixtures.
+- [ ] Complete release and CI checks; investigate remaining `\b{g}` state semantics and other Java regex gaps. Live testing is performed by the user.
+
 ## Latest: Java grapheme clusters
 
 - [x] Support selected `\X` clusters, repetitions, captures and lookbehinds over Latin-1; compare all byte pairs and 4,835 contextual beta-29 fixtures.

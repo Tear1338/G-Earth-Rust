@@ -1,5 +1,9 @@
 # Continuation state
 
+## Next: Java regex state and release
+
+Complete and verify Windows desktop/web release and CI for named-character escapes. Then reproduce a further unsupported Java-valid regex independently while investigating how `Matcher.last` changes across quantifiers and assertions for `\b{g}`. The user will perform live client tests.
+
 ## Next: stateful Java grapheme boundary
 
 Java `\X` is now supported for the tested Latin-1 cases. `\b{g}` remains unsupported: OpenJDK updates `Matcher.last` inside quantifiers and assertions, so static boundary matching diverges. Investigate a faithful bounded matcher state model; rebuild release and leave live tests to the user.

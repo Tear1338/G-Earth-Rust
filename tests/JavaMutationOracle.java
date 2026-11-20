@@ -1345,6 +1345,17 @@ public class JavaMutationOracle {
             finally { System.setOut(original); }
             emit("substring_nested_context_" + i, sample);
         }
+        String[] namedCases = {"\\N{LATIN CAPITAL LETTER A}", "\\N{ latin capital letter a }", "(?x)\\N{LATIN CAPITAL LETTER A}", "(?x)\\N { LATIN CAPITAL LETTER A }", "[\\N{LATIN CAPITAL LETTER A}-\\N{LATIN CAPITAL LETTER C}]", "(?iu)\\N{KELVIN SIGN}", "(?iu)[\\N{KELVIN SIGN}]", "\\N{CJK UNIFIED IDEOGRAPHS 4E00}", "\\N{HIGH SURROGATES D800}", "\\N{NULL}", "(\\N{LATIN SMALL LETTER A})+", "\\Q\\N{LATIN CAPITAL LETTER A}\\E", "(?x)[\\N{LATIN CAPITAL LETTER A}]"};
+        String[] namedInputs = {"AaBCkK", "", "\u0000\u00e9", "abcABC"};
+        for (int i = 0; i < namedCases.length * namedInputs.length; i++) {
+            String pattern = namedCases[i % namedCases.length];
+            String input = namedInputs[i / namedCases.length];
+            HPacket sample = new HPacket(9); sample.appendString(input + pattern + input); sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try { System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream())); sample.replaceXSubstrings(pattern, "[$0]", 1); }
+            finally { System.setOut(original); }
+            emit("substring_character_named_" + i, sample);
+        }
         String[] graphemeClusterCases = {"\\X", "\\X\\n", "\\X?", "\\X*", "\\X+", "\\X{2}", "\\X{0,2}?", "\\X++", "(?:\\X)+", "(\\X)", "(?=\\X).", "(?<=\\X).", "(?<!\\X).", "(?<=\\X{2})a", "\\X|\\r", "\\Q\\X\\E", "(?x)\\X #comment\n .", "\\X\\r\\n", "(\\X)+", "(?:\\X\\n)+"};
         String[] graphemeClusterInputs = {"", "a", "ab", "\r\n", "a\r\nb", "\r\r\n", "\u0085", "\n\r"};
         for (int i = 0; i < graphemeClusterCases.length * graphemeClusterInputs.length; i++) {

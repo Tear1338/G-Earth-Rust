@@ -3348,6 +3348,35 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap_or_else(|e| panic!("case {i} pattern {pattern}: {e:?}"));
         check(&format!("substring_nested_context_{i}"), &packet);
     }
+    let named_cases = [
+        "\\N{LATIN CAPITAL LETTER A}",
+        "\\N{ latin capital letter a }",
+        "(?x)\\N{LATIN CAPITAL LETTER A}",
+        "(?x)\\N { LATIN CAPITAL LETTER A }",
+        "[\\N{LATIN CAPITAL LETTER A}-\\N{LATIN CAPITAL LETTER C}]",
+        "(?iu)\\N{KELVIN SIGN}",
+        "(?iu)[\\N{KELVIN SIGN}]",
+        "\\N{CJK UNIFIED IDEOGRAPHS 4E00}",
+        "\\N{HIGH SURROGATES D800}",
+        "\\N{NULL}",
+        "(\\N{LATIN SMALL LETTER A})+",
+        "\\Q\\N{LATIN CAPITAL LETTER A}\\E",
+        "(?x)[\\N{LATIN CAPITAL LETTER A}]",
+    ];
+    let named_inputs = ["AaBCkK", "", "\0\u{e9}", "abcABC"];
+    for i in 0..named_cases.len() * named_inputs.len() {
+        let pattern = named_cases[i % named_cases.len()];
+        let input = named_inputs[i / named_cases.len()];
+        let mut packet = Packet::new(9);
+        packet
+            .put_string(&format!("{input}{pattern}{input}"))
+            .unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, "[$0]", Some(1))
+            .unwrap_or_else(|e| panic!("case {i} pattern {pattern}: {e:?}"));
+        check(&format!("substring_character_named_{i}"), &packet);
+    }
     let grapheme_cluster_cases = [
         "\\X",
         "\\X\\n",

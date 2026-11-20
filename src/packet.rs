@@ -635,6 +635,22 @@ fn braced_hex_escape(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Re
     }
 }
 
+fn named_regex_escape(chars: &mut std::iter::Peekable<std::str::Chars<'_>>) -> Result<u32> {
+    if chars.next() != Some('{') {
+        return Err(error("invalid regex character name"));
+    }
+    let mut name = String::new();
+    loop {
+        match chars.next() {
+            Some('}') => break,
+            Some(c) => name.push(c),
+            None => return Err(error("invalid regex character name")),
+        }
+    }
+    crate::java_character_names::code_point_of(&name)
+        .ok_or_else(|| error("unknown regex character name"))
+}
+
 // Java COMMENTS mode skips ASCII whitespace and # comments while parsing,
 // including inside character classes. Escaped and quoted characters stay literal.
 fn regex_skip_layout(chars: &[char], mut at: usize, comments: bool, unix: bool) -> usize {
@@ -683,6 +699,30 @@ fn normalize_regex_comments(pattern: &str) -> String {
                 *first = false;
             }
             at += 2;
+            if next == 'N' && !quoted {
+                // Pattern.N() skips layout while scanning but resolves the raw
+                // substring between braces, including any internal whitespace.
+                at = regex_skip_layout(&chars, at, comments, unix);
+                if chars.get(at) == Some(&'{') {
+                    output.push('{');
+                    at += 1;
+                    let start = at;
+                    loop {
+                        at = regex_skip_layout(&chars, at, comments, unix);
+                        if at >= chars.len() {
+                            output.extend(chars[start..].iter());
+                            break;
+                        }
+                        if chars[at] == '}' {
+                            output.extend(chars[start..=at].iter());
+                            at += 1;
+                            break;
+                        }
+                        at += 1;
+                    }
+                }
+                continue;
+            }
             if next == 'c' && !quoted {
                 // Java consumes the next significant character as the
                 // operand, even when it is ']' or another metacharacter.
@@ -916,11 +956,12 @@ fn parse_character_class_inner(
                 )?));
             } else if let Some(class) = predefined_class(escaped, unicode_class) {
                 elements.push(CharacterClassElement::Predefined(class));
-            } else if escaped == 'u' || (escaped == 'x' && chars.peek() == Some(&'{')) {
-                let value = if escaped == 'u' {
-                    unicode_regex_escape(chars)?
-                } else {
-                    braced_hex_escape(chars)?
+            } else if matches!(escaped, 'u' | 'N') || (escaped == 'x' && chars.peek() == Some(&'{'))
+            {
+                let value = match escaped {
+                    'u' => unicode_regex_escape(chars)?,
+                    'N' => named_regex_escape(chars)?,
+                    _ => braced_hex_escape(chars)?,
                 };
                 elements.push(CharacterClassElement::Literal(value, true));
             } else if let Some(byte) = control_escape(escaped, chars)? {
@@ -1750,6 +1791,29 @@ fn replace_alternatives(
 #[cfg(test)]
 mod regex_budget_tests {
     use super::*;
+
+    #[test]
+    fn named_escape_keeps_java_comment_mode_name_whitespace() {
+        assert_eq!(
+            normalize_regex_comments("(?x)\\N { LATIN CAPITAL LETTER A }"),
+            "(?x)\\N{ LATIN CAPITAL LETTER A }"
+        );
+        assert_eq!(
+            named_regex_escape(&mut "{ LATIN CAPITAL LETTER A }".chars().peekable()).unwrap(),
+            65
+        );
+        for input in [
+            "{BYTE ORDER MARK}",
+            "{LATIN  CAPITAL LETTER A}",
+            "{",
+            "LATIN CAPITAL LETTER A}",
+        ] {
+            assert!(
+                named_regex_escape(&mut input.chars().peekable()).is_err(),
+                "{input}"
+            );
+        }
+    }
 
     #[test]
     fn previous_match_anchor_tracks_successes_and_zero_width_progress() {
@@ -5044,11 +5108,11 @@ impl Packet {
                         last_closed_group = None;
                         continue;
                     }
-                    if c == 'u' || (c == 'x' && chars.peek() == Some(&'{')) {
-                        let value = if c == 'u' {
-                            unicode_regex_escape(&mut chars)?
-                        } else {
-                            braced_hex_escape(&mut chars)?
+                    if matches!(c, 'u' | 'N') || (c == 'x' && chars.peek() == Some(&'{')) {
+                        let value = match c {
+                            'u' => unicode_regex_escape(&mut chars)?,
+                            'N' => named_regex_escape(&mut chars)?,
+                            _ => braced_hex_escape(&mut chars)?,
                         };
                         if let Ok(byte) = u8::try_from(value) {
                             c = char::from(byte);

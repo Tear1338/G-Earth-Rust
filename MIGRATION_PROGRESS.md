@@ -1,5 +1,9 @@
 # G-Earth Rust migration progress
 
+## Java named-character regex escapes
+
+Java 21 canonical character names are generated into an embedded, lazily decompressed table of 288,767 entries. Every generated name round-trips through the Rust lookup, and 52 beta-29 packet cases cover literals, classes, ranges, COMMENTS mode, Unicode folding, non-Latin-1 values and quoting. The workspace/all-targets suite and 167 desktop/web library tests passed (7 ignored); the Java packet oracle passed. Desktop/web Clippy and debug build passed; release is running. CI now regenerates and compares the JDK 21 table, but has not run for this change. Real clients, protocols and extensions remain unverified. The prior commit `7941949` passed Windows desktop/web release and CI run 44652097312.
+
 ## Java grapheme-cluster regex `\X`
 
 Selected Java `\X` matches are now supported over Latin-1 packet strings. The matcher keeps CRLF together, handles tested repetition and capture cases, and reproduces Java 21’s tested lookbehind width behavior. Beta-29 differential fixtures cover all 65,536 byte pairs plus 4,835 contextual cases; a separate exhaustive Java boundary probe also found CRLF to be the only two-byte cluster in this domain. The 41 mutation tests, workspace/all-targets suite, 164 desktop/web library tests (7 ignored), Clippy and desktop/web debug build passed. This is bounded evidence, not complete regex parity. `\b{g}` remains unsupported because its mutable `Matcher.last` behavior diverged in the removed experiment. The previous Java CI failure caused by HTTP 429 passed on rerun; Windows release at `30c8191` predates this code. Real clients, protocols and extensions remain unverified.
@@ -737,4 +741,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Build Windows desktop/web release for the current `\X` matcher. Investigate how to preserve Java `Matcher.last` through quantifiers, assertions and backtracking before implementing `\b{g}`; use differential fixtures and retain bounded work. The user handles live tests; clients, protocols and extensions remain unverified.
+Complete the Windows desktop/web release and CI checks for named-character escapes. Then reproduce another unsupported Java-valid regex while investigating how to preserve `Matcher.last` through quantifiers, assertions and backtracking for `\b{g}`. Use differential fixtures and retain bounded work. The user handles live tests; clients, protocols and extensions remain unverified.

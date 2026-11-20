@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — Java named characters
+
+- Support Java named-character regex escapes in packet mutation, including tested character classes and COMMENTS mode.
+
 ## Unreleased — Java grapheme clusters
 
 - Support selected Java `\X` regex behavior over Latin-1 packet strings, including CRLF, repetition and tested lookbehinds.

@@ -1,5 +1,9 @@
 # Compatibility with 1.5.4-beta-29
 
+## Java named-character evidence
+
+The JDK 21 generator checks 288,767 canonical names; the Rust table resolves every entry. Fifty-two beta-29 packet comparisons cover selected syntax and case-folding combinations. This does not prove all regex combinations or compatibility with real clients and extensions.
+
 ## Java grapheme-cluster evidence
 
 Beta-29 packet fixtures cover all Latin-1 byte pairs and 4,835 contextual `\X` cases, including captures and lookarounds. `\b{g}` and broader regex parity remain open; real clients and extensions are unverified.
