@@ -4713,6 +4713,11 @@ impl Packet {
         let Ok(pattern_bytes) = latin1_encode(pattern) else {
             return Ok(0);
         };
+        // HPacket calls replaceAll only after finding the raw pattern inside
+        // a candidate string, so unmatched invalid patterns are never compiled.
+        if !self.has_raw_substring_candidate(&pattern_bytes)? {
+            return Ok(0);
+        }
         // replaceString uses Java's ISO-8859-1 encoder, which replaces each
         // unmappable Unicode scalar with '?'. Regex replacement syntax is ASCII.
         let replacement = latin1_decode(&latin1_encode_java(replacement));
@@ -5982,6 +5987,31 @@ impl Packet {
         }
         *self = candidate;
         Ok(count)
+    }
+
+    fn has_raw_substring_candidate(&self, pattern: &[u8]) -> Result<bool> {
+        let mut offset = self.bytes.len() as isize - 2 - pattern.len() as isize;
+        let mut scanned_bytes = 0usize;
+        while offset >= self.format.body_offset() as isize {
+            let i = offset as usize;
+            let length = u16::from_be_bytes([self.bytes[i], self.bytes[i + 1]]) as usize;
+            let end = i + 2 + length;
+            if end <= self.bytes.len() {
+                scanned_bytes = scanned_bytes
+                    .checked_add(length)
+                    .filter(|n| *n <= MAX_FRAME)
+                    .ok_or_else(|| error("substring scan limit exceeded"))?;
+                if pattern.is_empty()
+                    || self.bytes[i + 2..end]
+                        .windows(pattern.len())
+                        .any(|window| window == pattern)
+                {
+                    return Ok(true);
+                }
+            }
+            offset -= 1;
+        }
+        Ok(false)
     }
 
     fn replace_substrings_literal_inner(

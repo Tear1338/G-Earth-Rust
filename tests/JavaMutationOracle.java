@@ -1345,6 +1345,14 @@ public class JavaMutationOracle {
             finally { System.setOut(original); }
             emit("substring_nested_context_" + i, sample);
         }
+        String[] unmatchedInvalidPatterns = {"[", "(", "\\k<missing>", "(?", "a{2,1}"};
+        for (int i = 0; i < unmatchedInvalidPatterns.length; i++) {
+            HPacket sample = new HPacket(9); sample.appendString("hello"); sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try { System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream())); sample.replaceXSubstrings(unmatchedInvalidPatterns[i], "$bad", 1); }
+            finally { System.setOut(original); }
+            emit("substring_unmatched_invalid_" + i, sample);
+        }
         String[] nonLatinPatterns = {"雪", "🐱", "[雪", "A雪"};
         for (int i = 0; i < nonLatinPatterns.length; i++) {
             HPacket sample = new HPacket(9); sample.appendString("hello A?"); sample.setReadIndex(7);

@@ -1,5 +1,9 @@
 # Compatibility with 1.5.4-beta-29
 
+## Java lazy regex validation evidence
+
+Five beta-29 packet cases cover invalid patterns absent from candidate strings. The revised bounded precheck passes the mutation oracle and workspace tests; unsupported regex constructs and live compatibility remain open.
+
 ## Java Unicode substring mutation evidence
 
 Nine beta-29 packet comparisons cover unmatched non-Latin-1 patterns and unmappable replacement characters, including a supplementary character. Wider regex and live client compatibility remain open.

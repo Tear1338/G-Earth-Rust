@@ -3348,6 +3348,16 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap_or_else(|e| panic!("case {i} pattern {pattern}: {e:?}"));
         check(&format!("substring_nested_context_{i}"), &packet);
     }
+    let unmatched_invalid_patterns = ["[", "(", "\\k<missing>", "(?", "a{2,1}"];
+    for (i, pattern) in unmatched_invalid_patterns.iter().enumerate() {
+        let mut packet = Packet::new(9);
+        packet.put_string("hello").unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, "$bad", Some(1))
+            .unwrap();
+        check(&format!("substring_unmatched_invalid_{i}"), &packet);
+    }
     let nonlatin_patterns = ["雪", "🐱", "[雪", "A雪"];
     for (i, pattern) in nonlatin_patterns.iter().enumerate() {
         let mut packet = Packet::new(9);

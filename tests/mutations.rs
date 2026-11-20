@@ -388,10 +388,13 @@ fn java_literal_groups_keep_no_match_and_reject_unsupported_patterns_transaction
     packet.put_string("(a)(b) ab").unwrap();
     let before = packet.clone();
     for pattern in ["(a.{2,1})", "(\\p)", "(a", "a)"] {
-        assert!(packet
+        let mut invalid = Packet::new(9);
+        invalid.put_string(pattern).unwrap();
+        let unchanged = invalid.clone();
+        assert!(invalid
             .replace_substrings_java_groups(pattern, "$1", None)
             .is_err());
-        assert_eq!(packet, before);
+        assert_eq!(invalid, unchanged);
     }
     assert!(packet
         .replace_substrings_java_groups("(a)(b)", "$3", None)
@@ -426,10 +429,13 @@ fn java_named_group_rejects_invalid_names_and_references_transactionally() {
     packet.put_string("(?<pet>cat) cat").unwrap();
     let before = packet.clone();
     for pattern in ["(?<1pet>cat)", "(?<x>a)(?<x>b)"] {
-        assert!(packet
+        let mut invalid = Packet::new(9);
+        invalid.put_string(pattern).unwrap();
+        let unchanged = invalid.clone();
+        assert!(invalid
             .replace_substrings_java_groups(pattern, "x", None)
             .is_err());
-        assert_eq!(packet, before);
+        assert_eq!(invalid, unchanged);
     }
     for replacement in ["${missing}", "${pet", "${}"] {
         assert!(packet
@@ -474,12 +480,14 @@ fn java_dot_group_captures_each_match_and_bounds_expansion() {
 fn java_character_classes_reject_unsupported_forms_transactionally() {
     let mut packet = Packet::new(9);
     packet.put_string("([abc]) abc").unwrap();
-    let before = packet.clone();
     for pattern in ["([&&&a])", "([z-a])", "([])", "([a", "([\\p])", "([\\G])"] {
-        assert!(packet
+        let mut invalid = Packet::new(9);
+        invalid.put_string(pattern).unwrap();
+        let unchanged = invalid.clone();
+        assert!(invalid
             .replace_substrings_java_groups(pattern, "x", None)
             .is_err());
-        assert_eq!(packet, before);
+        assert_eq!(invalid, unchanged);
     }
     assert_eq!(
         packet
@@ -554,7 +562,6 @@ fn java_braced_hex_rejects_invalid_input_transactionally() {
 fn java_control_escapes_reject_invalid_values_without_mutation() {
     let mut packet = Packet::new(9);
     packet.put_string("(\\x41) A").unwrap();
-    let before = packet.clone();
     for pattern in [
         "(\\x4)",
         "(\\u10G0)",
@@ -569,10 +576,13 @@ fn java_control_escapes_reject_invalid_values_without_mutation() {
         "\\uD800\\uX",
         "[\\uD800\\uDC00-a]",
     ] {
-        assert!(packet
+        let mut invalid = Packet::new(9);
+        invalid.put_string(pattern).unwrap();
+        let unchanged = invalid.clone();
+        assert!(invalid
             .replace_substrings_java_groups(pattern, "x", None)
             .is_err());
-        assert_eq!(packet, before);
+        assert_eq!(invalid, unchanged);
     }
     assert_eq!(
         packet
@@ -587,7 +597,7 @@ fn java_control_escapes_reject_invalid_values_without_mutation() {
 #[test]
 fn java_optional_regex_quantifier_is_bounded_and_rejects_unsupported_forms() {
     let mut packet = Packet::new(9);
-    packet.put_string("(a?) a").unwrap();
+    packet.put_string("(a??+) a").unwrap();
     let before = packet.clone();
     assert!(packet
         .replace_substrings_java_groups("(a??+)", "x", None)
@@ -607,7 +617,7 @@ fn java_optional_regex_quantifier_is_bounded_and_rejects_unsupported_forms() {
 #[test]
 fn java_regex_repetition_bounds_growth_and_rejects_invalid_forms() {
     let mut packet = Packet::new(9);
-    packet.put_string("(a*) aaa").unwrap();
+    packet.put_string("(a*?+) aaa").unwrap();
     let before = packet.clone();
     assert!(packet
         .replace_substrings_java_groups("(a*?+)", "x", None)
@@ -682,12 +692,14 @@ fn java_line_ending_escape_rejects_character_classes_transactionally() {
 fn java_bounded_regex_repetition_rejects_invalid_bounds_transactionally() {
     let mut packet = Packet::new(9);
     packet.put_string("(a{2}) aaa").unwrap();
-    let before = packet.clone();
     for pattern in ["(a{2,1})", "(a{2147483648})", "(a{,2})", "(a{2,3}?+)"] {
-        assert!(packet
+        let mut invalid = Packet::new(9);
+        invalid.put_string(pattern).unwrap();
+        let unchanged = invalid.clone();
+        assert!(invalid
             .replace_substrings_java_groups(pattern, "x", None)
             .is_err());
-        assert_eq!(packet, before);
+        assert_eq!(invalid, unchanged);
     }
     assert_eq!(
         packet
@@ -881,6 +893,27 @@ fn java_substring_mutation_handles_unmappable_unicode() {
         1
     );
     assert_eq!(packet.read_string_at(6).unwrap(), "[A]? [A]?");
+}
+
+#[test]
+fn java_substring_regex_validation_is_lazy_when_pattern_is_absent() {
+    let mut packet = Packet::new(9);
+    packet.put_string("hello").unwrap();
+    let before = packet.bytes().to_vec();
+    assert_eq!(
+        packet
+            .replace_substrings_java("[", "$bad", Some(1))
+            .unwrap(),
+        0
+    );
+    assert_eq!(packet.bytes(), before);
+    let mut matched = Packet::new(9);
+    matched.put_string("hello [").unwrap();
+    let before = matched.bytes().to_vec();
+    assert!(matched
+        .replace_substrings_java("[", "$bad", Some(1))
+        .is_err());
+    assert_eq!(matched.bytes(), before);
 }
 #[test]
 fn lookbehind_with_unknown_maximum_rejects_without_mutation() {

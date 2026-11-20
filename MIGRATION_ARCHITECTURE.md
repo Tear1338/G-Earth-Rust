@@ -1,5 +1,9 @@
 # Rust migration architecture
 
+## Lazy substring pattern validation
+
+Before compiling a packet substring regex, a bounded read-only scan looks for the raw pattern in candidate ISO-8859-1 strings. This mirrors Java’s ordering and avoids copying or changing the packet during the precheck.
+
 ## Java substring encoding
 
 Packet substring mutation skips patterns that cannot occur in ISO-8859-1 packet strings and converts replacement characters with the Java ISO-8859-1 encoder behavior before bounded matching and replacement.

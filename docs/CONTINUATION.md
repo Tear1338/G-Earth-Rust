@@ -1,5 +1,9 @@
 # Continuation state
 
+## Next: validate lazy regex precheck
+
+The beta-29 mutation oracle, workspace tests, desktop/web Clippy and debug build pass with the read-only candidate precheck. Commit and push, then build release and inspect CI. Keep `\b{g}` matcher state and live client compatibility open.
+
 ## Next: complete Unicode mutation validation
 
 Workspace tests, desktop/web Clippy and debug compilation passed for the ISO-8859-1 substring fix. Build release and inspect CI; continue with a reproduced Java regex gap while the stateful `\b{g}` issue remains open. Live tests are the user’s responsibility.

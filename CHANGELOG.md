@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — lazy substring regex validation
+
+- Avoid rejecting an invalid substring regex when no candidate field contains the pattern, matching Java’s validation order.
+
 ## Unreleased — Unicode packet mutation
 
 - Preserve Java behavior for substring patterns and replacements outside ISO-8859-1.

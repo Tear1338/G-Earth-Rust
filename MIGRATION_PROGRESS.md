@@ -1,5 +1,9 @@
 # G-Earth Rust migration progress
 
+## Java lazy substring regex validation
+
+Beta-29 checks the raw pattern against candidate packet strings before compiling the regex. Rust now performs the same bounded candidate search: absent invalid patterns return no changes, while an invalid pattern found in a candidate is still rejected transactionally. Five beta-29 packet fixtures, the complete mutation oracle, 43 mutation tests, workspace/all-targets tests, desktop/web Clippy and debug build passed with the optimized read-only precheck. Windows desktop/web release and CI run 44654366306 passed for `9bed86f58236b6d66acaea7f7ffdd7b439ccc43c`. Real clients, protocols and extensions remain unverified.
+
 ## Java non-Latin-1 substring mutation
 
 The beta-29 API first checks for the literal pattern in ISO-8859-1 packet strings. A pattern containing an unmappable character therefore cannot match, even if its regex syntax is malformed; Rust now returns no changes instead of an encoding error. Unmappable replacement characters are encoded as Java does. Nine Java packet comparisons and 42 mutation tests passed. Workspace/all-targets, desktop/web Clippy and debug build passed. Windows desktop/web release and all eight CI jobs passed for preceding commit `49d185d79fff2eaa57ce69ba91b6f22cdcb4f4ea`. Real clients, protocols and extensions remain unverified.
@@ -745,4 +749,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Build Windows desktop/web release for the non-Latin-1 substring fix and inspect its CI. Reproduce another unsupported Java-valid regex while investigating how to preserve `Matcher.last` through quantifiers, assertions and backtracking for `\b{g}`. Use differential fixtures and retain bounded work. The user handles live tests; clients, protocols and extensions remain unverified.
+Commit and push the validated lazy substring precheck, then rebuild Windows desktop/web release and inspect CI. Investigate how to preserve `Matcher.last` through quantifiers, assertions and backtracking for `\b{g}`; use differential fixtures and retain bounded work. The user handles live tests; clients, protocols and extensions remain unverified.

@@ -1,5 +1,11 @@
 # Migration tasks
 
+## Latest: lazy Java regex validation
+
+- [x] Reproduce beta-29 behavior for invalid patterns absent from packet strings.
+- [x] Validate the read-only candidate precheck against the oracle and workspace.
+- [ ] Rebuild release and inspect CI. Stateful `\b{g}` and live compatibility remain open.
+
 ## Latest: non-Latin-1 substring mutation
 
 - [x] Compare non-Latin-1 patterns and replacement strings with beta-29 and reproduce Java ISO-8859-1 replacement behavior.
