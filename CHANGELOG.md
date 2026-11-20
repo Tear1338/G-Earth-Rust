@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — Linux IPv6 socket owner
+
+- Identify unscoped IPv6 Flash sockets from `/proc/net/tcp6`, retaining conservative handling for scoped and ambiguous addresses.
+
+
 ## Unreleased — RC4 permutation discovery
 
 - Preserve regular RC4 permutations instead of filtering them before stream validation, with ordered hash-based deduplication.

@@ -1,5 +1,10 @@
 # Rust migration architecture
 
+## Linux IPv6 ownership
+
+Unscoped IPv6 endpoint pairs use `/proc/net/tcp6` and the existing candidate-descriptor ownership check. Scope IDs are not represented in this lookup and nonzero scopes are rejected; cross-namespace and mapped-address behavior remain open.
+
+
 ## RC4 candidate deduplication
 
 Shared process scanners retain all 256-value permutations, including regular ones accepted by the beta-29 Linux path. Hash sets deduplicate within each chunk and scan page while preserving the first occurrence in output order; candidate validation still decides whether a state fits the encrypted stream.

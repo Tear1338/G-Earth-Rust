@@ -1,5 +1,10 @@
 # Compatibility with 1.5.4-beta-29
 
+## Linux IPv6 owner evidence
+
+Synthetic IPv6 table parsing and Linux-target compilation pass. Native loopback and scoped-address fixtures await Linux CI; IPv4-mapped sockets, network namespaces and real-client compatibility remain unverified.
+
+
 ## RC4 scanner parity evidence
 
 The beta-29 Linux source accepts regular permutations; a synthetic identity state now survives discovery and decrypts a frame. Extra false candidates and real-client performance remain unmeasured. Native Linux socket ownership fixtures passed in CI run 44433005283; its G-Presets retry remains pending.

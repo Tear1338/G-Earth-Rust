@@ -1,5 +1,10 @@
 # Continuation state
 
+## Next: native Linux IPv6 verification
+
+Unscoped IPv6 socket-owner parsing now supports `/proc/net/tcp6`. Confirm the native loopback and scoped-address fixtures in Linux CI, then inspect mapped IPv4 sockets and namespace behavior. Rebuild release for this change; live tests belong to the user.
+
+
 ## Next: CI retry and Linux IPv6
 
 Regular RC4 states now survive scanning; monitor G-Presets CI retry after a transient 404, benchmark realistic scan candidate volume and investigate Linux IPv6/network-namespace support. Windows release must be rebuilt for this code; live tests belong to the user.

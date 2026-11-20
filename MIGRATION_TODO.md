@@ -1,5 +1,11 @@
 # Migration tasks
 
+## Latest: Linux IPv6 socket ownership
+
+- [x] Parse Linux IPv6 socket tables and conservatively reject nonzero scope IDs; cover parsing and malformed input.
+- [ ] Verify native IPv6 loopback and scoped-address fixtures in Linux CI, assess IPv4-mapped sockets and network namespaces, and rebuild release. Live compatibility remains unverified.
+
+
 ## Latest: RC4 permutation discovery
 
 - [x] Retain regular permutations accepted by beta-29 Linux, compare a decrypting identity-state fixture and deduplicate candidates without changing order.

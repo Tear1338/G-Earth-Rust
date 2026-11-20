@@ -34,9 +34,7 @@ pub(super) fn processes_from(root: &Path) -> io::Result<Vec<ClientProcess>> {
     Ok(result)
 }
 
-#[cfg(target_os = "linux")]
-use std::net::SocketAddr;
-use std::net::{Ipv4Addr, SocketAddrV4};
+use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, SocketAddrV6};
 
 fn parse_proc_v4(value: &str) -> Option<SocketAddrV4> {
     let (address, port) = value.split_once(':')?;
@@ -50,15 +48,39 @@ fn parse_proc_v4(value: &str) -> Option<SocketAddrV4> {
         port,
     ))
 }
-fn matching_socket_inodes(table: &str, local: SocketAddrV4, remote: SocketAddrV4) -> Vec<u64> {
+fn parse_proc_v6(value: &str) -> Option<SocketAddrV6> {
+    let (address, port) = value.split_once(':')?;
+    if address.len() != 32 || port.len() != 4 {
+        return None;
+    }
+    let mut octets = [0u8; 16];
+    for (i, chunk) in address.as_bytes().as_chunks::<8>().0.iter().enumerate() {
+        let word = u32::from_str_radix(std::str::from_utf8(chunk).ok()?, 16).ok()?;
+        octets[i * 4..i * 4 + 4].copy_from_slice(&word.to_ne_bytes());
+    }
+    let port = u16::from_str_radix(port, 16).ok()?;
+    Some(SocketAddrV6::new(Ipv6Addr::from(octets), port, 0, 0))
+}
+fn matching_socket_inodes(table: &str, local: SocketAddr, remote: SocketAddr) -> Vec<u64> {
     table
         .lines()
         .filter_map(|line| {
             let fields: Vec<_> = line.split_whitespace().collect();
-            if fields.len() <= 9
-                || parse_proc_v4(fields[1])? != local
-                || parse_proc_v4(fields[2])? != remote
-            {
+            if fields.len() <= 9 {
+                return None;
+            }
+            let (entry_local, entry_remote): (SocketAddr, SocketAddr) = match (local, remote) {
+                (SocketAddr::V4(_), SocketAddr::V4(_)) => (
+                    parse_proc_v4(fields[1])?.into(),
+                    parse_proc_v4(fields[2])?.into(),
+                ),
+                (SocketAddr::V6(_), SocketAddr::V6(_)) => (
+                    parse_proc_v6(fields[1])?.into(),
+                    parse_proc_v6(fields[2])?.into(),
+                ),
+                _ => return None,
+            };
+            if entry_local != local || entry_remote != remote {
                 return None;
             }
             let inode = fields[9].parse::<u64>().ok()?;
@@ -82,10 +104,24 @@ fn tcp_owner_from(
     remote: SocketAddr,
     candidates: &[u32],
 ) -> io::Result<Option<u32>> {
-    let (SocketAddr::V4(local), SocketAddr::V4(remote)) = (local, remote) else {
-        return Ok(None);
+    let (table_name, local, remote): (&str, SocketAddr, SocketAddr) = match (local, remote) {
+        (SocketAddr::V4(local), SocketAddr::V4(remote)) => ("net/tcp", local.into(), remote.into()),
+        (SocketAddr::V6(local), SocketAddr::V6(remote))
+            if local.scope_id() == 0 && remote.scope_id() == 0 =>
+        {
+            (
+                "net/tcp6",
+                SocketAddrV6::new(*local.ip(), local.port(), 0, 0).into(),
+                SocketAddrV6::new(*remote.ip(), remote.port(), 0, 0).into(),
+            )
+        }
+        _ => return Ok(None),
     };
-    let table = fs::read_to_string(root.join("net/tcp"))?;
+    let table = match fs::read_to_string(root.join(table_name)) {
+        Ok(table) => table,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error),
+    };
     let inodes = matching_socket_inodes(&table, local, remote);
     if inodes.is_empty() {
         return Ok(None);
@@ -291,11 +327,74 @@ mod tests {
         let remote = SocketAddrV4::new(Ipv4Addr::new(127, 0, 0, 1), 4000);
         let a = u32::from_ne_bytes(local.ip().octets());
         let table = format!("header\n0: {a:08X}:0BB8 {a:08X}:0FA0 01 0:0 0:0 0 1000 0 12345\n1: {a:08X}:0BB8 {a:08X}:0FA0 01 0:0 0:0 0 1000 0 0\nmalformed\n");
-        assert_eq!(matching_socket_inodes(&table, local, remote), [12345]);
-        assert!(matching_socket_inodes(&table, remote, local).is_empty());
+        assert_eq!(
+            matching_socket_inodes(&table, local.into(), remote.into()),
+            [12345]
+        );
+        assert!(matching_socket_inodes(&table, remote.into(), local.into()).is_empty());
         assert!(parse_proc_v4("bad:0001").is_none());
         assert!(parse_proc_v4("0100007F:10000").is_none());
     }
+    #[test]
+    fn socket_table_matches_ipv6_endpoints() {
+        let local = SocketAddrV6::new(Ipv6Addr::LOCALHOST, 3000, 0, 0);
+        let remote = SocketAddrV6::new(Ipv6Addr::LOCALHOST, 4000, 0, 0);
+        let address = local
+            .ip()
+            .octets()
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|chunk| format!("{:08X}", u32::from_ne_bytes(*chunk)))
+            .collect::<String>();
+        let table = format!("0: {address}:0BB8 {address}:0FA0 01 0:0 0:0 0 1000 0 54321\n");
+        assert_eq!(
+            matching_socket_inodes(&table, local.into(), remote.into()),
+            [54321]
+        );
+        assert!(parse_proc_v6("not-an-address:0001").is_none());
+        assert!(parse_proc_v6("éééééééééééééééé:0001").is_none());
+    }
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn declines_ipv6_scope_ids_without_guessing() {
+        let local = SocketAddrV6::new(Ipv6Addr::LOCALHOST, 3000, 0, 1);
+        let remote = SocketAddrV6::new(Ipv6Addr::LOCALHOST, 4000, 0, 0);
+        assert_eq!(
+            tcp_owner_from(Path::new("/nonexistent"), local.into(), remote.into(), &[]).unwrap(),
+            None
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn identifies_a_controlled_ipv6_socket_owner_when_available() {
+        use std::net::{TcpListener, TcpStream};
+        let listener = match TcpListener::bind((Ipv6Addr::LOCALHOST, 0)) {
+            Ok(listener) => listener,
+            Err(error)
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::AddrNotAvailable | io::ErrorKind::Unsupported
+                ) =>
+            {
+                eprintln!("IPv6 loopback unavailable: {error}");
+                return;
+            }
+            Err(error) => panic!("IPv6 listener failed: {error}"),
+        };
+        let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (_server, _) = listener.accept().unwrap();
+        let owner = tcp_owner_from(
+            Path::new("/proc"),
+            client.local_addr().unwrap(),
+            client.peer_addr().unwrap(),
+            &[std::process::id()],
+        )
+        .unwrap();
+        assert_eq!(owner, Some(std::process::id()));
+    }
+
     #[cfg(target_os = "linux")]
     #[test]
     fn refuses_a_socket_shared_by_multiple_candidate_processes() {

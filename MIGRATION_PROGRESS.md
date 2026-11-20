@@ -1,5 +1,10 @@
 # G-Earth Rust migration progress
 
+## Linux IPv6 socket ownership
+
+Linux socket-owner lookup now parses `/proc/net/tcp6` for unscoped IPv6 endpoints, while preserving IPv4 behavior and refusing scoped IPv6 addresses rather than guessing. Windows-hosted parser fixtures, Linux-target Clippy, Windows platform tests and the desktop/web debug build pass. The native IPv6 loopback and scope tests are pending Linux CI; the loopback fixture reports if IPv6 is unavailable. Cross-network-namespace lookup and IPv4-mapped dual-stack behavior remain unverified. Windows desktop/web release and CI passed at preceding code commit `0cfa724`; real clients, protocols and extensions remain unverified.
+
+
 ## RC4 permutation discovery parity
 
 The beta-29 Linux scanner accepts any 256-value permutation; Rust previously rejected strongly regular states. A synthetic identity-state regression failed before the fix and now scans and decrypts a frame. The shared Windows/Linux scanner retains all permutations and uses hash-based deduplication while preserving discovery order; more false candidates can increase work, and no representative performance benchmark has been run. Windows workspace/all-targets tests and debug build, platform/Flash tests, Windows Clippy and Linux-target Clippy pass. Linux native loopback owner and shared-owner tests passed in CI run 44433005283; its G-Presets job initially received a transient 404 and has been rerun. Windows desktop/web release succeeded at preceding commit `7c26b0e`. Real clients, protocols and extensions remain unverified.
@@ -697,4 +702,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Check G-Presets CI retry for run 44433005283 and address any persistent failure. Build Windows desktop/web release for the current RC4 scanner, then benchmark candidate volume and implement or document Linux IPv6/network-namespace ownership. The user handles live tests; clients, protocols and extensions remain unverified.
+Confirm Linux CI executes the IPv6 loopback and scoped-address fixtures and correct any platform failures. Investigate IPv4-mapped dual-stack sockets and network namespaces; rebuild Windows desktop/web release for the current code. The user handles live tests; clients, protocols and extensions remain unverified.
