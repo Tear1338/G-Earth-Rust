@@ -1,5 +1,10 @@
 # Continuation state
 
+## Next: another evidenced regex gap
+
+A 2,400-case nested-repeat packet corpus agrees with beta-29; Windows release and CI passed at `30c8191`. Find another Java-valid unsupported or mismatched regex and build a differential reproducer before changing the matcher. Live client and extension tests remain with the user.
+
+
 ## Next: repeated-capture parity
 
 Selected repeated captures with surrounding context now use the tree matcher and match 3,070 beta-29 fixtures. Broaden nested and variable-width repetitions against Java, rebuild release and continue tracking scoped IPv6/network-namespace limitations. Live tests belong to the user.

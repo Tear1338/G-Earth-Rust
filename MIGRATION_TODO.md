@@ -1,5 +1,11 @@
 # Migration tasks
 
+## Latest: nested repeated-capture corpus
+
+- [x] Compare 2,400 additional selected nested and variable-width repeated-capture cases against beta-29; Windows desktop/web release and CI passed at `30c8191`.
+- [ ] Find and reproduce another Java-valid unsupported regex; live compatibility, scoped IPv6 and cross-network-namespace ownership remain open.
+
+
 ## Latest: repeated captures in context
 
 - [x] Route selected repeated captures with surrounding captures, optional atoms, anchors or empty groups through the tree matcher; compare 3,070 beta-29 packet fixtures.

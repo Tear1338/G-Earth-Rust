@@ -1328,6 +1328,23 @@ public class JavaMutationOracle {
             finally { System.setOut(original); }
             emit("substring_repeated_exhaustive_" + i, sample);
         }
+        String[] nestedContextCases = {"((a)?b)*c", "((a*)b)+c", "((ab)+c)*d", "((a|b)c)*d", "(x)((a?)b)*", "((a)?b)*(c)", "(a(b)?)+c", "((a|b)+)(c)", "((a*)+)(c)", "((a?)*)(b)", "((a)b?)*c", "(a(bc)*)+d", "((ab)?c)+d", "((a)b*)*c", "((a*)b){1,2}c", "((ab)+)?c", "(x?)(a(b)*)+", "(a(b)?)*(c)", "(a(b)*){0,2}(c)", "(a(b|c)*)*(d)"};
+        char[] nestedContextAlphabet = {'a', 'b', 'c'};
+        for (int i = 0; i < nestedContextCases.length * 40 * 3; i++) {
+            String pattern = nestedContextCases[i % nestedContextCases.length];
+            int n = (i / nestedContextCases.length) % 40;
+            int length = n < 1 ? 0 : n < 4 ? 1 : n < 13 ? 2 : 3;
+            int digits = n - (length == 0 ? 0 : length == 1 ? 1 : length == 2 ? 4 : 13);
+            StringBuilder input = new StringBuilder();
+            for (int j = 0; j < length; j++) { input.append(nestedContextAlphabet[digits % 3]); digits /= 3; }
+            int replacementIndex = i / (nestedContextCases.length * 40);
+            String replacement = replacementIndex == 0 ? "[$0]" : replacementIndex == 1 ? "<$1>" : "{$2}";
+            HPacket sample = new HPacket(9); sample.appendString(input + pattern + input.toString()); sample.setReadIndex(7);
+            java.io.PrintStream original = System.out;
+            try { System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream())); sample.replaceXSubstrings(pattern, replacement, 1); }
+            finally { System.setOut(original); }
+            emit("substring_nested_context_" + i, sample);
+        }
         String[] lineEndingCases = {"\\R", "\\R\\n", "\\R?\\n", "\\R+\\n", "(?:\\R)?\\n", "(?:\\R)+\\n", "(?:x\\R)*\\n", "(?:\\R\\n)+", "(?:\\R){1}\\n", "(?:\\R){0,1}\\n", "(?:\\R){1,2}?\\n", "(\\R)+\\n", "(?:(\\R))+\\n", "(?:\\R|x)+\\n", "(?=\\R)\\R", "(?<=\\R)\\n", "\\R++\\n", "(?x)\\R #comment\n +", "\\Q\\R\\E", "(?d)\\R"};
         String[] lineEndingInputs = {"\r\n", "\r\n\n", "\r\r\n", "x\r\n", "x\r\n\n", "\u0085", "\r\nx", "\u000b\u000c"};
         for (int i = 0; i < 480; i++) {

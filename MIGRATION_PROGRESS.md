@@ -1,5 +1,15 @@
 # G-Earth Rust migration progress
 
+## Nested repeated captures: expanded evidence
+
+An additional 2,400 beta-29 packet cases covering selected nested and variable-width repeated groups match the installed Java API, including replacements for groups zero, one and two. The existing mutation oracle, 40 mutation tests and Clippy passed. Windows desktop/web release and the full CI passed at code commit `30c81910cba6064556831c67a7922f4d6ee3e359`; this commit only adds fixtures and documentation. These tests do not establish full regex parity or real-client and extension compatibility.
+
+
+## Release after repeated-capture support
+
+Windows GNU desktop/web release succeeded at `30c81910cba6064556831c67a7922f4d6ee3e359`; the Ubuntu core and Java compatibility CI jobs passed. Java 21 rejects several apparent variable-length lookbehinds currently rejected by Rust, so those are not evidence of a missing feature. Further nested repetition and real client/extension compatibility remain open.
+
+
 ## Java repeated captures in surrounding context
 
 Selected Java regex patterns with repeated captures surrounded by other captures, optional atoms, anchors or empty groups now use the tree matcher instead of being rejected. The installed beta-29 packet oracle agrees on 3,070 additional cases, including first and second capture replacements and all short strings over a three-character alphabet for selected patterns; 40 mutation tests pass. The workspace/all-targets suite, 164 desktop/web library tests (7 ignored), Clippy and the desktop/web debug build also passed. This evidence covers those forms only: other regex structures remain unsupported. The Windows desktop/web release and full CI passed at preceding code commit `7f52485`; native Linux CI also explicitly verified IPv6 loopback and both mapped dual-stack fixtures. Scoped IPv6, cross-network-namespace attribution and real clients, protocols and extensions remain unverified.
@@ -717,4 +727,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Build Windows desktop/web release for the repeated-capture change. Compare further nested and variable-width repeated captures against beta-29, preserving existing limits and transactionality. Scoped IPv6 and cross-network-namespace ownership remain unresolved. The user handles live tests; clients, protocols and extensions remain unverified.
+Find another concrete Java-valid regex construct still rejected or mismatched by Rust, add a beta-29 differential reproducer, then implement and test it without weakening bounds. Scoped IPv6 and cross-network-namespace ownership remain unresolved. The user handles live tests; clients, protocols and extensions remain unverified.

@@ -3287,6 +3287,67 @@ fn mutations_match_original_java_packets_and_cursor() {
             .unwrap_or_else(|e| panic!("case {i} pattern {pattern}: {e:?}"));
         check(&format!("substring_repeated_exhaustive_{i}"), &packet);
     }
+    let nested_context_cases = [
+        "((a)?b)*c",
+        "((a*)b)+c",
+        "((ab)+c)*d",
+        "((a|b)c)*d",
+        "(x)((a?)b)*",
+        "((a)?b)*(c)",
+        "(a(b)?)+c",
+        "((a|b)+)(c)",
+        "((a*)+)(c)",
+        "((a?)*)(b)",
+        "((a)b?)*c",
+        "(a(bc)*)+d",
+        "((ab)?c)+d",
+        "((a)b*)*c",
+        "((a*)b){1,2}c",
+        "((ab)+)?c",
+        "(x?)(a(b)*)+",
+        "(a(b)?)*(c)",
+        "(a(b)*){0,2}(c)",
+        "(a(b|c)*)*(d)",
+    ];
+    let nested_alphabet = ['a', 'b', 'c'];
+    for i in 0..nested_context_cases.len() * 40 * 3 {
+        let pattern = nested_context_cases[i % nested_context_cases.len()];
+        let n = (i / nested_context_cases.len()) % 40;
+        let length = if n < 1 {
+            0
+        } else if n < 4 {
+            1
+        } else if n < 13 {
+            2
+        } else {
+            3
+        };
+        let mut digits = n - match length {
+            0 => 0,
+            1 => 1,
+            2 => 4,
+            _ => 13,
+        };
+        let mut input = String::new();
+        for _ in 0..length {
+            input.push(nested_alphabet[digits % 3]);
+            digits /= 3;
+        }
+        let replacement = match i / (nested_context_cases.len() * 40) {
+            0 => "[$0]",
+            1 => "<$1>",
+            _ => "{$2}",
+        };
+        let mut packet = Packet::new(9);
+        packet
+            .put_string(&format!("{input}{pattern}{input}"))
+            .unwrap();
+        packet.set_cursor(7).unwrap();
+        packet
+            .replace_substrings_java(pattern, replacement, Some(1))
+            .unwrap_or_else(|e| panic!("case {i} pattern {pattern}: {e:?}"));
+        check(&format!("substring_nested_context_{i}"), &packet);
+    }
     let line_ending_cases = [
         "\\R",
         "\\R\\n",
