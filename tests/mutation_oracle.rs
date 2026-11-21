@@ -3932,6 +3932,30 @@ fn mutations_match_original_java_packets_and_cursor() {
     utf16_long.reset();
     assert_eq!(utf16_long.read_long_bytes().unwrap(), encoded);
     assert_eq!(utf16_long.read_i32().unwrap(), 123);
+    let unicode_old_values = ["a", "", "雪", "🐱"];
+    let unicode_new_values = ["雪", "🐱", "🐱🐱", "A🐱B", ""];
+    for (old_index, old) in unicode_old_values.iter().enumerate() {
+        for (new_index, new) in unicode_new_values.iter().enumerate() {
+            for (limit_index, limit) in [Some(0), Some(1), None].iter().enumerate() {
+                let mut sample = Packet::new(5);
+                sample
+                    .put_string("a")
+                    .unwrap()
+                    .put_string("a")
+                    .unwrap()
+                    .put_string("")
+                    .unwrap()
+                    .put_string("a")
+                    .unwrap();
+                sample.set_cursor(7).unwrap();
+                sample.replace_strings_java(old, new, *limit).unwrap();
+                check(
+                    &format!("strings_unicode_{old_index}_{new_index}_{limit_index}"),
+                    &sample,
+                );
+            }
+        }
+    }
     let values = ["", "a", "abc", "é"];
     let old_values = ["a", "abc", "é"];
     let limits = [Some(0), Some(1), Some(2), None];
@@ -3955,10 +3979,16 @@ fn mutations_match_original_java_packets_and_cursor() {
                     .put_string("")
                     .unwrap();
                 sample.set_cursor(7).unwrap();
+                let mut compatible = sample.clone();
+                compatible.replace_strings_java(old, new, *limit).unwrap();
                 sample.replace_strings(old, new, *limit).unwrap();
                 check(
                     &format!("strings_{old_index}_{new_index}_{limit_index}"),
                     &sample,
+                );
+                check(
+                    &format!("strings_{old_index}_{new_index}_{limit_index}"),
+                    &compatible,
                 );
             }
         }

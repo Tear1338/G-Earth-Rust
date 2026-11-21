@@ -4590,6 +4590,69 @@ impl Packet {
         Ok(count)
     }
 
+    /// Java `HPacket.replaceXStrings`, including its UTF-16 scan advance and
+    /// ISO-8859-1 replacement encoding. Packet edits remain transactional.
+    pub fn replace_strings_java(
+        &mut self,
+        old: &str,
+        new: &str,
+        limit: Option<usize>,
+    ) -> Result<usize> {
+        self.ensure_eva()?;
+        if limit == Some(0) {
+            return Ok(0);
+        }
+        let Ok(old) = latin1_encode(old) else {
+            return Ok(0);
+        };
+        let Ok(old_len) = u16::try_from(old.len()) else {
+            return Ok(0);
+        };
+        let new_bytes = latin1_encode_java(new);
+        let new_units = new.encode_utf16().count();
+        let mut candidate = self.clone();
+        let mut offset = self.format.body_offset();
+        let mut count = 0;
+        let mut moved = 0usize;
+        while offset + 2 + old.len() <= candidate.bytes.len() {
+            if candidate.bytes[offset..offset + 2] == old_len.to_be_bytes()
+                && candidate.bytes[offset + 2..offset + 2 + old.len()] == old
+            {
+                let end = offset + 2 + old.len();
+                if new_bytes.len() != old.len() {
+                    moved = moved
+                        .checked_add(candidate.bytes.len() - end)
+                        .filter(|n| *n <= MAX_FRAME * 16)
+                        .ok_or_else(|| error("bulk string replacement work limit exceeded"))?;
+                }
+                // When replacing an empty string, Java's growing copy loop
+                // leaves the first suffix byte at its old array position.
+                let suffix = offset + 2 + new_bytes.len();
+                let java_byte =
+                    if old.is_empty() && !new_bytes.is_empty() && end < candidate.bytes.len() {
+                        Some(candidate.bytes.get(suffix).copied().unwrap_or(0))
+                    } else {
+                        None
+                    };
+                candidate.replace_short_bytes(offset, &new_bytes)?;
+                if let Some(byte) = java_byte {
+                    candidate.bytes[suffix] = byte;
+                }
+                offset = offset.saturating_add(2).saturating_add(new_units);
+                count += 1;
+                if limit == Some(count) {
+                    break;
+                }
+            } else {
+                offset += 1;
+            }
+        }
+        if count != 0 {
+            *self = candidate;
+        }
+        Ok(count)
+    }
+
     /// Replace literal substrings in length-prefixed Latin-1 fields, scanning
     /// from the end as beta-29 does. Java regex patterns and replacement groups
     /// are deliberately rejected until their semantics are implemented.

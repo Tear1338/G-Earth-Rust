@@ -1,5 +1,9 @@
 # G-Earth Rust migration progress
 
+## Java bulk string mutation
+
+A separate `replace_strings_java` implements beta-29 bulk string replacement for non-Latin-1 input and UTF-16 scan distances. It also reproduces the original empty-string growth quirk that can alter the first byte of the following field; the existing strict API retains its safer behavior. Sixty new Java packet fixtures and 48 existing Latin-1 cases agree with beta-29; the mutation oracle, workspace/all-targets suite, desktop/web Clippy and debug build passed. The Java variant preserves Rust’s bounded transactional behavior and cursor clamping, so it does not claim parity for oversized fields or a cursor beyond the new packet end. Windows release and CI run 44656055311 passed for preceding commit `f2f2cd7dc22d720dbff31a1e9fdde5b3ede95ee4`. Real clients, protocols and extensions remain unverified.
+
 ## Bounded Flash final decryption
 
 After a Flash key is validated by the asynchronous worker, decryption of the buffered ciphertext now also runs in resumable worker slices of at most 1 MiB of RC4 work. Installation transfers the prepared plaintext and the advanced reader state without decrypting the entire buffer on the relay thread. Synthetic tests cover a frame over 2 MiB, reader/writer state, cancellation between slices, revalidation on buffer growth, and existing ambiguity/ordering behavior; 35 Flash discovery tests passed. The worker retains a separate plaintext copy, so memory usage increases by up to the bounded bootstrap size (16 MiB plus framing); allocation/copy time is not bounded by the RC4 slice. Workspace/all-targets tests and 169 desktop/web library tests passed (7 ignored); Desktop/web Clippy and debug build passed. Windows packaging and development release assets now include the embedded Unicode data license. CI run 44655132659, including its Windows release build, passed for preceding commit `bc1a61caad624ea14342412f9f05c67e91e5ff2e`. Live Flash client behavior is unverified and will be tested by the user.
@@ -753,4 +757,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Commit and push the validated sliced Flash final decryption and Unicode notice packaging changes, then rebuild Windows desktop/web release and inspect CI. Investigate remaining Flash scheduling and `Matcher.last` state for `\b{g}` with differential fixtures. The user handles live tests; clients, protocols and extensions remain unverified.
+Commit and push the validated Java bulk string mutation, then rebuild Windows desktop/web release and inspect CI. Investigate remaining cursor/size differences, Flash scheduling and `Matcher.last` state for `\b{g}`. The user handles live tests; clients, protocols and extensions remain unverified.

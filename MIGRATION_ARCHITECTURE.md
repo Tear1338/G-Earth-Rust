@@ -1,5 +1,9 @@
 # Rust migration architecture
 
+## Java bulk string replacement
+
+The explicit Java-compatible bulk API scans the evolving packet, converts replacements with Java ISO-8859-1 semantics, advances by UTF-16 units, and reproduces Java’s empty-field growth quirk. It uses transactional mutation and a bounded total suffix movement; the existing strict bulk API remains separate.
+
 ## Flash verified-buffer installation
 
 The asynchronous verification worker decrypts the verified ciphertext in resumable RC4 slices and transfers plaintext plus the advanced reader state to the relay. It retains encrypted and decrypted buffers during this phase; copying and allocation are not covered by the RC4 slice budget. The explicit synchronous recovery API remains synchronous.

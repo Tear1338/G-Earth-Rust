@@ -1,5 +1,9 @@
 # Compatibility with 1.5.4-beta-29
 
+## Java bulk string replacement evidence
+
+Sixty Unicode/empty-field packet cases plus 48 existing Latin-1 cases match the beta-29 API. Rust still bounds replacement work and clamps its cursor, so oversized cases and Java’s out-of-range cursor behavior remain different.
+
 ## Flash final decryption evidence
 
 Synthetic fixtures cover multi-slice final decryption, reader/writer state, cancellation and revalidation on growing ciphertext. This changes scheduling rather than the cryptographic protocol and does not establish real-client compatibility.

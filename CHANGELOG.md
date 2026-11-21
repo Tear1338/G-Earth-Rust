@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — Java bulk string compatibility
+
+- Add a Java-compatible bulk string replacement method with UTF-16 scanning, ISO-8859-1 encoding and the tested empty-field growth quirk.
+
 ## Unreleased — Flash bootstrap decryption
 
 - Move final asynchronous Flash bootstrap decryption to resumable worker slices after key verification.

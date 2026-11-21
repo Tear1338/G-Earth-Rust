@@ -254,6 +254,27 @@ fn growing_empty_string_does_not_corrupt_the_following_field() {
 }
 
 #[test]
+fn java_bulk_string_replacement_uses_utf16_scan_distance() {
+    let mut packet = Packet::new(5);
+    packet.put_string("a").unwrap().put_string("a").unwrap();
+    assert_eq!(packet.replace_strings_java("a", "🐱", None).unwrap(), 1);
+    packet.reset();
+    assert_eq!(packet.read_string().unwrap(), "?");
+    assert_eq!(packet.read_string().unwrap(), "a");
+    let before = packet.clone();
+    assert_eq!(packet.replace_strings_java("雪", "x", None).unwrap(), 0);
+    assert_eq!(packet, before);
+}
+
+#[test]
+fn java_bulk_replacement_preserves_empty_growth_quirk() {
+    let mut packet = Packet::new(5);
+    packet.put_string("").unwrap().put_string("a").unwrap();
+    assert_eq!(packet.replace_strings_java("", "x", Some(1)).unwrap(), 1);
+    assert_eq!(&packet.bytes()[6..], &[0, 1, b'x', 1, 1, b'a']);
+}
+
+#[test]
 fn substring_replacement_scans_from_the_end_and_is_transactional() {
     let mut packet = Packet::new(9);
     packet

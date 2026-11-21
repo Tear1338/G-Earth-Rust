@@ -2042,6 +2042,19 @@ public class JavaMutationOracle {
         HPacket utf16Long = new HPacket(9);
         utf16Long.appendLongString("水🐱", StandardCharsets.UTF_16BE).appendInt(123);
         emit("utf16_long", utf16Long);
+        String[] unicodeOldValues = {"a", "", "雪", "🐱"};
+        String[] unicodeNewValues = {"雪", "🐱", "🐱🐱", "A🐱B", ""};
+        for (int oldIndex = 0; oldIndex < unicodeOldValues.length; oldIndex++) {
+            for (int newIndex = 0; newIndex < unicodeNewValues.length; newIndex++) {
+                for (int limitIndex = 0; limitIndex < 3; limitIndex++) {
+                    HPacket sample = new HPacket(5);
+                    sample.appendString("a").appendString("a").appendString("").appendString("a");
+                    sample.setReadIndex(7);
+                    sample.replaceXStrings(unicodeOldValues[oldIndex], unicodeNewValues[newIndex], new int[]{0, 1, -1}[limitIndex]);
+                    emit("strings_unicode_" + oldIndex + "_" + newIndex + "_" + limitIndex, sample);
+                }
+            }
+        }
         String[] oldValues = {"a", "abc", "é"};
         String[] values = {"", "a", "abc", "é"};
         int[] limits = {0, 1, 2, -1};

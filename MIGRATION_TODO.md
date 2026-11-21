@@ -1,5 +1,11 @@
 # Migration tasks
 
+## Latest: Java bulk string replacement
+
+- [x] Add a separate beta-29-compatible bulk string method with Unicode encoding, UTF-16 scan advance and empty-string growth behavior; compare Java fixtures.
+- [x] Complete workspace and desktop/web checks and rerun the Java oracle.
+- [ ] Rebuild release and inspect CI. Cursor and size-limit differences remain open; live testing belongs to the user.
+
 ## Latest: Flash final decryption
 
 - [x] Move asynchronous Flash final-buffer decryption into resumable bounded RC4 worker slices; test state, cancellation and buffer-growth revalidation.

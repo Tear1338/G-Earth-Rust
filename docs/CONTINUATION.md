@@ -1,5 +1,9 @@
 # Continuation state
 
+## Next: validate Java bulk string mutation
+
+The workspace and desktop/web checks and Java oracle pass for the Java-compatible bulk string method. Commit and push, then rebuild release and inspect CI. Cursor and large-input differences, `\b{g}`, macOS support and real-client compatibility remain open.
+
 ## Next: validate Flash final decryption
 
 Workspace and desktop/web checks passed for sliced final Flash decryption; commit and push, rebuild release and inspect CI. The worker temporarily holds an additional bounded plaintext copy. The user handles real-client tests.
