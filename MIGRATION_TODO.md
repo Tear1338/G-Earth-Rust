@@ -1,5 +1,10 @@
 # Migration tasks
 
+## Latest: macOS process discovery
+
+- [x] Implement read-only libproc process enumeration and executable filtering; cross-check macOS target.
+- [ ] Verify native self-enumeration in CI, then implement read-only bounded macOS memory scanning, socket ownership and hosts/proxy lifecycle. Live tests belong to the user.
+
 ## Latest: native macOS CI
 
 - [x] Add a native macOS workspace, desktop/web test, Clippy and release-build job.

@@ -1,5 +1,9 @@
 # G-Earth Rust migration progress
 
+## macOS process discovery
+
+Read-only native macOS process enumeration now uses libproc to list PIDs and executable paths and selects Habbo and Flash Player executable basenames. A native self-enumeration test is included; Windows-hosted name tests, aarch64 macOS cross-check and Clippy, Windows workspace/all-targets tests, desktop/web Clippy and debug compilation pass. Native execution awaits the next macOS CI run. The previous macOS CI has passed workspace and desktop/web library tests and Clippy; its release build is running. macOS memory scanning, socket ownership, privileged hosts/proxy lifecycle and live compatibility are still missing or unverified. The earlier Java compatibility CI run 44965973810 passed on retry.
+
 ## Native macOS validation
 
 A new macOS GitHub Actions job runs workspace/all-targets tests, desktop/web library tests, Clippy and a desktop/web release build on a native macOS runner. The workflow YAML was parsed locally; actual macOS execution is pending after push. This does not implement macOS Flash discovery, privileged proxy/hosts handling or establish real-client compatibility. The prior failed Java compatibility run 44965973810 passed on retry after a JavaFX HTTP 404; CI and Windows release for `93c99e1` remain in progress.
@@ -781,4 +785,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Commit and push native macOS CI, then inspect its first run and fix actual macOS compilation or test failures. Implement missing macOS Flash discovery and privileged hosts/proxy lifecycle; continue Java size differences and `Matcher.last` for `\b{g}`. The user handles live tests; clients, protocols and extensions remain unverified.
+Commit and push native macOS process enumeration, then inspect its macOS CI self-process result and release build. Implement bounded, cancellable read-only Mach memory-region scanning with a controlled self-process fixture; then address socket ownership and privileged hosts/proxy lifecycle. Continue Java size differences and `Matcher.last` for `\b{g}`. The user handles live tests; clients, protocols and extensions remain unverified.

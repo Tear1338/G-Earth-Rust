@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — macOS process discovery
+
+- Add read-only native macOS enumeration of Habbo and Flash player processes.
+
 ## Unreleased — macOS validation
 
 - Add native macOS tests, Clippy and a desktop/web release build to CI.

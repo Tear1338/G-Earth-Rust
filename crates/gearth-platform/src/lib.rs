@@ -6,6 +6,8 @@ mod hotkeys;
 mod ip_mapping;
 #[cfg(any(target_os = "linux", test))]
 mod linux;
+#[cfg(any(target_os = "macos", test))]
+mod macos;
 mod process_tree;
 #[cfg(windows)]
 pub use file_dialog::{choose_file, FileKind};
@@ -187,11 +189,15 @@ pub fn habbo_processes() -> io::Result<Vec<ClientProcess>> {
     {
         linux::processes_from(std::path::Path::new("/proc"))
     }
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(target_os = "macos")]
+    {
+        macos::processes()
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
-            "automatic Flash memory discovery currently requires Windows",
+            "automatic client process discovery is unavailable on this platform",
         ))
     }
 }
@@ -243,7 +249,7 @@ pub fn scan_habbo_from_with_limit(
         let _ = (pid, address, cancel, max_tables);
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
-            "automatic Flash memory discovery currently requires Windows",
+            "automatic Flash memory scanning is unavailable on this platform",
         ))
     }
 }

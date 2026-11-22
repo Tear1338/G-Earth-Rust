@@ -1,5 +1,9 @@
 # Compatibility with 1.5.4-beta-29
 
+## macOS process discovery evidence
+
+Executable name filtering passes local fixtures; aarch64 macOS cross-check and Clippy pass. A self-process libproc test awaits native macOS CI. This does not yet provide memory scanning or a working client relay.
+
 ## macOS validation status
 
 A native macOS CI job has been added and awaits its first run. The proxy/hosts lifecycle, Flash process discovery and real client compatibility remain incomplete or unverified.

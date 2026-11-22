@@ -1286,6 +1286,7 @@ dependencies = [
 name = "gearth-platform"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "sha1 0.10.7",
  "windows-sys 0.61.2",
 ]

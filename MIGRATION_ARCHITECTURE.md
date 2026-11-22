@@ -1,5 +1,9 @@
 # Rust migration architecture
 
+## macOS process enumeration
+
+The platform crate uses macOS libproc to enumerate PIDs and read executable paths, selecting known Habbo and Flash player basenames without changing processes. Memory scanning and socket-owner attribution remain separate unsupported steps.
+
 ## macOS validation
 
 A native macOS CI job checks the workspace and desktop/web build, but native compilation and synthetic tests do not imply that missing process discovery, host mapping or proxy lifecycle support is implemented.

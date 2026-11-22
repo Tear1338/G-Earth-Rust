@@ -1,5 +1,9 @@
 # Continuation state
 
+## Next: macOS memory scanner
+
+Commit and push native macOS process enumeration, inspect its macOS CI self-process result and release build. Then implement bounded, cancellable read-only Mach memory-region scanning with a controlled self-process fixture, retaining explicit permission failures; socket ownership and privileged host/proxy lifecycle remain open.
+
 ## Next: native macOS CI
 
 Commit and push the native macOS CI job, inspect its first run and repair any actual compilation or test failures. Implement macOS Flash process discovery and privileged host/proxy lifecycle separately; real clients remain for the user to test.
