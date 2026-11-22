@@ -1,5 +1,13 @@
 # Migration tasks
 
+## Latest: Beta-29 Inactive Extension Rows, Confirmation Dialogs, Colorized Console, Store UX & Scheduler/Injection Parity
+
+- [x] Keep disconnected installed extensions as inactive rows with **Restart (`ButtonReload.png`)** + **Uninstall (`ButtonDelete.png`)** and beta-29 confirmation dialog (`Do not ask again`), plus modal approval popup for unknown external extensions (`Remember my choice`).
+- [x] Parse and colorize beta-29 Extension Console `[color]` tags (`logger.css` palette + ` --> ` prefix) with Clear/Copy buttons.
+- [x] Auto-load G-ExtensionStore catalog on open, auto-launch newly installed Store extensions, and add cross-platform **Open folder** (`explorer`/`open`/`xdg-open`).
+- [x] Highlight edited Scheduler rows in `.tableRowBlue` with vertical column dividers and report multi-packet corrupted line indices (`isCorrupted: True -> ...`) in Injection.
+- [ ] External / user-run boundary only: live official-client end-to-end sessions (Flash AIR, Origins, Unity WebGL, Nitro, real G-Presets/QX Scripter/G-Python gameplay), optional Chrome TLS JA3/JA4 impersonation (BoringSSL) if a live hotel rejects `rustls`, OpenJDK internal stateful `\b{g}` quirk, and paid OS code-signing certificates.
+
 ## Latest: Full beta-29 Extension Lifecycle, CLI Flags, PortChecker & macOS Privileged Hosts
 
 - [x] Support all 6 beta-29 extension types (`.jar`, `.py`, `.py3`, `.exe`, `.sh`, `.js`), permanent installation into `extensions/` with 12-digit unique suffix, startup auto-launch of installed standalone & Store extensions, and separate Disconnect (`ButtonExit.png`) vs Uninstall (`ButtonDelete.png`) actions.

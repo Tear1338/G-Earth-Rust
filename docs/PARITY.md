@@ -1,5 +1,11 @@
 # Compatibility with 1.5.4-beta-29
 
+## Beta-29 Inactive Extension Rows, Confirmation Dialogs, Colorized Console, Store UX & Scheduler/Injection Parity
+
+- Disconnected installed extensions remain listed in `.tableRowInactive` with **Restart (`ButtonReload.png`)** and **Uninstall (`ButtonDelete.png`)** actions guarded by the localized beta-29 confirmation dialog (`Do not ask again` persisted); unknown external extensions open the localized approval popup (`Remember my choice`).
+- Extension Console parses all 14 beta-29 `logger.css` `[color]` tags and `Title --> message` announcements with Clear/Copy controls; G-ExtensionStore auto-loads its catalog on open, auto-launches newly installed extensions, and exposes **Open folder** (`explorer` / `open` / `xdg-open`).
+- Scheduler highlights the row being edited in `.tableRowBlue` with vertical grid dividers; Injection reports 0-based corrupted line indices (`isCorrupted: True -> 0, 2`) on multi-packet input.
+
 ## Full beta-29 Extension Lifecycle, CLI Flags, PortChecker & macOS Privileged Hosts
 
 - Supported all 6 beta-29 extension file types (`.jar`, `.py`, `.py3`, `.exe`, `.sh`, `.js`) in both native file pickers and `ExtensionHost::launch`, added permanent installation into `extensions/` with unique 12-digit suffixes, automatic startup launch of installed standalone & Store extensions, and separate **Disconnect (`ButtonExit.png`)** vs **Uninstall (`ButtonDelete.png`)** actions.

@@ -14,6 +14,7 @@ use std::{
 };
 enum Outcome {
     Catalog(Catalog),
+    Installed(Box<Installed>),
     Changed(String),
 }
 enum Action {
@@ -35,6 +36,7 @@ pub struct StoreUi {
     installed: Vec<Installed>,
     worker: Option<Receiver<Result<Outcome, String>>>,
     initialized: bool,
+    catalog_auto_requested: bool,
     search: String,
     sort: Sort,
     outdated: bool,
@@ -52,6 +54,7 @@ impl StoreUi {
             installed: Vec::new(),
             worker: None,
             initialized: false,
+            catalog_auto_requested: false,
             search: String::new(),
             sort: Sort::Rating,
             outdated: false,
@@ -84,6 +87,21 @@ impl StoreUi {
             self.refresh(status);
             self.initialized = true;
         }
+        if !self.catalog_auto_requested && self.catalog.is_none() && self.worker.is_none() {
+            self.catalog_auto_requested = true;
+            let (sender, receiver) = mpsc::channel();
+            self.worker = Some(receiver);
+            *status = "Loading extension catalogue...".into();
+            std::thread::spawn(move || {
+                let result = Catalog::fetch(
+                    extension_store::STORE_SOURCE,
+                    extension_store::STORE_VERSION,
+                )
+                .map(Outcome::Catalog)
+                .map_err(|error| error.to_string());
+                let _ = sender.send(result);
+            });
+        }
         if let Some(worker) = &self.worker {
             ui.ctx()
                 .request_repaint_after(std::time::Duration::from_millis(100));
@@ -94,6 +112,39 @@ impl StoreUi {
                             *status =
                                 format!("Loaded {} store extensions", catalog.extensions.len());
                             self.catalog = Some(catalog);
+                        }
+                        Ok(Outcome::Installed(record)) => {
+                            self.refresh(status);
+                            if let Some(host) = host {
+                                let filename = record
+                                    .directory
+                                    .file_name()
+                                    .and_then(|name| name.to_str())
+                                    .unwrap_or("");
+                                match host.launch_command(
+                                    &record.command,
+                                    &record.directory.join("extension"),
+                                    filename,
+                                    &record.title,
+                                    java,
+                                ) {
+                                    Ok(process) => {
+                                        processes.push(process);
+                                        *status = format!(
+                                            "Installed & launched {} {}",
+                                            record.title, record.version
+                                        );
+                                    }
+                                    Err(error) => {
+                                        *status = format!(
+                                            "Installed {} {} (launch failed: {error})",
+                                            record.title, record.version
+                                        );
+                                    }
+                                }
+                            } else {
+                                *status = format!("Installed {} {}", record.title, record.version);
+                            }
                         }
                         Ok(Outcome::Changed(message)) => {
                             *status = message;
@@ -348,7 +399,16 @@ impl StoreUi {
                         });
                 }
                 ui.separator();
-                ui.strong(i18n.text("rust.store.installed_versions"));
+                ui.horizontal(|ui| {
+                    ui.strong(i18n.text("rust.store.installed_versions"));
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button(i18n.text("ext.store.overview.folder")).clicked() {
+                            if let Err(error) = gearth_platform::open_folder(&self.root) {
+                                *status = error.to_string();
+                            }
+                        }
+                    });
+                });
                 ui.label(i18n.text("rust.store.installed_hint"));
                 egui::ScrollArea::vertical()
                     .id_salt("store-installed")
@@ -388,12 +448,7 @@ impl StoreUi {
                                 format!("Installing {} {}...", extension.title, extension.version);
                             std::thread::spawn(move || {
                                 let result = extension_store::install(&catalog, &extension, &root)
-                                    .map(|record| {
-                                        Outcome::Changed(format!(
-                                            "Installed {} {}",
-                                            record.title, record.version
-                                        ))
-                                    })
+                                    .map(|record| Outcome::Installed(Box::new(record)))
                                     .map_err(|error| error.to_string());
                                 let _ = sender.send(result);
                             });

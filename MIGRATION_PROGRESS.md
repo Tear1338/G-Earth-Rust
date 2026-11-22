@@ -1,5 +1,12 @@
 # G-Earth Rust migration progress
 
+## Beta-29 Inactive Extension Rows, Confirmation Dialogs, Colorized Console, Store UX & Scheduler/Injection Parity
+
+- **Inactive installed extension rows + Restart (`ButtonReload.png`) + Confirmation Dialogs (`src/desktop.rs`, `src/theme_ui.rs`, `resources/ui/ButtonReload.png`)**: Disconnected installed extensions now remain visible in `.tableRowInactive` with **Restart** (`ButtonReload.png`) and **Uninstall** (`ButtonDelete.png`) buttons (exact `ExtensionItemContainer.java` parity). Uninstalling prompts with the localized beta-29 confirmation dialog (`alert.confirmation.button.donotaskagain` persisted in settings), and unauthenticated external extensions trigger the localized approval popup (`alert.extconnection.content` + `alert.confirmation.button.remember`, matching `NetworkExtensionAuthenticator.java`).
+- **Colorized Extension Console (`src/desktop.rs`)**: Implemented beta-29 `ExtensionLoggerController` / `logger.css` `[color]` tag parsing (all 14 named colors + `Title --> message` split) with **Clear** and **Copy** controls.
+- **G-ExtensionStore UX (`src/store_ui.rs`, `crates/gearth-platform/src/file_dialog.rs`)**: Auto-loads the catalog on window open, auto-launches newly installed Store extensions immediately, and adds the beta-29 **Open folder** button (`ext.store.overview.folder` via native Explorer / Finder / `xdg-open`).
+- **Scheduler & Injection polish (`src/desktop.rs`, `src/injection.rs`)**: Scheduler highlights the row being edited in `.tableRowBlue` with full grid lines (`ScheduleItemContainer.java` parity), and multi-packet Injection reports exact 0-based corrupted line indices (`isCorrupted: True -> 0, 2`, matching `InjectionController.java`).
+
 ## Full beta-29 Extension Lifecycle, CLI Flags, PortChecker & macOS Privileged Hosts
 
 - **Extension persistence, startup auto-launch & all 6 file types (`src/extension_host.rs`, `src/desktop.rs`, `crates/gearth-platform/src/file_dialog.rs`)**: Added full support for all 6 beta-29 extension formats (`.jar`, `.py`, `.py3`, `.exe`, `.sh`, `.js` — enabling native/C# `.exe` extensions like **QX Scripter**), permanent installation into `extensions/` with unique 12-digit suffixes (`NormalExtensionRunner.java` parity), automatic background startup of all installed standalone and Extension Store extensions, and separate **Disconnect (`ButtonExit.png`)** vs **Uninstall (`ButtonDelete.png`)** row actions with Windows file-lock retry cleanup.

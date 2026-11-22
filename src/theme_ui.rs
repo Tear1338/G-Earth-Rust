@@ -261,6 +261,7 @@ pub struct ThemeLogos {
     pub btn_fire: Option<egui::TextureHandle>,
     pub btn_exit: Option<egui::TextureHandle>,
     pub btn_delete: Option<egui::TextureHandle>,
+    pub btn_reload: Option<egui::TextureHandle>,
     pub btn_edit: Option<egui::TextureHandle>,
     pub btn_pause: Option<egui::TextureHandle>,
     pub btn_resume: Option<egui::TextureHandle>,
@@ -347,6 +348,11 @@ impl ThemeLogos {
                 ctx,
                 "btn_delete",
                 include_bytes!("../resources/ui/ButtonDelete.png"),
+            ),
+            btn_reload: load_png_texture(
+                ctx,
+                "btn_reload",
+                include_bytes!("../resources/ui/ButtonReload.png"),
             ),
             btn_edit: load_png_texture(
                 ctx,

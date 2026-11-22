@@ -14,7 +14,7 @@ mod process_tree;
 mod tray;
 #[cfg(any(target_os = "macos", target_os = "linux", test))]
 mod unix_web_settings;
-pub use file_dialog::{choose_file, FileKind};
+pub use file_dialog::{choose_file, open_folder, FileKind};
 pub use hotkeys::GlobalHotkeys;
 pub use ip_mapping::{system_ip_mapper, IpMapper};
 pub use macos_flash_prep::{

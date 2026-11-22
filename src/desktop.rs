@@ -27,7 +27,7 @@ use gearth_rust::{
     web_proxy::{fetch_nitro_metadata, WebOptions, WebProxy, NITRO_REVISION},
 };
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::{BTreeMap, HashSet, VecDeque},
     io::Read,
     path::{Path, PathBuf},
     process::Child,
@@ -443,6 +443,13 @@ struct Desktop {
     extension_processes: Vec<Child>,
     extension_launch_task: Option<Receiver<std::io::Result<Child>>>,
     extension_console: VecDeque<String>,
+    known_installed_extensions: BTreeMap<String, gearth_rust::extension::ExtensionInfo>,
+    confirm_uninstall_extension: bool,
+    confirm_uninstall_ext: Option<(Option<u64>, String, String)>,
+    confirm_uninstall_dont_ask: bool,
+    pending_ext_approvals: VecDeque<(u64, gearth_rust::extension::ExtensionInfo)>,
+    remember_ext_approval: Option<bool>,
+    remember_ext_approval_box: bool,
     launch_args_auto_connect: bool,
     hotel_version: String,
     client_identifier: String,
@@ -1162,6 +1169,13 @@ impl Default for Desktop {
             extension_processes: Vec::new(),
             extension_launch_task: None,
             extension_console: VecDeque::new(),
+            known_installed_extensions: BTreeMap::new(),
+            confirm_uninstall_extension: true,
+            confirm_uninstall_ext: None,
+            confirm_uninstall_dont_ask: false,
+            pending_ext_approvals: VecDeque::new(),
+            remember_ext_approval: None,
+            remember_ext_approval_box: false,
             launch_args_auto_connect: false,
             hotel_version: String::new(),
             client_identifier: String::new(),
@@ -1465,21 +1479,57 @@ impl Desktop {
                 Err(std::sync::mpsc::TryRecvError::Empty) => {}
             }
         }
+        let ext_dir_poll = self.extensions_dir();
+        let mut pending_auto_actions: Vec<(u64, bool)> = Vec::new();
         if let Some(events) = &self.extension_events {
             for event in events.try_iter().take(256) {
                 let line = match event {
                     HostEvent::Console { id, text } => format!("#{id} {text}"),
-                    HostEvent::Error { id, text } => format!("#{id} ERROR: {text}"),
+                    HostEvent::Error { id, text } => format!("#{id} [red]ERROR: {text}"),
                     HostEvent::Pending { id, info } => {
-                        format!("#{id} {} is waiting for approval", info.title)
+                        let title = info.title.clone();
+                        if let Some(allow) = self.remember_ext_approval {
+                            pending_auto_actions.push((id, allow));
+                        } else if !self.pending_ext_approvals.iter().any(|(pid, _)| *pid == id) {
+                            self.pending_ext_approvals.push_back((id, info));
+                        }
+                        format!("#{id} [orange]{title} is waiting for approval")
                     }
-                    HostEvent::Connected { id, info } => format!("#{id} {} connected", info.title),
-                    HostEvent::Disconnected(id) => format!("#{id} disconnected"),
+                    HostEvent::Connected { id, info } => {
+                        let title = info.title.clone();
+                        self.pending_ext_approvals.retain(|(pid, _)| *pid != id);
+                        if let Some(fname) = &info.file {
+                            if gearth_rust::extension_host::is_installed_file(&ext_dir_poll, fname)
+                            {
+                                self.known_installed_extensions
+                                    .insert(fname.clone(), info.clone());
+                            }
+                        }
+                        format!("#{id} [green]{title} connected")
+                    }
+                    HostEvent::Disconnected(id) => {
+                        self.pending_ext_approvals.retain(|(pid, _)| *pid != id);
+                        format!("#{id} [grey]disconnected")
+                    }
                 };
                 if self.extension_console.len() == 512 {
                     self.extension_console.pop_front();
                 }
                 self.extension_console.push_back(line);
+            }
+        }
+        if !pending_auto_actions.is_empty() {
+            if let Some(host) = &self.extension_host {
+                for (id, allow) in pending_auto_actions {
+                    let res = if allow {
+                        host.approve(id)
+                    } else {
+                        host.disconnect(id)
+                    };
+                    if let Err(e) = res {
+                        self.status = e.to_string();
+                    }
+                }
             }
         }
         if let Some(task) = &self.extension_launch_task {
@@ -4036,7 +4086,7 @@ impl Desktop {
     }
     fn injection(&mut self, ui: &mut egui::Ui) {
         // Compute live packet validation & description matching Injection.fxml header bar
-        let (corrupted, info_text, server_valid, client_valid) =
+        let (corrupted, corrupted_indices, info_text, server_valid, client_valid) =
             if self.expression.len() <= 64 * 1024 {
                 let parsed_server = injection::parse_packets(
                     &self.expression,
@@ -4078,6 +4128,7 @@ impl Desktop {
                         };
                         (
                             false,
+                            Vec::new(),
                             format!(
                                 "{} ({}={}, {}={}){}",
                                 self.i18n.text("tab.injection.description.header"),
@@ -4093,6 +4144,7 @@ impl Desktop {
                     }
                     Ok(packets) => (
                         false,
+                        Vec::new(),
                         format!(
                             "{} {}",
                             packets.len(),
@@ -4101,20 +4153,29 @@ impl Desktop {
                         s_ok,
                         c_ok,
                     ),
-                    Err(_) => (
-                        true,
-                        format!(
-                            "{} ({}=NULL, {}=0)",
-                            self.i18n.text("tab.injection.description.header"),
-                            self.i18n.text("tab.injection.description.id"),
-                            self.i18n.text("tab.injection.description.length")
-                        ),
-                        false,
-                        false,
-                    ),
+                    Err(_) => {
+                        let bad = injection::corrupted_packet_indices(
+                            &self.expression,
+                            self.packet_format(Direction::ToServer),
+                            Direction::ToServer,
+                            &self.packet_info,
+                        );
+                        (
+                            true,
+                            bad,
+                            format!(
+                                "{} ({}=NULL, {}=0)",
+                                self.i18n.text("tab.injection.description.header"),
+                                self.i18n.text("tab.injection.description.id"),
+                                self.i18n.text("tab.injection.description.length")
+                            ),
+                            false,
+                            false,
+                        )
+                    }
                 }
             } else {
-                (false, "Large input".into(), true, true)
+                (false, Vec::new(), "Large input".into(), true, true)
             };
 
         let avail_w = ui.available_width().max(580.0);
@@ -4129,15 +4190,30 @@ impl Desktop {
                 egui::Layout::top_down(egui::Align::Min),
                 |ui| {
                     ui.horizontal(|ui| {
-                        let corrupt_label = format!(
-                            "{}: {}",
-                            self.i18n.text("tab.injection.corrupted"),
-                            self.i18n.text(if corrupted {
-                                "tab.injection.corrupted.true"
+                        let multi_line = self.expression.contains('\n');
+                        let corrupt_label =
+                            if corrupted && multi_line && !corrupted_indices.is_empty() {
+                                let list = corrupted_indices
+                                    .iter()
+                                    .map(usize::to_string)
+                                    .collect::<Vec<_>>()
+                                    .join(", ");
+                                format!(
+                                    "{}: {} -> {list}",
+                                    self.i18n.text("tab.injection.corrupted"),
+                                    self.i18n.text("tab.injection.corrupted.true")
+                                )
                             } else {
-                                "tab.injection.corrupted.false"
-                            })
-                        );
+                                format!(
+                                    "{}: {}",
+                                    self.i18n.text("tab.injection.corrupted"),
+                                    self.i18n.text(if corrupted {
+                                        "tab.injection.corrupted.true"
+                                    } else {
+                                        "tab.injection.corrupted.false"
+                                    })
+                                )
+                            };
                         let corrupt_color = if corrupted {
                             egui::Color32::from_rgb(0xc9, 0x30, 0x2c)
                         } else {
@@ -4538,20 +4614,28 @@ impl Desktop {
         let mut pause_change = None;
         let mut edit_active = None;
         group_box(ui, self.theme, egui::Margin::same(0.0), |ui| {
-            ui.set_width(avail_w - 2.0);
-            let inner_w = (avail_w - 30.0).max(520.0);
-            let col_idx = (inner_w * 0.09).floor();
-            let col_pkt = (inner_w * 0.37).floor();
+            let box_w = (avail_w - 2.0).max(560.0);
+            ui.set_width(box_w);
+            let inner_w = (box_w - 2.0).max(540.0);
+            let col_idx = (inner_w * 0.10).floor();
+            let col_pkt = (inner_w * 0.39).floor();
             let col_int = (inner_w * 0.16).floor();
-            let col_dst = (inner_w * 0.17).floor();
-            let col_edt = (inner_w - col_idx - col_pkt - col_int - col_dst).max(88.0);
+            let col_dst = (inner_w * 0.18).floor();
+            let col_edt = (inner_w - col_idx - col_pkt - col_int - col_dst).max(80.0);
+            let col_xs = [
+                col_idx,
+                col_idx + col_pkt,
+                col_idx + col_pkt + col_int,
+                col_idx + col_pkt + col_int + col_dst,
+            ];
+            let grid_stroke = egui::Stroke::new(1.0_f32, palette.table_grid_line);
 
-            egui::Frame::none()
+            let header_resp = egui::Frame::none()
                 .fill(palette.table_header_bg)
-                .inner_margin(egui::Margin::symmetric(6.0, 5.0))
+                .inner_margin(egui::Margin::symmetric(0.0, 5.0))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 4.0;
+                        ui.spacing_mut().item_spacing.x = 0.0;
                         for (w, key) in [
                             (col_idx, "tab.scheduler.table.index"),
                             (col_pkt, "tab.scheduler.table.packet"),
@@ -4567,39 +4651,43 @@ impl Desktop {
                                     ui.set_max_width(w);
                                     ui.label(
                                         egui::RichText::new(self.i18n.text(key))
-                                            .color(palette.table_header_text)
-                                            .strong(),
+                                            .color(palette.table_header_text),
                                     );
                                 },
                             );
                         }
                     });
                 });
-            let sep = ui.available_rect_before_wrap();
-            ui.painter().line_segment(
-                [
-                    egui::pos2(sep.left(), sep.top()),
-                    egui::pos2(sep.right(), sep.top()),
-                ],
-                egui::Stroke::new(1.0_f32, palette.group_border),
-            );
+            let hrect = header_resp.response.rect;
+            for dx in col_xs {
+                ui.painter().line_segment(
+                    [
+                        egui::pos2(hrect.left() + dx, hrect.top()),
+                        egui::pos2(hrect.left() + dx, hrect.bottom()),
+                    ],
+                    grid_stroke,
+                );
+            }
+            ui.painter()
+                .line_segment([hrect.left_bottom(), hrect.right_bottom()], grid_stroke);
             egui::ScrollArea::vertical()
                 .id_salt("scheduler_active_table")
                 .max_height(table_h)
                 .show(ui, |ui| {
                     ui.set_min_height(table_h);
+                    ui.spacing_mut().item_spacing.y = 0.0;
                     for (i, job) in self.scheduler.jobs.iter().enumerate() {
-                        let bg = if i % 2 == 1 {
-                            palette.table_row_alt_bg
+                        let bg = if self.active_schedule_edit == Some(job.id) {
+                            palette.table_row_blue
                         } else {
-                            palette.content_bg
+                            palette.table_row_active
                         };
-                        egui::Frame::none()
+                        let row_resp = egui::Frame::none()
                             .fill(bg)
-                            .inner_margin(egui::Margin::symmetric(6.0, 3.0))
+                            .inner_margin(egui::Margin::symmetric(0.0, 3.0))
                             .show(ui, |ui| {
                                 ui.horizontal(|ui| {
-                                    ui.spacing_mut().item_spacing.x = 4.0;
+                                    ui.spacing_mut().item_spacing.x = 0.0;
                                     ui.allocate_ui_with_layout(
                                         egui::vec2(col_idx, 20.0),
                                         egui::Layout::centered_and_justified(
@@ -4620,6 +4708,7 @@ impl Desktop {
                                         |ui| {
                                             ui.set_min_width(col_pkt);
                                             ui.set_max_width(col_pkt);
+                                            ui.add_space(6.0);
                                             ui.add(
                                                 egui::Label::new(
                                                     egui::RichText::new(expr).monospace().small(),
@@ -4670,6 +4759,8 @@ impl Desktop {
                                         |ui| {
                                             ui.set_min_width(col_edt);
                                             ui.set_max_width(col_edt);
+                                            ui.add_space(8.0);
+                                            ui.spacing_mut().item_spacing.x = 6.0;
                                             let pause_tex = self.logos.as_ref().and_then(|l| {
                                                 if job.paused {
                                                     l.btn_resume.as_ref()
@@ -4716,6 +4807,18 @@ impl Desktop {
                                     );
                                 });
                             });
+                        let r = row_resp.response.rect;
+                        for dx in col_xs {
+                            ui.painter().line_segment(
+                                [
+                                    egui::pos2(r.left() + dx, r.top()),
+                                    egui::pos2(r.left() + dx, r.bottom()),
+                                ],
+                                grid_stroke,
+                            );
+                        }
+                        ui.painter()
+                            .line_segment([r.left_bottom(), r.right_bottom()], grid_stroke);
                     }
                 });
         });
@@ -6185,16 +6288,50 @@ impl eframe::App for Desktop {
         }
         if self.ext_console_open {
             let mut open = self.ext_console_open;
+            let dark = ui_is_dark(self.theme);
             egui::Window::new(self.i18n.text("tab.extensions.button.logs.windowtitle"))
                 .open(&mut open)
                 .resizable(true)
-                .default_size([600.0, 320.0])
+                .default_size([620.0, 340.0])
                 .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        if ui.button(self.i18n.text("rust.logger.clear")).clicked() {
+                            self.extension_console.clear();
+                        }
+                        if ui
+                            .button(self.i18n.text("rust.tools.copy_output"))
+                            .clicked()
+                        {
+                            let joined = self
+                                .extension_console
+                                .iter()
+                                .cloned()
+                                .collect::<Vec<_>>()
+                                .join("\n");
+                            ui.ctx().copy_text(joined);
+                        }
+                    });
+                    ui.separator();
                     egui::ScrollArea::vertical()
                         .stick_to_bottom(true)
                         .show(ui, |ui| {
                             for line in &self.extension_console {
-                                ui.monospace(line);
+                                let (prefix, color_name, body) = parse_extension_console_line(line);
+                                let body_color =
+                                    color_name.and_then(|name| extension_console_color(name, dark));
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.spacing_mut().item_spacing.x = 0.0;
+                                    if !prefix.is_empty() {
+                                        ui.monospace(prefix);
+                                    }
+                                    if let Some(color) = body_color {
+                                        ui.label(
+                                            egui::RichText::new(body).monospace().color(color),
+                                        );
+                                    } else {
+                                        ui.monospace(body);
+                                    }
+                                });
                             }
                         });
                 });
@@ -6337,6 +6474,7 @@ impl eframe::App for Desktop {
             self.logger_window.open = open;
         }
         self.developer_mode_dialog(ctx);
+        self.extension_confirmation_dialogs(ctx);
         if self.relay.is_some()
             || self.attachment_pending.is_some()
             || self.extension_host.is_some()
@@ -6357,6 +6495,100 @@ impl eframe::App for Desktop {
         }
     }
 }
+fn ui_is_dark(theme: AppTheme) -> bool {
+    theme.is_dark()
+}
+
+/// Parse beta-29 Extension Console lines of the form `#id [color]Title --> body` or `[color]body`.
+fn parse_extension_console_line(line: &str) -> (String, Option<&str>, &str) {
+    let (id_prefix, rest) = if line.starts_with('#') {
+        if let Some(sp) = line.find(' ') {
+            (&line[..=sp], &line[sp + 1..])
+        } else {
+            ("", line)
+        }
+    } else {
+        ("", line)
+    };
+    let (color, after_tag) = if let Some(inner) = rest.strip_prefix('[') {
+        if let Some(close) = inner.find(']') {
+            let tag = &inner[..close];
+            if !tag.is_empty() && tag.bytes().all(|b| b.is_ascii_alphabetic()) {
+                (Some(tag), &inner[close + 1..])
+            } else {
+                (None, rest)
+            }
+        } else {
+            (None, rest)
+        }
+    } else {
+        (None, rest)
+    };
+    if let Some(arrow) = after_tag.find(" --> ") {
+        let split = arrow + 5;
+        (
+            format!("{id_prefix}{}", &after_tag[..split]),
+            color,
+            &after_tag[split..],
+        )
+    } else {
+        (id_prefix.to_owned(), color, after_tag)
+    }
+}
+
+/// Official beta-29 `ExtensionLoggerController` / `logger.css` palette, adjusted for readability.
+fn extension_console_color(name: &str, dark: bool) -> Option<egui::Color32> {
+    match name.to_ascii_lowercase().as_str() {
+        "grey" | "gray" => Some(egui::Color32::from_rgb(0xa9, 0xa9, 0xa9)),
+        "lightgrey" | "lightgray" => Some(if dark {
+            egui::Color32::from_rgb(0xd0, 0xd3, 0xd4)
+        } else {
+            egui::Color32::from_rgb(0x6e, 0x73, 0x78)
+        }),
+        "yellow" => Some(if dark {
+            egui::Color32::from_rgb(0xff, 0xe8, 0x38)
+        } else {
+            egui::Color32::from_rgb(0xb5, 0x89, 0x00)
+        }),
+        "orange" => Some(egui::Color32::from_rgb(0xf0, 0x93, 0x2b)),
+        "white" => Some(if dark {
+            egui::Color32::WHITE
+        } else {
+            egui::Color32::from_rgb(0x44, 0x44, 0x44)
+        }),
+        "purple" => Some(if dark {
+            egui::Color32::from_rgb(0xc5, 0x86, 0xc0)
+        } else {
+            egui::Color32::from_rgb(0x80, 0x00, 0x80)
+        }),
+        "brown" => Some(egui::Color32::from_rgb(0xa5, 0x52, 0x2a)),
+        "pink" => Some(egui::Color32::from_rgb(0xff, 0x85, 0xa2)),
+        "red" => Some(if dark {
+            egui::Color32::from_rgb(0xf4, 0x60, 0x60)
+        } else {
+            egui::Color32::from_rgb(0xd9, 0x2b, 0x2b)
+        }),
+        "black" => Some(if dark {
+            egui::Color32::from_rgb(0xd8, 0xd8, 0xd8)
+        } else {
+            egui::Color32::BLACK
+        }),
+        "blue" => Some(if dark {
+            egui::Color32::from_rgb(0x6e, 0xa8, 0xfe)
+        } else {
+            egui::Color32::from_rgb(0x1f, 0x5f, 0xc4)
+        }),
+        "cyan" => Some(if dark {
+            egui::Color32::from_rgb(0x4d, 0xd0, 0xe1)
+        } else {
+            egui::Color32::from_rgb(0x00, 0x83, 0x8f)
+        }),
+        "green" => Some(egui::Color32::from_rgb(0x73, 0xb5, 0x04)),
+        "darkergreen" => Some(egui::Color32::from_rgb(0x2e, 0x8b, 0x57)),
+        _ => None,
+    }
+}
+
 fn find_java() -> PathBuf {
     let name = if cfg!(windows) { "java.exe" } else { "java" };
     if let Ok(exe) = std::env::current_exe() {
@@ -6456,6 +6688,184 @@ impl Desktop {
             }
         });
     }
+    fn execute_extension_uninstall(&mut self, id: Option<u64>, fname: String, title: String) {
+        if let Some(ext_id) = id {
+            if let Some(host) = &self.extension_host {
+                let _ = host.disconnect(ext_id);
+            }
+        }
+        self.known_installed_extensions.remove(&fname);
+        let dir = self.extensions_dir();
+        let store_removed = fname.starts_with("extension-");
+        match gearth_rust::extension_host::uninstall_installed(&dir, &fname) {
+            Ok(true) => {
+                if store_removed {
+                    self.store.invalidate();
+                }
+                self.status = format!("Uninstalled {title}");
+            }
+            Ok(false) => {}
+            Err(_) => {
+                std::thread::spawn(move || {
+                    for _ in 0..10 {
+                        std::thread::sleep(Duration::from_millis(150));
+                        if gearth_rust::extension_host::uninstall_installed(&dir, &fname).is_ok() {
+                            break;
+                        }
+                    }
+                });
+                if store_removed {
+                    self.store.invalidate();
+                }
+                self.status = format!("Uninstalling {title}...");
+            }
+        }
+    }
+    fn restart_installed_extension(&mut self, fname: &str) {
+        let Some(host) = self.extension_host.clone() else {
+            return;
+        };
+        let ext_dir = self.extensions_dir();
+        let runtime = PathBuf::from(&self.extension_runtime);
+        let fname_owned = fname.to_owned();
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.extension_launch_task = Some(rx);
+        self.status = format!("Restarting {fname_owned}...");
+        std::thread::spawn(move || {
+            let target = ext_dir.join(&fname_owned);
+            if target.is_file() {
+                let _ = tx.send(host.launch(&runtime, &target));
+            } else if fname_owned.starts_with("extension-") {
+                let result =
+                    gearth_rust::extension_store::installed(&ext_dir).and_then(|records| {
+                        let record = records
+                            .into_iter()
+                            .find(|r| {
+                                r.directory.file_name().and_then(|n| n.to_str())
+                                    == Some(fname_owned.as_str())
+                            })
+                            .ok_or_else(|| {
+                                std::io::Error::new(
+                                    std::io::ErrorKind::NotFound,
+                                    "installed store extension not found",
+                                )
+                            })?;
+                        host.launch_command(
+                            &record.command,
+                            &record.directory.join("extension"),
+                            &fname_owned,
+                            &record.title,
+                            &runtime,
+                        )
+                    });
+                let _ = tx.send(result);
+            } else {
+                let _ = tx.send(Err(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "installed extension file not found",
+                )));
+            }
+        });
+    }
+    fn extension_confirmation_dialogs(&mut self, ctx: &egui::Context) {
+        if let Some((ext_id, fname, title)) = self.confirm_uninstall_ext.clone() {
+            let mut open = true;
+            let mut decision = None;
+            egui::Window::new(self.i18n.text("alert.confirmation.windowtitle"))
+                .id(egui::Id::new("confirm_uninstall_ext_dialog"))
+                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                .open(&mut open)
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.label(format!(
+                        "{}\n({title})",
+                        self.i18n
+                            .text("tab.extensions.table.edit.uninstall.confirmation")
+                    ));
+                    ui.add_space(6.0);
+                    ui.checkbox(
+                        &mut self.confirm_uninstall_dont_ask,
+                        self.i18n.text("alert.confirmation.button.donotaskagain"),
+                    );
+                    ui.add_space(6.0);
+                    ui.horizontal(|ui| {
+                        if ui.button(self.i18n.text("rust.confirmation.yes")).clicked() {
+                            decision = Some(true);
+                        }
+                        if ui.button(self.i18n.text("rust.confirmation.no")).clicked() {
+                            decision = Some(false);
+                        }
+                    });
+                });
+            if let Some(confirmed) = decision {
+                self.confirm_uninstall_ext = None;
+                if self.confirm_uninstall_dont_ask {
+                    self.confirm_uninstall_extension = false;
+                    self.confirm_uninstall_dont_ask = false;
+                    self.save_settings();
+                }
+                if confirmed {
+                    self.execute_extension_uninstall(ext_id, fname, title);
+                }
+            } else if !open {
+                self.confirm_uninstall_ext = None;
+            }
+        }
+        if let Some((pending_id, pending_info)) = self.pending_ext_approvals.front().cloned() {
+            let mut open = true;
+            let mut decision = None;
+            egui::Window::new(self.i18n.text("alert.confirmation.windowtitle"))
+                .id(egui::Id::new("confirm_ext_connection_dialog"))
+                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                .open(&mut open)
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    let msg = self
+                        .i18n
+                        .text("alert.extconnection.content")
+                        .replace("%s", &pending_info.title);
+                    ui.label(msg);
+                    ui.add_space(6.0);
+                    ui.checkbox(
+                        &mut self.remember_ext_approval_box,
+                        self.i18n.text("alert.confirmation.button.remember"),
+                    );
+                    ui.add_space(6.0);
+                    ui.horizontal(|ui| {
+                        if ui.button(self.i18n.text("rust.confirmation.yes")).clicked() {
+                            decision = Some(true);
+                        }
+                        if ui.button(self.i18n.text("rust.confirmation.no")).clicked() {
+                            decision = Some(false);
+                        }
+                    });
+                });
+            if let Some(allow) = decision {
+                self.pending_ext_approvals.pop_front();
+                if self.remember_ext_approval_box {
+                    self.remember_ext_approval = Some(allow);
+                    self.remember_ext_approval_box = false;
+                }
+                if let Some(host) = &self.extension_host {
+                    let res = if allow {
+                        host.approve(pending_id)
+                    } else {
+                        host.disconnect(pending_id)
+                    };
+                    if let Err(e) = res {
+                        self.status = e.to_string();
+                    }
+                }
+            } else if !open {
+                self.pending_ext_approvals.pop_front();
+                if let Some(host) = &self.extension_host {
+                    let _ = host.disconnect(pending_id);
+                }
+            }
+        }
+    }
     fn start_update_check(&mut self) {
         if self.update_task.is_some() || self.update_apply_task.is_some() {
             return;
@@ -6523,6 +6933,12 @@ impl Desktop {
             .settings
             .booleans
             .get("auto_update")
+            .copied()
+            .unwrap_or(true);
+        self.confirm_uninstall_extension = self
+            .settings
+            .booleans
+            .get("confirm_uninstall_extension")
             .copied()
             .unwrap_or(true);
         self.custom_hotels = self
@@ -6831,6 +7247,10 @@ impl Desktop {
         }
         self.settings.booleans.extend([
             ("auto_update".into(), self.auto_update),
+            (
+                "confirm_uninstall_extension".into(),
+                self.confirm_uninstall_extension,
+            ),
             ("scheduler_auto_start".into(), self.scheduler_auto_start),
             ("socks_enabled".into(), self.socks_enabled),
             ("origins".into(), self.origins),
@@ -7027,7 +7447,15 @@ impl Desktop {
             .as_ref()
             .and_then(|l| l.btn_delete.as_ref())
             .cloned();
+        let reload_tex = self
+            .logos
+            .as_ref()
+            .and_then(|l| l.btn_reload.as_ref())
+            .cloned();
         let ext_dir = self.extensions_dir();
+
+        let mut pending_restart: Option<String> = None;
+        let mut pending_uninstall: Option<(Option<u64>, String, String)> = None;
 
         // Pixel-faithful Extensions.fxml 5-column bordered table with vertical dividers
         group_box(ui, self.theme, egui::Margin::same(0.0), |ui| {
@@ -7204,9 +7632,15 @@ impl Desktop {
                         let uninstall_tip = self
                             .i18n
                             .text("tab.extensions.table.edit.uninstall.tooltip");
+                        let restart_tip =
+                            self.i18n.text("tab.extensions.table.edit.restart.tooltip");
                         let mut status_update: Option<String> = None;
-                        let mut uninstall_request: Option<(u64, String, String)> = None;
-                        for extension in host.extensions() {
+                        let connected = host.extensions();
+                        let active_files: HashSet<String> = connected
+                            .iter()
+                            .filter_map(|e| e.info.file.clone())
+                            .collect();
+                        for extension in &connected {
                             let bg = if extension.approved {
                                 palette.table_row_active
                             } else {
@@ -7258,8 +7692,8 @@ impl Desktop {
                                             .on_hover_text(&uninstall_tip)
                                             .clicked()
                                         {
-                                            uninstall_request = Some((
-                                                extension.id,
+                                            pending_uninstall = Some((
+                                                Some(extension.id),
                                                 fname.clone(),
                                                 extension.info.title.clone(),
                                             ));
@@ -7268,38 +7702,37 @@ impl Desktop {
                                 },
                             );
                         }
-                        if let Some((id, fname, title)) = uninstall_request {
-                            let _ = host.disconnect(id);
-                            let dir = ext_dir.clone();
-                            let store_removed = fname.starts_with("extension-");
-                            match gearth_rust::extension_host::uninstall_installed(&dir, &fname) {
-                                Ok(true) => {
-                                    if store_removed {
-                                        self.store.invalidate();
-                                    }
-                                    status_update = Some(format!("Uninstalled {title}"));
-                                }
-                                Ok(false) => {}
-                                Err(_) => {
-                                    // On Windows the extension JVM/exe may briefly hold a file lock while exiting.
-                                    std::thread::spawn(move || {
-                                        for _ in 0..10 {
-                                            std::thread::sleep(Duration::from_millis(150));
-                                            if gearth_rust::extension_host::uninstall_installed(
-                                                &dir, &fname,
-                                            )
-                                            .is_ok()
-                                            {
-                                                break;
-                                            }
-                                        }
-                                    });
-                                    if store_removed {
-                                        self.store.invalidate();
-                                    }
-                                    status_update = Some(format!("Uninstalling {title}..."));
-                                }
+                        // Disconnected installed extensions stay visible in .tableRowInactive with Reload + Delete
+                        for (fname, info) in &self.known_installed_extensions {
+                            if active_files.contains(fname)
+                                || !gearth_rust::extension_host::is_installed_file(&ext_dir, fname)
+                            {
+                                continue;
                             }
+                            draw_row(
+                                ui,
+                                palette.table_row_inactive,
+                                &info.title,
+                                &info.description,
+                                &info.author,
+                                &info.version,
+                                &mut |ui| {
+                                    if icon_action(ui, reload_tex.as_ref(), "↻", 14.0)
+                                        .on_hover_text(&restart_tip)
+                                        .clicked()
+                                    {
+                                        pending_restart = Some(fname.clone());
+                                    }
+                                    if info.can_delete
+                                        && icon_action(ui, delete_tex.as_ref(), "🗑", 14.0)
+                                            .on_hover_text(&uninstall_tip)
+                                            .clicked()
+                                    {
+                                        pending_uninstall =
+                                            Some((None, fname.clone(), info.title.clone()));
+                                    }
+                                },
+                            );
                         }
                         if let Some(err) = status_update {
                             self.status = err;
@@ -7310,6 +7743,17 @@ impl Desktop {
                     }
                 });
         });
+
+        if let Some(fname) = pending_restart {
+            self.restart_installed_extension(&fname);
+        }
+        if let Some((id, fname, title)) = pending_uninstall {
+            if self.confirm_uninstall_extension {
+                self.confirm_uninstall_ext = Some((id, fname, title));
+            } else {
+                self.execute_extension_uninstall(id, fname, title);
+            }
+        }
 
         ui.add_space(8.0);
 
@@ -8115,5 +8559,22 @@ mod logger_prediction_tests {
         assert_eq!(nitro.connect_client, Some(super::CliClientMode::Nitro));
         assert_eq!(nitro.theme, Some(super::AppTheme::GEarthDark));
         assert_eq!(nitro.port, None);
+    }
+
+    #[test]
+    fn extension_console_parses_beta29_color_tags_and_announcement_prefix() {
+        let (prefix, color, body) =
+            super::parse_extension_console_line("#3 [green]G-Presets --> Ready!");
+        assert_eq!(prefix, "#3 G-Presets --> ");
+        assert_eq!(color, Some("green"));
+        assert_eq!(body, "Ready!");
+        assert!(super::extension_console_color("green", true).is_some());
+        assert!(super::extension_console_color("darkergreen", false).is_some());
+        assert!(super::extension_console_color("unknown", true).is_none());
+
+        let (prefix2, color2, body2) = super::parse_extension_console_line("#1 plain message");
+        assert_eq!(prefix2, "#1 ");
+        assert_eq!(color2, None);
+        assert_eq!(body2, "plain message");
     }
 }

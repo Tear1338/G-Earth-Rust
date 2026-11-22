@@ -42,6 +42,61 @@ pub fn first_unsafe_packet(
         .find(|header| !safety.may_send(revision, direction, *header, developer_mode))
 }
 
+/// Return 0-based indices of corrupted packet entries in a multi-packet injection buffer
+/// (matching beta-29 `InjectionController.updateUI` `isCorrupted: True -> 0, 2` reporting).
+pub fn corrupted_packet_indices(
+    input: &str,
+    format: PacketFormat,
+    direction: Direction,
+    info: &PacketInfoManager,
+) -> Vec<usize> {
+    if input.len() > MAX_FRAME {
+        return vec![0];
+    }
+    let input = input.trim_end_matches(['\r', '\n']);
+    if input.is_empty() {
+        return vec![0];
+    }
+    let mut bad = Vec::new();
+    let mut packet_idx = 0usize;
+    let mut start = 0usize;
+    let mut field = false;
+    let mut quoted = false;
+    let mut escaped = false;
+    for (index, c) in input.char_indices() {
+        if field && quoted && escaped {
+            escaped = false;
+            continue;
+        }
+        if field && quoted && c == '\\' {
+            escaped = true;
+            continue;
+        }
+        if field && c == '"' {
+            quoted = !quoted;
+            continue;
+        }
+        if !quoted && c == '{' {
+            field = true;
+        }
+        if !quoted && c == '}' {
+            field = false;
+        }
+        if !field && c == '\n' {
+            let slice = input[start..index].trim_end_matches('\r');
+            if expression::parse_with_format(slice, format, Some((direction, info))).is_err() {
+                bad.push(packet_idx);
+            }
+            packet_idx += 1;
+            start = index + 1;
+        }
+    }
+    if expression::parse_with_format(&input[start..], format, Some((direction, info))).is_err() {
+        bad.push(packet_idx);
+    }
+    bad
+}
+
 /// Validate the whole batch before submitting any packet to the connection.
 pub fn parse_packets(
     input: &str,
@@ -233,5 +288,33 @@ impl InjectionHistory {
             .values
             .insert("injection_history".into(), self.to_json());
         settings.save(path)
+    }
+}
+
+#[cfg(test)]
+mod corrupted_indices_tests {
+    use super::corrupted_packet_indices;
+    use crate::{
+        packet::{Direction, PacketFormat},
+        packet_info::PacketInfoManager,
+    };
+
+    #[test]
+    fn reports_zero_based_corrupted_indices_for_multi_packet_input() {
+        let info = PacketInfoManager::default();
+        let bad = corrupted_packet_indices(
+            "{h:bad}\n{h:10}{i:1}\n{h:oops}",
+            PacketFormat::EvaWire,
+            Direction::ToServer,
+            &info,
+        );
+        assert_eq!(bad, vec![0, 2]);
+        assert!(corrupted_packet_indices(
+            "{h:10}\n{h:20}",
+            PacketFormat::EvaWire,
+            Direction::ToServer,
+            &info
+        )
+        .is_empty());
     }
 }

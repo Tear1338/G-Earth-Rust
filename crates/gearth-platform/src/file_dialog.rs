@@ -308,6 +308,49 @@ pub fn choose_file(kind: FileKind, save: bool) -> io::Result<Option<PathBuf>> {
     }
 }
 
+/// Open a directory in the operating system's native file manager (Explorer / Finder / xdg-open).
+pub fn open_folder(path: &std::path::Path) -> io::Result<()> {
+    std::fs::create_dir_all(path)?;
+    #[cfg(windows)]
+    {
+        std::process::Command::new("explorer.exe")
+            .arg(path)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()?;
+        Ok(())
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("/usr/bin/open")
+            .arg(path)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()?;
+        Ok(())
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(path)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()?;
+        Ok(())
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    {
+        let _ = path;
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "opening folders is unavailable on this platform",
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
