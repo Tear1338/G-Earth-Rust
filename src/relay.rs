@@ -427,7 +427,20 @@ impl Relay {
                     "remote has no addresses",
                 ));
             }
-            let listener = TcpListener::bind(route.listen)?;
+            let listener = TcpListener::bind(route.listen).map_err(|error| {
+                if error.kind() == io::ErrorKind::AddrInUse {
+                    if let Some(owner) = gearth_platform::process_using_port(route.listen.port()) {
+                        return io::Error::new(
+                            io::ErrorKind::AddrInUse,
+                            format!(
+                                "Port {} is already in use by {owner}. Close it and try again.",
+                                route.listen.port()
+                            ),
+                        );
+                    }
+                }
+                error
+            })?;
             listener.set_nonblocking(true)?;
             bound_routes.push(BoundRoute {
                 listener,

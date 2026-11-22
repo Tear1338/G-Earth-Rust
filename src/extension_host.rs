@@ -549,15 +549,52 @@ impl ExtensionHost {
                 cmd.args(&plan.extra_jvm_args).arg("-jar").arg(&path);
                 cmd
             }
-            Some("py" | "js") => {
-                let mut cmd = Command::new(executable);
+            Some("exe") => Command::new(&path),
+            Some("py" | "py3") => {
+                let interpreter =
+                    if executable.as_os_str().is_empty() || is_java_executable(executable) {
+                        if cfg!(windows) {
+                            std::path::PathBuf::from("python")
+                        } else {
+                            std::path::PathBuf::from("python3")
+                        }
+                    } else {
+                        executable.to_path_buf()
+                    };
+                let mut cmd = Command::new(interpreter);
+                cmd.arg(&path);
+                cmd
+            }
+            Some("js") => {
+                let interpreter =
+                    if executable.as_os_str().is_empty() || is_java_executable(executable) {
+                        std::path::PathBuf::from("node")
+                    } else {
+                        executable.to_path_buf()
+                    };
+                let mut cmd = Command::new(interpreter);
+                cmd.arg(&path);
+                cmd
+            }
+            Some("sh") => {
+                let interpreter =
+                    if executable.as_os_str().is_empty() || is_java_executable(executable) {
+                        if cfg!(unix) {
+                            std::path::PathBuf::from("/bin/sh")
+                        } else {
+                            std::path::PathBuf::from("sh")
+                        }
+                    } else {
+                        executable.to_path_buf()
+                    };
+                let mut cmd = Command::new(interpreter);
                 cmd.arg(&path);
                 cmd
             }
             _ => {
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidInput,
-                    "choose a .jar, .py or .js extension",
+                    "choose a .jar, .exe, .py, .py3, .js or .sh extension",
                 ))
             }
         };
@@ -1373,6 +1410,153 @@ fn serve_peer(mut stream: TcpStream, id: u64, shared: &Arc<Shared>) -> io::Resul
     Ok(())
 }
 
+/// Supported standalone extension file extensions (matching beta-29 `ExecutionInfo.java`).
+pub const SUPPORTED_EXTENSION_FILE_TYPES: &[&str] = &["jar", "py", "py3", "exe", "sh", "js"];
+
+/// Returns `true` when `path` has one of the 6 supported beta-29 extension file types.
+pub fn is_supported_extension_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|s| s.to_str())
+        .is_some_and(|ext| {
+            SUPPORTED_EXTENSION_FILE_TYPES
+                .iter()
+                .any(|allowed| allowed.eq_ignore_ascii_case(ext))
+        })
+}
+
+fn is_java_executable(path: &Path) -> bool {
+    path.file_stem()
+        .and_then(|s| s.to_str())
+        .is_some_and(|stem| stem.eq_ignore_ascii_case("java") || stem.eq_ignore_ascii_case("javaw"))
+}
+
+fn safe_extension_filename(filename: &str) -> bool {
+    !filename.is_empty()
+        && filename.len() <= 256
+        && filename != "."
+        && filename != ".."
+        && !filename.contains(['/', '\\', ':', '\0'])
+}
+
+/// Discover all standalone extension files stored directly inside `extensions_dir`.
+pub fn discover_installed_files(extensions_dir: &Path) -> Vec<std::path::PathBuf> {
+    let Ok(entries) = std::fs::read_dir(extensions_dir) else {
+        return Vec::new();
+    };
+    let mut files: Vec<std::path::PathBuf> = entries
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_ok_and(|ft| ft.is_file()))
+        .map(|entry| entry.path())
+        .filter(|path| is_supported_extension_file(path))
+        .map(normalize_launch_path)
+        .collect();
+    files.sort();
+    files
+}
+
+/// Copy a standalone extension file into `extensions_dir` with a unique 12-digit suffix
+/// (matching beta-29 `NormalExtensionRunner.java`) so it auto-launches on future startups.
+pub fn install_extension_file(
+    extensions_dir: &Path,
+    source_path: &Path,
+) -> io::Result<std::path::PathBuf> {
+    let source = normalize_launch_path(source_path.canonicalize()?);
+    if !source.is_file() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "extension must be a regular file",
+        ));
+    }
+    if !is_supported_extension_file(&source) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "choose a .jar, .exe, .py, .py3, .js or .sh extension",
+        ));
+    }
+    std::fs::create_dir_all(extensions_dir)?;
+    let dest_dir = normalize_launch_path(extensions_dir.canonicalize()?);
+    if source.parent() == Some(dest_dir.as_path()) {
+        return Ok(source);
+    }
+    let stem = source
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("extension");
+    let ext = source
+        .extension()
+        .and_then(|s| s.to_str())
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "missing file extension"))?;
+    let mut dest = None;
+    for _ in 0..8 {
+        let mut bytes = [0u8; 8];
+        getrandom::fill(&mut bytes).map_err(|e| io::Error::other(e.to_string()))?;
+        let num = u64::from_le_bytes(bytes) % 1_000_000_000_000;
+        let candidate = dest_dir.join(format!("{stem}-{num:012}.{ext}"));
+        if !candidate.exists() {
+            dest = Some(candidate);
+            break;
+        }
+    }
+    let dest = dest.ok_or_else(|| io::Error::other("could not allocate unique extension name"))?;
+    std::fs::copy(&source, &dest)?;
+    Ok(normalize_launch_path(dest))
+}
+
+/// Returns `true` when `filename` corresponds to an installed standalone file or Store directory.
+pub fn is_installed_file(extensions_dir: &Path, filename: &str) -> bool {
+    if !safe_extension_filename(filename) {
+        return false;
+    }
+    let target = extensions_dir.join(filename);
+    if target.is_file() && is_supported_extension_file(&target) {
+        return true;
+    }
+    target.is_dir() && filename.starts_with("extension-")
+}
+
+/// Remove an installed standalone extension file or Store directory from `extensions_dir`.
+/// Returns `Ok(true)` if removed, `Ok(false)` if it was not an installed entry.
+pub fn uninstall_installed(extensions_dir: &Path, filename: &str) -> io::Result<bool> {
+    if !safe_extension_filename(filename) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid extension filename",
+        ));
+    }
+    let root = match extensions_dir.canonicalize() {
+        Ok(path) => path,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(e),
+    };
+    let target = root.join(filename);
+    if !target.exists() {
+        return Ok(false);
+    }
+    let canonical = target.canonicalize()?;
+    if canonical.parent() != Some(root.as_path()) {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "extension path escapes extensions directory",
+        ));
+    }
+    if canonical.is_file() && is_supported_extension_file(&canonical) {
+        std::fs::remove_file(&canonical)?;
+        return Ok(true);
+    }
+    if canonical.is_dir() && filename.starts_with("extension-") {
+        let records = crate::extension_store::installed(&root)?;
+        if let Some(record) = records
+            .into_iter()
+            .find(|r| r.directory.canonicalize().ok().as_deref() == Some(canonical.as_path()))
+        {
+            crate::extension_store::uninstall(&root, &record)?;
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
 /// Strip Windows `\\?\` verbatim prefixes added by `Path::canonicalize()`, which break
 /// Java's `URLClassLoader` (`ClassNotFoundException` on `java -jar \\?\C:\...`).
 fn normalize_launch_path(path: std::path::PathBuf) -> std::path::PathBuf {
@@ -1389,8 +1573,11 @@ fn normalize_launch_path(path: std::path::PathBuf) -> std::path::PathBuf {
 
 #[cfg(test)]
 mod launch_path_tests {
-    use super::normalize_launch_path;
-    use std::path::PathBuf;
+    use super::{
+        discover_installed_files, install_extension_file, is_installed_file,
+        is_supported_extension_file, normalize_launch_path, uninstall_installed,
+    };
+    use std::path::{Path, PathBuf};
 
     #[test]
     fn strips_windows_verbatim_prefix_for_external_runtimes() {
@@ -1406,5 +1593,64 @@ mod launch_path_tests {
             normalize_launch_path(PathBuf::from("/tmp/GPresets.jar")),
             PathBuf::from("/tmp/GPresets.jar")
         );
+    }
+
+    #[test]
+    fn supports_all_six_beta29_extension_file_types() {
+        for name in [
+            "GPresets.jar",
+            "QXScripter.exe",
+            "script.py",
+            "script.py3",
+            "bot.js",
+            "runner.sh",
+            "UPPER.JAR",
+            "TOOL.EXE",
+        ] {
+            assert!(is_supported_extension_file(Path::new(name)), "{name}");
+        }
+        for bad in ["readme.txt", "archive.zip", "noext", ""] {
+            assert!(!is_supported_extension_file(Path::new(bad)), "{bad}");
+        }
+    }
+
+    #[test]
+    fn installs_discovers_and_uninstalls_standalone_extensions_safely() {
+        let mut random = [0u8; 8];
+        getrandom::fill(&mut random).unwrap();
+        let tag = random
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>();
+        let base = std::env::temp_dir().join(format!("gearth-ext-install-{tag}"));
+        let src_dir = base.join("src");
+        let ext_dir = base.join("extensions");
+        std::fs::create_dir_all(&src_dir).unwrap();
+        let src_file = src_dir.join("QXScripter.exe");
+        std::fs::write(&src_file, b"MZ-test").unwrap();
+
+        let installed = install_extension_file(&ext_dir, &src_file).unwrap();
+        assert!(installed.is_file());
+        let fname = installed.file_name().unwrap().to_str().unwrap().to_owned();
+        assert!(fname.starts_with("QXScripter-"));
+        assert!(fname.ends_with(".exe"));
+        assert!(is_installed_file(&ext_dir, &fname));
+
+        // Installing a file already inside extensions_dir should not duplicate it.
+        let same = install_extension_file(&ext_dir, &installed).unwrap();
+        assert_eq!(same, installed);
+
+        let found = discover_installed_files(&ext_dir);
+        assert_eq!(found, vec![installed.clone()]);
+
+        // Path traversal must be rejected.
+        assert!(uninstall_installed(&ext_dir, "../src/QXScripter.exe").is_err());
+        assert!(!is_installed_file(&ext_dir, "../src/QXScripter.exe"));
+
+        assert!(uninstall_installed(&ext_dir, &fname).unwrap());
+        assert!(!installed.exists());
+        assert!(discover_installed_files(&ext_dir).is_empty());
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

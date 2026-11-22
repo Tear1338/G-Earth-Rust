@@ -39,24 +39,43 @@ pub struct HostsRedirect {
     active: bool,
 }
 fn edit(path: &Path, change: impl FnOnce(&str) -> io::Result<String>) -> io::Result<()> {
-    let mut file = OpenOptions::new().read(true).write(true).open(path)?;
-    file.lock()?;
-    let mut bytes = Vec::new();
-    Read::by_ref(&mut file)
-        .take(1024 * 1024 + 1)
-        .read_to_end(&mut bytes)?;
-    if bytes.len() > 1024 * 1024 {
-        return Err(io::Error::other("hosts file exceeds 1 MiB"));
+    match OpenOptions::new().read(true).write(true).open(path) {
+        Ok(mut file) => {
+            file.lock()?;
+            let mut bytes = Vec::new();
+            Read::by_ref(&mut file)
+                .take(1024 * 1024 + 1)
+                .read_to_end(&mut bytes)?;
+            if bytes.len() > 1024 * 1024 {
+                return Err(io::Error::other("hosts file exceeds 1 MiB"));
+            }
+            let text = std::str::from_utf8(&bytes).map_err(io::Error::other)?;
+            let updated = change(text)?;
+            if updated != text {
+                file.seek(SeekFrom::Start(0))?;
+                file.write_all(updated.as_bytes())?;
+                file.set_len(updated.len() as u64)?;
+                file.sync_all()?;
+            }
+            Ok(())
+        }
+        Err(err) if cfg!(target_os = "macos") && err.kind() == io::ErrorKind::PermissionDenied => {
+            let mut bytes = Vec::new();
+            std::fs::File::open(path)?
+                .take(1024 * 1024 + 1)
+                .read_to_end(&mut bytes)?;
+            if bytes.len() > 1024 * 1024 {
+                return Err(io::Error::other("hosts file exceeds 1 MiB"));
+            }
+            let text = std::str::from_utf8(&bytes).map_err(io::Error::other)?;
+            let updated = change(text)?;
+            if updated != text {
+                gearth_platform::write_macos_hosts_privileged(path, &updated)?;
+            }
+            Ok(())
+        }
+        Err(err) => Err(err),
     }
-    let text = std::str::from_utf8(&bytes).map_err(io::Error::other)?;
-    let updated = change(text)?;
-    if updated != text {
-        file.seek(SeekFrom::Start(0))?;
-        file.write_all(updated.as_bytes())?;
-        file.set_len(updated.len() as u64)?;
-        file.sync_all()?;
-    }
-    Ok(())
 }
 fn valid_domain(host: &str) -> bool {
     !host.is_empty()

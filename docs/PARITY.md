@@ -1,5 +1,10 @@
 # Compatibility with 1.5.4-beta-29
 
+## Full beta-29 Extension Lifecycle, CLI Flags, PortChecker & macOS Privileged Hosts
+
+- Supported all 6 beta-29 extension file types (`.jar`, `.py`, `.py3`, `.exe`, `.sh`, `.js`) in both native file pickers and `ExtensionHost::launch`, added permanent installation into `extensions/` with unique 12-digit suffixes, automatic startup launch of installed standalone & Store extensions, and separate **Disconnect (`ButtonExit.png`)** vs **Uninstall (`ButtonDelete.png`)** actions.
+- Added desktop CLI flags (`--connect`/`-c`, `--host`, `--port`, `--debug`, `-t`/`--theme`), cross-platform `PortChecker` (`netstat`+`tasklist` on Windows, `lsof` on Unix) for `AddrInUse` relay binds, and macOS `osascript` privileged `/etc/hosts` fallback.
+
 ## Built-in SHA-256 Verified GitHub Auto-Updater
 
 - Added built-in startup and 1-click self-updating from GitHub Releases (`src/update_checker.rs`, `src/desktop.rs`, `.github/workflows/ci.yml`): compares CI-embedded `GEARTH_BUILD_TAG` against the newest GitHub release, verifies downloaded binaries against `SHA256SUMS.txt` (`sha2::Sha256`), atomically swaps `<exe>` with rollback and automatic restart (plus Windows silent installer fallback for read-only directories), and cleans up `<exe>.old` on next launch.

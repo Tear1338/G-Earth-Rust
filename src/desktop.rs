@@ -218,6 +218,111 @@ fn bounded_log_prediction(mut value: String) -> String {
     value
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CliClientMode {
+    Flash,
+    Origins,
+    Unity,
+    Nitro,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct LaunchArgs {
+    connect_client: Option<CliClientMode>,
+    host: Option<String>,
+    port: Option<u16>,
+    debug_stdout: bool,
+    theme: Option<AppTheme>,
+}
+
+fn parse_cli_client_mode(raw: &str) -> Option<CliClientMode> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "flash" => Some(CliClientMode::Flash),
+        "origins" | "shockwave" => Some(CliClientMode::Origins),
+        "unity" => Some(CliClientMode::Unity),
+        "nitro" => Some(CliClientMode::Nitro),
+        _ => None,
+    }
+}
+
+fn parse_cli_theme(raw: &str) -> Option<AppTheme> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "tanji" => Some(AppTheme::Tanji),
+        "dark" | "g-earth dark" | "gearth-dark" => Some(AppTheme::GEarthDark),
+        "light" | "g-earth" | "gearth" => Some(AppTheme::GEarth),
+        _ => None,
+    }
+}
+
+fn parse_cli_args(args: &[String]) -> LaunchArgs {
+    let mut parsed = LaunchArgs::default();
+    let mut idx = 0usize;
+    while idx < args.len() {
+        let arg = args[idx].as_str();
+        if let Some(val) = arg
+            .strip_prefix("--connect=")
+            .or_else(|| arg.strip_prefix("-c="))
+        {
+            if let Some(mode) = parse_cli_client_mode(val) {
+                parsed.connect_client = Some(mode);
+            }
+        } else if arg == "--connect" || arg == "-c" {
+            if let Some(next) = args.get(idx + 1) {
+                if let Some(mode) = parse_cli_client_mode(next) {
+                    parsed.connect_client = Some(mode);
+                    idx += 1;
+                }
+            }
+        } else if let Some(val) = arg.strip_prefix("--host=") {
+            let trimmed = val.trim();
+            if !trimmed.is_empty() {
+                parsed.host = Some(trimmed.to_owned());
+            }
+        } else if arg == "--host" {
+            if let Some(next) = args.get(idx + 1) {
+                let trimmed = next.trim();
+                if !trimmed.is_empty() {
+                    parsed.host = Some(trimmed.to_owned());
+                }
+                idx += 1;
+            }
+        } else if let Some(val) = arg.strip_prefix("--port=") {
+            if let Ok(port) = val.trim().parse::<u16>() {
+                if port != 0 {
+                    parsed.port = Some(port);
+                }
+            }
+        } else if arg == "--port" {
+            if let Some(next) = args.get(idx + 1) {
+                if let Ok(port) = next.trim().parse::<u16>() {
+                    if port != 0 {
+                        parsed.port = Some(port);
+                    }
+                }
+                idx += 1;
+            }
+        } else if arg == "--debug" || arg == "-d" {
+            parsed.debug_stdout = true;
+        } else if let Some(val) = arg
+            .strip_prefix("--theme=")
+            .or_else(|| arg.strip_prefix("-t="))
+        {
+            if let Some(theme) = parse_cli_theme(val) {
+                parsed.theme = Some(theme);
+            }
+        } else if arg == "-t" || arg == "--theme" {
+            if let Some(next) = args.get(idx + 1) {
+                if let Some(theme) = parse_cli_theme(next) {
+                    parsed.theme = Some(theme);
+                    idx += 1;
+                }
+            }
+        }
+        idx += 1;
+    }
+    parsed
+}
+
 fn main() -> eframe::Result<()> {
     gearth_rust::update_checker::cleanup_old_binary();
     eframe::run_native(
@@ -332,9 +437,13 @@ struct Desktop {
     extension_events: Option<Receiver<HostEvent>>,
     extension_runtime: String,
     extension_path: String,
+    extension_install_permanent: bool,
+    extensions_autostarted: bool,
+    extension_autostart_rx: Option<Receiver<std::io::Result<Child>>>,
     extension_processes: Vec<Child>,
     extension_launch_task: Option<Receiver<std::io::Result<Child>>>,
     extension_console: VecDeque<String>,
+    launch_args_auto_connect: bool,
     hotel_version: String,
     client_identifier: String,
     packet_database: String,
@@ -1047,9 +1156,13 @@ impl Default for Desktop {
             extension_events,
             extension_runtime: find_java().to_string_lossy().into_owned(),
             extension_path: String::new(),
+            extension_install_permanent: true,
+            extensions_autostarted: false,
+            extension_autostart_rx: None,
             extension_processes: Vec::new(),
             extension_launch_task: None,
             extension_console: VecDeque::new(),
+            launch_args_auto_connect: false,
             hotel_version: String::new(),
             client_identifier: String::new(),
             packet_database: String::new(),
@@ -1125,6 +1238,8 @@ impl Default for Desktop {
             }
         }
         desktop.load_settings();
+        let cli_args: Vec<String> = std::env::args().skip(1).collect();
+        desktop.apply_launch_args(&parse_cli_args(&cli_args));
         desktop
     }
 }
@@ -1382,6 +1497,29 @@ impl Desktop {
                     self.extension_launch_task = None;
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        if let Some(rx) = &self.extension_autostart_rx {
+            let mut disconnected = false;
+            loop {
+                match rx.try_recv() {
+                    Ok(Ok(child)) => self.extension_processes.push(child),
+                    Ok(Err(e)) => {
+                        if self.extension_console.len() == 512 {
+                            self.extension_console.pop_front();
+                        }
+                        self.extension_console
+                            .push_back(format!("#0 Auto-start failed: {e}"));
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        disconnected = true;
+                        break;
+                    }
+                }
+            }
+            if disconnected {
+                self.extension_autostart_rx = None;
             }
         }
         self.extension_processes
@@ -5521,6 +5659,23 @@ impl eframe::App for Desktop {
                 self.start_update_check();
             }
         }
+        if !self.extensions_autostarted {
+            self.extensions_autostarted = true;
+            self.start_installed_extensions();
+        }
+        if self.launch_args_auto_connect {
+            self.launch_args_auto_connect = false;
+            if self.relay.is_none() && self.attachment_pending.is_none() {
+                if self.nitro {
+                    if let Err(e) = self.start_nitro() {
+                        self.connection_error = Some(e.to_string());
+                        self.status = e.to_string();
+                    }
+                } else {
+                    self.start_flash_or_origins_attach();
+                }
+            }
+        }
         ctx.set_visuals(self.theme.visuals());
         self.poll();
         if self.update_close_requested {
@@ -6068,6 +6223,10 @@ impl eframe::App for Desktop {
                             &mut self.status,
                         );
                     });
+                    ui.checkbox(
+                        &mut self.extension_install_permanent,
+                        self.i18n.text("rust.extensions.install_permanent"),
+                    );
                     if let Some(host) = &self.extension_host {
                         let launching = self.extension_launch_task.is_some();
                         if ui
@@ -6080,11 +6239,26 @@ impl eframe::App for Desktop {
                             let host = host.clone();
                             let runtime = PathBuf::from(&self.extension_runtime);
                             let ext_path = PathBuf::from(&self.extension_path);
+                            let permanent = self.extension_install_permanent;
+                            let ext_dir = self.extensions_dir();
                             let (tx, rx) = std::sync::mpsc::channel();
                             self.extension_launch_task = Some(rx);
                             self.status = "Preparing runtime & launching extension...".into();
                             std::thread::spawn(move || {
-                                let _ = tx.send(host.launch(&runtime, &ext_path));
+                                let launch_path = if permanent {
+                                    match gearth_rust::extension_host::install_extension_file(
+                                        &ext_dir, &ext_path,
+                                    ) {
+                                        Ok(installed) => installed,
+                                        Err(e) => {
+                                            let _ = tx.send(Err(e));
+                                            return;
+                                        }
+                                    }
+                                } else {
+                                    ext_path
+                                };
+                                let _ = tx.send(host.launch(&runtime, &launch_path));
                             });
                         }
                     }
@@ -6171,6 +6345,7 @@ impl eframe::App for Desktop {
             || self.update_task.is_some()
             || self.update_apply_task.is_some()
             || self.extension_launch_task.is_some()
+            || self.extension_autostart_rx.is_some()
         {
             let mut delay = Duration::from_millis(50);
             if self.relay.as_ref().is_some_and(Connection::connected) {
@@ -6201,6 +6376,86 @@ fn find_java() -> PathBuf {
     PathBuf::from("java")
 }
 impl Desktop {
+    fn extensions_dir(&self) -> PathBuf {
+        self.settings_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("extensions")
+    }
+    fn apply_launch_args(&mut self, args: &LaunchArgs) {
+        if let Some(theme) = args.theme {
+            self.theme = theme;
+        }
+        if args.debug_stdout {
+            self.debug_stdout = true;
+            self.advanced_options = true;
+        }
+        if let Some(mode) = args.connect_client {
+            match mode {
+                CliClientMode::Flash => {
+                    self.origins = false;
+                    self.nitro = false;
+                    self.unity = false;
+                    self.connection_port = "30000".into();
+                }
+                CliClientMode::Origins => {
+                    self.origins = true;
+                    self.nitro = false;
+                    self.unity = false;
+                    self.connection_port = "40001".into();
+                }
+                CliClientMode::Unity => {
+                    self.origins = false;
+                    self.nitro = true;
+                    self.unity = true;
+                }
+                CliClientMode::Nitro => {
+                    self.origins = false;
+                    self.nitro = true;
+                    self.unity = false;
+                }
+            }
+            self.launch_args_auto_connect = true;
+        }
+        if let Some(host) = &args.host {
+            self.attachment_host = host.clone();
+            self.auto_detect = false;
+        }
+        if let Some(port) = args.port {
+            self.connection_port = port.to_string();
+            self.auto_detect = false;
+        }
+    }
+    fn start_installed_extensions(&mut self) {
+        let Some(host) = self.extension_host.clone() else {
+            return;
+        };
+        let ext_dir = self.extensions_dir();
+        let runtime = PathBuf::from(&self.extension_runtime);
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.extension_autostart_rx = Some(rx);
+        std::thread::spawn(move || {
+            for file in gearth_rust::extension_host::discover_installed_files(&ext_dir) {
+                let _ = tx.send(host.launch(&runtime, &file));
+            }
+            if let Ok(records) = gearth_rust::extension_store::installed(&ext_dir) {
+                for record in records {
+                    let filename = record
+                        .directory
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .unwrap_or("");
+                    let _ = tx.send(host.launch_command(
+                        &record.command,
+                        &record.directory.join("extension"),
+                        filename,
+                        &record.title,
+                        &runtime,
+                    ));
+                }
+            }
+        });
+    }
     fn start_update_check(&mut self) {
         if self.update_task.is_some() || self.update_apply_task.is_some() {
             return;
@@ -6767,6 +7022,12 @@ impl Desktop {
             .as_ref()
             .and_then(|l| l.btn_exit.as_ref())
             .cloned();
+        let delete_tex = self
+            .logos
+            .as_ref()
+            .and_then(|l| l.btn_delete.as_ref())
+            .cloned();
+        let ext_dir = self.extensions_dir();
 
         // Pixel-faithful Extensions.fxml 5-column bordered table with vertical dividers
         group_box(ui, self.theme, egui::Margin::same(0.0), |ui| {
@@ -6774,10 +7035,10 @@ impl Desktop {
             ui.set_width(box_w);
             let inner_w = (box_w - 2.0).max(540.0);
             let col_title = (inner_w * 0.21).floor();
-            let col_desc = (inner_w * 0.37).floor();
+            let col_desc = (inner_w * 0.36).floor();
             let col_author = (inner_w * 0.17).floor();
-            let col_ver = (inner_w * 0.13).floor();
-            let col_edit = (inner_w - col_title - col_desc - col_author - col_ver).max(66.0);
+            let col_ver = (inner_w * 0.12).floor();
+            let col_edit = (inner_w - col_title - col_desc - col_author - col_ver).max(76.0);
             let col_xs = [
                 col_title,
                 col_title + col_desc,
@@ -6871,8 +7132,8 @@ impl Desktop {
                                             |ui| {
                                                 ui.set_min_width(col_edit);
                                                 ui.set_max_width(col_edit);
-                                                ui.add_space(12.0);
-                                                ui.spacing_mut().item_spacing.x = 8.0;
+                                                ui.add_space(8.0);
+                                                ui.spacing_mut().item_spacing.x = 6.0;
                                                 render_actions(ui);
                                             },
                                         );
@@ -6938,14 +7199,25 @@ impl Desktop {
                     if let Some(host) = &self.extension_host {
                         let open_tip = self.i18n.text("rust.extensions.open");
                         let allow_tip = self.i18n.text("rust.extensions.allow");
-                        let delete_tip = self.i18n.text("tab.extensions.table.edit.delete.tooltip");
+                        let disconnect_tip =
+                            self.i18n.text("tab.extensions.table.edit.delete.tooltip");
+                        let uninstall_tip = self
+                            .i18n
+                            .text("tab.extensions.table.edit.uninstall.tooltip");
                         let mut status_update: Option<String> = None;
+                        let mut uninstall_request: Option<(u64, String, String)> = None;
                         for extension in host.extensions() {
                             let bg = if extension.approved {
                                 palette.table_row_active
                             } else {
                                 palette.table_row_inactive
                             };
+                            let installed_file = extension.info.file.as_ref().filter(|fname| {
+                                extension.info.can_delete
+                                    && gearth_rust::extension_host::is_installed_file(
+                                        &ext_dir, fname,
+                                    )
+                            });
                             draw_row(
                                 ui,
                                 bg,
@@ -6972,16 +7244,62 @@ impl Desktop {
                                             status_update = Some(e.to_string());
                                         }
                                     }
-                                    if icon_action(ui, exit_tex.as_ref(), "✕", 14.0)
-                                        .on_hover_text(&delete_tip)
-                                        .clicked()
+                                    if extension.info.can_leave
+                                        && icon_action(ui, exit_tex.as_ref(), "✕", 14.0)
+                                            .on_hover_text(&disconnect_tip)
+                                            .clicked()
                                     {
                                         if let Err(e) = host.disconnect(extension.id) {
                                             status_update = Some(e.to_string());
                                         }
                                     }
+                                    if let Some(fname) = installed_file {
+                                        if icon_action(ui, delete_tex.as_ref(), "🗑", 14.0)
+                                            .on_hover_text(&uninstall_tip)
+                                            .clicked()
+                                        {
+                                            uninstall_request = Some((
+                                                extension.id,
+                                                fname.clone(),
+                                                extension.info.title.clone(),
+                                            ));
+                                        }
+                                    }
                                 },
                             );
+                        }
+                        if let Some((id, fname, title)) = uninstall_request {
+                            let _ = host.disconnect(id);
+                            let dir = ext_dir.clone();
+                            let store_removed = fname.starts_with("extension-");
+                            match gearth_rust::extension_host::uninstall_installed(&dir, &fname) {
+                                Ok(true) => {
+                                    if store_removed {
+                                        self.store.invalidate();
+                                    }
+                                    status_update = Some(format!("Uninstalled {title}"));
+                                }
+                                Ok(false) => {}
+                                Err(_) => {
+                                    // On Windows the extension JVM/exe may briefly hold a file lock while exiting.
+                                    std::thread::spawn(move || {
+                                        for _ in 0..10 {
+                                            std::thread::sleep(Duration::from_millis(150));
+                                            if gearth_rust::extension_host::uninstall_installed(
+                                                &dir, &fname,
+                                            )
+                                            .is_ok()
+                                            {
+                                                break;
+                                            }
+                                        }
+                                    });
+                                    if store_removed {
+                                        self.store.invalidate();
+                                    }
+                                    status_update = Some(format!("Uninstalling {title}..."));
+                                }
+                            }
                         }
                         if let Some(err) = status_update {
                             self.status = err;
@@ -7765,5 +8083,37 @@ mod logger_prediction_tests {
             "  game-test.example \n\nGAME-TEST.EXAMPLE\ngame-2.example\n",
         );
         assert_eq!(parsed, vec!["game-test.example", "game-2.example"]);
+    }
+
+    #[test]
+    fn cli_launch_args_parse_beta29_flags_and_equals_syntax() {
+        let args: Vec<String> = [
+            "-c",
+            "origins",
+            "--host",
+            "game-od.habbo.com",
+            "--port=40001",
+            "--debug",
+            "-t",
+            "tanji",
+        ]
+        .into_iter()
+        .map(String::from)
+        .collect();
+        let parsed = super::parse_cli_args(&args);
+        assert_eq!(parsed.connect_client, Some(super::CliClientMode::Origins));
+        assert_eq!(parsed.host.as_deref(), Some("game-od.habbo.com"));
+        assert_eq!(parsed.port, Some(40001));
+        assert!(parsed.debug_stdout);
+        assert_eq!(parsed.theme, Some(super::AppTheme::Tanji));
+
+        let nitro_args: Vec<String> = ["--connect=nitro", "--theme=dark", "--port", "0"]
+            .into_iter()
+            .map(String::from)
+            .collect();
+        let nitro = super::parse_cli_args(&nitro_args);
+        assert_eq!(nitro.connect_client, Some(super::CliClientMode::Nitro));
+        assert_eq!(nitro.theme, Some(super::AppTheme::GEarthDark));
+        assert_eq!(nitro.port, None);
     }
 }

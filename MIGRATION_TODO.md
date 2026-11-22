@@ -1,5 +1,12 @@
 # Migration tasks
 
+## Latest: Full beta-29 Extension Lifecycle, CLI Flags, PortChecker & macOS Privileged Hosts
+
+- [x] Support all 6 beta-29 extension types (`.jar`, `.py`, `.py3`, `.exe`, `.sh`, `.js`), permanent installation into `extensions/` with 12-digit unique suffix, startup auto-launch of installed standalone & Store extensions, and separate Disconnect (`ButtonExit.png`) vs Uninstall (`ButtonDelete.png`) actions.
+- [x] Add desktop CLI launch flags (`--connect`/`-c`, `--host`, `--port`, `--debug`, `-t`/`--theme`).
+- [x] Port cross-platform `PortChecker` (`netstat`+`tasklist` / `lsof`) for `AddrInUse` relay errors and macOS `osascript` privileged `/etc/hosts` fallback.
+- [ ] External / user-run boundary only: live official-client end-to-end sessions (Flash AIR, Origins, Unity WebGL, Nitro, real G-Presets/QX Scripter/G-Python gameplay), optional Chrome TLS JA3/JA4 impersonation (BoringSSL) if a live hotel rejects `rustls`, OpenJDK internal stateful `\b{g}` quirk, and paid OS code-signing certificates.
+
 ## Latest: Faithful G-Earth 1.5.4-beta-29 Desktop UI Replica
 
 - [x] Port original beta-29 Bootstrap/JavaFX styling for `G-Earth`, `G-Earth Dark`, and `Tanji` with embedded MIT theme logos (`src/theme_ui.rs`, `resources/themes/`).

@@ -62,6 +62,9 @@ impl StoreUi {
             category: String::new(),
         }
     }
+    pub fn invalidate(&mut self) {
+        self.initialized = false;
+    }
     fn refresh(&mut self, status: &mut String) {
         match extension_store::installed(&self.root) {
             Ok(entries) => self.installed = entries,

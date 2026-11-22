@@ -49,7 +49,7 @@ mod windows {
     pub(super) fn filter(kind: FileKind) -> Vec<u16> {
         let text = match kind {
             FileKind::Extension => {
-                "Extensions (*.jar;*.exe;*.py)\0*.jar;*.exe;*.py\0All files (*.*)\0*.*\0\0"
+                "Extensions (*.jar;*.exe;*.py;*.py3;*.js;*.sh)\0*.jar;*.exe;*.py;*.py3;*.js;*.sh\0All files (*.*)\0*.*\0\0"
             }
             FileKind::Schedule => "Schedule files (*.sched)\0*.sched\0All files (*.*)\0*.*\0\0",
             FileKind::Json => "JSON files (*.json)\0*.json\0All files (*.*)\0*.*\0\0",
@@ -137,7 +137,7 @@ mod unix {
         } else {
             match kind {
                 FileKind::Extension => {
-                    r#"POSIX path of (choose file of type {"jar", "py", "sh", "command", "public.unix-executable"})"#
+                    r#"POSIX path of (choose file of type {"jar", "py", "py3", "js", "sh", "exe", "command", "public.unix-executable"})"#
                 }
                 FileKind::Schedule => r#"POSIX path of (choose file of type {"sched"})"#,
                 FileKind::Json => r#"POSIX path of (choose file of type {"json"})"#,
@@ -185,7 +185,9 @@ mod unix {
             args.push("--confirm-overwrite");
         }
         args.push(match kind {
-            FileKind::Extension => "--file-filter=Extensions (*.jar *.py) | *.jar *.py",
+            FileKind::Extension => {
+                "--file-filter=Extensions (*.jar *.exe *.py *.py3 *.js *.sh) | *.jar *.exe *.py *.py3 *.js *.sh"
+            }
             FileKind::Schedule => "--file-filter=Schedule files (*.sched) | *.sched",
             FileKind::Json => "--file-filter=JSON files (*.json) | *.json",
             FileKind::Text => "--file-filter=Text files (*.txt) | *.txt",
@@ -197,7 +199,7 @@ mod unix {
     #[cfg(any(target_os = "linux", test))]
     pub(super) fn kdialog_args(kind: FileKind, save: bool) -> Vec<&'static str> {
         let filter = match kind {
-            FileKind::Extension => "*.jar *.py|Extensions",
+            FileKind::Extension => "*.jar *.exe *.py *.py3 *.js *.sh|Extensions",
             FileKind::Schedule => "*.sched|Schedule files",
             FileKind::Json => "*.json|JSON files",
             FileKind::Text => "*.txt|Text files",

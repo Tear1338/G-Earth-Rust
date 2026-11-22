@@ -1,5 +1,12 @@
 # G-Earth Rust migration progress
 
+## Full beta-29 Extension Lifecycle, CLI Flags, PortChecker & macOS Privileged Hosts
+
+- **Extension persistence, startup auto-launch & all 6 file types (`src/extension_host.rs`, `src/desktop.rs`, `crates/gearth-platform/src/file_dialog.rs`)**: Added full support for all 6 beta-29 extension formats (`.jar`, `.py`, `.py3`, `.exe`, `.sh`, `.js` — enabling native/C# `.exe` extensions like **QX Scripter**), permanent installation into `extensions/` with unique 12-digit suffixes (`NormalExtensionRunner.java` parity), automatic background startup of all installed standalone and Extension Store extensions, and separate **Disconnect (`ButtonExit.png`)** vs **Uninstall (`ButtonDelete.png`)** row actions with Windows file-lock retry cleanup.
+- **Desktop CLI launch flags (`src/desktop.rs`)**: Added beta-29 startup flags (`--connect`/`-c flash|origins|unity|nitro`, `--host`, `--port`, `--debug`, `-t`/`--theme`) with unit tests and automatic first-frame connection.
+- **Port-in-use process detection (`crates/gearth-platform/src/port_checker.rs`, `src/relay.rs`)**: Ported beta-29 `WindowsPortChecker` (`netstat -ano` + `tasklist`, including localized OS labels) and `UnixPortChecker` (`lsof -nP`) to surface the owning process name and PID when a relay port is already in use.
+- **macOS privileged `/etc/hosts` helper (`crates/gearth-platform/src/macos_hosts.rs`, `src/attachment.rs`)**: Added injection-safe `osascript ... with administrator privileges` fallback when `/etc/hosts` returns `PermissionDenied` on macOS, with temp-file cleanup and cross-platform unit tests.
+
 ## Built-in SHA-256 Verified GitHub Auto-Updater
 
 - **Automatic GitHub self-updater (`src/update_checker.rs`, `src/desktop.rs`, `.github/workflows/ci.yml`)**: Embedded `GEARTH_BUILD_TAG` (`development-<run_number>`) in all CI desktop builds (Windows, macOS, Linux), added numeric `development-*` + Maven version comparison, `SHA256SUMS.txt` download/verification, atomic in-place binary swap (`<exe>.old` backup + rollback + cleanup on restart) with Windows Inno Setup silent-installer fallback for read-only install directories, startup auto-update (only when disconnected), 1-click **"Update & Restart"** button & titlebar badge, and 9-language localization (`rust.info.auto_update`, `rust.info.update_now`, `rust.info.updating`, `rust.info.update_failed`).

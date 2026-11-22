@@ -8,6 +8,8 @@ mod linux;
 #[cfg(any(target_os = "macos", test))]
 mod macos;
 mod macos_flash_prep;
+mod macos_hosts;
+mod port_checker;
 mod process_tree;
 mod tray;
 #[cfg(any(target_os = "macos", target_os = "linux", test))]
@@ -18,6 +20,8 @@ pub use ip_mapping::{system_ip_mapper, IpMapper};
 pub use macos_flash_prep::{
     check_macos_flash_client, prepare_macos_flash_client, MacosFlashPrepStatus,
 };
+pub use macos_hosts::write_macos_hosts_privileged;
+pub use port_checker::process_using_port;
 pub use process_tree::ProcessTree;
 pub use tray::{SystemTray, TrayEvent};
 #[derive(Clone, Debug)]
