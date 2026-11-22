@@ -1,5 +1,9 @@
 # Continuation state
 
+## Next: validate bulk cursor retention
+
+Workspace and desktop/web checks and the expanded read-safety test pass for retaining a Java bulk-replacement cursor beyond the new packet end. Commit and push, then rebuild release and inspect CI. Continue other cursor/size differences, `\b{g}`, macOS support and user-run client tests.
+
 ## Next: Java cursor parity and platform gaps
 
 The mixed bulk-string corpus passes; Windows CI and release passed at `beb327c9f6020b5a0023c869bc5972ab96cf9c77`. Inspect Java cursor behavior after shrinking and Rust packet invariants before deciding whether a safe compatibility representation is possible. Stateful `\b{g}`, macOS support and user-run live tests remain open.

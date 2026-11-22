@@ -1,5 +1,9 @@
 # Rust migration architecture
 
+## Java-compatible cursor after bulk replacement
+
+The Java bulk string method retains its original cursor even when the packet shrinks below it. Remaining-byte calculation saturates, and EVA reads use bounds checks; the stricter existing mutation APIs keep their previous cursor behavior.
+
 ## Mixed bulk string oracle
 
 The compatibility path is checked against mixed-field beta-29 packets, including empty strings and supplementary Unicode replacements. Work and cursor safety bounds remain explicit differences.

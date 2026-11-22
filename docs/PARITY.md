@@ -1,5 +1,9 @@
 # Compatibility with 1.5.4-beta-29
 
+## Java bulk string cursor evidence
+
+A beta-29 packet oracle verifies that bulk replacement retains the original cursor after shrinking below it. Rust protects subsequent checked reads and reports zero remaining bytes; other Java cursor edge cases are not covered by this change.
+
 ## Expanded bulk string evidence
 
 Six hundred deterministic mixed-field packets agree with beta-29 for selected empty, Latin-1 and Unicode strings and replacement limits. This does not establish parity for oversized data or cursor positions beyond the resulting packet.

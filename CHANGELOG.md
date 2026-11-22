@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — Java bulk cursor
+
+- Retain the Java read cursor after a shrinking bulk string replacement, with checked out-of-range reads.
+
 ## Unreleased — bulk string parity corpus
 
 - Expand beta-29 bulk string comparison with 600 mixed-field cases.

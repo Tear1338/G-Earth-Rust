@@ -275,6 +275,32 @@ fn java_bulk_replacement_preserves_empty_growth_quirk() {
 }
 
 #[test]
+fn java_bulk_shrink_retains_cursor_and_reads_fail_safely() {
+    let mut packet = Packet::new(5);
+    packet.put_string("abcdefgh").unwrap().put_i32(42).unwrap();
+    let original_end = packet.bytes().len();
+    packet.set_cursor(original_end).unwrap();
+    packet
+        .replace_strings_java("abcdefgh", "x", Some(1))
+        .unwrap();
+    assert_eq!(packet.cursor(), original_end);
+    assert_eq!(packet.remaining(), 0);
+    assert!(packet.read_u8().is_err());
+    assert!(packet.read_bytes(0).is_err());
+    assert!(packet.read_u16().is_err());
+    assert!(packet.read_i32().is_err());
+    assert!(packet.read_i64().is_err());
+    assert!(packet.read_f32().is_err());
+    assert!(packet.read_f64().is_err());
+    assert!(packet.read_short_bytes().is_err());
+    assert!(packet.read_long_bytes().is_err());
+    assert!(packet.read_string().is_err());
+    assert_eq!(packet.cursor(), original_end);
+    packet.reset();
+    assert_eq!(packet.read_string().unwrap(), "x");
+}
+
+#[test]
 fn substring_replacement_scans_from_the_end_and_is_transactional() {
     let mut packet = Packet::new(9);
     packet

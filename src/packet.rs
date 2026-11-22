@@ -3641,7 +3641,7 @@ impl Packet {
         self.cursor
     }
     pub fn remaining(&self) -> usize {
-        self.bytes.len() - self.cursor
+        self.bytes.len().saturating_sub(self.cursor)
     }
     /// Test whether an EVA structure describes the complete body, without
     /// moving the read cursor or modifying the packet.
@@ -4648,6 +4648,9 @@ impl Packet {
             }
         }
         if count != 0 {
+            // Java leaves readIndex untouched even if shrinking puts it past
+            // the end; reads remain checked and remaining() saturates at zero.
+            candidate.cursor = self.cursor;
             *self = candidate;
         }
         Ok(count)

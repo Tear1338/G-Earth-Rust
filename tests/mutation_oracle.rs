@@ -3932,6 +3932,21 @@ fn mutations_match_original_java_packets_and_cursor() {
     utf16_long.reset();
     assert_eq!(utf16_long.read_long_bytes().unwrap(), encoded);
     assert_eq!(utf16_long.read_i32().unwrap(), 123);
+    let mut bulk_cursor = Packet::new(5);
+    bulk_cursor
+        .put_string("abcdefgh")
+        .unwrap()
+        .put_i32(42)
+        .unwrap();
+    bulk_cursor.set_cursor(bulk_cursor.bytes().len()).unwrap();
+    bulk_cursor
+        .replace_strings_java("abcdefgh", "x", Some(1))
+        .unwrap();
+    check("strings_java_cursor_past_end", &bulk_cursor);
+    assert_eq!(bulk_cursor.remaining(), 0);
+    assert!(bulk_cursor.read_string().is_err());
+    bulk_cursor.reset();
+    assert_eq!(bulk_cursor.read_string().unwrap(), "x");
     let unicode_old_values = ["a", "", "雪", "🐱"];
     let unicode_new_values = ["雪", "🐱", "🐱🐱", "A🐱B", ""];
     for (old_index, old) in unicode_old_values.iter().enumerate() {

@@ -1,5 +1,9 @@
 # G-Earth Rust migration progress
 
+## Java bulk replacement cursor
+
+The explicit Java bulk-string replacement now preserves `readIndex` even if shrinking makes it exceed the packet length, as confirmed against beta-29. Rust `remaining()` saturates at zero and checked reads fail safely until the cursor is reset. The Java oracle and 46 mutation tests passed; workspace/all-targets tests, 169 desktop/web library tests (7 ignored), desktop/web Clippy, debug build and expanded read-safety test passed. Windows desktop/web release and CI run 44964776832 passed at preceding commit `1f8e6ed548216bbdbdfaa8dad85a552903857b52`. Work and size bounds, other Java cursor cases, `\b{g}`, macOS and real-client compatibility remain open.
+
 ## Expanded Java bulk string oracle
 
 Six hundred additional deterministic beta-29 packets exercise six mixed fields, empty strings, Unicode replacements and several replacement limits. All match the Java-compatible bulk string method; the full mutation oracle, formatting, test Clippy and 45 mutation tests passed. Windows CI run 44964380105, including release compilation, passed at code commit `beb327c9f6020b5a0023c869bc5972ab96cf9c77`; a separate local release is still running. Cursor clamping and bounded large-input behavior differ from Java. Clients, protocols and extensions remain unverified.
@@ -761,4 +765,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Commit and push the validated expanded bulk-string oracle, then verify CI. Inspect Java cursor behavior after a shrinking bulk replacement and Rust packet invariants before selecting a safe compatibility representation; then continue Flash scheduling and `Matcher.last` for `\b{g}`. The user handles live tests; clients, protocols and extensions remain unverified.
+Commit and push the validated Java bulk-replacement cursor change, then rebuild Windows desktop/web release and inspect CI. Continue other Java cursor/size differences, Flash scheduling and `Matcher.last` for `\b{g}`. The user handles live tests; clients, protocols and extensions remain unverified.

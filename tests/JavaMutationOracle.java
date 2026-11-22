@@ -2042,6 +2042,11 @@ public class JavaMutationOracle {
         HPacket utf16Long = new HPacket(9);
         utf16Long.appendLongString("水🐱", StandardCharsets.UTF_16BE).appendInt(123);
         emit("utf16_long", utf16Long);
+        HPacket bulkCursor = new HPacket(5);
+        bulkCursor.appendString("abcdefgh").appendInt(42);
+        bulkCursor.setReadIndex(bulkCursor.toBytes().length);
+        bulkCursor.replaceXStrings("abcdefgh", "x", 1);
+        emit("strings_java_cursor_past_end", bulkCursor);
         String[] unicodeOldValues = {"a", "", "雪", "🐱"};
         String[] unicodeNewValues = {"雪", "🐱", "🐱🐱", "A🐱B", ""};
         for (int oldIndex = 0; oldIndex < unicodeOldValues.length; oldIndex++) {

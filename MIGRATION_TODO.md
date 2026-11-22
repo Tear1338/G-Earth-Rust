@@ -1,5 +1,11 @@
 # Migration tasks
 
+## Latest: Java bulk replacement cursor
+
+- [x] Match beta-29 cursor retention after bulk string shrink and protect checked reads beyond the end.
+- [x] Complete workspace and desktop/web validation and expanded read-safety tests.
+- [ ] Rebuild release and inspect CI. Continue other Java cursor and size-limit differences.
+
 ## Latest: expanded Java bulk string oracle
 
 - [x] Compare 600 deterministic mixed-field packets against beta-29.
