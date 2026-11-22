@@ -5897,6 +5897,7 @@ impl eframe::App for Desktop {
                         }
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let theme_before = self.theme;
                         ui.menu_button("⚙", |ui| {
                             if ui.button(self.i18n.text("rust.settings.save")).clicked() {
                                 self.save_settings();
@@ -5919,6 +5920,13 @@ impl eframe::App for Desktop {
                         ui.add_space(4.0);
                         dark_mode_pill_switch(ui, &mut self.theme)
                             .on_hover_text("Toggle Dark / Light theme (Right-click: Tanji)");
+                        if self.theme != theme_before {
+                            if let Some(host) = &self.extension_host {
+                                if let Err(e) = host.set_theme(self.theme.name()) {
+                                    self.status = e.to_string();
+                                }
+                            }
+                        }
                         ui.add_space(6.0);
                         let before = self.language.clone();
                         let flag_tex = self
@@ -6596,6 +6604,7 @@ impl eframe::App for Desktop {
             } else {
                 egui::WindowLevel::Normal
             };
+            let theme_visuals = self.theme.visuals();
             ctx.show_viewport_immediate(
                 egui::ViewportId::from_hash_of("logger_window"),
                 with_gearth_icon(
@@ -6606,6 +6615,7 @@ impl eframe::App for Desktop {
                         .with_min_inner_size([480.0, 320.0]),
                 ),
                 |logger_ctx, class| {
+                    logger_ctx.set_visuals(theme_visuals.clone());
                     if class == egui::ViewportClass::Embedded {
                         egui::Window::new(&title)
                             .id(egui::Id::new("floating_logger"))
@@ -6801,6 +6811,11 @@ impl Desktop {
     fn apply_launch_args(&mut self, args: &LaunchArgs) {
         if let Some(theme) = args.theme {
             self.theme = theme;
+            if let Some(host) = &self.extension_host {
+                if let Err(e) = host.set_theme(self.theme.name()) {
+                    self.status = e.to_string();
+                }
+            }
         }
         if args.debug_stdout {
             self.debug_stdout = true;
@@ -7440,6 +7455,9 @@ impl Desktop {
         self.i18n = I18n::new(&self.language);
         if let Some(host) = &self.extension_host {
             if let Err(e) = host.set_language(&self.language) {
+                self.status = e.to_string();
+            }
+            if let Err(e) = host.set_theme(self.theme.name()) {
                 self.status = e.to_string();
             }
         }

@@ -121,26 +121,36 @@ pub fn info_response(info: &ExtensionInfo) -> Result<Packet> {
         .put_bool(info.can_delete)?;
     Ok(p)
 }
+pub const DEFAULT_THEME: &str = "G-Earth";
+
 pub fn init(connected: bool) -> Result<Packet> {
-    init_with_language(connected, "en")
+    init_with_host_info(connected, "en", DEFAULT_THEME)
 }
 pub fn init_with_language(connected: bool, language: &str) -> Result<Packet> {
+    init_with_host_info(connected, language, DEFAULT_THEME)
+}
+pub fn init_with_host_info(connected: bool, language: &str, theme: &str) -> Result<Packet> {
     let mut p = Packet::new(7);
     p.put_bool(connected)?;
-    append_host_info(&mut p, language)?;
+    append_host_info(&mut p, language, theme)?;
     Ok(p)
 }
-fn append_host_info(p: &mut Packet, language: &str) -> Result<()> {
+fn append_host_info(p: &mut Packet, language: &str, theme: &str) -> Result<()> {
     p.put_string("G-Earth-Rust")?
         .put_string(env!("CARGO_PKG_VERSION"))?
-        .put_i32(1)?
+        .put_i32(2)?
         .put_string("language")?
-        .put_string(language)?;
+        .put_string(language)?
+        .put_string("theme")?
+        .put_string(theme)?;
     Ok(())
 }
 pub fn update_host_info(language: &str) -> Result<Packet> {
+    update_host_info_with_theme(language, DEFAULT_THEME)
+}
+pub fn update_host_info_with_theme(language: &str, theme: &str) -> Result<Packet> {
     let mut p = Packet::new(10);
-    append_host_info(&mut p, language)?;
+    append_host_info(&mut p, language, theme)?;
     Ok(p)
 }
 pub fn intercept(message: &Message) -> Result<Packet> {

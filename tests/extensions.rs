@@ -820,6 +820,7 @@ fn identifier_database_roundtrip_and_duplicate_directions() {
 fn language_is_in_host_info_and_updates_existing_extensions() {
     let (host, events) = ExtensionHost::start("127.0.0.1:0".parse().unwrap(), Vec::new()).unwrap();
     host.set_language("fr").unwrap();
+    host.set_theme("G-Earth Dark").unwrap();
     let mut stream = TcpStream::connect(host.address).unwrap();
     stream
         .set_read_timeout(Some(Duration::from_secs(2)))
@@ -836,16 +837,30 @@ fn language_is_in_host_info_and_updates_existing_extensions() {
     assert!(!init.read_bool().unwrap());
     init.read_string().unwrap();
     init.read_string().unwrap();
-    assert_eq!(init.read_i32().unwrap(), 1);
+    assert_eq!(init.read_i32().unwrap(), 2);
     assert_eq!(init.read_string().unwrap(), "language");
     assert_eq!(init.read_string().unwrap(), "fr");
+    assert_eq!(init.read_string().unwrap(), "theme");
+    assert_eq!(init.read_string().unwrap(), "G-Earth Dark");
     host.set_language("de").unwrap();
     let mut update = read_frame(&mut stream).unwrap();
     assert_eq!(update.header(), 10);
     update.read_string().unwrap();
     update.read_string().unwrap();
-    assert_eq!(update.read_i32().unwrap(), 1);
+    assert_eq!(update.read_i32().unwrap(), 2);
     assert_eq!(update.read_string().unwrap(), "language");
     assert_eq!(update.read_string().unwrap(), "de");
+    assert_eq!(update.read_string().unwrap(), "theme");
+    assert_eq!(update.read_string().unwrap(), "G-Earth Dark");
+    host.set_theme("G-Earth").unwrap();
+    let mut theme_update = read_frame(&mut stream).unwrap();
+    assert_eq!(theme_update.header(), 10);
+    theme_update.read_string().unwrap();
+    theme_update.read_string().unwrap();
+    assert_eq!(theme_update.read_i32().unwrap(), 2);
+    assert_eq!(theme_update.read_string().unwrap(), "language");
+    assert_eq!(theme_update.read_string().unwrap(), "de");
+    assert_eq!(theme_update.read_string().unwrap(), "theme");
+    assert_eq!(theme_update.read_string().unwrap(), "G-Earth");
     host.stop();
 }

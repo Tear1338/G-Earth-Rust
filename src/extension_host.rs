@@ -66,6 +66,7 @@ struct Peer {
 }
 struct Shared {
     language: Mutex<String>,
+    theme: Mutex<String>,
     peers: Mutex<BTreeMap<u64, Arc<Peer>>>,
     tokens: Mutex<HashMap<String, (String, Instant)>>,
     connection: Mutex<Option<ConnectionDetails>>,
@@ -172,6 +173,7 @@ impl ExtensionHost {
         let (injections, injection_rx) = mpsc::sync_channel(256);
         let shared = Arc::new(Shared {
             language: Mutex::new("en".into()),
+            theme: Mutex::new(extension::DEFAULT_THEME.into()),
             peers: Mutex::new(BTreeMap::new()),
             tokens: Mutex::new(HashMap::new()),
             connection: Mutex::new(None),
@@ -265,7 +267,36 @@ impl ExtensionHost {
             .language
             .lock()
             .map_err(|_| io::Error::other("language lock poisoned"))? = language.into();
-        self.broadcast(extension::update_host_info(language).map_err(io::Error::other)?);
+        let theme = self
+            .shared
+            .theme
+            .lock()
+            .map_err(|_| io::Error::other("theme lock poisoned"))?
+            .clone();
+        self.broadcast(
+            extension::update_host_info_with_theme(language, &theme).map_err(io::Error::other)?,
+        );
+        Ok(())
+    }
+    pub fn set_theme(&self, theme: &str) -> io::Result<()> {
+        let theme = theme.trim();
+        if theme.is_empty() || theme.len() > 64 {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid theme"));
+        }
+        *self
+            .shared
+            .theme
+            .lock()
+            .map_err(|_| io::Error::other("theme lock poisoned"))? = theme.into();
+        let language = self
+            .shared
+            .language
+            .lock()
+            .map_err(|_| io::Error::other("language lock poisoned"))?
+            .clone();
+        self.broadcast(
+            extension::update_host_info_with_theme(&language, theme).map_err(io::Error::other)?,
+        );
         Ok(())
     }
     pub fn approve(&self, id: u64) -> io::Result<()> {
@@ -815,10 +846,17 @@ fn initialize(shared: &Shared, peer: &Peer) -> io::Result<()> {
     let language = shared
         .language
         .lock()
-        .map_err(|_| io::Error::other("language lock poisoned"))?;
+        .map_err(|_| io::Error::other("language lock poisoned"))?
+        .clone();
+    let theme = shared
+        .theme
+        .lock()
+        .map_err(|_| io::Error::other("theme lock poisoned"))?
+        .clone();
     send(
         &peer.output,
-        extension::init_with_language(connection.is_some(), &language).map_err(io::Error::other)?,
+        extension::init_with_host_info(connection.is_some(), &language, &theme)
+            .map_err(io::Error::other)?,
     )?;
     if let Some(c) = connection.as_ref() {
         send(&peer.output, c.packet()?)?;
