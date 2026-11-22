@@ -239,6 +239,22 @@ struct Shared {
     index: AtomicI32,
     stop: AtomicBool,
 }
+fn first_evawire_header(bytes: &[u8]) -> Option<u16> {
+    if bytes.len() < 6 {
+        return None;
+    }
+    let frame_len = u32::from_be_bytes(bytes[..4].try_into().ok()?) as usize;
+    if !(2..=crate::packet::MAX_FRAME).contains(&frame_len) || 4 + frame_len > bytes.len() {
+        return None;
+    }
+    Some(u16::from_be_bytes([bytes[4], bytes[5]]))
+}
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CityActivation {
+    None,
+    Migrate,
+    Replace,
+}
 impl Shared {
     fn peer(&self, key: PeerKey) -> io::Result<Arc<Peer>> {
         let mut peers = self
@@ -330,17 +346,19 @@ impl Shared {
     }
     #[cfg(test)]
     async fn activate(self: &Arc<Self>, peer: &Arc<Peer>, uri: &Uri) -> io::Result<()> {
-        self.activate_with_migration(peer, uri, false).await
+        self.activate_with_migration(peer, uri, CityActivation::None)
+            .await
     }
     async fn activate_with_migration(
         self: &Arc<Self>,
         peer: &Arc<Peer>,
         uri: &Uri,
-        allow_city_migration: bool,
+        city_activation: CityActivation,
     ) -> io::Result<()> {
         // Bound the control backlog by deferring new sessions until the
         // previous lifecycle has entered the consumer channel. Never hold
         // a peer lock or block a Tokio worker while waiting for the UI.
+        let mut replaced_previous: Option<Arc<Peer>> = None;
         let migrated_from: Option<Arc<Peer>> = loop {
             let outcome = {
                 let mut active = self
@@ -354,13 +372,20 @@ impl Shared {
                     ));
                 }
                 if let Some(previous) = active.as_ref().filter(|p| p.key != peer.key).cloned() {
-                    if allow_city_migration
+                    if city_activation == CityActivation::Migrate
                         && previous.ready.load(Ordering::Acquire)
                         && !previous.closed.load(Ordering::Acquire)
                     {
                         *active = Some(peer.clone());
                         peer.active.store(true, Ordering::Release);
                         Some(Some(previous))
+                    } else if city_activation == CityActivation::Replace {
+                        // A reloaded HabboCity tab opened a fresh WebSocket before the old tab
+                        // finished its TCP FIN; supersede the stale peer cleanly.
+                        *active = Some(peer.clone());
+                        peer.active.store(true, Ordering::Release);
+                        replaced_previous = Some(previous);
+                        Some(None)
                     } else {
                         return Err(io::Error::other("another Nitro client is already active"));
                     }
@@ -377,6 +402,18 @@ impl Shared {
             }
             tokio::time::sleep(Duration::from_millis(5)).await;
         };
+        if let Some(previous) = replaced_previous {
+            // End the superseded peer's extension session and close it; `*active` already
+            // points to `peer`, so `close(&previous)` will not emit a spurious Disconnected.
+            if let Some(host) = &self.options.extensions {
+                if let Ok(mut session) = previous.extension_session.lock() {
+                    if let Some(epoch) = session.take() {
+                        host.end_owned_connection(epoch);
+                    }
+                }
+            }
+            self.close(&previous);
+        }
         if let Some(previous) = migrated_from {
             if let Ok(mut prev_session) = previous.extension_session.lock() {
                 if let Some(epoch) = prev_session.take() {
@@ -504,8 +541,15 @@ impl Shared {
             Some(Arc::new(database));
         peer.ready.store(true, Ordering::Release);
         peer.notify.notify_waiters();
+        let connected_port =
+            uri.port_u16()
+                .unwrap_or(if matches!(uri.scheme_str(), Some("https" | "wss")) {
+                    443
+                } else {
+                    80
+                });
         let _ = self.events.try_send(Event::Connected(format!(
-            "Nitro {}",
+            "Nitro {}:{connected_port}",
             uri.host().unwrap_or("")
         )));
         Ok(())
@@ -607,7 +651,10 @@ impl Handler {
         }
         request.into()
     }
-    async fn handle_asset_response(&mut self, response: Response<Body>) -> Response<Body> {
+    async fn handle_asset_response(&mut self, mut response: Response<Body>) -> Response<Body> {
+        // Prevent browsers from upgrading proxied Cloudflare/CDN hosts (e.g. HabboCity) to
+        // HTTP/3 (QUIC/UDP), which would bypass the local HTTP/1.1+TLS proxy.
+        response.headers_mut().remove("alt-svc");
         if self.1 == 0 || response.status() != StatusCode::OK {
             return response;
         }
@@ -866,14 +913,21 @@ impl WebSocketHandler for Handler {
                             if direction==Direction::ToServer&&!decided {
                                 decided=true;
                                 let url=uri.to_string();
+                                let normalized_url=crate::nitro::normalize_websocket_url(&url);
                                 let configured=self.0.options.hotels.find(&url).is_some()
                                     ||(self.0.options.city_mode&&is_city_host)
-                                    ||self.0.options.websocket_urls.iter().any(|u|{let url=url.split('?').next().unwrap_or(&url);match u.strip_suffix('*'){Some(prefix)=>url.starts_with(prefix),None=>u==url}});
-                                let parsed_first_header=Packet::from_bytes(bytes.to_vec()).ok().map(|p|p.header());
+                                    ||self.0.options.websocket_urls.iter().any(|u|{match u.strip_suffix('*'){Some(prefix)=>normalized_url.starts_with(prefix),None=>u==normalized_url.as_ref()}});
+                                let parsed_first_header=first_evawire_header(&bytes);
                                 let hello=parsed_first_header==Some(4000);
-                                let city_link_control=is_city_host&&parsed_first_header.is_some_and(|h|(7701..=7705).contains(&h));
+                                let city_link_control=is_city_host&&parsed_first_header.is_some_and(|h|(7701..=7705).contains(&h)||h==2419);
                                 let city_plain=hello||city_link_control;
-                                let city_migration=is_city_host&&parsed_first_header==Some(7702);
+                                let city_activation=if !is_city_host {
+                                    CityActivation::None
+                                } else if parsed_first_header==Some(7702) {
+                                    CityActivation::Migrate
+                                } else {
+                                    CityActivation::Replace
+                                };
                                 if self.0.options.detect_nitro&&(configured||hello){
                                     {
                                         let mut modifier=peer.modifier.lock().await;
@@ -888,7 +942,7 @@ impl WebSocketHandler for Handler {
                                             }
                                         }
                                     }
-                                    self.0.activate_with_migration(&peer,&uri,city_migration).await?;
+                                    self.0.activate_with_migration(&peer,&uri,city_activation).await?;
                                 }
                             }
                             if peer.active.load(Ordering::Acquire){
@@ -1338,26 +1392,51 @@ mod lifecycle_tests {
             let _ = handler.handle_asset_request(req).await;
             assert_eq!(handler.1, 2);
 
-            // Simulate HabboCity Link 1 activation and seamless Link 2 (header 7702) migration.
-            let uri: Uri = "wss://websocket.habbocity.fr/websocket/".parse().unwrap();
+            // Simulate HabboCity Link 1 activation, seamless Link 2 (header 7702) migration,
+            // and fresh hotel reload replacement (header 7701) while old link is still open.
+            let uri: Uri = "wss://websocket.habbocity.fr:443/websocket/"
+                .parse()
+                .unwrap();
             state
-                .activate_with_migration(&peer, &uri, false)
+                .activate_with_migration(&peer, &uri, CityActivation::Replace)
                 .await
                 .unwrap();
             let peer2 = state
                 .peer(PeerKey {
                     client: "127.0.0.1:50001".parse().unwrap(),
-                    uri: "wss://websocket.habbocity.fr/websocket/".into(),
+                    uri: "wss://websocket.habbocity.fr:443/websocket/".into(),
                 })
                 .unwrap();
             state
-                .activate_with_migration(&peer2, &uri, true)
+                .activate_with_migration(&peer2, &uri, CityActivation::Migrate)
                 .await
                 .unwrap();
             assert!(peer2.ready.load(Ordering::Acquire));
             // Closing Link 1 after migration must NOT disconnect active Link 2.
             state.finish(&peer);
             assert!(state.active().is_some_and(|a| a.key == peer2.key));
+
+            // A fresh reload (7701) supersedes peer2 cleanly instead of failing.
+            let peer3 = state
+                .peer(PeerKey {
+                    client: "127.0.0.1:50002".parse().unwrap(),
+                    uri: "wss://websocket.habbocity.fr:443/websocket/".into(),
+                })
+                .unwrap();
+            state
+                .activate_with_migration(&peer3, &uri, CityActivation::Replace)
+                .await
+                .unwrap();
+            assert!(peer2.closed.load(Ordering::Acquire));
+            assert!(state.active().is_some_and(|a| a.key == peer3.key));
+
+            // Coalesced EvaWire frames (e.g. 7701 + 2419 in one WS binary message) still extract 7701.
+            let mut coalesced = Packet::new(7701);
+            coalesced.put_i32(0).unwrap();
+            let mut combined = coalesced.bytes().to_vec();
+            combined.extend_from_slice(Packet::new(2419).bytes());
+            assert_eq!(first_evawire_header(&combined), Some(7701));
+            assert_eq!(first_evawire_header(&[0, 0, 0, 1, 0x1E]), None);
         });
     }
 

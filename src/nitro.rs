@@ -19,14 +19,37 @@ pub struct Hotel {
     pub websocket_urls: Vec<String>,
     pub kind: HotelKind,
 }
+pub fn normalize_websocket_url(url: &str) -> std::borrow::Cow<'_, str> {
+    let url = url.split('?').next().unwrap_or(url);
+    for (scheme, default_port) in [
+        ("wss://", ":443"),
+        ("https://", ":443"),
+        ("ws://", ":80"),
+        ("http://", ":80"),
+    ] {
+        if let Some(rest) = url.strip_prefix(scheme) {
+            let authority_end = rest.find('/').unwrap_or(rest.len());
+            let authority = &rest[..authority_end];
+            if let Some(host) = authority.strip_suffix(default_port) {
+                let mut normalized = String::with_capacity(url.len() - default_port.len());
+                normalized.push_str(scheme);
+                normalized.push_str(host);
+                normalized.push_str(&rest[authority_end..]);
+                return std::borrow::Cow::Owned(normalized);
+            }
+            break;
+        }
+    }
+    std::borrow::Cow::Borrowed(url)
+}
 impl Hotel {
     pub fn matches(&self, url: &str) -> bool {
-        let url = url.split('?').next().unwrap_or(url);
+        let url = normalize_websocket_url(url);
         self.websocket_urls
             .iter()
             .any(|pattern| match pattern.strip_suffix('*') {
                 Some(prefix) => url.starts_with(prefix),
-                None => url == pattern,
+                None => url.as_ref() == pattern,
             })
     }
 }
@@ -309,6 +332,25 @@ mod tests {
                 .unwrap()
                 .kind,
             HotelKind::HabboCity
+        );
+        assert_eq!(
+            hotels
+                .find("wss://websocket.habbocity.fr:443/websocket/")
+                .unwrap()
+                .kind,
+            HotelKind::HabboCity
+        );
+        assert_eq!(
+            hotels.find("wss://habblet.habbocity.fr:443").unwrap().kind,
+            HotelKind::HabboCity
+        );
+        assert_eq!(
+            hotels.find("wss://server.hartico.tv:443/").unwrap().kind,
+            HotelKind::Hartico
+        );
+        assert_eq!(
+            hotels.find("wss://ws.hubbe.st:2053/").unwrap().kind,
+            HotelKind::HubbeSt
         );
         assert!(is_habbocity_host("habbocity.fr"));
         assert!(is_habbocity_host("habblet.habbocity.fr"));

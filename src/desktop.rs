@@ -1685,12 +1685,16 @@ impl Desktop {
                             clear_log_contents(&mut self.logs, &mut self.logs_bytes);
                         }
                         self.status = format!("Connected to {a}");
-                        if let Some(guard) = &mut self.proxy_guard {
-                            match guard.restore() {
-                                Ok(()) => self.proxy_guard = None,
-                                Err(e) => {
-                                    self.status =
-                                        format!("Connected; proxy restoration failed: {e}")
+                        // Keep the system proxy active in City mode because HabboCity migrates
+                        // to replacement WebSockets (link ticket 7705 -> 7702) mid-session.
+                        if !self.city {
+                            if let Some(guard) = &mut self.proxy_guard {
+                                match guard.restore() {
+                                    Ok(()) => self.proxy_guard = None,
+                                    Err(e) => {
+                                        self.status =
+                                            format!("Connected; proxy restoration failed: {e}")
+                                    }
                                 }
                             }
                         }
@@ -1723,6 +1727,25 @@ impl Desktop {
                             clear_log_contents(&mut self.logs, &mut self.logs_bytes);
                         }
                         self.status = "Client disconnected; listening".into();
+                        // Re-enable the system proxy if it was restored on connect while the
+                        // local proxy is still waiting for the user to reload their hotel.
+                        if self.system_proxy && self.proxy_guard.is_none() {
+                            let proxy_addr = match self.relay.as_ref() {
+                                Some(Connection::Web(proxy)) => Some(proxy.address),
+                                Some(Connection::Unity(unity)) => Some(unity.address),
+                                _ => None,
+                            };
+                            if let Some(addr) = proxy_addr {
+                                match gearth_platform::SystemProxyGuard::activate(addr) {
+                                    Ok(guard) => self.proxy_guard = Some(guard),
+                                    Err(e) => {
+                                        self.status = format!(
+                                            "Client disconnected; proxy activation failed: {e}"
+                                        );
+                                    }
+                                }
+                            }
+                        }
                     }
                     Event::Error(e) => self.status = e,
                 }
