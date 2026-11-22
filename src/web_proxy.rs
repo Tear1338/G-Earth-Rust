@@ -92,6 +92,7 @@ pub struct WebOptions {
     pub extra_roots: Vec<Vec<u8>>,
     pub websocket_urls: Vec<String>,
     pub hotels: Hotels,
+    pub city_mode: bool,
     pub allow_city_helper: bool,
     pub city_keys: Option<crate::nitro_city::CityKeys>,
 }
@@ -113,6 +114,7 @@ impl WebOptions {
             extra_roots: Vec::new(),
             websocket_urls: Vec::new(),
             hotels: Hotels::beta29(),
+            city_mode: false,
             allow_city_helper: false,
             city_keys: None,
         }
@@ -254,11 +256,24 @@ impl Shared {
             .hotels
             .find(&key.uri)
             .map(|h| h.kind.clone())
-            .unwrap_or(crate::nitro::HotelKind::Plain);
+            .unwrap_or_else(|| {
+                if self.options.city_mode
+                    && key
+                        .uri
+                        .parse::<Uri>()
+                        .ok()
+                        .and_then(|u| u.host().map(crate::nitro::is_habbocity_host))
+                        .unwrap_or(false)
+                {
+                    crate::nitro::HotelKind::HabboCity
+                } else {
+                    crate::nitro::HotelKind::Plain
+                }
+            });
         let modifier = if kind == crate::nitro::HotelKind::Hartico {
             Modifier::Hartico(crate::nitro_assets::Hartico::new(self.hartico_key.lock().map_err(|_|io::Error::other("Hartico asset lock poisoned"))?.ok_or_else(||io::Error::other("Hartico logo key is unavailable; reload the hotel assets before connecting"))?))
         } else if kind == crate::nitro::HotelKind::HabboCity {
-            Modifier::HabboCity(Box::new(crate::nitro_city::HabboCity::new(self.city_keys.lock().map_err(|_|io::Error::other("HabboCity key lock poisoned"))?.clone().ok_or_else(||io::Error::other("HabboCity keys are unavailable; import keys or opt in to Nitro Helper, then reload the hotel"))?)))
+            Modifier::HabboCityPending
         } else {
             Modifier::new(&kind)?
         };
@@ -514,13 +529,16 @@ impl Shared {
 struct Handler(Arc<Shared>, u8, Option<crate::unity_assets::UnityAsset>);
 impl Handler {
     async fn handle_asset_request(&mut self, mut request: Request<Body>) -> RequestOrResponse {
+        let is_city_wasm = request
+            .uri()
+            .host()
+            .is_some_and(crate::nitro::is_habbocity_host)
+            && request.uri().path().ends_with(".wasm");
         self.1 = if request.uri().host() == Some("images.hartico.tv")
             && request.uri().path() == "/cosmos/img/logos/logo.png"
         {
             1
-        } else if request.uri().host() == Some("cdn.habbocity.fr")
-            && request.uri().path() == "/crypto/file/city_crypto_bg.wasm"
-        {
+        } else if is_city_wasm {
             2
         } else {
             0
@@ -673,6 +691,23 @@ impl Handler {
             }
         }
         if self.1 == 2 {
+            if self.0.options.city_mode {
+                for name in [
+                    "age",
+                    "cache-control",
+                    "etag",
+                    "if-none-match",
+                    "if-modified-since",
+                    "last-modified",
+                    "date",
+                    "expires",
+                ] {
+                    parts.headers.remove(name);
+                }
+                parts
+                    .headers
+                    .insert("cache-control", "no-store".parse().unwrap());
+            }
             if self.0.options.allow_city_helper {
                 let wasm = bytes.clone();
                 let socks = self.0.options.upstream_socks.clone();
@@ -689,6 +724,10 @@ impl Handler {
                         if let Ok(mut target) = self.0.city_keys.lock() {
                             *target = Some(keys);
                         }
+                        let _ = self
+                            .0
+                            .events
+                            .try_send(Event::Status("HabboCity crypto keys extracted".into()));
                     }
                     Ok(Err(e)) => {
                         let _ = self
@@ -789,9 +828,29 @@ impl WebSocketHandler for Handler {
                         let Some(message)=message else{break;};let message=message.map_err(io::Error::other)?;
                         if let WsMessage::Binary(bytes)=message {
                             if direction==Direction::ToServer&&!decided {
-                                decided=true;let url=uri.to_string();let configured=self.0.options.hotels.find(&url).is_some()||self.0.options.websocket_urls.iter().any(|u|{let url=url.split('?').next().unwrap_or(&url);match u.strip_suffix('*'){Some(prefix)=>url.starts_with(prefix),None=>u==url}});
+                                decided=true;
+                                let url=uri.to_string();
+                                let is_city_host=uri.host().is_some_and(crate::nitro::is_habbocity_host);
+                                let configured=self.0.options.hotels.find(&url).is_some()
+                                    ||(self.0.options.city_mode&&is_city_host)
+                                    ||self.0.options.websocket_urls.iter().any(|u|{let url=url.split('?').next().unwrap_or(&url);match u.strip_suffix('*'){Some(prefix)=>url.starts_with(prefix),None=>u==url}});
                                 let hello=Packet::from_bytes(bytes.to_vec()).is_ok_and(|p|p.header()==4000);
-                                if self.0.options.detect_nitro&&(configured||hello){self.0.activate(&peer,&uri).await?;}
+                                if self.0.options.detect_nitro&&(configured||hello){
+                                    {
+                                        let mut modifier=peer.modifier.lock().await;
+                                        if matches!(*modifier,Modifier::HabboCityPending){
+                                            if hello {
+                                                *modifier=Modifier::Plain;
+                                                let _=self.0.events.try_send(Event::Status(format!("HabboCity connected (Nitro plain): {url}")));
+                                            } else {
+                                                let keys=self.0.city_keys.lock().map_err(|_|io::Error::other("HabboCity key lock poisoned"))?.clone().ok_or_else(||io::Error::other("HabboCity keys are unavailable; import keys or enable Nitro Helper, then reload (Ctrl+F5) https://habbocity.fr/hotel"))?;
+                                                *modifier=Modifier::HabboCity(Box::new(crate::nitro_city::HabboCity::new(keys)));
+                                                let _=self.0.events.try_send(Event::Status(format!("HabboCity connected (City crypto): {url}")));
+                                            }
+                                        }
+                                    }
+                                    self.0.activate(&peer,&uri).await?;
+                                }
                             }
                             if peer.active.load(Ordering::Acquire){
                                 while !peer.ready.load(Ordering::Acquire)&&!peer.closed.load(Ordering::Acquire){let notified=peer.notify.notified();if peer.ready.load(Ordering::Acquire)||peer.closed.load(Ordering::Acquire){break;}notified.await;}
@@ -1200,6 +1259,45 @@ mod lifecycle_tests {
             listener.accept().err().unwrap().kind(),
             io::ErrorKind::WouldBlock
         );
+    }
+
+    #[test]
+    fn city_mode_peer_starts_pending_and_intercepts_habbocity_wasm() {
+        let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), PathBuf::new());
+        options.city_mode = true;
+        let (events, _receiver) = mpsc::sync_channel(16);
+        let state = Arc::new(Shared {
+            options,
+            hartico_key: Mutex::new(None),
+            city_keys: Mutex::new(None),
+            peers: Mutex::new(HashMap::new()),
+            active: Mutex::new(None),
+            rules: Mutex::new(Rules::default()),
+            pipeline: Mutex::new(()),
+            events: RelayEventSink::new(events),
+            index: AtomicI32::new(0),
+            stop: AtomicBool::new(false),
+        });
+        let key = PeerKey {
+            client: "127.0.0.1:50000".parse().unwrap(),
+            uri: "wss://habblet.habbocity.fr/".into(),
+        };
+        // Does not fail eagerly when city_keys are absent (allows plain Nitro 4000 auto-detection).
+        let peer = state.peer(key).unwrap();
+        assert!(matches!(
+            *peer.modifier.blocking_lock(),
+            Modifier::HabboCityPending
+        ));
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        runtime.block_on(async {
+            let mut handler = Handler(state, 0, None);
+            let req = Request::builder()
+                .uri("https://habbocity.fr/assets/city_crypto_v2.wasm")
+                .body(Body::empty())
+                .unwrap();
+            let _ = handler.handle_asset_request(req).await;
+            assert_eq!(handler.1, 2);
+        });
     }
 
     #[test]

@@ -34,13 +34,23 @@ impl Hotel {
 pub struct Hotels {
     pub entries: Vec<Hotel>,
 }
+pub fn is_habbocity_host(host: &str) -> bool {
+    host.eq_ignore_ascii_case("habbocity.fr")
+        || host.to_ascii_lowercase().ends_with(".habbocity.fr")
+}
+
 impl Hotels {
     pub fn beta29() -> Self {
         let mut result = Self::default();
         for (name, urls, kind) in [
             (
                 "habbocity.fr",
-                vec!["wss://websocket.habbocity.fr/websocket/"],
+                vec![
+                    "wss://websocket.habbocity.fr/websocket/",
+                    "wss://websocket.habbocity.fr/*",
+                    "wss://habblet.habbocity.fr/*",
+                    "wss://habblet.habbocity.fr",
+                ],
                 HotelKind::HabboCity,
             ),
             (
@@ -156,6 +166,7 @@ pub enum Modifier {
     HabboSk(Box<HabboSk>),
     Hartico(crate::nitro_assets::Hartico),
     HabboCity(Box<crate::nitro_city::HabboCity>),
+    HabboCityPending,
 }
 impl Modifier {
     pub fn new(kind: &HotelKind) -> io::Result<Self> {
@@ -170,7 +181,7 @@ impl Modifier {
     }
     pub fn decode(&mut self, direction: Direction, mut bytes: Vec<u8>) -> io::Result<Decoded> {
         match self {
-            Self::Plain => {}
+            Self::Plain | Self::HabboCityPending => {}
             Self::HubbeSt { first } => {
                 if direction == Direction::ToServer && *first {
                     *first = false;
@@ -284,6 +295,25 @@ mod tests {
             .is_none());
         assert!(hotels.find("wss://socket.hubbe.biz/?x=1").is_some());
         assert!(hotels.find("wss://socket.hubbe.biz/other").is_none());
+        assert_eq!(
+            hotels.find("wss://habblet.habbocity.fr/").unwrap().kind,
+            HotelKind::HabboCity
+        );
+        assert_eq!(
+            hotels.find("wss://habblet.habbocity.fr").unwrap().kind,
+            HotelKind::HabboCity
+        );
+        assert_eq!(
+            hotels
+                .find("wss://websocket.habbocity.fr/websocket/")
+                .unwrap()
+                .kind,
+            HotelKind::HabboCity
+        );
+        assert!(is_habbocity_host("habbocity.fr"));
+        assert!(is_habbocity_host("habblet.habbocity.fr"));
+        assert!(is_habbocity_host("cdn.habbocity.fr"));
+        assert!(!is_habbocity_host("evilhabbocity.fr"));
     }
     #[test]
     fn parses_original_dynamic_configuration_and_preserves_precedence() {

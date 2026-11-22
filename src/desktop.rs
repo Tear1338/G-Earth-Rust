@@ -224,6 +224,7 @@ enum CliClientMode {
     Origins,
     Unity,
     Nitro,
+    City,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -241,6 +242,7 @@ fn parse_cli_client_mode(raw: &str) -> Option<CliClientMode> {
         "origins" | "shockwave" => Some(CliClientMode::Origins),
         "unity" => Some(CliClientMode::Unity),
         "nitro" => Some(CliClientMode::Nitro),
+        "city" | "habbocity" => Some(CliClientMode::City),
         _ => None,
     }
 }
@@ -485,6 +487,7 @@ struct Desktop {
     origins: bool,
     nitro: bool,
     unity: bool,
+    city: bool,
     system_proxy: bool,
     proxy_guard: Option<gearth_platform::SystemProxyGuard>,
     public_certificate: Option<(PathBuf, Vec<u8>)>,
@@ -1221,6 +1224,7 @@ impl Default for Desktop {
             origins: false,
             nitro: false,
             unity: false,
+            city: false,
             system_proxy: cfg!(windows),
             proxy_guard: None,
             public_certificate: None,
@@ -1993,7 +1997,8 @@ impl Desktop {
                                 let is_flash = !self.origins && !self.nitro;
                                 let is_origins = self.origins && !self.nitro;
                                 let is_unity = self.nitro && self.unity;
-                                let is_nitro = self.nitro && !self.unity;
+                                let is_nitro = self.nitro && !self.unity && !self.city;
+                                let is_city = self.nitro && !self.unity && self.city;
                                 let mut switched = false;
                                 if ui
                                     .radio(is_flash, self.i18n.text("tab.connection.client.flash"))
@@ -2002,9 +2007,11 @@ impl Desktop {
                                     self.origins = false;
                                     self.nitro = false;
                                     self.unity = false;
+                                    self.city = false;
                                     self.connection_port = "30000".into();
                                     if gearth_rust::attachment::ORIGINS_HOTELS
                                         .contains(&self.attachment_host.as_str())
+                                        || self.attachment_host == "habbocity.fr"
                                     {
                                         self.attachment_host = "game-fr.habbo.com".into();
                                     }
@@ -2020,9 +2027,11 @@ impl Desktop {
                                     self.origins = true;
                                     self.nitro = false;
                                     self.unity = false;
+                                    self.city = false;
                                     self.connection_port = "40001".into();
                                     if gearth_rust::attachment::FLASH_HOTELS
                                         .contains(&self.attachment_host.as_str())
+                                        || self.attachment_host == "habbocity.fr"
                                     {
                                         self.attachment_host = "game-od.habbo.com".into();
                                     }
@@ -2035,6 +2044,7 @@ impl Desktop {
                                     self.origins = false;
                                     self.nitro = true;
                                     self.unity = true;
+                                    self.city = false;
                                     switched = true;
                                 }
                                 if ui
@@ -2044,6 +2054,21 @@ impl Desktop {
                                     self.origins = false;
                                     self.nitro = true;
                                     self.unity = false;
+                                    self.city = false;
+                                    switched = true;
+                                }
+                                if ui
+                                    .radio(is_city, self.i18n.text("rust.connection.client.city"))
+                                    .on_hover_text("https://habbocity.fr/hotel")
+                                    .clicked()
+                                {
+                                    self.origins = false;
+                                    self.nitro = true;
+                                    self.unity = false;
+                                    self.city = true;
+                                    self.attachment_host = "habbocity.fr".into();
+                                    self.allow_city_helper = true;
+                                    let _ = self.prepare_certificate();
                                     switched = true;
                                 }
                                 if switched {
@@ -2661,6 +2686,18 @@ impl Desktop {
             .filter(|s| !s.is_empty())
             .map(str::to_owned)
             .collect();
+        options.city_mode = self.city;
+        if self.city {
+            for default_url in [
+                "wss://habblet.habbocity.fr/*",
+                "wss://habblet.habbocity.fr",
+                "wss://websocket.habbocity.fr/*",
+            ] {
+                if !options.websocket_urls.iter().any(|u| u == default_url) {
+                    options.websocket_urls.push(default_url.to_owned());
+                }
+            }
+        }
         options.allow_city_helper = self.allow_city_helper;
         if !self.city_key_path.trim().is_empty() {
             use std::io::Read;
@@ -2674,10 +2711,17 @@ impl Desktop {
         if self.system_proxy {
             self.proxy_guard = Some(gearth_platform::SystemProxyGuard::activate(proxy.address)?);
         }
-        self.status = format!(
-            "Browser proxy listening on {}; reload the Nitro client",
-            proxy.address
-        );
+        self.status = if self.city {
+            format!(
+                "City proxy listening on {}; open or reload (Ctrl+F5) https://habbocity.fr/hotel",
+                proxy.address
+            )
+        } else {
+            format!(
+                "Browser proxy listening on {}; reload the Nitro client",
+                proxy.address
+            )
+        };
         self.relay = Some(Connection::Web(proxy));
         self.events = Some(events);
         self.update_rules();
@@ -2709,9 +2753,27 @@ impl Desktop {
     fn nitro_connection(&mut self, ui: &mut egui::Ui) {
         ui.label(self.i18n.text(if self.unity {
             "rust.browser.unity_connection"
+        } else if self.city {
+            "rust.browser.city_connection"
         } else {
             "rust.browser.nitro_connection"
         }));
+        if self.city {
+            ui.horizontal(|ui| {
+                ui.hyperlink_to(
+                    self.i18n.text("rust.browser.open_habbocity"),
+                    "https://habbocity.fr/hotel",
+                );
+                ui.add_space(8.0);
+                ui.add_enabled(
+                    self.relay.is_none(),
+                    egui::Checkbox::new(
+                        &mut self.allow_city_helper,
+                        self.i18n.text("rust.browser.city_helper"),
+                    ),
+                );
+            });
+        }
         ui.horizontal(|ui| {
             ui.label(self.i18n.text("rust.browser.local_address"));
             ui.add_enabled(
@@ -6894,23 +6956,35 @@ impl Desktop {
                     self.origins = false;
                     self.nitro = false;
                     self.unity = false;
+                    self.city = false;
                     self.connection_port = "30000".into();
                 }
                 CliClientMode::Origins => {
                     self.origins = true;
                     self.nitro = false;
                     self.unity = false;
+                    self.city = false;
                     self.connection_port = "40001".into();
                 }
                 CliClientMode::Unity => {
                     self.origins = false;
                     self.nitro = true;
                     self.unity = true;
+                    self.city = false;
                 }
                 CliClientMode::Nitro => {
                     self.origins = false;
                     self.nitro = true;
                     self.unity = false;
+                    self.city = false;
+                }
+                CliClientMode::City => {
+                    self.origins = false;
+                    self.nitro = true;
+                    self.unity = false;
+                    self.city = true;
+                    self.attachment_host = "habbocity.fr".into();
+                    self.allow_city_helper = true;
                 }
             }
             self.launch_args_auto_connect = true;
@@ -7494,6 +7568,12 @@ impl Desktop {
             .get("unity")
             .copied()
             .unwrap_or(false);
+        self.city = self.settings.booleans.get("city").copied().unwrap_or(false);
+        if self.city {
+            self.nitro = true;
+            self.unity = false;
+            self.allow_city_helper = true;
+        }
         if self.nitro {
             self.origins = false;
         }
@@ -7584,6 +7664,7 @@ impl Desktop {
             ("origins".into(), self.origins),
             ("nitro".into(), self.nitro),
             ("unity".into(), self.unity),
+            ("city".into(), self.city),
             ("dark_mode".into(), self.theme.is_dark()),
             ("outgoing".into(), self.outgoing),
             ("incoming".into(), self.incoming),
