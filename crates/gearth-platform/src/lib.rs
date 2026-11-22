@@ -244,7 +244,18 @@ pub fn scan_habbo_from_with_limit(
         }
         linux::scan_from(root, pid, address, cancel, max_tables)
     }
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(target_os = "macos")]
+    {
+        let known = habbo_processes()?;
+        if !known.iter().any(|process| process.pid == pid) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "select a running Habbo or Flash player process",
+            ));
+        }
+        macos::scan_from(pid, address, cancel, max_tables)
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         let _ = (pid, address, cancel, max_tables);
         Err(io::Error::new(

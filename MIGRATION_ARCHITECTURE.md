@@ -1,5 +1,9 @@
 # Rust migration architecture
 
+## macOS Mach memory scanning
+
+The macOS platform scanner obtains a task port and scans readable writable Mach regions in overlapping chunks, using existing permutation detection. It bounds bytes, time and tables per page, supports cancellation and continuation, skips unreadable chunks and releases returned port rights. Access can be denied by macOS process security; native and real-client behavior require verification.
+
 ## macOS process enumeration
 
 The platform crate uses macOS libproc to enumerate PIDs and read executable paths, selecting known Habbo and Flash player basenames without changing processes. Memory scanning and socket-owner attribution remain separate unsupported steps.

@@ -1,5 +1,9 @@
 # Continuation state
 
+## Next: validate native macOS scanner
+
+Commit and push the Mach scanner, inspect native macOS CI for self-process discovery, cancellation, pagination and release compilation, and correct any failure. Then implement socket-owner attribution and privileged hosts/proxy lifecycle. The user handles live client tests.
+
 ## Next: macOS memory scanner
 
 Commit and push native macOS process enumeration, inspect its macOS CI self-process result and release build. Then implement bounded, cancellable read-only Mach memory-region scanning with a controlled self-process fixture, retaining explicit permission failures; socket ownership and privileged host/proxy lifecycle remain open.

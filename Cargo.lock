@@ -1287,6 +1287,7 @@ name = "gearth-platform"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "mach2",
  "sha1 0.10.7",
  "windows-sys 0.61.2",
 ]
@@ -2115,6 +2116,12 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
 ]
+
+[[package]]
+name = "mach2"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b0d28e293f2b8c9d2b2d1c0193bd3c1cbdc0d2cf396888dc01162f7cf9d6c3f3"
 
 [[package]]
 name = "malloc_buf"

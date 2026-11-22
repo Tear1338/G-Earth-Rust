@@ -1,5 +1,10 @@
 # Migration tasks
 
+## Latest: macOS Mach memory scanner
+
+- [x] Implement bounded, cancellable, read-only Mach region scanning and controlled self-process fixtures; cross-check Intel and Apple Silicon targets.
+- [ ] Run self-process fixtures and release build on native macOS CI; address failures, socket ownership, privileged hosts/proxy lifecycle and user-run live tests.
+
 ## Latest: macOS process discovery
 
 - [x] Implement read-only libproc process enumeration and executable filtering; cross-check macOS target.

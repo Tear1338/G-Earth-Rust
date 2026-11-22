@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — macOS memory scanning
+
+- Add bounded, resumable, read-only Mach memory scanning for selected Habbo and Flash processes.
+
 ## Unreleased — macOS process discovery
 
 - Add read-only native macOS enumeration of Habbo and Flash player processes.
