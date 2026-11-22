@@ -103,7 +103,7 @@ jobs:
           cmp /tmp/generated-character-names /tmp/embedded-character-names
       - name: Download the pinned upstream release
         run: |
-          curl --fail --location --retry 3 'https://github.com/G-Realm/G-Earth/releases/download/1.5.4-beta-29/G-Earth-windows-x64.zip' -o /tmp/gearth.zip
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 'https://github.com/G-Realm/G-Earth/releases/download/1.5.4-beta-29/G-Earth-windows-x64.zip' -o /tmp/gearth.zip
           echo 'c2bffcf8ef8e9df6b2355fe6c5f45690bc24b7211f9848728209e0a9b2b4a6e6  /tmp/gearth.zip' | sha256sum --check
           unzip -q /tmp/gearth.zip -d /tmp/upstream-gearth
       - name: Generate vectors with the actual Java implementation
@@ -113,7 +113,7 @@ jobs:
           bcprov=$(find /tmp/upstream-gearth -name 'bcprov-*.jar' -print -quit)
           mkdir -p /tmp/original-crypto /tmp/original-classes
           for source in BobbaCrypto BobbaChaChaKey BobbaCryptoUtils; do
-            curl --fail --location --retry 3 "https://raw.githubusercontent.com/G-Realm/G-Earth/242155c291b1109d6c9a02370f6a2af1ead41ea8/G-Earth/src/main/java/gearth/app/protocol/crypto/$source.java" -o "/tmp/original-crypto/$source.java"
+            curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 "https://raw.githubusercontent.com/G-Realm/G-Earth/242155c291b1109d6c9a02370f6a2af1ead41ea8/G-Earth/src/main/java/gearth/app/protocol/crypto/$source.java" -o "/tmp/original-crypto/$source.java"
           done
           javac -cp "$bcprov" -d /tmp/original-classes /tmp/original-crypto/*.java
           javac -cp "$api_jar:$bcprov:/tmp/original-classes" tests/JavaOracle.java tests/JavaExtensionFixture.java tests/JavaOriginsExtensionFixture.java tests/BobbaOracle.java
@@ -187,7 +187,7 @@ jobs:
           test -n "$api_jar"
           mkdir -p /tmp/flash-source /tmp/flash-classes
           for source in OutgoingFlashPacketHandler OnDatastreamConfirmedListener; do
-            curl --fail --location --retry 3 "https://raw.githubusercontent.com/G-Realm/G-Earth/242155c291b1109d6c9a02370f6a2af1ead41ea8/G-Earth/src/main/java/gearth/app/protocol/packethandler/flash/$source.java" -o "/tmp/flash-source/$source.java"
+            curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 "https://raw.githubusercontent.com/G-Realm/G-Earth/242155c291b1109d6c9a02370f6a2af1ead41ea8/G-Earth/src/main/java/gearth/app/protocol/packethandler/flash/$source.java" -o "/tmp/flash-source/$source.java"
           done
           javac -encoding UTF-8 -cp "$api_jar" -d /tmp/flash-classes $(find tests/java_flash -name '*.java') /tmp/flash-source/*.java
           java -cp "$api_jar:/tmp/flash-classes" JavaFlashIdentityOracle > /tmp/flash-identity-oracle.txt
@@ -207,11 +207,11 @@ jobs:
         run: |
           api_jar=$(find /tmp/upstream-gearth -name 'G-Earth-Api-1.5.4-beta-29.jar' -print -quit)
           test -n "$api_jar"
-          curl --fail --location --retry 3 'https://repo.maven.apache.org/maven2/org/openjfx/javafx-base/21.0.2/javafx-base-21.0.2-linux.jar' -o /tmp/javafx-base.jar
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 'https://repo.maven.apache.org/maven2/org/openjfx/javafx-base/21.0.2/javafx-base-21.0.2-linux.jar' -o /tmp/javafx-base.jar
           mkdir -p /tmp/scheduler-src /tmp/scheduler-classes
           for source in gearth/app/services/scheduler/ScheduleItem.java gearth/app/services/scheduler/Interval.java gearth/app/ui/subforms/scheduler/InteractableScheduleItem.java gearth/app/services/scheduler/listeners/OnBeingUpdatedListener.java gearth/app/services/scheduler/listeners/OnDeleteListener.java gearth/app/services/scheduler/listeners/OnEditListener.java gearth/app/services/scheduler/listeners/OnUpdatedListener.java; do
             mkdir -p "/tmp/scheduler-src/$(dirname "$source")"
-            curl --fail --location --retry 3 "https://raw.githubusercontent.com/G-Realm/G-Earth/242155c291b1109d6c9a02370f6a2af1ead41ea8/G-Earth/src/main/java/$source" -o "/tmp/scheduler-src/$source"
+            curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 "https://raw.githubusercontent.com/G-Realm/G-Earth/242155c291b1109d6c9a02370f6a2af1ead41ea8/G-Earth/src/main/java/$source" -o "/tmp/scheduler-src/$source"
           done
           javac -cp "$api_jar:/tmp/javafx-base.jar" -d /tmp/scheduler-classes $(find /tmp/scheduler-src -name '*.java') tests/java_schedule/gearth/app/ui/subforms/scheduler/SchedulerController.java tests/java_schedule/JavaScheduleOracle.java tests/java_schedule/JavaSchedulePacketOracle.java tests/java_schedule/JavaSchedulerCatchupOracle.java
           java -cp "$api_jar:/tmp/javafx-base.jar:/tmp/scheduler-classes" JavaScheduleOracle > /tmp/schedule-oracle.txt
@@ -223,7 +223,7 @@ jobs:
       - name: Compare packet hex dumps with the original Java logger
         run: |
           mkdir -p /tmp/hexdump-classes
-          curl --fail --location --retry 3 'https://raw.githubusercontent.com/G-Realm/G-Earth/242155c291b1109d6c9a02370f6a2af1ead41ea8/G-Earth/src/main/java/gearth/app/services/internal_extensions/uilogger/hexdumper/Hexdump.java' -o /tmp/Hexdump.java
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 'https://raw.githubusercontent.com/G-Realm/G-Earth/242155c291b1109d6c9a02370f6a2af1ead41ea8/G-Earth/src/main/java/gearth/app/services/internal_extensions/uilogger/hexdumper/Hexdump.java' -o /tmp/Hexdump.java
           javac -d /tmp/hexdump-classes /tmp/Hexdump.java tests/JavaHexdumpOracle.java
           cargo test --locked --test logger_display hex_dump_matches_original_java -- --ignored
         env:
@@ -239,8 +239,8 @@ jobs:
           GEARTH_STORE_CONFIG: /tmp/store-config.json
           GEARTH_STORE_EXTENSIONS: /tmp/store-extensions.json
         run: |
-          curl --fail --location --retry 3 'https://raw.githubusercontent.com/sirjonasxx/G-ExtensionStore/e1d69194395c038bd1ee6a34239fbb45bb424e97/store/config.json' -o /tmp/store-config.json
-          curl --fail --location --retry 3 'https://raw.githubusercontent.com/sirjonasxx/G-ExtensionStore/e1d69194395c038bd1ee6a34239fbb45bb424e97/.auto-generated/extensions.json' -o /tmp/store-extensions.json
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 'https://raw.githubusercontent.com/sirjonasxx/G-ExtensionStore/e1d69194395c038bd1ee6a34239fbb45bb424e97/store/config.json' -o /tmp/store-config.json
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 'https://raw.githubusercontent.com/sirjonasxx/G-ExtensionStore/e1d69194395c038bd1ee6a34239fbb45bb424e97/.auto-generated/extensions.json' -o /tmp/store-extensions.json
           cargo test --locked --test extension_store -- --ignored
           cargo test --locked --test java_store_command -- --ignored
       - name: Validate hotel crypto against Java JCE
@@ -259,13 +259,13 @@ jobs:
           echo "81ede388f652652b5a7dd66cb111c3bdfb0526fd03ffa688fe8f8ea56c91e748  $gwasm" | sha256sum --check
           mkdir -p /tmp/original-unity-source /tmp/original-unity-classes
           for source in WasmCodePatcher UnityWebModifierException; do
-            curl --fail --location --retry 3 "https://raw.githubusercontent.com/G-Realm/G-Earth/242155c291b1109d6c9a02370f6a2af1ead41ea8/G-Earth/src/main/java/gearth/app/services/unity_tools/$source.java" -o "/tmp/original-unity-source/$source.java"
+            curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 "https://raw.githubusercontent.com/G-Realm/G-Earth/242155c291b1109d6c9a02370f6a2af1ead41ea8/G-Earth/src/main/java/gearth/app/services/unity_tools/$source.java" -o "/tmp/original-unity-source/$source.java"
           done
           for source in SalsaSetKeyPatcher SalsaReturnBytePatcher OutgoingPacketPatcher IncomingPacketPatcher; do
-            curl --fail --location --retry 3 "https://raw.githubusercontent.com/G-Realm/G-Earth/242155c291b1109d6c9a02370f6a2af1ead41ea8/G-Earth/src/main/java/gearth/app/services/unity_tools/codepatcher/$source.java" -o "/tmp/original-unity-source/$source.java"
+            curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 "https://raw.githubusercontent.com/G-Realm/G-Earth/242155c291b1109d6c9a02370f6a2af1ead41ea8/G-Earth/src/main/java/gearth/app/services/unity_tools/codepatcher/$source.java" -o "/tmp/original-unity-source/$source.java"
           done
           for source in IncomingPacketPatcherDebug OutgoingPacketPatcherDebug; do
-            curl --fail --location --retry 3 "https://raw.githubusercontent.com/G-Realm/G-Earth/242155c291b1109d6c9a02370f6a2af1ead41ea8/G-Earth/src/main/java/gearth/app/services/unity_tools/codepatcher/debug/$source.java" -o "/tmp/original-unity-source/$source.java"
+            curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 "https://raw.githubusercontent.com/G-Realm/G-Earth/242155c291b1109d6c9a02370f6a2af1ead41ea8/G-Earth/src/main/java/gearth/app/services/unity_tools/codepatcher/debug/$source.java" -o "/tmp/original-unity-source/$source.java"
           done
           javac -cp "$gwasm" -d /tmp/original-unity-classes /tmp/original-unity-source/*.java tests/JavaUnityWasmOracle.java
           cargo test --locked --features web --test unity_wasm patches_all_four_hooks -- --nocapture
@@ -343,11 +343,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Download pinned released G-Presets and JavaFX runtime
         run: |
-          curl --fail --location --retry 3 'https://github.com/Tear1338/G-Presets/releases/download/v1.6.5/GPresets-1.6.5.jar' -o /tmp/GPresets-1.6.5.jar
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 'https://github.com/Tear1338/G-Presets/releases/download/v1.6.5/GPresets-1.6.5.jar' -o /tmp/GPresets-1.6.5.jar
           echo 'd2bd67422b131e17a5033762a3fc7e015f5a6581f6e2d3c4abb6b414a711ddb3  /tmp/GPresets-1.6.5.jar' | sha256sum --check
           mkdir -p /tmp/javafx
           for module in base graphics controls fxml media web swing; do
-            curl --fail --location --retry 3 "https://repo.maven.apache.org/maven2/org/openjfx/javafx-$module/21.0.2/javafx-$module-21.0.2-linux.jar" -o "/tmp/javafx/javafx-$module.jar"
+            curl --fail --location --retry 5 --retry-all-errors --retry-delay 2 "https://repo.maven.apache.org/maven2/org/openjfx/javafx-$module/21.0.2/javafx-$module-21.0.2-linux.jar" -o "/tmp/javafx/javafx-$module.jar"
           done
       - name: Start the real extension in an isolated virtual display
         run: xvfb-run -a cargo test --locked --test gpresets_compatibility -- --ignored --nocapture

@@ -1,5 +1,12 @@
 # Migration tasks
 
+## Latest: Java EOF and CI download retries
+
+- [x] Expose and compare the three Java EOF states, including a cursor past the end.
+- [x] Verify a transient HTTP 404 is retried with the revised CI curl policy.
+- [x] Complete workspace and desktop/web checks.
+- [ ] Rerun failed CI when the original run finishes and build release. Real-client tests belong to the user.
+
 ## Latest: Java substring writes
 
 - [x] Use Java-compatible string writes for substring mutation and compare empty-growth and cursor fixtures against beta-29.

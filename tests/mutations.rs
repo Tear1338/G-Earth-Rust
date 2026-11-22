@@ -303,11 +303,14 @@ fn java_bulk_shrink_retains_cursor_and_reads_fail_safely() {
     let mut packet = Packet::new(5);
     packet.put_string("abcdefgh").unwrap().put_i32(42).unwrap();
     let original_end = packet.bytes().len();
+    assert_eq!(packet.eof_state_java(), 0);
     packet.set_cursor(original_end).unwrap();
+    assert_eq!(packet.eof_state_java(), 1);
     packet
         .replace_strings_java("abcdefgh", "x", Some(1))
         .unwrap();
     assert_eq!(packet.cursor(), original_end);
+    assert_eq!(packet.eof_state_java(), 2);
     assert_eq!(packet.remaining(), 0);
     assert!(packet.read_u8().is_err());
     assert!(packet.read_bytes(0).is_err());

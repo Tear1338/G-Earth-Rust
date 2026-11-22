@@ -3643,6 +3643,14 @@ impl Packet {
     pub fn remaining(&self) -> usize {
         self.bytes.len().saturating_sub(self.cursor)
     }
+    /// Java `HPacket.isEOF`: 0 before the end, 1 at the end, 2 past it.
+    pub fn eof_state_java(&self) -> i32 {
+        match self.cursor.cmp(&self.bytes.len()) {
+            std::cmp::Ordering::Less => 0,
+            std::cmp::Ordering::Equal => 1,
+            std::cmp::Ordering::Greater => 2,
+        }
+    }
     /// Test whether an EVA structure describes the complete body, without
     /// moving the read cursor or modifying the packet.
     pub fn structure_equals(&self, structure: &str) -> bool {

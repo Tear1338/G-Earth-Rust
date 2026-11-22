@@ -1,5 +1,9 @@
 # Compatibility with 1.5.4-beta-29
 
+## Java EOF evidence
+
+The beta-29 oracle checks before, at and past end states, including a cursor retained beyond the packet after a shrinking Java-compatible replacement. Other arbitrary Java cursor inputs remain unverified.
+
 ## Java substring write evidence
 
 Beta-29 fixtures cover substring replacement growing an empty field and shrinking a field with the cursor at the old packet end. Broader regex, size-limit and live compatibility remain unverified.

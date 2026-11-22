@@ -3996,11 +3996,17 @@ fn mutations_match_original_java_packets_and_cursor() {
         .unwrap()
         .put_i32(42)
         .unwrap();
+    let eof_before = bulk_cursor.eof_state_java();
     bulk_cursor.set_cursor(bulk_cursor.bytes().len()).unwrap();
+    let eof_at = bulk_cursor.eof_state_java();
     bulk_cursor
         .replace_strings_java("abcdefgh", "x", Some(1))
         .unwrap();
     check("strings_java_cursor_past_end", &bulk_cursor);
+    assert_eq!(
+        format!("{eof_before},{eof_at},{}", bulk_cursor.eof_state_java()),
+        expected["strings_java_eof_states"]
+    );
     assert_eq!(bulk_cursor.remaining(), 0);
     assert!(bulk_cursor.read_string().is_err());
     bulk_cursor.reset();

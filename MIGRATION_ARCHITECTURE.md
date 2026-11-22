@@ -1,5 +1,9 @@
 # Rust migration architecture
 
+## Java EOF state
+
+The explicit Java EOF accessor distinguishes before, at and past the packet end. Rust’s remaining-byte accessor continues to saturate at zero when the Java cursor is past the end.
+
 ## Java substring writes
 
 The Java regex substring path commits changed EVA fields through the shared Java-compatible string writer, preserving its cursor and empty-field growth behavior. The strict literal API remains separate.

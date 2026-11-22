@@ -1,5 +1,9 @@
 # G-Earth Rust migration progress
 
+## Java three-state EOF and CI retries
+
+The Rust packet API now exposes Java `isEOF` semantics: 0 before the end, 1 at the end, 2 past it. A beta-29 oracle checks all three states, including a cursor retained past the end by a Java-compatible shrink; 48 mutation tests and the full Java mutation oracle pass. Workspace/all-targets tests, desktop/web Clippy and debug compilation passed. CI download commands now retry transient HTTP errors, including 403 and 404; a local loopback HTTP fixture confirms retry after a 404. CI run 44965973810 failed before scheduler tests on a transient JavaFX HTTP 404; other jobs are still running. Real clients, protocols and extensions remain unverified.
+
 ## Java substring mutation uses compatible writes
 
 The Java regex substring mutation path now writes changed fields through the Java-compatible string helper. Two beta-29 fixtures reproduce the empty-field growth quirk and cursor retention after shrink; the complete Java mutation oracle and 48 mutation tests pass. Workspace/all-targets tests, desktop/web Clippy and debug compilation passed. CI run 44965609759, including Windows release, passed at preceding commit `7e4a53657336aea35d083437bfeb3b440115ba9e`; its separate local release is still running. Real clients, protocols and extensions remain unverified.
@@ -773,4 +777,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Commit and push the validated Java substring writes, then rebuild Windows desktop/web release and inspect CI. Continue Java size differences, Flash scheduling and `Matcher.last` for `\b{g}`. The user handles live tests; clients, protocols and extensions remain unverified.
+Commit and push the validated Java EOF and CI download retries. Rerun failed CI run 44965973810 after its other jobs finish, rebuild release and inspect new CI. Continue Java size differences, Flash scheduling and `Matcher.last` for `\b{g}`. The user handles live tests; clients, protocols and extensions remain unverified.

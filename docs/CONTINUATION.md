@@ -1,5 +1,9 @@
 # Continuation state
 
+## Next: Java EOF and CI download validation
+
+Workspace and desktop/web checks pass. Commit and push the Java EOF accessor and CI retry policy. Rerun CI run 44965973810 after its other jobs finish; it initially failed on a JavaFX HTTP 404. Build release and inspect new CI; live testing belongs to the user.
+
 ## Next: validate Java substring writes
 
 Workspace and desktop/web checks pass for Java-compatible substring writes. Commit and push, then build release and inspect CI. Continue regex state, size bounds, macOS and user-run live compatibility work.

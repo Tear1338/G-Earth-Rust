@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased — Java EOF and CI resilience
+
+- Expose Java’s three packet EOF states.
+- Retry transient HTTP errors when downloading pinned CI fixtures.
+
 ## Unreleased — Java substring writes
 
 - Match Java field growth and cursor behavior when regex substring mutation writes a string.
