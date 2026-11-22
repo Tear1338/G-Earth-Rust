@@ -1,5 +1,6 @@
-//! Original G-Earth 1.5.4-beta-29 Bootstrap/JavaFX theme visuals, logos, and layout primitives.
+//! Original G-Earth 1.5.4-beta-29 Bootstrap/JavaFX theme visuals, logos, icons, and layout primitives.
 use eframe::egui;
+use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AppTheme {
@@ -22,6 +23,10 @@ pub struct ThemePalette {
     pub table_header_bg: egui::Color32,
     pub table_header_text: egui::Color32,
     pub table_row_alt_bg: egui::Color32,
+    pub table_row_blue: egui::Color32,
+    pub table_row_active: egui::Color32,
+    pub table_row_inactive: egui::Color32,
+    pub table_grid_line: egui::Color32,
     pub primary_accent: egui::Color32,
     pub text_muted: egui::Color32,
 }
@@ -41,14 +46,6 @@ impl AppTheme {
         match self {
             Self::Tanji => "Tanji",
             Self::GEarth | Self::GEarthDark => "G-Earth",
-        }
-    }
-
-    pub fn next(self) -> Self {
-        match self {
-            Self::GEarth => Self::GEarthDark,
-            Self::GEarthDark => Self::Tanji,
-            Self::Tanji => Self::GEarth,
         }
     }
 
@@ -79,8 +76,12 @@ impl AppTheme {
                 tab_active_text: egui::Color32::from_rgb(0x33, 0x33, 0x33),
                 tab_active_border: egui::Color32::from_rgb(0xdd, 0xdd, 0xdd),
                 table_header_bg: egui::Color32::from_rgb(0xf7, 0xf7, 0xf7),
-                table_header_text: egui::Color32::from_rgb(0x66, 0x66, 0x66),
+                table_header_text: egui::Color32::from_rgb(0x44, 0x44, 0x44),
                 table_row_alt_bg: egui::Color32::from_rgb(0xfa, 0xfa, 0xfa),
+                table_row_blue: egui::Color32::from_rgb(0xf0, 0xff, 0xff),
+                table_row_active: egui::Color32::WHITE,
+                table_row_inactive: egui::Color32::from_rgb(0xcc, 0xcc, 0xcc),
+                table_grid_line: egui::Color32::from_rgb(0xcc, 0xcc, 0xcc),
                 primary_accent: egui::Color32::from_rgb(0x33, 0x7a, 0xb7),
                 text_muted: egui::Color32::from_rgb(0x55, 0x55, 0x55),
             },
@@ -95,8 +96,12 @@ impl AppTheme {
                 tab_active_text: egui::Color32::from_rgb(0xee, 0xee, 0xee),
                 tab_active_border: egui::Color32::from_rgb(0x11, 0x11, 0x11),
                 table_header_bg: egui::Color32::from_rgb(0x28, 0x28, 0x28),
-                table_header_text: egui::Color32::from_rgb(0xcc, 0xcc, 0xcc),
+                table_header_text: egui::Color32::from_rgb(0xe8, 0xe8, 0xe8),
                 table_row_alt_bg: egui::Color32::from_rgb(0x38, 0x38, 0x38),
+                table_row_blue: egui::Color32::from_rgb(0x3d, 0x5b, 0x69),
+                table_row_active: egui::Color32::from_rgb(0x52, 0x52, 0x52),
+                table_row_inactive: egui::Color32::from_rgb(0x5e, 0x5e, 0x5e),
+                table_grid_line: egui::Color32::from_rgb(0x78, 0x78, 0x78),
                 primary_accent: egui::Color32::from_rgb(0x5d, 0x83, 0xb4),
                 text_muted: egui::Color32::from_rgb(0xb8, 0xb8, 0xb8),
             },
@@ -111,8 +116,12 @@ impl AppTheme {
                 tab_active_text: egui::Color32::from_rgb(0x33, 0x33, 0x33),
                 tab_active_border: egui::Color32::from_rgb(0xdd, 0xdd, 0xdd),
                 table_header_bg: egui::Color32::from_rgb(0xf7, 0xf5, 0xf0),
-                table_header_text: egui::Color32::from_rgb(0x66, 0x66, 0x66),
+                table_header_text: egui::Color32::from_rgb(0x44, 0x44, 0x44),
                 table_row_alt_bg: egui::Color32::from_rgb(0xfc, 0xf9, 0xf4),
+                table_row_blue: egui::Color32::from_rgb(0xff, 0xf0, 0xe3),
+                table_row_active: egui::Color32::WHITE,
+                table_row_inactive: egui::Color32::from_rgb(0xcc, 0xcc, 0xcc),
+                table_grid_line: egui::Color32::from_rgb(0xcc, 0xcc, 0xcc),
                 primary_accent: egui::Color32::from_rgb(0xb7, 0x77, 0x14),
                 text_muted: egui::Color32::from_rgb(0x55, 0x55, 0x55),
             },
@@ -249,10 +258,60 @@ pub struct ThemeLogos {
     pub gearth_small: Option<egui::TextureHandle>,
     pub tanji_large: Option<egui::TextureHandle>,
     pub tanji_small: Option<egui::TextureHandle>,
+    pub btn_fire: Option<egui::TextureHandle>,
+    pub btn_exit: Option<egui::TextureHandle>,
+    pub btn_delete: Option<egui::TextureHandle>,
+    pub btn_edit: Option<egui::TextureHandle>,
+    pub btn_pause: Option<egui::TextureHandle>,
+    pub btn_resume: Option<egui::TextureHandle>,
+    pub flags: HashMap<&'static str, egui::TextureHandle>,
 }
 
 impl ThemeLogos {
     pub fn load(ctx: &egui::Context) -> Self {
+        let mut flags = HashMap::new();
+        for (code, bytes) in [
+            (
+                "de",
+                include_bytes!("../resources/ui/flags/DE.png").as_slice(),
+            ),
+            (
+                "en",
+                include_bytes!("../resources/ui/flags/EN.png").as_slice(),
+            ),
+            (
+                "es",
+                include_bytes!("../resources/ui/flags/ES.png").as_slice(),
+            ),
+            (
+                "fi",
+                include_bytes!("../resources/ui/flags/FI.png").as_slice(),
+            ),
+            (
+                "fr",
+                include_bytes!("../resources/ui/flags/FR.png").as_slice(),
+            ),
+            (
+                "it",
+                include_bytes!("../resources/ui/flags/IT.png").as_slice(),
+            ),
+            (
+                "nl",
+                include_bytes!("../resources/ui/flags/NL.png").as_slice(),
+            ),
+            (
+                "pt",
+                include_bytes!("../resources/ui/flags/PT.png").as_slice(),
+            ),
+            (
+                "tr",
+                include_bytes!("../resources/ui/flags/TR.png").as_slice(),
+            ),
+        ] {
+            if let Some(tex) = load_png_texture(ctx, &format!("flag_{code}"), bytes) {
+                flags.insert(code, tex);
+            }
+        }
         Self {
             gearth_large: load_png_texture(
                 ctx,
@@ -274,6 +333,37 @@ impl ThemeLogos {
                 "tanji_logo_small",
                 include_bytes!("../resources/themes/tanji_small.png"),
             ),
+            btn_fire: load_png_texture(
+                ctx,
+                "btn_fire",
+                include_bytes!("../resources/ui/ButtonFire.png"),
+            ),
+            btn_exit: load_png_texture(
+                ctx,
+                "btn_exit",
+                include_bytes!("../resources/ui/ButtonExit.png"),
+            ),
+            btn_delete: load_png_texture(
+                ctx,
+                "btn_delete",
+                include_bytes!("../resources/ui/ButtonDelete.png"),
+            ),
+            btn_edit: load_png_texture(
+                ctx,
+                "btn_edit",
+                include_bytes!("../resources/ui/ButtonEdit.png"),
+            ),
+            btn_pause: load_png_texture(
+                ctx,
+                "btn_pause",
+                include_bytes!("../resources/ui/ButtonPause.png"),
+            ),
+            btn_resume: load_png_texture(
+                ctx,
+                "btn_resume",
+                include_bytes!("../resources/ui/ButtonResume.png"),
+            ),
+            flags,
         }
     }
 
@@ -289,6 +379,10 @@ impl ThemeLogos {
             AppTheme::Tanji => self.tanji_small.as_ref(),
             AppTheme::GEarth | AppTheme::GEarthDark => self.gearth_small.as_ref(),
         }
+    }
+
+    pub fn flag(&self, code: &str) -> Option<&egui::TextureHandle> {
+        self.flags.get(code).or_else(|| self.flags.get("en"))
     }
 }
 
@@ -315,6 +409,82 @@ pub fn group_box<R>(
         .rounding(egui::Rounding::same(5.0))
         .inner_margin(inner_margin)
         .show(ui, add_contents)
+}
+
+/// Borderless icon action button (e.g., green Play triangle / red Exit door from beta-29).
+pub fn icon_action(
+    ui: &mut egui::Ui,
+    tex: Option<&egui::TextureHandle>,
+    fallback: &str,
+    size: f32,
+) -> egui::Response {
+    if let Some(tex) = tex {
+        let (rect, response) =
+            ui.allocate_exact_size(egui::vec2(size + 4.0, size + 4.0), egui::Sense::click());
+        if ui.is_rect_visible(rect) {
+            if response.hovered() {
+                ui.painter().rect_filled(
+                    rect,
+                    egui::Rounding::same(3.0),
+                    egui::Color32::from_white_alpha(28),
+                );
+            }
+            let img_rect = egui::Rect::from_center_size(rect.center(), egui::vec2(size, size));
+            ui.painter().image(
+                tex.id(),
+                img_rect,
+                egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)),
+                egui::Color32::WHITE,
+            );
+        }
+        response
+    } else {
+        ui.small_button(fallback)
+    }
+}
+
+/// Exact beta-29 titlebar pill switch to toggle G-Earth Light / G-Earth Dark (right-click for Tanji).
+pub fn dark_mode_pill_switch(ui: &mut egui::Ui, theme: &mut AppTheme) -> egui::Response {
+    let desired = egui::vec2(38.0, 20.0);
+    let (rect, response) = ui.allocate_exact_size(desired, egui::Sense::click());
+    if response.clicked() {
+        *theme = if theme.is_dark() {
+            AppTheme::GEarth
+        } else {
+            AppTheme::GEarthDark
+        };
+    } else if response.secondary_clicked() {
+        *theme = AppTheme::Tanji;
+    }
+    if ui.is_rect_visible(rect) {
+        let radius = rect.height() * 0.5;
+        let is_dark = theme.is_dark();
+        let bg = if is_dark {
+            egui::Color32::from_rgb(0x4a, 0x4a, 0x4a)
+        } else if *theme == AppTheme::Tanji {
+            egui::Color32::from_rgb(0xe9, 0xb3, 0x65)
+        } else {
+            egui::Color32::from_rgb(0xd4, 0xd4, 0xd4)
+        };
+        let border = if is_dark {
+            egui::Color32::from_rgb(0x88, 0x88, 0x88)
+        } else {
+            egui::Color32::from_rgb(0x99, 0x99, 0x99)
+        };
+        ui.painter()
+            .rect(rect, radius, bg, egui::Stroke::new(1.0_f32, border));
+        let knob_x = if is_dark {
+            rect.right() - radius
+        } else {
+            rect.left() + radius
+        };
+        ui.painter().circle_filled(
+            egui::pos2(knob_x, rect.center().y),
+            radius - 4.0,
+            egui::Color32::WHITE,
+        );
+    }
+    response
 }
 
 /// Draw an original Bootstrap-styled G-Earth top tab.
@@ -424,6 +594,38 @@ mod tests {
             (
                 "tanji_small",
                 include_bytes!("../resources/themes/tanji_small.png").as_slice(),
+            ),
+            (
+                "btn_fire",
+                include_bytes!("../resources/ui/ButtonFire.png").as_slice(),
+            ),
+            (
+                "btn_exit",
+                include_bytes!("../resources/ui/ButtonExit.png").as_slice(),
+            ),
+            (
+                "btn_edit",
+                include_bytes!("../resources/ui/ButtonEdit.png").as_slice(),
+            ),
+            (
+                "btn_pause",
+                include_bytes!("../resources/ui/ButtonPause.png").as_slice(),
+            ),
+            (
+                "btn_resume",
+                include_bytes!("../resources/ui/ButtonResume.png").as_slice(),
+            ),
+            (
+                "btn_delete",
+                include_bytes!("../resources/ui/ButtonDelete.png").as_slice(),
+            ),
+            (
+                "flag_fr",
+                include_bytes!("../resources/ui/flags/FR.png").as_slice(),
+            ),
+            (
+                "flag_en",
+                include_bytes!("../resources/ui/flags/EN.png").as_slice(),
             ),
         ] {
             let icon = eframe::icon_data::from_png_bytes(bytes)

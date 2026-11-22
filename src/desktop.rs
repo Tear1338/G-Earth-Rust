@@ -35,7 +35,10 @@ use std::{
     sync::{Arc, OnceLock},
     time::{Duration, Instant, SystemTime},
 };
-use theme_ui::{group_box, parse_interval_spec, tab_button, AppTheme, ThemeLogos};
+use theme_ui::{
+    dark_mode_pill_switch, group_box, icon_action, parse_interval_spec, tab_button, AppTheme,
+    ThemeLogos,
+};
 
 // Both lazy prediction caches count against the capture byte budget.
 const LOG_PREDICTION_LIMIT: usize = 1024;
@@ -4529,27 +4532,43 @@ impl Desktop {
                                         |ui| {
                                             ui.set_min_width(col_edt);
                                             ui.set_max_width(col_edt);
-                                            let pause_lbl = if job.paused { "▶" } else { "⏸" };
-                                            if ui
-                                                .small_button(pause_lbl)
-                                                .on_hover_text(self.i18n.text(if job.paused {
-                                                    "rust.scheduler.resume"
+                                            let pause_tex = self.logos.as_ref().and_then(|l| {
+                                                if job.paused {
+                                                    l.btn_resume.as_ref()
                                                 } else {
-                                                    "rust.scheduler.pause"
-                                                }))
-                                                .clicked()
+                                                    l.btn_pause.as_ref()
+                                                }
+                                            });
+                                            if icon_action(
+                                                ui,
+                                                pause_tex,
+                                                if job.paused { "▶" } else { "⏸" },
+                                                14.0,
+                                            )
+                                            .on_hover_text(self.i18n.text(if job.paused {
+                                                "rust.scheduler.resume"
+                                            } else {
+                                                "rust.scheduler.pause"
+                                            }))
+                                            .clicked()
                                             {
                                                 pause_change = Some((i, !job.paused));
                                             }
-                                            if ui
-                                                .small_button("✎")
+                                            let edit_tex = self
+                                                .logos
+                                                .as_ref()
+                                                .and_then(|l| l.btn_edit.as_ref());
+                                            if icon_action(ui, edit_tex, "✎", 14.0)
                                                 .on_hover_text(self.i18n.text("rust.action.edit"))
                                                 .clicked()
                                             {
                                                 edit_active = Some(job.id);
                                             }
-                                            if ui
-                                                .small_button("✕")
+                                            let del_tex = self
+                                                .logos
+                                                .as_ref()
+                                                .and_then(|l| l.btn_delete.as_ref());
+                                            if icon_action(ui, del_tex, "✕", 14.0)
                                                 .on_hover_text(self.i18n.text("rust.action.remove"))
                                                 .clicked()
                                             {
@@ -5524,19 +5543,18 @@ impl eframe::App for Desktop {
                 if self.developer_mode_confirmation {
                     ui.disable();
                 }
-                // Compact G-Earth Titlebar strip (logo + title left, language + theme + settings right)
+                // Exact G-Earth 1.5.4-beta-29 Titlebar strip (logo + title left, flag + dark pill switch right)
                 ui.horizontal(|ui| {
                     if let Some(tex) = self.logos.as_ref().and_then(|l| l.small(self.theme)) {
                         ui.add(egui::Image::new((tex.id(), egui::vec2(16.0, 16.0))));
                     }
-                    ui.label(egui::RichText::new(self.theme.title()).strong().size(13.5));
                     ui.label(
                         egui::RichText::new(format!(
-                            "1.5.4-beta-29 · {}",
+                            "{} 1.5.4-beta-29 (G-Earth-Rust · {})",
+                            self.theme.title(),
                             gearth_rust::update_checker::current_build_tag()
                         ))
-                        .small()
-                        .color(palette.text_muted),
+                        .size(13.0),
                     );
                     if let Some(Ok(info)) = self.update_result.clone() {
                         if info.outdated
@@ -5554,30 +5572,6 @@ impl eframe::App for Desktop {
                         }
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui
-                            .small_button(self.theme.name())
-                            .on_hover_text("Switch theme (G-Earth / G-Earth Dark / Tanji)")
-                            .clicked()
-                        {
-                            self.theme = self.theme.next();
-                        }
-                        let before = self.language.clone();
-                        egui::ComboBox::from_id_salt("language")
-                            .width(48.0)
-                            .selected_text(self.language.to_uppercase())
-                            .show_ui(ui, |ui| {
-                                for (code, name) in LANGUAGES {
-                                    ui.selectable_value(&mut self.language, (*code).into(), *name);
-                                }
-                            });
-                        if before != self.language {
-                            self.i18n = I18n::new(&self.language);
-                            if let Some(host) = &self.extension_host {
-                                if let Err(e) = host.set_language(&self.language) {
-                                    self.status = e.to_string();
-                                }
-                            }
-                        }
                         ui.menu_button("⚙", |ui| {
                             if ui.button(self.i18n.text("rust.settings.save")).clicked() {
                                 self.save_settings();
@@ -5597,6 +5591,75 @@ impl eframe::App for Desktop {
                                 }
                             }
                         });
+                        ui.add_space(4.0);
+                        dark_mode_pill_switch(ui, &mut self.theme)
+                            .on_hover_text("Toggle Dark / Light theme (Right-click: Tanji)");
+                        ui.add_space(6.0);
+                        let before = self.language.clone();
+                        let flag_tex = self
+                            .logos
+                            .as_ref()
+                            .and_then(|l| l.flag(&self.language))
+                            .cloned();
+                        let lang_popup_id = ui.make_persistent_id("lang_flag_popup");
+                        let flag_resp = if let Some(tex) = &flag_tex {
+                            let (rect, resp) = ui
+                                .allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::click());
+                            if ui.is_rect_visible(rect) {
+                                ui.painter().image(
+                                    tex.id(),
+                                    egui::Rect::from_center_size(
+                                        rect.center(),
+                                        egui::vec2(18.0, 18.0),
+                                    ),
+                                    egui::Rect::from_min_max(
+                                        egui::pos2(0.0, 0.0),
+                                        egui::pos2(1.0, 1.0),
+                                    ),
+                                    egui::Color32::WHITE,
+                                );
+                            }
+                            resp
+                        } else {
+                            ui.small_button(self.language.to_uppercase())
+                        };
+                        if flag_resp.clicked() {
+                            ui.memory_mut(|m| m.toggle_popup(lang_popup_id));
+                        }
+                        egui::popup::popup_below_widget(
+                            ui,
+                            lang_popup_id,
+                            &flag_resp,
+                            egui::popup::PopupCloseBehavior::CloseOnClick,
+                            |ui| {
+                                ui.set_min_width(120.0);
+                                for (code, name) in LANGUAGES {
+                                    ui.horizontal(|ui| {
+                                        if let Some(tex) =
+                                            self.logos.as_ref().and_then(|l| l.flag(code))
+                                        {
+                                            ui.add(egui::Image::new((
+                                                tex.id(),
+                                                egui::vec2(16.0, 16.0),
+                                            )));
+                                        }
+                                        ui.selectable_value(
+                                            &mut self.language,
+                                            (*code).into(),
+                                            *name,
+                                        );
+                                    });
+                                }
+                            },
+                        );
+                        if before != self.language {
+                            self.i18n = I18n::new(&self.language);
+                            if let Some(host) = &self.extension_host {
+                                if let Err(e) = host.set_language(&self.language) {
+                                    self.status = e.to_string();
+                                }
+                            }
+                        }
                     });
                 });
                 ui.add_space(4.0);
@@ -6693,24 +6756,43 @@ impl Desktop {
     fn extensions(&mut self, ui: &mut egui::Ui) {
         let palette = self.theme.palette();
         let avail_w = ui.available_width().max(580.0);
-        let table_h = (ui.available_height() - 78.0).clamp(110.0, 460.0);
+        let table_h = (ui.available_height() - 80.0).clamp(110.0, 460.0);
+        let fire_tex = self
+            .logos
+            .as_ref()
+            .and_then(|l| l.btn_fire.as_ref())
+            .cloned();
+        let exit_tex = self
+            .logos
+            .as_ref()
+            .and_then(|l| l.btn_exit.as_ref())
+            .cloned();
 
-        // Exact Extensions.fxml 5-column table: Title (22%) | Description (34%) | Author (18%) | Version (13%) | Edit (13%)
+        // Pixel-faithful Extensions.fxml 5-column bordered table with vertical dividers
         group_box(ui, self.theme, egui::Margin::same(0.0), |ui| {
-            ui.set_width(avail_w - 2.0);
-            let inner_w = (avail_w - 30.0).max(520.0);
-            let col_title = (inner_w * 0.22).floor();
-            let col_desc = (inner_w * 0.34).floor();
-            let col_author = (inner_w * 0.18).floor();
-            let col_ver = (inner_w * 0.11).floor();
-            let col_edit = (inner_w - col_title - col_desc - col_author - col_ver).max(76.0);
+            let box_w = (avail_w - 2.0).max(560.0);
+            ui.set_width(box_w);
+            let inner_w = (box_w - 2.0).max(540.0);
+            let col_title = (inner_w * 0.21).floor();
+            let col_desc = (inner_w * 0.37).floor();
+            let col_author = (inner_w * 0.17).floor();
+            let col_ver = (inner_w * 0.13).floor();
+            let col_edit = (inner_w - col_title - col_desc - col_author - col_ver).max(66.0);
+            let col_xs = [
+                col_title,
+                col_title + col_desc,
+                col_title + col_desc + col_author,
+                col_title + col_desc + col_author + col_ver,
+            ];
+            let grid_stroke = egui::Stroke::new(1.0_f32, palette.table_grid_line);
 
-            egui::Frame::none()
+            // Header row (centered labels, dark #282828 / light #f7f7f7, vertical dividers)
+            let header_resp = egui::Frame::none()
                 .fill(palette.table_header_bg)
-                .inner_margin(egui::Margin::symmetric(6.0, 5.0))
+                .inner_margin(egui::Margin::symmetric(0.0, 5.0))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 4.0;
+                        ui.spacing_mut().item_spacing.x = 0.0;
                         for (w, key) in [
                             (col_title, "tab.extensions.table.title"),
                             (col_desc, "tab.extensions.table.description"),
@@ -6726,124 +6808,124 @@ impl Desktop {
                                     ui.set_max_width(w);
                                     ui.label(
                                         egui::RichText::new(self.i18n.text(key))
-                                            .color(palette.table_header_text)
-                                            .strong(),
+                                            .color(palette.table_header_text),
                                     );
                                 },
                             );
                         }
                     });
                 });
-            let sep = ui.available_rect_before_wrap();
-            ui.painter().line_segment(
-                [
-                    egui::pos2(sep.left(), sep.top()),
-                    egui::pos2(sep.right(), sep.top()),
-                ],
-                egui::Stroke::new(1.0_f32, palette.group_border),
-            );
+            let hrect = header_resp.response.rect;
+            for dx in col_xs {
+                ui.painter().line_segment(
+                    [
+                        egui::pos2(hrect.left() + dx, hrect.top()),
+                        egui::pos2(hrect.left() + dx, hrect.bottom()),
+                    ],
+                    grid_stroke,
+                );
+            }
+            ui.painter()
+                .line_segment([hrect.left_bottom(), hrect.right_bottom()], grid_stroke);
+
             egui::ScrollArea::vertical()
                 .id_salt("extensions_table_scroll")
                 .max_height(table_h)
                 .show(ui, |ui| {
                     ui.set_min_height(table_h);
-                    // Built-in internal extensions (matching original G-Earth beta-29)
+                    ui.spacing_mut().item_spacing.y = 0.0;
+                    let draw_row =
+                        |ui: &mut egui::Ui,
+                         bg: egui::Color32,
+                         title: &str,
+                         desc: &str,
+                         author: &str,
+                         ver: &str,
+                         render_actions: &mut dyn FnMut(&mut egui::Ui)| {
+                            let row_resp = egui::Frame::none()
+                                .fill(bg)
+                                .inner_margin(egui::Margin::symmetric(0.0, 3.0))
+                                .show(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        ui.spacing_mut().item_spacing.x = 0.0;
+                                        for (w, text) in [
+                                            (col_title, title),
+                                            (col_desc, desc),
+                                            (col_author, author),
+                                            (col_ver, ver),
+                                        ] {
+                                            ui.allocate_ui_with_layout(
+                                                egui::vec2(w, 20.0),
+                                                egui::Layout::left_to_right(egui::Align::Center),
+                                                |ui| {
+                                                    ui.set_min_width(w);
+                                                    ui.set_max_width(w);
+                                                    ui.add_space(6.0);
+                                                    ui.add(egui::Label::new(text).truncate());
+                                                },
+                                            );
+                                        }
+                                        ui.allocate_ui_with_layout(
+                                            egui::vec2(col_edit, 20.0),
+                                            egui::Layout::left_to_right(egui::Align::Center),
+                                            |ui| {
+                                                ui.set_min_width(col_edit);
+                                                ui.set_max_width(col_edit);
+                                                ui.add_space(12.0);
+                                                ui.spacing_mut().item_spacing.x = 8.0;
+                                                render_actions(ui);
+                                            },
+                                        );
+                                    });
+                                });
+                            let r = row_resp.response.rect;
+                            for dx in col_xs {
+                                ui.painter().line_segment(
+                                    [
+                                        egui::pos2(r.left() + dx, r.top()),
+                                        egui::pos2(r.left() + dx, r.bottom()),
+                                    ],
+                                    grid_stroke,
+                                );
+                            }
+                            ui.painter()
+                                .line_segment([r.left_bottom(), r.right_bottom()], grid_stroke);
+                        };
+
+                    // Built-in internal rows (exact .tableRowBlue #3d5b69 dark / #f0ffff light / #fff0e3 Tanji)
                     let mut open_logger = false;
                     let mut open_store = false;
-                    for (idx, (title, desc, author, ver, action)) in [
-                        (
-                            "Packet Logger",
-                            "Internal packet logger",
-                            "1desirable1337",
-                            "1.5.4",
-                            0u8,
-                        ),
+                    for (title, desc, author, ver, action) in [
                         (
                             "G-ExtensionStore",
-                            "Install and manage extensions",
+                            "Get your extensions here",
                             "1desirable1337",
-                            "1.5.4",
+                            "1.0",
                             1u8,
                         ),
-                    ]
-                    .into_iter()
-                    .enumerate()
-                    {
-                        let bg = if idx % 2 == 1 {
-                            palette.table_row_alt_bg
-                        } else {
-                            palette.content_bg
-                        };
-                        egui::Frame::none()
-                            .fill(bg)
-                            .inner_margin(egui::Margin::symmetric(6.0, 4.0))
-                            .show(ui, |ui| {
-                                ui.horizontal(|ui| {
-                                    ui.spacing_mut().item_spacing.x = 4.0;
-                                    ui.allocate_ui_with_layout(
-                                        egui::vec2(col_title, 20.0),
-                                        egui::Layout::left_to_right(egui::Align::Center),
-                                        |ui| {
-                                            ui.set_min_width(col_title);
-                                            ui.set_max_width(col_title);
-                                            ui.add(egui::Label::new(title).truncate());
-                                        },
-                                    );
-                                    ui.allocate_ui_with_layout(
-                                        egui::vec2(col_desc, 20.0),
-                                        egui::Layout::left_to_right(egui::Align::Center),
-                                        |ui| {
-                                            ui.set_min_width(col_desc);
-                                            ui.set_max_width(col_desc);
-                                            ui.add(egui::Label::new(desc).truncate());
-                                        },
-                                    );
-                                    ui.allocate_ui_with_layout(
-                                        egui::vec2(col_author, 20.0),
-                                        egui::Layout::centered_and_justified(
-                                            egui::Direction::LeftToRight,
-                                        ),
-                                        |ui| {
-                                            ui.set_min_width(col_author);
-                                            ui.set_max_width(col_author);
-                                            ui.label(author);
-                                        },
-                                    );
-                                    ui.allocate_ui_with_layout(
-                                        egui::vec2(col_ver, 20.0),
-                                        egui::Layout::centered_and_justified(
-                                            egui::Direction::LeftToRight,
-                                        ),
-                                        |ui| {
-                                            ui.set_min_width(col_ver);
-                                            ui.set_max_width(col_ver);
-                                            ui.label(ver);
-                                        },
-                                    );
-                                    ui.allocate_ui_with_layout(
-                                        egui::vec2(col_edit, 20.0),
-                                        egui::Layout::centered_and_justified(
-                                            egui::Direction::LeftToRight,
-                                        ),
-                                        |ui| {
-                                            ui.set_min_width(col_edit);
-                                            ui.set_max_width(col_edit);
-                                            if ui
-                                                .small_button(
-                                                    self.i18n.text("rust.extensions.open"),
-                                                )
-                                                .clicked()
-                                            {
-                                                if action == 0 {
-                                                    open_logger = true;
-                                                } else {
-                                                    open_store = true;
-                                                }
-                                            }
-                                        },
-                                    );
-                                });
-                            });
+                        ("Packet Logger", "", "1desirable1337", "1.0", 0u8),
+                    ] {
+                        let open_tip = self.i18n.text("rust.extensions.open");
+                        draw_row(
+                            ui,
+                            palette.table_row_blue,
+                            title,
+                            desc,
+                            author,
+                            ver,
+                            &mut |ui| {
+                                if icon_action(ui, fire_tex.as_ref(), "▶", 14.0)
+                                    .on_hover_text(&open_tip)
+                                    .clicked()
+                                {
+                                    if action == 0 {
+                                        open_logger = true;
+                                    } else {
+                                        open_store = true;
+                                    }
+                                }
+                            },
+                        );
                     }
                     if open_logger {
                         self.logger_window.open = true;
@@ -6852,109 +6934,57 @@ impl Desktop {
                         self.ext_store_open = true;
                     }
 
+                    // External extensions (exact .tableRowActive #525252 / .tableRowInactive #5e5e5e)
                     if let Some(host) = &self.extension_host {
-                        for (idx, extension) in host.extensions().into_iter().enumerate() {
-                            let bg = if idx % 2 == 1 {
-                                palette.table_row_alt_bg
+                        let open_tip = self.i18n.text("rust.extensions.open");
+                        let allow_tip = self.i18n.text("rust.extensions.allow");
+                        let delete_tip = self.i18n.text("tab.extensions.table.edit.delete.tooltip");
+                        let mut status_update: Option<String> = None;
+                        for extension in host.extensions() {
+                            let bg = if extension.approved {
+                                palette.table_row_active
                             } else {
-                                palette.content_bg
+                                palette.table_row_inactive
                             };
-                            egui::Frame::none()
-                                .fill(bg)
-                                .inner_margin(egui::Margin::symmetric(6.0, 4.0))
-                                .show(ui, |ui| {
-                                    ui.horizontal(|ui| {
-                                        ui.spacing_mut().item_spacing.x = 4.0;
-                                        ui.allocate_ui_with_layout(
-                                            egui::vec2(col_title, 20.0),
-                                            egui::Layout::left_to_right(egui::Align::Center),
-                                            |ui| {
-                                                ui.set_min_width(col_title);
-                                                ui.set_max_width(col_title);
-                                                ui.add(
-                                                    egui::Label::new(&extension.info.title)
-                                                        .truncate(),
-                                                );
-                                            },
-                                        );
-                                        ui.allocate_ui_with_layout(
-                                            egui::vec2(col_desc, 20.0),
-                                            egui::Layout::left_to_right(egui::Align::Center),
-                                            |ui| {
-                                                ui.set_min_width(col_desc);
-                                                ui.set_max_width(col_desc);
-                                                ui.add(
-                                                    egui::Label::new(&extension.info.description)
-                                                        .truncate(),
-                                                );
-                                            },
-                                        );
-                                        ui.allocate_ui_with_layout(
-                                            egui::vec2(col_author, 20.0),
-                                            egui::Layout::centered_and_justified(
-                                                egui::Direction::LeftToRight,
-                                            ),
-                                            |ui| {
-                                                ui.set_min_width(col_author);
-                                                ui.set_max_width(col_author);
-                                                ui.label(&extension.info.author);
-                                            },
-                                        );
-                                        ui.allocate_ui_with_layout(
-                                            egui::vec2(col_ver, 20.0),
-                                            egui::Layout::centered_and_justified(
-                                                egui::Direction::LeftToRight,
-                                            ),
-                                            |ui| {
-                                                ui.set_min_width(col_ver);
-                                                ui.set_max_width(col_ver);
-                                                ui.label(&extension.info.version);
-                                            },
-                                        );
-                                        ui.allocate_ui_with_layout(
-                                            egui::vec2(col_edit, 20.0),
-                                            egui::Layout::left_to_right(egui::Align::Center),
-                                            |ui| {
-                                                ui.set_min_width(col_edit);
-                                                ui.set_max_width(col_edit);
-                                                if !extension.approved
-                                                    && ui
-                                                        .small_button(
-                                                            self.i18n.text("rust.extensions.allow"),
-                                                        )
-                                                        .clicked()
-                                                {
-                                                    if let Err(e) = host.approve(extension.id) {
-                                                        self.status = e.to_string();
-                                                    }
-                                                }
-                                                if extension.approved
-                                                    && extension.info.on_click
-                                                    && ui
-                                                        .small_button(
-                                                            self.i18n.text("rust.extensions.open"),
-                                                        )
-                                                        .clicked()
-                                                {
-                                                    if let Err(e) = host.click(extension.id) {
-                                                        self.status = e.to_string();
-                                                    }
-                                                }
-                                                if ui
-                                                    .small_button("✕")
-                                                    .on_hover_text(self.i18n.text(
-                                                        "tab.extensions.table.edit.delete.tooltip",
-                                                    ))
-                                                    .clicked()
-                                                {
-                                                    if let Err(e) = host.disconnect(extension.id) {
-                                                        self.status = e.to_string();
-                                                    }
-                                                }
-                                            },
-                                        );
-                                    });
-                                });
+                            draw_row(
+                                ui,
+                                bg,
+                                &extension.info.title,
+                                &extension.info.description,
+                                &extension.info.author,
+                                &extension.info.version,
+                                &mut |ui| {
+                                    if !extension.approved {
+                                        if icon_action(ui, fire_tex.as_ref(), "▶", 14.0)
+                                            .on_hover_text(&allow_tip)
+                                            .clicked()
+                                        {
+                                            if let Err(e) = host.approve(extension.id) {
+                                                status_update = Some(e.to_string());
+                                            }
+                                        }
+                                    } else if extension.info.on_click
+                                        && icon_action(ui, fire_tex.as_ref(), "▶", 14.0)
+                                            .on_hover_text(&open_tip)
+                                            .clicked()
+                                    {
+                                        if let Err(e) = host.click(extension.id) {
+                                            status_update = Some(e.to_string());
+                                        }
+                                    }
+                                    if icon_action(ui, exit_tex.as_ref(), "✕", 14.0)
+                                        .on_hover_text(&delete_tip)
+                                        .clicked()
+                                    {
+                                        if let Err(e) = host.disconnect(extension.id) {
+                                            status_update = Some(e.to_string());
+                                        }
+                                    }
+                                },
+                            );
+                        }
+                        if let Some(err) = status_update {
+                            self.status = err;
                         }
                     } else {
                         ui.add_space(8.0);
@@ -6963,11 +6993,12 @@ impl Desktop {
                 });
         });
 
-        ui.add_space(6.0);
+        ui.add_space(8.0);
 
-        // Exact Extensions.fxml bottom bar: Port: [9092] ... [G-Python Shell] [View logs] [Install]
+        // Exact Extensions.fxml bottom bar: Port: [9092] ... [G-Python shell] [Logs] [Installer]
         ui.horizontal(|ui| {
             ui.label(format!("{}:", self.i18n.text("tab.extensions.port")));
+            ui.add_space(6.0);
             let mut port_text = self
                 .extension_host
                 .as_ref()
@@ -6975,14 +7006,15 @@ impl Desktop {
                 .unwrap_or_else(|| "-".into());
             ui.add_enabled(
                 false,
-                egui::TextEdit::singleline(&mut port_text).desired_width(72.0),
+                egui::TextEdit::singleline(&mut port_text).desired_width(88.0),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
                 if ui
                     .add_enabled(
                         self.extension_host.is_some(),
                         egui::Button::new(self.i18n.text("tab.extensions.button.install"))
-                            .min_size(egui::vec2(105.0, 26.0)),
+                            .min_size(egui::vec2(124.0, 28.0)),
                     )
                     .clicked()
                 {
@@ -6991,7 +7023,7 @@ impl Desktop {
                 if ui
                     .add(
                         egui::Button::new(self.i18n.text("tab.extensions.button.logs"))
-                            .min_size(egui::vec2(105.0, 26.0)),
+                            .min_size(egui::vec2(124.0, 28.0)),
                     )
                     .clicked()
                 {
@@ -7001,7 +7033,7 @@ impl Desktop {
                     .add_enabled(
                         self.python_enabled,
                         egui::Button::new(self.i18n.text("tab.extensions.button.pythonshell"))
-                            .min_size(egui::vec2(115.0, 26.0)),
+                            .min_size(egui::vec2(124.0, 28.0)),
                     )
                     .clicked()
                 {
