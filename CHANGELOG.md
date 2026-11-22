@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — macOS validation
+
+- Add native macOS tests, Clippy and a desktop/web release build to CI.
+
 ## Unreleased — Java EOF and CI resilience
 
 - Expose Java’s three packet EOF states.

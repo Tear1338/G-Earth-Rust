@@ -1,5 +1,9 @@
 # G-Earth Rust migration progress
 
+## Native macOS validation
+
+A new macOS GitHub Actions job runs workspace/all-targets tests, desktop/web library tests, Clippy and a desktop/web release build on a native macOS runner. The workflow YAML was parsed locally; actual macOS execution is pending after push. This does not implement macOS Flash discovery, privileged proxy/hosts handling or establish real-client compatibility. The prior failed Java compatibility run 44965973810 passed on retry after a JavaFX HTTP 404; CI and Windows release for `93c99e1` remain in progress.
+
 ## Java three-state EOF and CI retries
 
 The Rust packet API now exposes Java `isEOF` semantics: 0 before the end, 1 at the end, 2 past it. A beta-29 oracle checks all three states, including a cursor retained past the end by a Java-compatible shrink; 48 mutation tests and the full Java mutation oracle pass. Workspace/all-targets tests, desktop/web Clippy and debug compilation passed. CI download commands now retry transient HTTP errors, including 403 and 404; a local loopback HTTP fixture confirms retry after a 404. CI run 44965973810 failed before scheduler tests on a transient JavaFX HTTP 404; other jobs are still running. Real clients, protocols and extensions remain unverified.
@@ -777,4 +781,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Commit and push the validated Java EOF and CI download retries. Rerun failed CI run 44965973810 after its other jobs finish, rebuild release and inspect new CI. Continue Java size differences, Flash scheduling and `Matcher.last` for `\b{g}`. The user handles live tests; clients, protocols and extensions remain unverified.
+Commit and push native macOS CI, then inspect its first run and fix actual macOS compilation or test failures. Implement missing macOS Flash discovery and privileged hosts/proxy lifecycle; continue Java size differences and `Matcher.last` for `\b{g}`. The user handles live tests; clients, protocols and extensions remain unverified.

@@ -1,5 +1,9 @@
 # Rust migration architecture
 
+## macOS validation
+
+A native macOS CI job checks the workspace and desktop/web build, but native compilation and synthetic tests do not imply that missing process discovery, host mapping or proxy lifecycle support is implemented.
+
 ## Java EOF state
 
 The explicit Java EOF accessor distinguishes before, at and past the packet end. Rust’s remaining-byte accessor continues to saturate at zero when the Java cursor is past the end.

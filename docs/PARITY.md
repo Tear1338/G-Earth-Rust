@@ -1,5 +1,9 @@
 # Compatibility with 1.5.4-beta-29
 
+## macOS validation status
+
+A native macOS CI job has been added and awaits its first run. The proxy/hosts lifecycle, Flash process discovery and real client compatibility remain incomplete or unverified.
+
 ## Java EOF evidence
 
 The beta-29 oracle checks before, at and past end states, including a cursor retained beyond the packet after a shrinking Java-compatible replacement. Other arbitrary Java cursor inputs remain unverified.

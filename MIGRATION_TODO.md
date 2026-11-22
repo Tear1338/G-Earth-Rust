@@ -1,5 +1,10 @@
 # Migration tasks
 
+## Latest: native macOS CI
+
+- [x] Add a native macOS workspace, desktop/web test, Clippy and release-build job.
+- [ ] Inspect the first run and fix platform failures; implement missing macOS Flash, hosts and proxy support and await user-run live tests.
+
 ## Latest: Java EOF and CI download retries
 
 - [x] Expose and compare the three Java EOF states, including a cursor past the end.

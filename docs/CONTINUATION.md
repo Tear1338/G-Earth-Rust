@@ -1,5 +1,9 @@
 # Continuation state
 
+## Next: native macOS CI
+
+Commit and push the native macOS CI job, inspect its first run and repair any actual compilation or test failures. Implement macOS Flash process discovery and privileged host/proxy lifecycle separately; real clients remain for the user to test.
+
 ## Next: Java EOF and CI download validation
 
 Workspace and desktop/web checks pass. Commit and push the Java EOF accessor and CI retry policy. Rerun CI run 44965973810 after its other jobs finish; it initially failed on a JavaFX HTTP 404. Build release and inspect new CI; live testing belongs to the user.
