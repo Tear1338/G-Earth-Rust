@@ -6310,96 +6310,197 @@ impl eframe::App for Desktop {
                     }
                 }
             });
-        // Floating extension & info dialogs matching beta-29 separate windows
+        // Independent native OS windows matching beta-29 separate windows
         if self.ext_store_open {
-            let mut open = self.ext_store_open;
-            egui::Window::new("G-ExtensionStore")
-                .open(&mut open)
-                .resizable(true)
-                .default_size([560.0, 560.0])
-                .min_size([480.0, 420.0])
-                .frame(egui::Frame::window(&ctx.style()).inner_margin(egui::Margin::same(0.0)))
-                .show(ctx, |ui| {
-                    self.store.show(
-                        ui,
-                        self.extension_host.as_ref(),
-                        Path::new(&self.extension_runtime),
-                        &self.i18n,
-                        &mut self.status,
-                        &mut self.extension_processes,
-                    );
-                });
+            let mut open = true;
+            let theme_visuals = self.theme.visuals();
+            ctx.show_viewport_immediate(
+                egui::ViewportId::from_hash_of("extension_store_window"),
+                with_gearth_icon(
+                    egui::ViewportBuilder::default()
+                        .with_title("G-ExtensionStore")
+                        .with_inner_size([560.0, 560.0])
+                        .with_min_inner_size([480.0, 420.0]),
+                ),
+                |store_ctx, class| {
+                    store_ctx.set_visuals(theme_visuals.clone());
+                    if class == egui::ViewportClass::Embedded {
+                        egui::Window::new("G-ExtensionStore")
+                            .id(egui::Id::new("floating_extension_store"))
+                            .open(&mut open)
+                            .resizable(true)
+                            .default_size([560.0, 560.0])
+                            .min_size([480.0, 420.0])
+                            .frame(
+                                egui::Frame::window(&store_ctx.style())
+                                    .inner_margin(egui::Margin::same(0.0)),
+                            )
+                            .show(store_ctx, |ui| {
+                                self.store.show(
+                                    ui,
+                                    self.extension_host.as_ref(),
+                                    Path::new(&self.extension_runtime),
+                                    &self.i18n,
+                                    &mut self.status,
+                                    &mut self.extension_processes,
+                                );
+                            });
+                    } else {
+                        if store_ctx.input(|i| i.viewport().close_requested()) {
+                            open = false;
+                        }
+                        egui::CentralPanel::default()
+                            .frame(egui::Frame::none().fill(palette.content_bg))
+                            .show(store_ctx, |ui| {
+                                self.store.show(
+                                    ui,
+                                    self.extension_host.as_ref(),
+                                    Path::new(&self.extension_runtime),
+                                    &self.i18n,
+                                    &mut self.status,
+                                    &mut self.extension_processes,
+                                );
+                            });
+                    }
+                },
+            );
+            if !open {
+                ctx.request_repaint_of(egui::ViewportId::ROOT);
+            }
             self.ext_store_open = open;
         }
         if self.ext_gpython_open {
-            let mut open = self.ext_gpython_open;
-            egui::Window::new(
-                self.i18n
-                    .text("tab.extensions.button.pythonshell.windowtitle"),
-            )
-            .open(&mut open)
-            .resizable(true)
-            .default_size([560.0, 340.0])
-            .show(ctx, |ui| {
-                self.python_console.show(
-                    ui,
-                    self.extension_host.as_ref(),
-                    self.python_enabled,
-                    &self.i18n,
-                    &mut self.status,
-                );
-            });
+            let mut open = true;
+            let title = self
+                .i18n
+                .text("tab.extensions.button.pythonshell.windowtitle");
+            let theme_visuals = self.theme.visuals();
+            ctx.show_viewport_immediate(
+                egui::ViewportId::from_hash_of("gpython_shell_window"),
+                with_gearth_icon(
+                    egui::ViewportBuilder::default()
+                        .with_title(&title)
+                        .with_inner_size([580.0, 360.0])
+                        .with_min_inner_size([420.0, 260.0]),
+                ),
+                |py_ctx, class| {
+                    py_ctx.set_visuals(theme_visuals.clone());
+                    if class == egui::ViewportClass::Embedded {
+                        egui::Window::new(&title)
+                            .id(egui::Id::new("floating_gpython_shell"))
+                            .open(&mut open)
+                            .resizable(true)
+                            .default_size([560.0, 340.0])
+                            .show(py_ctx, |ui| {
+                                self.python_console.show(
+                                    ui,
+                                    self.extension_host.as_ref(),
+                                    self.python_enabled,
+                                    &self.i18n,
+                                    &mut self.status,
+                                );
+                            });
+                    } else {
+                        if py_ctx.input(|i| i.viewport().close_requested()) {
+                            open = false;
+                        }
+                        egui::CentralPanel::default().show(py_ctx, |ui| {
+                            self.python_console.show(
+                                ui,
+                                self.extension_host.as_ref(),
+                                self.python_enabled,
+                                &self.i18n,
+                                &mut self.status,
+                            );
+                        });
+                        if self.python_console.is_pending() {
+                            py_ctx.request_repaint_after(Duration::from_millis(80));
+                        }
+                    }
+                },
+            );
+            if !open {
+                ctx.request_repaint_of(egui::ViewportId::ROOT);
+            }
             self.ext_gpython_open = open;
         }
         if self.ext_console_open {
-            let mut open = self.ext_console_open;
+            let mut open = true;
+            let title = self.i18n.text("tab.extensions.button.logs.windowtitle");
             let dark = ui_is_dark(self.theme);
-            egui::Window::new(self.i18n.text("tab.extensions.button.logs.windowtitle"))
-                .open(&mut open)
-                .resizable(true)
-                .default_size([620.0, 340.0])
-                .show(ctx, |ui| {
-                    ui.horizontal(|ui| {
-                        if ui.button(self.i18n.text("rust.logger.clear")).clicked() {
-                            self.extension_console.clear();
-                        }
-                        if ui
-                            .button(self.i18n.text("rust.tools.copy_output"))
-                            .clicked()
-                        {
-                            let joined = self
-                                .extension_console
-                                .iter()
-                                .cloned()
-                                .collect::<Vec<_>>()
-                                .join("\n");
-                            ui.ctx().copy_text(joined);
-                        }
-                    });
-                    ui.separator();
-                    egui::ScrollArea::vertical()
-                        .stick_to_bottom(true)
-                        .show(ui, |ui| {
-                            for line in &self.extension_console {
-                                let (prefix, color_name, body) = parse_extension_console_line(line);
-                                let body_color =
-                                    color_name.and_then(|name| extension_console_color(name, dark));
-                                ui.horizontal_wrapped(|ui| {
-                                    ui.spacing_mut().item_spacing.x = 0.0;
-                                    if !prefix.is_empty() {
-                                        ui.monospace(prefix);
-                                    }
-                                    if let Some(color) = body_color {
-                                        ui.label(
-                                            egui::RichText::new(body).monospace().color(color),
-                                        );
-                                    } else {
-                                        ui.monospace(body);
-                                    }
-                                });
+            let theme_visuals = self.theme.visuals();
+            ctx.show_viewport_immediate(
+                egui::ViewportId::from_hash_of("extension_console_window"),
+                with_gearth_icon(
+                    egui::ViewportBuilder::default()
+                        .with_title(&title)
+                        .with_inner_size([620.0, 360.0])
+                        .with_min_inner_size([400.0, 240.0]),
+                ),
+                |console_ctx, class| {
+                    console_ctx.set_visuals(theme_visuals.clone());
+                    let render_console = |ui: &mut egui::Ui,
+                                          console: &mut VecDeque<String>,
+                                          i18n: &I18n| {
+                        ui.horizontal(|ui| {
+                            if ui.button(i18n.text("rust.logger.clear")).clicked() {
+                                console.clear();
+                            }
+                            if ui.button(i18n.text("rust.tools.copy_output")).clicked() {
+                                let joined = console.iter().cloned().collect::<Vec<_>>().join("\n");
+                                ui.ctx().copy_text(joined);
                             }
                         });
-                });
+                        ui.separator();
+                        egui::ScrollArea::vertical()
+                            .stick_to_bottom(true)
+                            .show(ui, |ui| {
+                                for line in console.iter() {
+                                    let (prefix, color_name, body) =
+                                        parse_extension_console_line(line);
+                                    let body_color = color_name
+                                        .and_then(|name| extension_console_color(name, dark));
+                                    ui.horizontal_wrapped(|ui| {
+                                        ui.spacing_mut().item_spacing.x = 0.0;
+                                        if !prefix.is_empty() {
+                                            ui.monospace(prefix);
+                                        }
+                                        if let Some(color) = body_color {
+                                            ui.label(
+                                                egui::RichText::new(body).monospace().color(color),
+                                            );
+                                        } else {
+                                            ui.monospace(body);
+                                        }
+                                    });
+                                }
+                            });
+                    };
+                    if class == egui::ViewportClass::Embedded {
+                        egui::Window::new(&title)
+                            .id(egui::Id::new("floating_extension_console"))
+                            .open(&mut open)
+                            .resizable(true)
+                            .default_size([620.0, 340.0])
+                            .show(console_ctx, |ui| {
+                                render_console(ui, &mut self.extension_console, &self.i18n);
+                            });
+                    } else {
+                        if console_ctx.input(|i| i.viewport().close_requested()) {
+                            open = false;
+                        }
+                        egui::CentralPanel::default().show(console_ctx, |ui| {
+                            render_console(ui, &mut self.extension_console, &self.i18n);
+                        });
+                        if self.extension_host.is_some() {
+                            console_ctx.request_repaint_after(Duration::from_millis(100));
+                        }
+                    }
+                },
+            );
+            if !open {
+                ctx.request_repaint_of(egui::ViewportId::ROOT);
+            }
             self.ext_console_open = open;
         }
         if self.ext_install_open {
@@ -7759,9 +7860,21 @@ impl Desktop {
                         );
                     }
                     if open_logger {
+                        if self.logger_window.open {
+                            ui.ctx().send_viewport_cmd_to(
+                                egui::ViewportId::from_hash_of("logger_window"),
+                                egui::ViewportCommand::Focus,
+                            );
+                        }
                         self.logger_window.open = true;
                     }
                     if open_store {
+                        if self.ext_store_open {
+                            ui.ctx().send_viewport_cmd_to(
+                                egui::ViewportId::from_hash_of("extension_store_window"),
+                                egui::ViewportCommand::Focus,
+                            );
+                        }
                         self.ext_store_open = true;
                     }
 
@@ -7931,6 +8044,12 @@ impl Desktop {
                     )
                     .clicked()
                 {
+                    if self.ext_console_open {
+                        ui.ctx().send_viewport_cmd_to(
+                            egui::ViewportId::from_hash_of("extension_console_window"),
+                            egui::ViewportCommand::Focus,
+                        );
+                    }
                     self.ext_console_open = true;
                 }
                 if ui
@@ -7941,6 +8060,12 @@ impl Desktop {
                     )
                     .clicked()
                 {
+                    if self.ext_gpython_open {
+                        ui.ctx().send_viewport_cmd_to(
+                            egui::ViewportId::from_hash_of("gpython_shell_window"),
+                            egui::ViewportCommand::Focus,
+                        );
+                    }
                     self.ext_gpython_open = true;
                 }
             });
