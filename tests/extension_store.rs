@@ -305,3 +305,56 @@ fn original_catalog_snapshot_parses_and_retains_all_items() {
             > 100
     );
 }
+
+#[test]
+fn multi_source_defaults_persistence_and_merged_queries_work() {
+    let defaults = extension_store::default_sources();
+    assert_eq!(defaults.len(), 2);
+    assert_eq!(defaults[0].repo, extension_store::STORE_SOURCE);
+    assert_eq!(defaults[1].repo, extension_store::CUSTOM_STORE_SOURCE);
+
+    let dir = Directory::new();
+    let loaded_initial = extension_store::load_sources(&dir.0);
+    assert_eq!(loaded_initial, defaults);
+
+    let mut custom_list = defaults.clone();
+    custom_list.push(extension_store::StoreSource::new(
+        "Example/CustomStore",
+        "main",
+    ));
+    extension_store::save_sources(&dir.0, &custom_list).unwrap();
+    assert_eq!(extension_store::load_sources(&dir.0), custom_list);
+
+    let official = catalog();
+    let mut custom = catalog();
+    custom.source = extension_store::CUSTOM_STORE_SOURCE.into();
+    custom.version = "main".into();
+    custom.extensions[0].title = "Tear Custom Ext".into();
+    custom.extensions[0].rating = 500;
+    custom.extensions[0].update_date = "01-06-2026 12:00:00".into();
+    custom.extensions.truncate(1);
+
+    assert_eq!(
+        official.archive_url(&official.extensions[0]),
+        "https://raw.githubusercontent.com/sirjonasxx/G-ExtensionStore/repo/1.5.3/store/extensions/Fixture%20Tool/extension.zip"
+    );
+    assert_eq!(
+        custom.archive_url(&custom.extensions[0]),
+        "https://raw.githubusercontent.com/Tear1338/G-ExtensionStore/main/store/extensions/Tear%20Custom%20Ext/extension.zip"
+    );
+
+    let multi = extension_store::MultiCatalog::from_catalogs(vec![official, custom]);
+    let all = multi.query(&Query::default(), None);
+    assert_eq!(all.len(), 2);
+    assert_eq!(all[0].1.title, "Tear Custom Ext");
+    assert_eq!(all[0].0.source, extension_store::CUSTOM_STORE_SOURCE);
+    assert_eq!(all[1].1.title, "Fixture Tool");
+    assert_eq!(all[1].0.source, extension_store::STORE_SOURCE);
+
+    let only_custom = multi.query(
+        &Query::default(),
+        Some(extension_store::CUSTOM_STORE_SOURCE),
+    );
+    assert_eq!(only_custom.len(), 1);
+    assert_eq!(only_custom[0].1.title, "Tear Custom Ext");
+}

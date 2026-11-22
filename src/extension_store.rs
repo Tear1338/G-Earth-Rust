@@ -8,9 +8,157 @@ use std::{
     path::{Component, Path, PathBuf},
 };
 pub const STORE_SOURCE: &str = "sirjonasxx/G-ExtensionStore";
+pub const CUSTOM_STORE_SOURCE: &str = "Tear1338/G-ExtensionStore";
 pub const STORE_VERSION: &str = "1.5.3";
 const MAX_JSON: usize = 8 * 1024 * 1024;
 const MAX_ARCHIVE: usize = 64 * 1024 * 1024;
+const SOURCES_FILE: &str = "store-sources.json";
+
+fn default_enabled() -> bool {
+    true
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StoreSource {
+    pub repo: String,
+    pub version: String,
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+}
+
+impl StoreSource {
+    pub fn new(repo: impl Into<String>, version: impl Into<String>) -> Self {
+        Self {
+            repo: repo.into(),
+            version: version.into(),
+            enabled: true,
+        }
+    }
+
+    pub fn display_tag(&self) -> &str {
+        self.repo.split('/').next().unwrap_or(&self.repo)
+    }
+}
+
+pub fn default_sources() -> Vec<StoreSource> {
+    vec![
+        StoreSource::new(STORE_SOURCE, STORE_VERSION),
+        StoreSource::new(CUSTOM_STORE_SOURCE, STORE_VERSION),
+    ]
+}
+
+pub fn validate_source(repo: &str, version: &str) -> io::Result<()> {
+    if !source_valid(repo)
+        || version.is_empty()
+        || version.len() > 100
+        || !version
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
+    {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid store repository (expected owner/repo) or branch/version",
+        ));
+    }
+    Ok(())
+}
+
+pub fn load_sources(root: &Path) -> Vec<StoreSource> {
+    let path = root.join(SOURCES_FILE);
+    let Ok(bytes) = fs::read(&path) else {
+        return default_sources();
+    };
+    if bytes.len() > MAX_JSON {
+        return default_sources();
+    }
+    let Ok(parsed) = serde_json::from_slice::<Vec<StoreSource>>(&bytes) else {
+        return default_sources();
+    };
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for item in parsed {
+        let repo = item.repo.trim().to_owned();
+        let version = item.version.trim().to_owned();
+        if validate_source(&repo, &version).is_ok() && seen.insert(repo.to_ascii_lowercase()) {
+            out.push(StoreSource {
+                repo,
+                version,
+                enabled: item.enabled,
+            });
+        }
+    }
+    if out.is_empty() {
+        default_sources()
+    } else {
+        out
+    }
+}
+
+pub fn save_sources(root: &Path, sources: &[StoreSource]) -> io::Result<()> {
+    let mut cleaned = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for item in sources {
+        let repo = item.repo.trim().to_owned();
+        let version = item.version.trim().to_owned();
+        validate_source(&repo, &version)?;
+        if seen.insert(repo.to_ascii_lowercase()) {
+            cleaned.push(StoreSource {
+                repo,
+                version,
+                enabled: item.enabled,
+            });
+        }
+    }
+    fs::create_dir_all(root)?;
+    let bytes = serde_json::to_vec_pretty(&cleaned).map_err(io::Error::other)?;
+    fs::write(root.join(SOURCES_FILE), bytes)
+}
+
+#[derive(Clone, Debug)]
+pub struct SourceStatus {
+    pub repo: String,
+    pub version: String,
+    pub loaded_ref: Option<String>,
+    pub extension_count: usize,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct MultiCatalog {
+    pub catalogs: Vec<Catalog>,
+    pub statuses: Vec<SourceStatus>,
+}
+
+fn compare_extensions(
+    a: &StoreExtension,
+    b: &StoreExtension,
+    sort: Sort,
+    reverse: bool,
+) -> Ordering {
+    let ordering = match sort {
+        Sort::Rating => b.rating.cmp(&a.rating),
+        Sort::Alphabetical => a.title.to_lowercase().cmp(&b.title.to_lowercase()),
+        Sort::LastUpdated => date_key(&b.update_date)
+            .unwrap()
+            .cmp(&date_key(&a.update_date).unwrap()),
+        Sort::NewReleases => date_key(&b.submission_date)
+            .unwrap()
+            .cmp(&date_key(&a.submission_date).unwrap()),
+    };
+    if reverse {
+        ordering.reverse()
+    } else {
+        ordering
+    }
+}
+
+fn git_ref_for_version(version: &str) -> String {
+    if version == "main" || version == "master" {
+        version.to_owned()
+    } else {
+        format!("repo/{version}")
+    }
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Category {
     pub name: String,
@@ -255,9 +403,9 @@ impl Catalog {
     }
     pub fn resource_url(&self, path: &[&str]) -> String {
         format!(
-            "https://raw.githubusercontent.com/{}/repo/{}/{}",
+            "https://raw.githubusercontent.com/{}/{}/{}",
             self.source,
-            self.version,
+            git_ref_for_version(&self.version),
             path.iter()
                 .map(|part| uri_component(part))
                 .collect::<Vec<_>>()
@@ -265,23 +413,19 @@ impl Catalog {
         )
     }
     pub fn fetch(source: &str, version: &str) -> io::Result<Self> {
-        if !source_valid(source)
-            || version.len() > 100
-            || !version
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b"._-".contains(&b))
-        {
-            return Err(io::Error::other("invalid extension store source"));
-        }
+        Self::fetch_with_fallback(source, version, None)
+    }
+    pub fn fetch_with_fallback(
+        source: &str,
+        version: &str,
+        fallback_config: Option<&StoreConfig>,
+    ) -> io::Result<Self> {
+        validate_source(source, version)?;
         let agent = ureq::AgentBuilder::new()
             .timeout(std::time::Duration::from_secs(20))
             .build();
-        let prefix = format!("https://raw.githubusercontent.com/{source}/repo/{version}");
-        let read = |suffix: &str| -> io::Result<Vec<u8>> {
-            let response = agent
-                .get(&format!("{prefix}/{suffix}"))
-                .call()
-                .map_err(io::Error::other)?;
+        let read_url = |url: &str| -> io::Result<Vec<u8>> {
+            let response = agent.get(url).call().map_err(io::Error::other)?;
             let mut bytes = Vec::new();
             response
                 .into_reader()
@@ -292,12 +436,36 @@ impl Catalog {
             }
             Ok(bytes)
         };
-        Self::parse(
-            source,
-            version,
-            &read("store/config.json")?,
-            &read(".auto-generated/extensions.json")?,
-        )
+        let try_version = |candidate_version: &str| -> io::Result<Self> {
+            let git_ref = git_ref_for_version(candidate_version);
+            let prefix = format!("https://raw.githubusercontent.com/{source}/{git_ref}");
+            let extensions_bytes = read_url(&format!("{prefix}/.auto-generated/extensions.json"))
+                .or_else(|primary_err| {
+                if source != STORE_SOURCE {
+                    read_url(&format!("{prefix}/extensions.json")).map_err(|_| primary_err)
+                } else {
+                    Err(primary_err)
+                }
+            })?;
+            let config_bytes = match read_url(&format!("{prefix}/store/config.json")) {
+                Ok(bytes) => bytes,
+                Err(err) => {
+                    if let Some(fallback) = fallback_config {
+                        serde_json::to_vec(fallback).map_err(io::Error::other)?
+                    } else {
+                        return Err(err);
+                    }
+                }
+            };
+            Self::parse(source, candidate_version, &config_bytes, &extensions_bytes)
+        };
+        match try_version(version) {
+            Ok(catalog) => Ok(catalog),
+            Err(primary_err) if version != "main" && source != STORE_SOURCE => {
+                try_version("main").map_err(|_| primary_err)
+            }
+            Err(err) => Err(err),
+        }
     }
     pub fn query(&self, query: &Query<'_>) -> Vec<&StoreExtension> {
         let needle = query.text.to_lowercase();
@@ -343,23 +511,7 @@ impl Catalog {
                     })
             })
             .collect::<Vec<_>>();
-        entries.sort_by(|a, b| {
-            let ordering = match query.sort {
-                Sort::Rating => b.rating.cmp(&a.rating),
-                Sort::Alphabetical => a.title.to_lowercase().cmp(&b.title.to_lowercase()),
-                Sort::LastUpdated => date_key(&b.update_date)
-                    .unwrap()
-                    .cmp(&date_key(&a.update_date).unwrap()),
-                Sort::NewReleases => date_key(&b.submission_date)
-                    .unwrap()
-                    .cmp(&date_key(&a.submission_date).unwrap()),
-            };
-            if query.reverse {
-                ordering.reverse()
-            } else {
-                ordering
-            }
-        });
+        entries.sort_by(|a, b| compare_extensions(a, b, query.sort, query.reverse));
         entries
     }
     pub fn archive_url(&self, extension: &StoreExtension) -> String {
@@ -370,6 +522,125 @@ impl Catalog {
     }
     pub fn screenshot_url(&self, extension: &StoreExtension) -> String {
         self.resource_url(&["store", "extensions", &extension.title, "screenshot.png"])
+    }
+}
+
+impl MultiCatalog {
+    pub fn from_catalogs(catalogs: Vec<Catalog>) -> Self {
+        let statuses = catalogs
+            .iter()
+            .map(|c| SourceStatus {
+                repo: c.source.clone(),
+                version: c.version.clone(),
+                loaded_ref: Some(git_ref_for_version(&c.version)),
+                extension_count: c.extensions.len(),
+                error: None,
+            })
+            .collect();
+        Self { catalogs, statuses }
+    }
+
+    pub fn fetch_many(sources: &[StoreSource]) -> io::Result<Self> {
+        let enabled: Vec<&StoreSource> = sources.iter().filter(|s| s.enabled).collect();
+        if enabled.is_empty() {
+            return Err(io::Error::other("no extension store sources are enabled"));
+        }
+        let mut catalogs: Vec<Catalog> = Vec::new();
+        let mut statuses: Vec<SourceStatus> = Vec::new();
+        let mut first_error: Option<io::Error> = None;
+
+        for source in enabled {
+            let fallback_config = catalogs.first().map(|c| &c.config);
+            match Catalog::fetch_with_fallback(&source.repo, &source.version, fallback_config) {
+                Ok(catalog) => {
+                    statuses.push(SourceStatus {
+                        repo: source.repo.clone(),
+                        version: source.version.clone(),
+                        loaded_ref: Some(git_ref_for_version(&catalog.version)),
+                        extension_count: catalog.extensions.len(),
+                        error: None,
+                    });
+                    catalogs.push(catalog);
+                }
+                Err(error) => {
+                    statuses.push(SourceStatus {
+                        repo: source.repo.clone(),
+                        version: source.version.clone(),
+                        loaded_ref: None,
+                        extension_count: 0,
+                        error: Some(error.to_string()),
+                    });
+                    if first_error.is_none() {
+                        first_error = Some(error);
+                    }
+                }
+            }
+        }
+        if catalogs.is_empty() {
+            return Err(first_error
+                .unwrap_or_else(|| io::Error::other("failed to load extension catalogues")));
+        }
+        Ok(Self { catalogs, statuses })
+    }
+
+    pub fn total_extensions(&self) -> usize {
+        self.catalogs.iter().map(|c| c.extensions.len()).sum()
+    }
+
+    pub fn merged_categories(&self) -> Vec<Category> {
+        let mut seen = std::collections::HashSet::new();
+        let mut out = Vec::new();
+        for catalog in &self.catalogs {
+            for cat in &catalog.config.categories {
+                if seen.insert(cat.name.clone()) {
+                    out.push(cat.clone());
+                }
+            }
+        }
+        out
+    }
+
+    pub fn merged_frameworks(&self) -> Vec<Framework> {
+        let mut seen = std::collections::HashSet::new();
+        let mut out = Vec::new();
+        for catalog in &self.catalogs {
+            for fw in &catalog.config.frameworks {
+                if seen.insert(fw.name.clone()) {
+                    out.push(fw.clone());
+                }
+            }
+        }
+        out
+    }
+
+    pub fn find(&self, source: &str, title: &str) -> Option<(&Catalog, &StoreExtension)> {
+        self.catalogs
+            .iter()
+            .find(|c| c.source == source)
+            .and_then(|c| {
+                c.extensions
+                    .iter()
+                    .find(|e| e.title == title)
+                    .map(|e| (c, e))
+            })
+    }
+
+    pub fn query<'a>(
+        &'a self,
+        query: &Query<'_>,
+        source_filter: Option<&str>,
+    ) -> Vec<(&'a Catalog, &'a StoreExtension)> {
+        let mut entries: Vec<(&'a Catalog, &'a StoreExtension)> = Vec::new();
+        for catalog in &self.catalogs {
+            if source_filter.is_some_and(|filter| catalog.source != filter) {
+                continue;
+            }
+            for ext in catalog.query(query) {
+                entries.push((catalog, ext));
+            }
+        }
+        entries.sort_by(|(_, a), (_, b)| compare_extensions(a, b, query.sort, query.reverse));
+        entries
     }
 }
 

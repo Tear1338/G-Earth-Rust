@@ -1,7 +1,10 @@
 use eframe::egui;
 use gearth_rust::{
     extension_host::ExtensionHost,
-    extension_store::{self, Catalog, InstallStatus, Installed, Query, Sort, StoreExtension},
+    extension_store::{
+        self, Catalog, InstallStatus, Installed, MultiCatalog, Query, Sort, StoreExtension,
+        StoreSource,
+    },
     i18n::I18n,
 };
 use std::{
@@ -18,13 +21,13 @@ use std::{
 const PAGE_SIZE: usize = 7;
 
 enum Outcome {
-    Catalog(Catalog),
+    Catalog(MultiCatalog),
     Installed(Box<Installed>),
     Changed(String),
 }
 
 enum Action {
-    Install(Box<StoreExtension>),
+    Install(Box<(Catalog, StoreExtension)>),
     Remove(Box<Installed>),
     Launch(Box<Installed>),
 }
@@ -38,7 +41,8 @@ enum StoreView {
     Category(String),
     Installed,
     Search,
-    Details(String),
+    Sources,
+    Details { source: String, title: String },
 }
 
 struct OverviewIcons {
@@ -128,7 +132,11 @@ fn current_os_name() -> &'static str {
 
 pub struct StoreUi {
     root: PathBuf,
-    catalog: Option<Catalog>,
+    catalog: Option<MultiCatalog>,
+    sources: Vec<StoreSource>,
+    source_filter: String,
+    new_source_repo: String,
+    new_source_version: String,
     installed: Vec<Installed>,
     worker: Option<Receiver<Result<Outcome, String>>>,
     initialized: bool,
@@ -153,9 +161,14 @@ pub struct StoreUi {
 
 impl StoreUi {
     pub fn new(root: PathBuf) -> Self {
+        let sources = extension_store::load_sources(&root);
         Self {
             root,
             catalog: None,
+            sources,
+            source_filter: String::new(),
+            new_source_repo: String::new(),
+            new_source_version: extension_store::STORE_VERSION.into(),
             installed: Vec::new(),
             worker: None,
             initialized: false,
@@ -184,6 +197,7 @@ impl StoreUi {
     }
 
     fn refresh(&mut self, status: &mut String) {
+        self.sources = extension_store::load_sources(&self.root);
         match extension_store::installed(&self.root) {
             Ok(entries) => self.installed = entries,
             Err(error) => *status = error.to_string(),
@@ -194,16 +208,14 @@ impl StoreUi {
         if self.worker.is_some() {
             return;
         }
+        let sources = self.sources.clone();
         let (sender, receiver) = mpsc::channel();
         self.worker = Some(receiver);
-        *status = "Loading extension catalogue...".into();
+        *status = "Loading extension catalogues...".into();
         std::thread::spawn(move || {
-            let result = Catalog::fetch(
-                extension_store::STORE_SOURCE,
-                extension_store::STORE_VERSION,
-            )
-            .map(Outcome::Catalog)
-            .map_err(|error| error.to_string());
+            let result = MultiCatalog::fetch_many(&sources)
+                .map(Outcome::Catalog)
+                .map_err(|error| error.to_string());
             let _ = sender.send(result);
         });
     }
@@ -263,7 +275,7 @@ impl StoreUi {
     }
 
     fn navigate(&mut self, next: StoreView) {
-        if !matches!(self.view, StoreView::Details(_)) {
+        if !matches!(self.view, StoreView::Details { .. } | StoreView::Sources) {
             self.previous_view = self.view.clone();
         }
         self.view = next;
@@ -299,8 +311,11 @@ impl StoreUi {
                 Ok(result) => {
                     match result {
                         Ok(Outcome::Catalog(catalog)) => {
-                            *status =
-                                format!("Loaded {} store extensions", catalog.extensions.len());
+                            let loaded_count = catalog.catalogs.len();
+                            let total_ext = catalog.total_extensions();
+                            *status = format!(
+                                "Loaded {total_ext} store extensions from {loaded_count} source(s)"
+                            );
                             self.catalog = Some(catalog);
                         }
                         Ok(Outcome::Installed(record)) => {
@@ -360,16 +375,18 @@ impl StoreUi {
         let mut open_folder_requested = false;
 
         // Pre-fetch icon if we are on Details view so the header can show it
-        let detail_icon_key =
-            if let (StoreView::Details(title), Some(catalog)) = (&self.view, &self.catalog) {
-                catalog
-                    .extensions
-                    .iter()
-                    .find(|e| e.title == *title)
-                    .map(|ext| (format!("icon:{}", ext.title), catalog.icon_url(ext)))
-            } else {
-                None
-            };
+        let detail_icon_key = if let (StoreView::Details { source, title }, Some(catalog)) =
+            (&self.view, &self.catalog)
+        {
+            catalog.find(source, title).map(|(cat, ext)| {
+                (
+                    format!("icon:{}:{}", cat.source, ext.title),
+                    cat.icon_url(ext),
+                )
+            })
+        } else {
+            None
+        };
         if let Some((key, url)) = &detail_icon_key {
             let _ = self.request_image(key.clone(), url.clone());
         }
@@ -400,8 +417,12 @@ impl StoreUi {
                 let desc = self
                     .catalog
                     .as_ref()
-                    .and_then(|c| c.config.categories.iter().find(|cat| cat.name == *name))
-                    .map(|cat| cat.description.clone())
+                    .and_then(|c| {
+                        c.merged_categories()
+                            .into_iter()
+                            .find(|cat| cat.name == *name)
+                    })
+                    .map(|cat| cat.description)
                     .unwrap_or_default();
                 (name.clone(), desc, name.clone())
             }
@@ -415,19 +436,29 @@ impl StoreUi {
                 i18n.text("ext.store.search.description"),
                 i18n.text("ext.store.search.results"),
             ),
-            StoreView::Details(title) => {
+            StoreView::Sources => (
+                "Store Sources".to_owned(),
+                "Official & custom GitHub extension repositories".to_owned(),
+                "Configured repositories".to_owned(),
+            ),
+            StoreView::Details { source, title } => {
                 let sub = self
                     .catalog
                     .as_ref()
-                    .and_then(|c| c.extensions.iter().find(|e| e.title == *title))
-                    .map(|e| {
+                    .and_then(|c| c.find(source, title))
+                    .map(|(cat, e)| {
                         let author = e
                             .authors
                             .first()
                             .map(|a| a.name.as_str())
                             .unwrap_or("Unknown");
+                        let source_suffix = if cat.source != extension_store::STORE_SOURCE {
+                            format!("  ·  {}", cat.source)
+                        } else {
+                            String::new()
+                        };
                         format!(
-                            "{}  ·  v{}",
+                            "{}  ·  v{}{source_suffix}",
                             i18n.text("ext.store.extension.madeby")
                                 .replace("%s", author),
                             e.version
@@ -472,7 +503,8 @@ impl StoreUi {
                                             }
                                             StoreView::Installed => ic.success.as_ref(),
                                             StoreView::Search => ic.search.as_ref(),
-                                            StoreView::Details(_) => ic.star.as_ref(),
+                                            StoreView::Sources => ic.idea.as_ref(),
+                                            StoreView::Details { .. } => ic.star.as_ref(),
                                         });
                                 if let Some(tex) = custom_tex.or(overview_tex) {
                                     ui.add(egui::Image::new((tex.id(), egui::vec2(50.0, 50.0))));
@@ -508,7 +540,7 @@ impl StoreUi {
                             ui.add_space(6.0);
                         }
                         match &self.view {
-                            StoreView::Details(_) => {
+                            StoreView::Details { .. } | StoreView::Sources => {
                                 if ui
                                     .add(
                                         egui::Button::new(
@@ -551,6 +583,20 @@ impl StoreUi {
                                     .clicked()
                                 {
                                     refresh_requested = true;
+                                }
+                                ui.add_space(4.0);
+                                if ui
+                                    .add(
+                                        egui::Button::new(
+                                            egui::RichText::new("Sources")
+                                                .color(egui::Color32::WHITE),
+                                        )
+                                        .fill(egui::Color32::from_rgb(0x1f, 0x55, 0x6b)),
+                                    )
+                                    .on_hover_text("Manage official & custom store repositories")
+                                    .clicked()
+                                {
+                                    next_view = Some(StoreView::Sources);
                                 }
                             }
                         }
@@ -723,11 +769,43 @@ impl StoreUi {
                             }
                             let search_resp = ui.add(
                                 egui::TextEdit::singleline(&mut self.search)
-                                    .desired_width(170.0)
+                                    .desired_width(150.0)
                                     .hint_text(format!("🔍 {}", i18n.text("rust.store.search"))),
                             );
                             if search_resp.changed() {
                                 self.page = 0;
+                            }
+                            if self.sources.len() > 1 {
+                                let prev_src = self.source_filter.clone();
+                                let selected_label = if self.source_filter.is_empty() {
+                                    "All stores".to_owned()
+                                } else {
+                                    self.source_filter
+                                        .split('/')
+                                        .next()
+                                        .unwrap_or(&self.source_filter)
+                                        .to_owned()
+                                };
+                                egui::ComboBox::from_id_salt("store-source-filter")
+                                    .width(96.0)
+                                    .selected_text(selected_label)
+                                    .show_ui(ui, |ui| {
+                                        ui.selectable_value(
+                                            &mut self.source_filter,
+                                            String::new(),
+                                            "All stores",
+                                        );
+                                        for src in self.sources.iter().filter(|s| s.enabled) {
+                                            ui.selectable_value(
+                                                &mut self.source_filter,
+                                                src.repo.clone(),
+                                                src.display_tag(),
+                                            );
+                                        }
+                                    });
+                                if prev_src != self.source_filter {
+                                    self.page = 0;
+                                }
                             }
                         });
                     }
@@ -798,6 +876,8 @@ impl StoreUi {
                                 }
                             });
                         if let Some(catalog) = &self.catalog {
+                            let frameworks = catalog.merged_frameworks();
+                            let categories = catalog.merged_categories();
                             egui::ComboBox::from_id_salt("store-fw-v2")
                                 .width(110.0)
                                 .selected_text(if self.framework.is_empty() {
@@ -811,7 +891,7 @@ impl StoreUi {
                                         String::new(),
                                         i18n.text("rust.store.all_frameworks"),
                                     );
-                                    for fw in &catalog.config.frameworks {
+                                    for fw in &frameworks {
                                         ui.selectable_value(
                                             &mut self.framework,
                                             fw.name.clone(),
@@ -832,7 +912,7 @@ impl StoreUi {
                                         String::new(),
                                         i18n.text("rust.store.all_categories"),
                                     );
-                                    for cat in &catalog.config.categories {
+                                    for cat in &categories {
                                         ui.selectable_value(
                                             &mut self.category,
                                             cat.name.clone(),
@@ -884,6 +964,206 @@ impl StoreUi {
                                 ui.spacing_mut().item_spacing.y = 0.0;
 
                                 match self.view.clone() {
+                                    StoreView::Sources => {
+                                        let mut sources_changed = false;
+                                        let mut remove_idx: Option<usize> = None;
+                                        let statuses = self
+                                            .catalog
+                                            .as_ref()
+                                            .map(|c| c.statuses.clone())
+                                            .unwrap_or_default();
+                                        egui::Frame::none()
+                                            .inner_margin(egui::Margin::same(12.0))
+                                            .show(ui, |ui| {
+                                                for (idx, src) in
+                                                    self.sources.iter_mut().enumerate()
+                                                {
+                                                    let bg = if idx % 2 == 0 {
+                                                        row_even
+                                                    } else {
+                                                        row_odd
+                                                    };
+                                                    let st = statuses
+                                                        .iter()
+                                                        .find(|s| s.repo == src.repo);
+                                                    let is_builtin = src.repo
+                                                        == extension_store::STORE_SOURCE
+                                                        || src.repo
+                                                            == extension_store::CUSTOM_STORE_SOURCE;
+                                                    egui::Frame::none()
+                                                        .fill(bg)
+                                                        .inner_margin(egui::Margin::symmetric(
+                                                            8.0, 6.0,
+                                                        ))
+                                                        .show(ui, |ui| {
+                                                            ui.horizontal(|ui| {
+                                                                if ui
+                                                                    .checkbox(&mut src.enabled, "")
+                                                                    .changed()
+                                                                {
+                                                                    sources_changed = true;
+                                                                }
+                                                                ui.vertical(|ui| {
+                                                                    ui.horizontal(|ui| {
+                                                                        ui.strong(&src.repo);
+                                                                        ui.label(
+                                                                            egui::RichText::new(
+                                                                                format!(
+                                                                                    "({})",
+                                                                                    src.version
+                                                                                ),
+                                                                            )
+                                                                            .small()
+                                                                            .color(muted_fg),
+                                                                        );
+                                                                    });
+                                                                    if !src.enabled {
+                                                                        ui.label(
+                                                                            egui::RichText::new(
+                                                                                "Disabled",
+                                                                            )
+                                                                            .small()
+                                                                            .color(muted_fg),
+                                                                        );
+                                                                    } else if let Some(s) = st {
+                                                                        if let Some(err) = &s.error
+                                                                        {
+                                                                            ui.colored_label(
+                                                                                egui::Color32::from_rgb(
+                                                                                    210, 120, 15,
+                                                                                ),
+                                                                                "⚠ Unavailable (repo not ready or offline)",
+                                                                            )
+                                                                            .on_hover_text(err);
+                                                                        } else {
+                                                                            let r = s
+                                                                                .loaded_ref
+                                                                                .as_deref()
+                                                                                .unwrap_or(
+                                                                                    &s.version,
+                                                                                );
+                                                                            ui.colored_label(
+                                                                                egui::Color32::from_rgb(
+                                                                                    0x2e, 0x8b, 0x57,
+                                                                                ),
+                                                                                format!(
+                                                                                    "✓ {} extension(s) via {r}",
+                                                                                    s.extension_count
+                                                                                ),
+                                                                            );
+                                                                        }
+                                                                    }
+                                                                });
+                                                                if !is_builtin {
+                                                                    ui.with_layout(
+                                                                        egui::Layout::right_to_left(
+                                                                            egui::Align::Center,
+                                                                        ),
+                                                                        |ui| {
+                                                                            if ui
+                                                                                .small_button("✕")
+                                                                                .clicked()
+                                                                            {
+                                                                                remove_idx =
+                                                                                    Some(idx);
+                                                                            }
+                                                                        },
+                                                                    );
+                                                                }
+                                                            });
+                                                        });
+                                                    ui.add_space(4.0);
+                                                }
+                                                if let Some(idx) = remove_idx {
+                                                    let removed = self.sources.remove(idx);
+                                                    if self.source_filter == removed.repo {
+                                                        self.source_filter.clear();
+                                                    }
+                                                    sources_changed = true;
+                                                }
+                                                ui.add_space(8.0);
+                                                ui.separator();
+                                                ui.add_space(8.0);
+                                                ui.strong("Add a custom GitHub store repository");
+                                                ui.add_space(4.0);
+                                                ui.horizontal(|ui| {
+                                                    ui.add(
+                                                        egui::TextEdit::singleline(
+                                                            &mut self.new_source_repo,
+                                                        )
+                                                        .desired_width(210.0)
+                                                        .hint_text("owner/G-ExtensionStore"),
+                                                    );
+                                                    ui.add(
+                                                        egui::TextEdit::singleline(
+                                                            &mut self.new_source_version,
+                                                        )
+                                                        .desired_width(80.0)
+                                                        .hint_text("1.5.3 / main"),
+                                                    );
+                                                    if ui.button("Add").clicked() {
+                                                        let repo =
+                                                            self.new_source_repo.trim().to_owned();
+                                                        let version = if self
+                                                            .new_source_version
+                                                            .trim()
+                                                            .is_empty()
+                                                        {
+                                                            extension_store::STORE_VERSION
+                                                                .to_owned()
+                                                        } else {
+                                                            self.new_source_version
+                                                                .trim()
+                                                                .to_owned()
+                                                        };
+                                                        match extension_store::validate_source(
+                                                            &repo, &version,
+                                                        ) {
+                                                            Ok(()) => {
+                                                                if !self.sources.iter().any(|s| {
+                                                                    s.repo
+                                                                        .eq_ignore_ascii_case(&repo)
+                                                                }) {
+                                                                    self.sources.push(
+                                                                        StoreSource::new(
+                                                                            repo, version,
+                                                                        ),
+                                                                    );
+                                                                    self.new_source_repo.clear();
+                                                                    sources_changed = true;
+                                                                }
+                                                            }
+                                                            Err(err) => {
+                                                                *status = err.to_string();
+                                                            }
+                                                        }
+                                                    }
+                                                    if ui.button("Reset defaults").clicked() {
+                                                        self.sources =
+                                                            extension_store::default_sources();
+                                                        self.source_filter.clear();
+                                                        sources_changed = true;
+                                                    }
+                                                });
+                                                ui.add_space(10.0);
+                                                ui.label(
+                                                    egui::RichText::new(
+                                                        "Custom repo layout (branch repo/1.5.3 or main):\n• .auto-generated/extensions.json (or extensions.json at root)\n• store/config.json (optional — falls back to official config)\n• store/extensions/<Title>/extension.zip (+ optional icon.png, screenshot.png)",
+                                                    )
+                                                    .small()
+                                                    .color(muted_fg),
+                                                );
+                                            });
+                                        if sources_changed {
+                                            if let Err(err) = extension_store::save_sources(
+                                                &self.root,
+                                                &self.sources,
+                                            ) {
+                                                *status = err.to_string();
+                                            }
+                                            refresh_requested = true;
+                                        }
+                                    }
                                     StoreView::Installed => {
                                         if self.installed.is_empty() {
                                             ui.add_space(28.0);
@@ -906,31 +1186,31 @@ impl StoreUi {
                                                 } else {
                                                     row_odd
                                                 };
-                                                let catalog_ext = catalog_clone.as_ref().and_then(
-                                                    |c| {
-                                                        c.extensions
-                                                            .iter()
-                                                            .find(|e| e.title == record.title)
-                                                    },
-                                                );
+                                                let matched = catalog_clone
+                                                    .as_ref()
+                                                    .and_then(|c| {
+                                                        c.find(&record.source, &record.title)
+                                                    })
+                                                    .map(|(cat, ext)| (cat.clone(), ext.clone()));
                                                 let update_available =
-                                                    catalog_ext.is_some_and(|e| {
+                                                    matched.as_ref().is_some_and(|(_, e)| {
                                                         extension_store::compare_versions(
                                                             &e.version,
                                                             &record.version,
                                                         )
                                                         .is_gt()
                                                     });
-                                                    let icon_tex = if let (Some(cat), Some(ext)) =
-                                                        (&catalog_clone, catalog_ext)
-                                                    {
+                                                let icon_tex = matched.as_ref().and_then(
+                                                    |(cat, ext)| {
                                                         self.request_image(
-                                                            format!("icon:{}", ext.title),
+                                                            format!(
+                                                                "icon:{}:{}",
+                                                                cat.source, ext.title
+                                                            ),
                                                             cat.icon_url(ext),
                                                         )
-                                                    } else {
-                                                        None
-                                                    };
+                                                    },
+                                                );
                                                 let row_resp = egui::Frame::none()
                                                     .fill(bg)
                                                     .inner_margin(egui::Margin::symmetric(8.0, 6.0))
@@ -955,15 +1235,26 @@ impl StoreUi {
                                                                         )
                                                                         .sense(egui::Sense::click()),
                                                                     );
-                                                                    if catalog_ext.is_some()
+                                                                    if matched.is_some()
                                                                         && title_resp.clicked()
                                                                     {
                                                                         next_view = Some(
-                                                                            StoreView::Details(
-                                                                                record
+                                                                            StoreView::Details {
+                                                                                source: record
+                                                                                    .source
+                                                                                    .clone(),
+                                                                                title: record
                                                                                     .title
                                                                                     .clone(),
-                                                                            ),
+                                                                            },
+                                                                        );
+                                                                    }
+                                                                    if record.source
+                                                                        != extension_store::STORE_SOURCE
+                                                                    {
+                                                                        draw_source_badge(
+                                                                            ui,
+                                                                            &record.source,
                                                                         );
                                                                     }
                                                                     if update_available {
@@ -1010,7 +1301,9 @@ impl StoreUi {
                                                                                 ),
                                                                             ));
                                                                     }
-                                                                    if let Some(ext) = catalog_ext {
+                                                                    if let Some((cat, ext)) =
+                                                                        &matched
+                                                                    {
                                                                         if update_available
                                                                             && ui
                                                                                 .add_enabled(
@@ -1025,9 +1318,10 @@ impl StoreUi {
                                                                         {
                                                                             action = Some(
                                                                                 Action::Install(
-                                                                                    Box::new(
+                                                                                    Box::new((
+                                                                                        cat.clone(),
                                                                                         ext.clone(),
-                                                                                    ),
+                                                                                    )),
                                                                                 ),
                                                                             );
                                                                         }
@@ -1064,17 +1358,21 @@ impl StoreUi {
                                     }
                                     StoreView::Categories => {
                                         if let Some(catalog) = self.catalog.clone() {
-                                            for (idx, cat) in
-                                                catalog.config.categories.iter().enumerate()
-                                            {
+                                            let categories = catalog.merged_categories();
+                                            for (idx, cat) in categories.iter().enumerate() {
                                                 let bg = if idx % 2 == 0 {
                                                     row_even
                                                 } else {
                                                     row_odd
                                                 };
-                                                let count = catalog
-                                                    .extensions
+                                                let count: usize = catalog
+                                                    .catalogs
                                                     .iter()
+                                                    .filter(|c| {
+                                                        self.source_filter.is_empty()
+                                                            || c.source == self.source_filter
+                                                    })
+                                                    .flat_map(|c| c.extensions.iter())
                                                     .filter(|e| {
                                                         !e.outdated
                                                             && e.categories
@@ -1147,16 +1445,16 @@ impl StoreUi {
                                             });
                                         }
                                     }
-                                    StoreView::Details(title) => {
-                                        if let Some(catalog) = self.catalog.clone() {
-                                            if let Some(ext) = catalog
-                                                .extensions
-                                                .iter()
-                                                .find(|e| e.title == title)
-                                                .cloned()
+                                    StoreView::Details { source, title } => {
+                                        if let Some(multi) = self.catalog.clone() {
+                                            if let Some((catalog, ext)) = multi
+                                                .find(&source, &title)
+                                                .map(|(c, e)| (c.clone(), e.clone()))
                                             {
-                                                let screenshot_key =
-                                                    format!("screenshot:{}", ext.title);
+                                                let screenshot_key = format!(
+                                                    "screenshot:{}:{}",
+                                                    catalog.source, ext.title
+                                                );
                                                 let screenshot_tex = self.request_image(
                                                     screenshot_key,
                                                     catalog.screenshot_url(&ext),
@@ -1272,9 +1570,10 @@ impl StoreUi {
                                                                     {
                                                                         action =
                                                                             Some(Action::Install(
-                                                                                Box::new(
+                                                                                Box::new((
+                                                                                    catalog.clone(),
                                                                                     ext.clone(),
-                                                                                ),
+                                                                                )),
                                                                             ));
                                                                     }
                                                                     if let Some(rec) =
@@ -1495,6 +1794,13 @@ impl StoreUi {
                                                                     ext.categories.join(", "),
                                                                 );
                                                                 ui.end_row();
+
+                                                                ui.label(
+                                                                    egui::RichText::new("Store:")
+                                                                        .color(muted_fg),
+                                                                );
+                                                                ui.label(&catalog.source);
+                                                                ui.end_row();
                                                             });
 
                                                         ui.add_space(6.0);
@@ -1553,7 +1859,7 @@ impl StoreUi {
                                     }
                                     // Paginated list views: Recent, Popular, NewReleases, Category, Search
                                     list_view => {
-                                        if let Some(catalog) = self.catalog.clone() {
+                                        if let Some(multi) = self.catalog.clone() {
                                             let (sort, cat_filter, os_filter, cli_filter, fw_filter, inc_outdated, rev) =
                                                 match &list_view {
                                                     StoreView::Recent => (
@@ -1617,10 +1923,12 @@ impl StoreUi {
                                                 sort,
                                                 reverse: rev,
                                             };
-                                            let matches: Vec<StoreExtension> = catalog
-                                                .query(&query)
+                                            let source_filter = (!self.source_filter.is_empty())
+                                                .then_some(self.source_filter.as_str());
+                                            let matches: Vec<(Catalog, StoreExtension)> = multi
+                                                .query(&query, source_filter)
                                                 .into_iter()
-                                                .cloned()
+                                                .map(|(cat, ext)| (cat.clone(), ext.clone()))
                                                 .collect();
                                             total_items = matches.len();
                                             total_pages = total_items.div_ceil(PAGE_SIZE).max(1);
@@ -1646,7 +1954,7 @@ impl StoreUi {
                                                 let meta_w = 136.0;
                                                 let left_w = (total_w - meta_w - 2.0).max(200.0);
 
-                                                for (row_idx, ext) in
+                                                for (row_idx, (catalog, ext)) in
                                                     matches[start..end].iter().enumerate()
                                                 {
                                                     let bg = if row_idx % 2 == 0 {
@@ -1655,12 +1963,15 @@ impl StoreUi {
                                                         row_odd
                                                     };
                                                     let icon_tex = self.request_image(
-                                                        format!("icon:{}", ext.title),
+                                                        format!(
+                                                            "icon:{}:{}",
+                                                            catalog.source, ext.title
+                                                        ),
                                                         catalog.icon_url(ext),
                                                     );
                                                     let install_status =
                                                         extension_store::install_status(
-                                                            &catalog,
+                                                            catalog,
                                                             ext,
                                                             &self.installed,
                                                         );
@@ -1731,10 +2042,23 @@ impl StoreUi {
                                                                                 if t_resp.clicked()
                                                                                 {
                                                                                     next_view = Some(
-                                                                                        StoreView::Details(
-                                                                                            ext.title
+                                                                                        StoreView::Details {
+                                                                                            source: catalog
+                                                                                                .source
                                                                                                 .clone(),
-                                                                                        ),
+                                                                                            title: ext
+                                                                                                .title
+                                                                                                .clone(),
+                                                                                        },
+                                                                                    );
+                                                                                }
+                                                                                if catalog.source
+                                                                                    != extension_store::STORE_SOURCE
+                                                                                {
+                                                                                    ui.add_space(4.0);
+                                                                                    draw_source_badge(
+                                                                                        ui,
+                                                                                        &catalog.source,
                                                                                     );
                                                                                 }
                                                                                 match install_status
@@ -1851,9 +2175,10 @@ impl StoreUi {
                                                         );
                                                     }
                                                     if row_click.clicked() {
-                                                        next_view = Some(StoreView::Details(
-                                                            ext.title.clone(),
-                                                        ));
+                                                        next_view = Some(StoreView::Details {
+                                                            source: catalog.source.clone(),
+                                                            title: ext.title.clone(),
+                                                        });
                                                     }
                                                 }
                                             }
@@ -1929,19 +2254,18 @@ impl StoreUi {
         }
 
         match action {
-            Some(Action::Install(extension)) => {
-                if let Some(catalog) = self.catalog.clone() {
-                    let root = self.root.clone();
-                    let (sender, receiver) = mpsc::channel();
-                    self.worker = Some(receiver);
-                    *status = format!("Installing {} {}...", extension.title, extension.version);
-                    std::thread::spawn(move || {
-                        let result = extension_store::install(&catalog, &extension, &root)
-                            .map(|record| Outcome::Installed(Box::new(record)))
-                            .map_err(|error| error.to_string());
-                        let _ = sender.send(result);
-                    });
-                }
+            Some(Action::Install(pair)) => {
+                let (catalog, extension) = *pair;
+                let root = self.root.clone();
+                let (sender, receiver) = mpsc::channel();
+                self.worker = Some(receiver);
+                *status = format!("Installing {} {}...", extension.title, extension.version);
+                std::thread::spawn(move || {
+                    let result = extension_store::install(&catalog, &extension, &root)
+                        .map(|record| Outcome::Installed(Box::new(record)))
+                        .map_err(|error| error.to_string());
+                    let _ = sender.send(result);
+                });
             }
             Some(Action::Remove(record)) => {
                 let root = self.root.clone();
@@ -1984,6 +2308,22 @@ impl StoreUi {
             None => {}
         }
     }
+}
+
+fn draw_source_badge(ui: &mut egui::Ui, source: &str) {
+    let tag = source.split('/').next().unwrap_or(source);
+    egui::Frame::none()
+        .fill(egui::Color32::from_rgb(0x1f, 0x55, 0x6b))
+        .rounding(egui::Rounding::same(3.0))
+        .inner_margin(egui::Margin::symmetric(4.0, 1.0))
+        .show(ui, |ui| {
+            ui.label(
+                egui::RichText::new(tag)
+                    .size(10.0)
+                    .strong()
+                    .color(egui::Color32::WHITE),
+            );
+        });
 }
 
 fn draw_ext_icon(ui: &mut egui::Ui, tex: Option<&egui::TextureHandle>, title: &str, size: f32) {
