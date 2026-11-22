@@ -6001,9 +6001,9 @@ impl eframe::App for Desktop {
                 .resizable(false)
                 .show(ctx, |ui| {
                     ui.label(self.i18n.text("tab.info.donate.alert.content"));
-                    let mut btc = "1GEarthEV9Ua3RcixsKTcuc1PPZd9hqri3".to_owned();
+                    let mut btc = "bc1q9cpejyx57tzlzzmtqu0tsjjw8pdg0rsx67crh4".to_owned();
                     ui.horizontal(|ui| {
-                        ui.add(egui::TextEdit::singleline(&mut btc).desired_width(270.0));
+                        ui.add(egui::TextEdit::singleline(&mut btc).desired_width(340.0));
                         if ui.button("Copy").clicked() {
                             ui.ctx().copy_text(btc);
                         }
