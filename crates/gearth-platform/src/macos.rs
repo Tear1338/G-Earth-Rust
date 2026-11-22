@@ -475,9 +475,14 @@ mod sockets {
         let socket = tcp.tcpsi_ini;
         let local_port = u16::from_be(socket.insi_lport as u16);
         let remote_port = u16::from_be(socket.insi_fport as u16);
-        let (local, remote) = match info.psi.soi_family {
-            libc::AF_INET => {
-                // SAFETY: AF_INET identifies the IPv4 members of both address unions.
+        let (local, remote) = match super::select_address_family(
+            info.psi.soi_family,
+            socket.insi_vflag,
+            libc::AF_INET,
+            libc::AF_INET6,
+        )? {
+            super::SocketAddressFamily::Ipv4 => {
+                // SAFETY: AF_INET or AF_INET6 with INI_IPV4 populates the IPv4 members of both address unions.
                 let (a, b) = unsafe {
                     (
                         socket.insi_laddr.ina_46.i46a_addr4.s_addr,
@@ -489,8 +494,8 @@ mod sockets {
                     IpAddr::V4(Ipv4Addr::from(b.to_ne_bytes())),
                 )
             }
-            libc::AF_INET6 => {
-                // SAFETY: AF_INET6 identifies the IPv6 members of both address unions.
+            super::SocketAddressFamily::Ipv6 => {
+                // SAFETY: AF_INET6 with INI_IPV6 (without INI_IPV4) populates the IPv6 members of both address unions.
                 let (a, b) = unsafe {
                     (
                         socket.insi_laddr.ina_6.s6_addr,
@@ -499,7 +504,6 @@ mod sockets {
                 };
                 (IpAddr::V6(Ipv6Addr::from(a)), IpAddr::V6(Ipv6Addr::from(b)))
             }
-            _ => return None,
         };
         Some((endpoint(local, local_port), endpoint(remote, remote_port)))
     }
@@ -637,6 +641,35 @@ mod sockets {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SocketAddressFamily {
+    Ipv4,
+    Ipv6,
+}
+
+fn select_address_family(
+    soi_family: i32,
+    insi_vflag: u8,
+    af_inet: i32,
+    af_inet6: i32,
+) -> Option<SocketAddressFamily> {
+    const INI_IPV4: u8 = 0x1;
+    const INI_IPV6: u8 = 0x2;
+    if soi_family == af_inet {
+        Some(SocketAddressFamily::Ipv4)
+    } else if soi_family == af_inet6 {
+        if (insi_vflag & INI_IPV4) != 0 {
+            Some(SocketAddressFamily::Ipv4)
+        } else if (insi_vflag & INI_IPV6) != 0 {
+            Some(SocketAddressFamily::Ipv6)
+        } else {
+            None
+        }
+    } else {
+        None
+    }
+}
+
 #[cfg(target_os = "macos")]
 pub(super) use sockets::tcp_owner;
 
@@ -653,4 +686,32 @@ fn macos_client_names_use_executable_basename() {
     );
     assert_eq!(client_name("/tmp/not-habbo"), None);
     assert_eq!(client_name("/tmp/Habbo Helper"), None);
+}
+
+#[cfg(test)]
+#[test]
+fn macos_socket_family_uses_vflag_for_ipv4_mapped_dual_stack_sockets() {
+    const AF_INET: i32 = 2;
+    const AF_INET6: i32 = 30;
+    assert_eq!(
+        select_address_family(AF_INET, 0x1, AF_INET, AF_INET6),
+        Some(SocketAddressFamily::Ipv4)
+    );
+    assert_eq!(
+        select_address_family(AF_INET6, 0x1, AF_INET, AF_INET6),
+        Some(SocketAddressFamily::Ipv4)
+    );
+    assert_eq!(
+        select_address_family(AF_INET6, 0x3, AF_INET, AF_INET6),
+        Some(SocketAddressFamily::Ipv4)
+    );
+    assert_eq!(
+        select_address_family(AF_INET6, 0x2, AF_INET, AF_INET6),
+        Some(SocketAddressFamily::Ipv6)
+    );
+    assert_eq!(
+        select_address_family(AF_INET6, 0x0, AF_INET, AF_INET6),
+        None
+    );
+    assert_eq!(select_address_family(1, 0x1, AF_INET, AF_INET6), None);
 }
