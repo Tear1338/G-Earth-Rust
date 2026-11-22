@@ -57,7 +57,7 @@ jobs:
     runs-on: windows-latest
     env:
       RUSTFLAGS: -C target-feature=+crt-static
-      GEARTH_BUILD_TAG: development-${{ github.run_number }}
+      GEARTH_BUILD_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('development-{0}', github.run_number) }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -86,9 +86,10 @@ jobs:
             $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           }
           if ($iscc) {
-            & $iscc /DAppVersion=0.1.0 /DBinPath="$((Resolve-Path target/release/gearth-desktop.exe).Path)" packaging/windows/gearth-rust.iss
-            if ($LASTEXITCODE -eq 0 -and (Test-Path dist/G-Earth-Rust-Setup-0.1.0-x64.exe)) {
-              Copy-Item -LiteralPath dist/G-Earth-Rust-Setup-0.1.0-x64.exe -Destination package/G-Earth-Rust-Setup-x64.exe
+            $appVer = if ($env:GEARTH_BUILD_TAG -match '^v(\d+\.\d+\.\d+)') { $Matches[1] } else { '0.1.0' }
+            & $iscc /DAppVersion=$appVer /DBinPath="$((Resolve-Path target/release/gearth-desktop.exe).Path)" packaging/windows/gearth-rust.iss
+            if ($LASTEXITCODE -eq 0 -and (Test-Path "dist/G-Earth-Rust-Setup-$appVer-x64.exe")) {
+              Copy-Item -LiteralPath "dist/G-Earth-Rust-Setup-$appVer-x64.exe" -Destination package/G-Earth-Rust-Setup-x64.exe
             }
           }
       - uses: actions/upload-artifact@v4
@@ -99,7 +100,7 @@ jobs:
     timeout-minutes: 30
     runs-on: macos-latest
     env:
-      GEARTH_BUILD_TAG: development-${{ github.run_number }}
+      GEARTH_BUILD_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('development-{0}', github.run_number) }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -131,7 +132,7 @@ jobs:
     timeout-minutes: 20
     runs-on: ubuntu-latest
     env:
-      GEARTH_BUILD_TAG: development-${{ github.run_number }}
+      GEARTH_BUILD_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('development-{0}', github.run_number) }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -357,7 +358,7 @@ jobs:
           name: packet-microbenchmark
           path: '*-benchmark.csv'
   publish-development:
-    if: github.event_name == 'push' && contains(github.event.head_commit.message, '[build]')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[build]')
     needs: [core, desktop, linux-desktop, macos, java-compatibility, web, gpython, gpresets]
     runs-on: ubuntu-latest
     permissions:
@@ -393,6 +394,62 @@ jobs:
           sha256sum "${assets[@]}" > SHA256SUMS.txt
           printf '%s\n' 'Development build of the Rust port (Windows EXE/installer, Linux binary/tarball, macOS binary/.app bundle). Read docs/PARITY.md before use. Live official-client sessions, Chrome TLS fingerprint emulation, and code signing remain outstanding.' > release-notes.txt
           gh release create "$BUILD_TAG" --target "$BUILD_COMMIT" --title "Rust development build $BUILD_TAG" --prerelease --notes-file release-notes.txt "${assets[@]}" SHA256SUMS.txt java-benchmark.csv rust-benchmark.csv
+
+  publish-release:
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: [core, desktop, linux-desktop, macos, java-compatibility, web, gpython, gpresets]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Publish official GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          BUILD_COMMIT: ${{ github.sha }}
+        run: |
+          cd artifacts/formatted-source-and-lockfile
+          zip -qr ../../formatted-source-and-lockfile.zip .
+          cd ../..
+          cp artifacts/G-Earth-Rust-Windows-development/gearth-desktop.exe G-Earth-Rust-Windows.exe
+          cp artifacts/G-Earth-Rust-Linux-development/gearth-desktop G-Earth-Rust-Linux
+          cp artifacts/G-Earth-Rust-Linux-development/G-Earth-Rust-Linux.tar.gz G-Earth-Rust-Linux.tar.gz
+          cp artifacts/G-Earth-Rust-macOS-development/gearth-desktop G-Earth-Rust-macOS
+          cp artifacts/G-Earth-Rust-macOS-development/G-Earth-Rust-macOS-app.zip G-Earth-Rust-macOS-app.zip
+          cp artifacts/G-Earth-Rust-Windows-development/UNICODE-LICENSE.md UNICODE-LICENSE.md
+          cp artifacts/gearth-cli-windows-latest/gearth-rust.exe G-Earth-Rust-CLI-Windows.exe
+          cp artifacts/gearth-cli-ubuntu-latest/gearth-rust gearth-cli-linux
+          cp artifacts/packet-microbenchmark/*-benchmark.csv .
+          assets=(G-Earth-Rust-Windows.exe G-Earth-Rust-Linux G-Earth-Rust-Linux.tar.gz G-Earth-Rust-macOS G-Earth-Rust-macOS-app.zip G-Earth-Rust-CLI-Windows.exe gearth-cli-linux formatted-source-and-lockfile.zip UNICODE-LICENSE.md)
+          if [ -f artifacts/G-Earth-Rust-Windows-development/G-Earth-Rust-Setup-x64.exe ]; then
+            cp artifacts/G-Earth-Rust-Windows-development/G-Earth-Rust-Setup-x64.exe G-Earth-Rust-Setup-x64.exe
+            assets=(G-Earth-Rust-Setup-x64.exe "${assets[@]}")
+          fi
+          sha256sum "${assets[@]}" > SHA256SUMS.txt
+          {
+            printf '## G-Earth Rust %s\n\n' "$RELEASE_TAG"
+            cat <<'EOF'
+          Native Rust desktop & CLI port of **G-Earth 1.5.4-beta-29**.
+
+          ### Downloads
+          - **Windows Installer**: `G-Earth-Rust-Setup-x64.exe`
+          - **Windows Portable**: `G-Earth-Rust-Windows.exe`
+          - **macOS App Bundle**: `G-Earth-Rust-macOS-app.zip`
+          - **Linux Archive**: `G-Earth-Rust-Linux.tar.gz`
+          - **Checksums**: `SHA256SUMS.txt`
+
+          ### Highlights
+          - Full G-Earth 1.5.4-beta-29 interface with **Light**, **Dark**, and **Tanji** themes, synced live to external extensions via `HostInfo`.
+          - Independent native OS windows for **Packet Logger**, **G-ExtensionStore**, **Extension Console**, and **G-Python shell**.
+          - Redesigned **G-ExtensionStore** (Habbo forum details card, author avatars, screenshots with zoom) supporting both `sirjonasxx/G-ExtensionStore` and `Tear1338/G-ExtensionStore`.
+          - Persistent extension installation/auto-launch (`.jar`, `.exe`, `.py`, `.py3`, `.js`, `.sh`), live reload/uninstall, and SHA-256 verified self-updater.
+          EOF
+          } | sed 's/^          //' > release-notes.txt
+          gh release create "$RELEASE_TAG" --target "$BUILD_COMMIT" --title "G-Earth Rust $RELEASE_TAG" --latest --notes-file release-notes.txt "${assets[@]}" SHA256SUMS.txt java-benchmark.csv rust-benchmark.csv
 
   web:
     env:
