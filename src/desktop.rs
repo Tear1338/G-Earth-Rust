@@ -120,7 +120,6 @@ mod socks_settings_tests {
     }
 }
 
-#[cfg(windows)]
 fn browse_path(
     ui: &mut egui::Ui,
     path: &mut String,
@@ -1785,7 +1784,7 @@ impl Desktop {
             && !gearth_platform::certificate_trusted(&self.public_certificate.as_ref().unwrap().1)?
         {
             return Err(std::io::Error::other(
-                "Install the displayed public certificate before enabling the Windows proxy",
+                "Install the displayed public certificate before enabling the system proxy",
             ));
         }
         self.hotel_version.clear();
@@ -1852,7 +1851,7 @@ impl Desktop {
             && !gearth_platform::certificate_trusted(&self.public_certificate.as_ref().unwrap().1)?
         {
             return Err(std::io::Error::other(
-                "Install the displayed public certificate before enabling the Windows proxy",
+                "Install the displayed public certificate before enabling the system proxy",
             ));
         }
         let mut options = WebOptions::new(
@@ -2373,7 +2372,6 @@ impl Desktop {
         ui.horizontal(|ui| {
             ui.label(self.i18n.text("rust.logger.export_path"));
             ui.text_edit_singleline(&mut self.export_path);
-            #[cfg(windows)]
             browse_path(
                 ui,
                 &mut self.export_path,
@@ -3342,7 +3340,6 @@ impl Desktop {
         ui.horizontal_wrapped(|ui| {
             ui.label(self.i18n.text("rust.scheduler.file"));
             ui.text_edit_singleline(&mut self.schedule_path);
-            #[cfg(windows)]
             browse_path(
                 ui,
                 &mut self.schedule_path,
@@ -3351,7 +3348,6 @@ impl Desktop {
                 &self.i18n,
                 &mut self.status,
             );
-            #[cfg(windows)]
             browse_path(
                 ui,
                 &mut self.schedule_path,
@@ -3828,7 +3824,6 @@ impl Desktop {
         ui.horizontal(|ui| {
             ui.label("Import original Cache/cache.json");
             ui.text_edit_singleline(&mut self.legacy_cache_path);
-            #[cfg(windows)]
             browse_path(
                 ui,
                 &mut self.legacy_cache_path,
@@ -4599,7 +4594,6 @@ impl Desktop {
         ui.horizontal(|ui| {
             ui.label(self.i18n.text("rust.extensions.file"));
             ui.text_edit_singleline(&mut self.extension_path);
-            #[cfg(windows)]
             browse_path(
                 ui,
                 &mut self.extension_path,

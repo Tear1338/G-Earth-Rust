@@ -1,6 +1,5 @@
 //! Read-only native process access, isolated from the safe protocol core.
 use std::{io, sync::atomic::AtomicBool};
-#[cfg(windows)]
 mod file_dialog;
 mod hotkeys;
 mod ip_mapping;
@@ -9,7 +8,8 @@ mod linux;
 #[cfg(any(target_os = "macos", test))]
 mod macos;
 mod process_tree;
-#[cfg(windows)]
+#[cfg(any(target_os = "macos", target_os = "linux", test))]
+mod unix_web_settings;
 pub use file_dialog::{choose_file, FileKind};
 pub use hotkeys::GlobalHotkeys;
 pub use ip_mapping::{system_ip_mapper, IpMapper};
@@ -100,17 +100,23 @@ mod windows;
 pub struct SystemProxyGuard {
     #[cfg(windows)]
     inner: web_settings::ProxyGuard,
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    inner: unix_web_settings::ProxyGuard,
 }
 pub fn recover_system_proxy() -> io::Result<()> {
     #[cfg(windows)]
     {
         web_settings::ProxyGuard::recover()
     }
-    #[cfg(not(windows))]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        unix_web_settings::ProxyGuard::recover()
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
     {
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
-            "automatic system proxy restoration currently requires Windows",
+            "automatic system proxy restoration is unavailable on this platform",
         ))
     }
 }
@@ -122,21 +128,27 @@ impl SystemProxyGuard {
                 inner: web_settings::ProxyGuard::activate(address)?,
             })
         }
-        #[cfg(not(windows))]
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        {
+            Ok(Self {
+                inner: unix_web_settings::ProxyGuard::activate(address)?,
+            })
+        }
+        #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
         {
             let _ = address;
             Err(io::Error::new(
                 io::ErrorKind::Unsupported,
-                "automatic system proxy configuration currently requires Windows",
+                "automatic system proxy configuration is unavailable on this platform",
             ))
         }
     }
     pub fn restore(&mut self) -> io::Result<()> {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos", target_os = "linux"))]
         {
             self.inner.restore()
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
         {
             Ok(())
         }
@@ -147,7 +159,11 @@ pub fn certificate_trusted(der: &[u8]) -> io::Result<bool> {
     {
         web_settings::certificate_trusted(der)
     }
-    #[cfg(not(windows))]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        unix_web_settings::certificate_trusted(der)
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
     {
         let _ = der;
         Err(io::Error::new(
@@ -161,12 +177,16 @@ pub fn install_root_certificate(path: &std::path::Path) -> io::Result<()> {
     {
         web_settings::install_certificate(path)
     }
-    #[cfg(not(windows))]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        unix_web_settings::install_certificate(path)
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
     {
         let _ = path;
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
-            "automatic CA installation currently requires Windows",
+            "automatic CA installation is unavailable on this platform",
         ))
     }
 }
@@ -175,12 +195,16 @@ pub fn remove_root_certificate(der: &[u8]) -> io::Result<()> {
     {
         web_settings::remove_certificate(der)
     }
-    #[cfg(not(windows))]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        unix_web_settings::remove_certificate(der)
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
     {
         let _ = der;
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
-            "automatic CA removal currently requires Windows",
+            "automatic CA removal is unavailable on this platform",
         ))
     }
 }
