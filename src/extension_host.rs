@@ -521,7 +521,7 @@ impl ExtensionHost {
         self.forward_injections(enqueue)
     }
     pub fn launch(&self, executable: &Path, path: &Path) -> io::Result<Child> {
-        let path = path.canonicalize()?;
+        let path = normalize_launch_path(path.canonicalize()?);
         if !path.is_file() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -561,6 +561,9 @@ impl ExtensionHost {
                 ))
             }
         };
+        if let Some(parent) = path.parent() {
+            command.current_dir(parent);
+        }
         command
             .arg("-p")
             .arg(self.address.port().to_string())
@@ -668,18 +671,19 @@ impl ExtensionHost {
                         "relative extension entry point escapes its installation",
                     ));
                 }
-                path
+                normalize_launch_path(path)
             } else {
                 program
             }
         };
+        let working_dir = normalize_launch_path(directory);
         let mut extra_jvm_args = Vec::new();
         let has_module_path = command
             .iter()
             .any(|arg| arg == "--module-path" || arg.starts_with("--module-path="));
         let jar_arg = command
             .windows(2)
-            .find_map(|pair| (pair[0] == "-jar").then(|| directory.join(&pair[1])));
+            .find_map(|pair| (pair[0] == "-jar").then(|| working_dir.join(&pair[1])));
         if is_java_cmd && !has_module_path && jar_arg.is_some() {
             if let Ok(plan) = crate::java_runtime::resolve_java_launch(
                 &program,
@@ -694,7 +698,7 @@ impl ExtensionHost {
         child
             .args(&extra_jvm_args)
             .args(&command[1..])
-            .current_dir(directory)
+            .current_dir(working_dir)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -1367,4 +1371,40 @@ fn serve_peer(mut stream: TcpStream, id: u64, shared: &Arc<Shared>) -> io::Resul
         }
     }
     Ok(())
+}
+
+/// Strip Windows `\\?\` verbatim prefixes added by `Path::canonicalize()`, which break
+/// Java's `URLClassLoader` (`ClassNotFoundException` on `java -jar \\?\C:\...`).
+fn normalize_launch_path(path: std::path::PathBuf) -> std::path::PathBuf {
+    if let Some(text) = path.to_str() {
+        if let Some(rest) = text.strip_prefix(r"\\?\UNC\") {
+            return std::path::PathBuf::from(format!(r"\\{rest}"));
+        }
+        if let Some(rest) = text.strip_prefix(r"\\?\") {
+            return std::path::PathBuf::from(rest);
+        }
+    }
+    path
+}
+
+#[cfg(test)]
+mod launch_path_tests {
+    use super::normalize_launch_path;
+    use std::path::PathBuf;
+
+    #[test]
+    fn strips_windows_verbatim_prefix_for_external_runtimes() {
+        assert_eq!(
+            normalize_launch_path(PathBuf::from(r"\\?\C:\Users\Test\GPresets.jar")),
+            PathBuf::from(r"C:\Users\Test\GPresets.jar")
+        );
+        assert_eq!(
+            normalize_launch_path(PathBuf::from(r"\\?\UNC\server\share\GPresets.jar")),
+            PathBuf::from(r"\\server\share\GPresets.jar")
+        );
+        assert_eq!(
+            normalize_launch_path(PathBuf::from("/tmp/GPresets.jar")),
+            PathBuf::from("/tmp/GPresets.jar")
+        );
+    }
 }
