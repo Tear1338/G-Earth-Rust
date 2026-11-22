@@ -6313,23 +6313,21 @@ impl eframe::App for Desktop {
         // Floating extension & info dialogs matching beta-29 separate windows
         if self.ext_store_open {
             let mut open = self.ext_store_open;
-            egui::Window::new(self.i18n.text("rust.store.title"))
+            egui::Window::new("G-ExtensionStore")
                 .open(&mut open)
                 .resizable(true)
-                .default_size([720.0, 520.0])
+                .default_size([560.0, 560.0])
+                .min_size([480.0, 420.0])
+                .frame(egui::Frame::window(&ctx.style()).inner_margin(egui::Margin::same(0.0)))
                 .show(ctx, |ui| {
-                    egui::ScrollArea::vertical()
-                        .id_salt("store_window_scroll")
-                        .show(ui, |ui| {
-                            self.store.show(
-                                ui,
-                                self.extension_host.as_ref(),
-                                Path::new(&self.extension_runtime),
-                                &self.i18n,
-                                &mut self.status,
-                                &mut self.extension_processes,
-                            );
-                        });
+                    self.store.show(
+                        ui,
+                        self.extension_host.as_ref(),
+                        Path::new(&self.extension_runtime),
+                        &self.i18n,
+                        &mut self.status,
+                        &mut self.extension_processes,
+                    );
                 });
             self.ext_store_open = open;
         }

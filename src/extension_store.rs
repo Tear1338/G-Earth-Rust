@@ -365,6 +365,79 @@ impl Catalog {
     pub fn archive_url(&self, extension: &StoreExtension) -> String {
         self.resource_url(&["store", "extensions", &extension.title, "extension.zip"])
     }
+    pub fn icon_url(&self, extension: &StoreExtension) -> String {
+        self.resource_url(&["store", "extensions", &extension.title, "icon.png"])
+    }
+    pub fn screenshot_url(&self, extension: &StoreExtension) -> String {
+        self.resource_url(&["store", "extensions", &extension.title, "screenshot.png"])
+    }
+}
+
+const MAX_IMAGE_BYTES: usize = 2 * 1024 * 1024;
+
+/// Download a bounded store icon/screenshot from GitHub raw content.
+pub fn fetch_image_bytes(url: &str) -> io::Result<Vec<u8>> {
+    if !url.starts_with("https://raw.githubusercontent.com/") {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "image URL must point to raw.githubusercontent.com",
+        ));
+    }
+    let agent = ureq::AgentBuilder::new()
+        .timeout(std::time::Duration::from_secs(10))
+        .build();
+    let response = agent.get(url).call().map_err(io::Error::other)?;
+    let mut bytes = Vec::new();
+    response
+        .into_reader()
+        .take((MAX_IMAGE_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)?;
+    if bytes.len() > MAX_IMAGE_BYTES {
+        return Err(io::Error::other("store image exceeds 2 MiB"));
+    }
+    Ok(bytes)
+}
+
+/// Convert a beta-29 store date (`dd-MM-yyyy HH:mm:ss`) into a relative `(amount, unit_key_prefix)`.
+/// Unit key prefixes match `ext.store.elapsedtime.<unit>.single` / `.multiple`.
+pub fn elapsed_since(date_str: &str, now_unix_secs: u64) -> Option<(u64, &'static str)> {
+    let [year, month, day, hour, minute, second] = date_key(date_str).ok()?;
+    let days = days_from_civil(year as i64, month, day)?;
+    let then_secs = (days as u64)
+        .checked_mul(86_400)?
+        .checked_add(u64::from(hour) * 3600 + u64::from(minute) * 60 + u64::from(second))?;
+    let diff = now_unix_secs.saturating_sub(then_secs);
+    let (amount, unit) = if diff < 60 {
+        (diff.max(1), "second")
+    } else if diff < 3600 {
+        (diff / 60, "minute")
+    } else if diff < 86_400 {
+        (diff / 3600, "hour")
+    } else if diff < 86_400 * 7 {
+        (diff / 86_400, "day")
+    } else if diff < 86_400 * 30 {
+        (diff / (86_400 * 7), "week")
+    } else if diff < 86_400 * 365 {
+        (diff / (86_400 * 30), "month")
+    } else {
+        (diff / (86_400 * 365), "year")
+    };
+    Some((amount, unit))
+}
+
+fn days_from_civil(year: i64, month: u32, day: u32) -> Option<i64> {
+    if !(1..=12).contains(&month) || !(1..=31).contains(&day) {
+        return None;
+    }
+    let y = year - i64::from(month <= 2);
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = (y - era * 400) as u64;
+    let m = u64::from(month);
+    let d = u64::from(day);
+    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe as i64 - 719_468;
+    (days >= 0).then_some(days)
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Installed {
@@ -666,4 +739,28 @@ pub fn uninstall(root: &Path, record: &Installed) -> io::Result<()> {
 /// Compare extension versions using Maven's ComparableVersion rules.
 pub fn compare_versions(a: &str, b: &str) -> Ordering {
     crate::maven_version::compare(a, b)
+}
+
+#[cfg(test)]
+mod store_helper_tests {
+    use super::elapsed_since;
+
+    #[test]
+    fn elapsed_since_formats_beta29_dates_into_relative_units() {
+        // 2026-01-01 00:00:00 UTC = 1767225600
+        let base = 1_767_225_600u64;
+        assert_eq!(
+            elapsed_since("01-01-2026 00:00:00", base + 45),
+            Some((45, "second"))
+        );
+        assert_eq!(
+            elapsed_since("01-01-2026 00:00:00", base + 3 * 7 * 86_400),
+            Some((3, "week"))
+        );
+        assert_eq!(
+            elapsed_since("01-01-2026 00:00:00", base + 65 * 86_400),
+            Some((2, "month"))
+        );
+        assert_eq!(elapsed_since("bad-date", base), None);
+    }
 }
