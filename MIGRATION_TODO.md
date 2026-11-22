@@ -1,5 +1,13 @@
 # Migration tasks
 
+## Latest: Cross-platform parity, Tanji theme, WEDGIE prediction, 9-language i18n & Linux/macOS desktop CI
+
+- [x] Fix macOS IPv4-mapped socket ownership using `insi_vflag` and verify all 9 CI jobs green (run `44970664290`).
+- [x] Implement macOS (`networksetup`/`security`/`osascript`) and Linux (`gsettings`/`certutil`/`zenity`/`kdialog`) system proxy, root CA, and native file dialog support with crash-recovery journals and unit tests (run `44971449329`).
+- [x] Implement distinct `Tanji` desktop theme + 3-theme selector + Java cache import, CLI Flash hello revision auto-detection, and RC4/rules/loopback relay end-to-end benchmarks (run `44971887726`).
+- [x] Add `WedgieIncoming`/`WedgieOutgoing` structure prediction, complete 9-language localization for all 179 `rust.*` keys, and Linux/macOS desktop CI builds & artifacts (`7a8f59b`).
+- [ ] Verify CI run `44972361378` (including `linux-desktop` and macOS desktop packaging); remaining open items are live official-client sessions (Flash AIR, Origins, Unity WebGL, Nitro, G-Presets, G-Python), Chrome TLS fingerprint emulation, non-Windows global hotkeys / system tray, and signed release installers.
+
 ## Latest: macOS mapped-socket coverage
 
 - [x] Add an IPv4-mapped client fixture and explicit native socket coverage markers.

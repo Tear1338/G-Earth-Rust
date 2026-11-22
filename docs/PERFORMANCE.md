@@ -19,3 +19,11 @@ The median ratio is about 2.24 for this workload. Rust reserves room for a small
 This is a narrow microbenchmark, not an end-to-end speed claim. Samples show runner noise, implementations have different allocation/GC behavior, and Java and Rust optimizer barriers differ. No confidence interval, network latency, memory peak, GUI throughput, large-packet workload or real hotel session was measured. The full application cannot yet be compared at feature parity.
 
 Reproduce using tests/JavaBenchmark.java against the pinned API JAR and cargo run --release --bin gearth-benchmark. CSV measurements accompany the development release.
+
+## Extended Rust pipeline and loopback relay benchmarks
+
+Starting at commit `e794e48`, `gearth-benchmark` also emits two additional Rust-only workloads in the same CSV format:
+- `rc4_frame_rules` (50,000 iterations): RC4 stream encrypt/decrypt, `FrameDecoder` framing, `Rules::apply`, and lossless expression formatting (~107 ms / ~467k packets/sec on local Windows GNU release).
+- `loopback_relay_e2e` (2,000 iterations): full TCP loopback client -> `Relay` (with active rules) -> echo server -> client roundtrips (skipped gracefully if the sandbox forbids loopback binding).
+
+Equivalent end-to-end Java relay workloads and live hotel sessions have not yet been benchmarked side by side.

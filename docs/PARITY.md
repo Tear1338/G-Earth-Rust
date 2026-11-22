@@ -1,5 +1,13 @@
 # Compatibility with 1.5.4-beta-29
 
+## Cross-platform parity, Tanji theme, WEDGIE prediction & 9-language i18n
+
+- Native macOS CI run `44970664290` passed IPv4, IPv6, and IPv4-mapped socket ownership fixtures after switching `macos.rs` to inspect `insi_vflag`.
+- macOS (`networksetup` / `security` / `osascript`) and Linux (`gsettings` / `certutil` / `zenity` / `kdialog`) system proxy guards, user CA trust/install/remove helpers, and native file dialogs are implemented and unit-tested with injectable runners (CI run `44971449329`).
+- Distinct `Tanji` desktop theme, CLI Flash hello revision auto-detection, and RC4/framing/rules + loopback relay benchmarks are implemented and verified (CI run `44971887726`).
+- `WedgieIncoming` and `WedgieOutgoing` structure prediction, complete 9-language UI localization (all 179 `rust.*` keys across `en`, `fr`, `de`, `es`, `fi`, `it`, `nl`, `pt`, `tr`), and Linux/macOS desktop CI packaging are implemented (`7a8f59b`).
+- Live official-client sessions, Chrome TLS fingerprint emulation, non-Windows global shortcuts / system tray, and signed release installers remain open.
+
 ## macOS mapped-socket evidence
 
 The initial native macOS workspace run passed the mandatory IPv4 loopback owner fixture. A mapped-IPv6 client fixture and explicit coverage markers are added; their native results remain pending.

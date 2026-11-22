@@ -144,14 +144,12 @@ fn legacy_packet_conversions_preserve_exact_bytes_for_all_formats() {
         original.append(&(0..=255).collect::<Vec<_>>()).unwrap();
         let expression = expression::to_lossless_expression(&original);
         let wire = packet_tools::expression_to_wire(&expression, format, direction, &info).unwrap();
-        let (recovered, _) =
+        let (recovered, structured) =
             packet_tools::wire_to_expression(&wire, format, direction, &info, false).unwrap();
+        assert!(structured, "expected predicted structure for {format:?}");
         let packet =
             expression::parse_with_format(&recovered, format, Some((direction, &info))).unwrap();
         assert_eq!(packet.bytes(), original.bytes());
-        if format != PacketFormat::EvaWire {
-            assert_eq!(recovered, wire);
-        }
     }
 }
 
