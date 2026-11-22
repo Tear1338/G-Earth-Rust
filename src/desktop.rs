@@ -36,8 +36,8 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 use theme_ui::{
-    dark_mode_pill_switch, group_box, icon_action, parse_interval_spec, tab_button, AppTheme,
-    ThemeLogos,
+    dark_mode_pill_switch, group_box, icon_action, parse_interval_spec, tab_button,
+    vector_icon_button, vector_text_button, AppTheme, ThemeLogos, VectorIcon,
 };
 
 // Both lazy prediction caches count against the capture byte budget.
@@ -3268,19 +3268,16 @@ impl Desktop {
             } else {
                 self.theme.palette().text_muted
             };
-            if ui
-                .add(
-                    egui::Button::new(
-                        egui::RichText::new(format!(
-                            "← {}",
-                            self.i18n.text("ext.logger.element.direction.incoming")
-                        ))
-                        .color(in_fg)
-                        .small(),
-                    )
-                    .fill(in_bg),
-                )
-                .clicked()
+            if vector_text_button(
+                ui,
+                VectorIcon::ArrowLeft,
+                in_fg,
+                &self.i18n.text("ext.logger.element.direction.incoming"),
+                Some(in_fg),
+                Some(in_bg),
+                true,
+            )
+            .clicked()
             {
                 self.incoming = !self.incoming;
             }
@@ -3302,44 +3299,74 @@ impl Desktop {
             } else {
                 self.theme.palette().text_muted
             };
-            if ui
-                .add(
-                    egui::Button::new(
-                        egui::RichText::new(format!(
-                            "→ {}",
-                            self.i18n.text("ext.logger.element.direction.outgoing")
-                        ))
-                        .color(out_fg)
-                        .small(),
-                    )
-                    .fill(out_bg),
-                )
-                .clicked()
+            if vector_text_button(
+                ui,
+                VectorIcon::ArrowRight,
+                out_fg,
+                &self.i18n.text("ext.logger.element.direction.outgoing"),
+                Some(out_fg),
+                Some(out_bg),
+                true,
+            )
+            .clicked()
             {
                 self.outgoing = !self.outgoing;
             }
-            let pause_label = if self.paused {
-                format!("▶ {}", self.i18n.text("rust.scheduler.resume"))
-            } else {
-                format!("⏸ {}", self.i18n.text("rust.logger.pause"))
-            };
-            if ui.small_button(pause_label).clicked() {
+            let ui_fg = ui.visuals().text_color();
+            if vector_text_button(
+                ui,
+                if self.paused {
+                    VectorIcon::Play
+                } else {
+                    VectorIcon::Pause
+                },
+                ui_fg,
+                &self.i18n.text(if self.paused {
+                    "rust.scheduler.resume"
+                } else {
+                    "rust.logger.pause"
+                }),
+                None,
+                None,
+                true,
+            )
+            .clicked()
+            {
                 self.paused = !self.paused;
             }
-            if ui
-                .small_button(format!("🗑 {}", self.i18n.text("rust.logger.clear")))
-                .clicked()
+            if vector_text_button(
+                ui,
+                VectorIcon::Trash,
+                ui_fg,
+                &self.i18n.text("rust.logger.clear"),
+                None,
+                None,
+                true,
+            )
+            .clicked()
             {
                 clear_log_contents(&mut self.logs, &mut self.logs_bytes);
                 self.selected_log_index = None;
             }
-            let mode_label = if self.logger_friendly {
-                format!("✨ {}", self.i18n.text("rust.logger.friendly_mode"))
-            } else {
-                self.i18n.text("rust.logger.classic_mode")
-            };
-            if ui.small_button(mode_label).clicked() {
-                self.logger_friendly = !self.logger_friendly;
+            if self.logger_friendly {
+                if vector_text_button(
+                    ui,
+                    VectorIcon::Sparkle,
+                    self.theme.palette().primary_accent,
+                    &self.i18n.text("rust.logger.friendly_mode"),
+                    None,
+                    None,
+                    true,
+                )
+                .clicked()
+                {
+                    self.logger_friendly = false;
+                }
+            } else if ui
+                .small_button(self.i18n.text("rust.logger.classic_mode"))
+                .clicked()
+            {
+                self.logger_friendly = true;
             }
         });
         ui.separator();
@@ -3658,7 +3685,16 @@ impl Desktop {
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
                                 |ui| {
-                                    if ui.small_button("✕").clicked() {
+                                    if vector_icon_button(
+                                        ui,
+                                        VectorIcon::Close,
+                                        egui::vec2(20.0, 20.0),
+                                        10.0,
+                                        None,
+                                        ui.visuals().text_color(),
+                                    )
+                                    .clicked()
+                                    {
                                         self.selected_log_index = None;
                                     }
                                 },
@@ -3723,16 +3759,22 @@ impl Desktop {
                             });
                         ui.add_space(4.0);
                         ui.horizontal_wrapped(|ui| {
-                            if ui
-                                .add_enabled(
-                                    !row.skipped,
-                                    egui::Button::new(format!(
-                                        "➡ {}",
-                                        self.i18n.text("rust.logger.open_injection")
-                                    )),
-                                )
-                                .clicked()
-                            {
+                            let ui_fg = ui.visuals().text_color();
+                            let send_clicked = ui
+                                .add_enabled_ui(!row.skipped, |ui| {
+                                    vector_text_button(
+                                        ui,
+                                        VectorIcon::ArrowRight,
+                                        palette.primary_accent,
+                                        &self.i18n.text("rust.logger.open_injection"),
+                                        None,
+                                        None,
+                                        false,
+                                    )
+                                    .clicked()
+                                })
+                                .inner;
+                            if send_clicked {
                                 open_injection_req = Some((m.direction, row.expression.clone()));
                             }
                             if ui
@@ -3744,12 +3786,16 @@ impl Desktop {
                             {
                                 ui.ctx().copy_text(row.expression.clone());
                             }
-                            if ui
-                                .button(format!(
-                                    "🚫 {}",
-                                    self.i18n.text("rust.logger.block_header")
-                                ))
-                                .clicked()
+                            if vector_text_button(
+                                ui,
+                                VectorIcon::Block,
+                                egui::Color32::from_rgb(200, 65, 65),
+                                &self.i18n.text("rust.logger.block_header"),
+                                Some(ui_fg),
+                                None,
+                                false,
+                            )
+                            .clicked()
                             {
                                 block_header_req = Some((m.direction, m.packet.header()));
                             }
@@ -4784,7 +4830,7 @@ impl Desktop {
                                             if icon_action(
                                                 ui,
                                                 pause_tex,
-                                                if job.paused { "▶" } else { "⏸" },
+                                                if job.paused { ">" } else { "||" },
                                                 14.0,
                                             )
                                             .on_hover_text(self.i18n.text(if job.paused {
@@ -4800,7 +4846,7 @@ impl Desktop {
                                                 .logos
                                                 .as_ref()
                                                 .and_then(|l| l.btn_edit.as_ref());
-                                            if icon_action(ui, edit_tex, "✎", 14.0)
+                                            if icon_action(ui, edit_tex, "E", 14.0)
                                                 .on_hover_text(self.i18n.text("rust.action.edit"))
                                                 .clicked()
                                             {
@@ -4810,7 +4856,7 @@ impl Desktop {
                                                 .logos
                                                 .as_ref()
                                                 .and_then(|l| l.btn_delete.as_ref());
-                                            if icon_action(ui, del_tex, "✕", 14.0)
+                                            if icon_action(ui, del_tex, "X", 14.0)
                                                 .on_hover_text(self.i18n.text("rust.action.remove"))
                                                 .clicked()
                                             {
@@ -5079,10 +5125,16 @@ impl Desktop {
                 }
             }
             if editing
-                && ui
-                    .small_button("✕")
-                    .on_hover_text(self.i18n.text("rust.scheduler.cancel_edit"))
-                    .clicked()
+                && vector_icon_button(
+                    ui,
+                    VectorIcon::Close,
+                    egui::vec2(22.0, 22.0),
+                    10.5,
+                    None,
+                    ui.visuals().text_color(),
+                )
+                .on_hover_text(self.i18n.text("rust.scheduler.cancel_edit"))
+                .clicked()
             {
                 let reset_active_editor = self.active_schedule_edit.is_some();
                 self.schedule_edit = None;
@@ -5884,42 +5936,57 @@ impl eframe::App for Desktop {
                     if let Some(Ok(info)) = self.update_result.clone() {
                         if info.outdated
                             && self.update_apply_task.is_none()
-                            && ui
-                                .small_button(
-                                    egui::RichText::new(format!("⬆ {}", info.latest_version))
-                                        .color(egui::Color32::from_rgb(210, 120, 15))
-                                        .strong(),
-                                )
-                                .on_hover_text(self.i18n.text("rust.info.update_now"))
-                                .clicked()
+                            && vector_text_button(
+                                ui,
+                                VectorIcon::UpdateArrow,
+                                egui::Color32::from_rgb(210, 120, 15),
+                                &info.latest_version,
+                                Some(egui::Color32::from_rgb(210, 120, 15)),
+                                None,
+                                true,
+                            )
+                            .on_hover_text(self.i18n.text("rust.info.update_now"))
+                            .clicked()
                         {
                             self.start_update_apply(info);
                         }
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let theme_before = self.theme;
-                        ui.menu_button("⚙", |ui| {
-                            if ui.button(self.i18n.text("rust.settings.save")).clicked() {
-                                self.save_settings();
-                                ui.close_menu();
-                            }
-                            if ui.button(self.i18n.text("rust.settings.reload")).clicked() {
-                                self.load_settings();
-                                ui.close_menu();
-                            }
-                            ui.separator();
-                            for theme in AppTheme::ALL {
-                                if ui
-                                    .selectable_value(&mut self.theme, theme, theme.name())
-                                    .clicked()
-                                {
-                                    ui.close_menu();
+                        let gear_popup_id = ui.make_persistent_id("settings_gear_popup");
+                        let gear_resp = vector_icon_button(
+                            ui,
+                            VectorIcon::Gear,
+                            egui::vec2(24.0, 22.0),
+                            13.0,
+                            None,
+                            ui.visuals().text_color(),
+                        );
+                        if gear_resp.clicked() {
+                            ui.memory_mut(|m| m.toggle_popup(gear_popup_id));
+                        }
+                        egui::popup::popup_below_widget(
+                            ui,
+                            gear_popup_id,
+                            &gear_resp,
+                            egui::popup::PopupCloseBehavior::CloseOnClick,
+                            |ui| {
+                                ui.set_min_width(150.0);
+                                if ui.button(self.i18n.text("rust.settings.save")).clicked() {
+                                    self.save_settings();
                                 }
-                            }
-                        });
+                                if ui.button(self.i18n.text("rust.settings.reload")).clicked() {
+                                    self.load_settings();
+                                }
+                                ui.separator();
+                                for theme in AppTheme::ALL {
+                                    ui.selectable_value(&mut self.theme, theme, theme.name());
+                                }
+                            },
+                        );
                         ui.add_space(4.0);
                         dark_mode_pill_switch(ui, &mut self.theme)
-                            .on_hover_text("Toggle Dark / Light theme (Right-click: Tanji)");
+                            .on_hover_text(self.i18n.text("rust.theme.toggle_hint"));
                         if self.theme != theme_before {
                             if let Some(host) = &self.extension_host {
                                 if let Err(e) = host.set_theme(self.theme.name()) {
@@ -7864,7 +7931,7 @@ impl Desktop {
                             author,
                             ver,
                             &mut |ui| {
-                                if icon_action(ui, fire_tex.as_ref(), "▶", 14.0)
+                                if icon_action(ui, fire_tex.as_ref(), ">", 14.0)
                                     .on_hover_text(&open_tip)
                                     .clicked()
                                 {
@@ -7934,7 +8001,7 @@ impl Desktop {
                                 &extension.info.version,
                                 &mut |ui| {
                                     if !extension.approved {
-                                        if icon_action(ui, fire_tex.as_ref(), "▶", 14.0)
+                                        if icon_action(ui, fire_tex.as_ref(), ">", 14.0)
                                             .on_hover_text(&allow_tip)
                                             .clicked()
                                         {
@@ -7943,7 +8010,7 @@ impl Desktop {
                                             }
                                         }
                                     } else if extension.info.on_click
-                                        && icon_action(ui, fire_tex.as_ref(), "▶", 14.0)
+                                        && icon_action(ui, fire_tex.as_ref(), ">", 14.0)
                                             .on_hover_text(&open_tip)
                                             .clicked()
                                     {
@@ -7952,7 +8019,7 @@ impl Desktop {
                                         }
                                     }
                                     if extension.info.can_leave
-                                        && icon_action(ui, exit_tex.as_ref(), "✕", 14.0)
+                                        && icon_action(ui, exit_tex.as_ref(), "X", 14.0)
                                             .on_hover_text(&disconnect_tip)
                                             .clicked()
                                     {
@@ -7961,7 +8028,7 @@ impl Desktop {
                                         }
                                     }
                                     if let Some(fname) = installed_file {
-                                        if icon_action(ui, delete_tex.as_ref(), "🗑", 14.0)
+                                        if icon_action(ui, delete_tex.as_ref(), "Del", 14.0)
                                             .on_hover_text(&uninstall_tip)
                                             .clicked()
                                         {
@@ -7990,14 +8057,14 @@ impl Desktop {
                                 &info.author,
                                 &info.version,
                                 &mut |ui| {
-                                    if icon_action(ui, reload_tex.as_ref(), "↻", 14.0)
+                                    if icon_action(ui, reload_tex.as_ref(), "R", 14.0)
                                         .on_hover_text(&restart_tip)
                                         .clicked()
                                     {
                                         pending_restart = Some(fname.clone());
                                     }
                                     if info.can_delete
-                                        && icon_action(ui, delete_tex.as_ref(), "🗑", 14.0)
+                                        && icon_action(ui, delete_tex.as_ref(), "Del", 14.0)
                                             .on_hover_text(&uninstall_tip)
                                             .clicked()
                                     {

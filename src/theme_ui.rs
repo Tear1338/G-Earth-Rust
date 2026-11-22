@@ -548,6 +548,355 @@ pub fn tab_button(
     response
 }
 
+/// Crisp DPI-independent vector icons drawn directly via `egui::Painter`
+/// (never relies on missing Unicode/emoji font glyphs).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VectorIcon {
+    Check,
+    UpdateArrow,
+    Refresh,
+    Search,
+    Star,
+    Warning,
+    Gear,
+    Close,
+    Trash,
+    Play,
+    Pause,
+    Block,
+    Sparkle,
+    ArrowRight,
+    ArrowLeft,
+}
+
+pub fn draw_vector_icon(
+    painter: &egui::Painter,
+    rect: egui::Rect,
+    icon: VectorIcon,
+    color: egui::Color32,
+) {
+    let c = rect.center();
+    let s = rect.width().min(rect.height());
+    let r = s * 0.44;
+    let sw = (s * 0.125).clamp(1.2_f32, 2.4_f32);
+    let stroke = egui::Stroke::new(sw, color);
+
+    match icon {
+        VectorIcon::Check => {
+            let p1 = egui::pos2(c.x - r * 0.85, c.y + r * 0.05);
+            let p2 = egui::pos2(c.x - r * 0.22, c.y + r * 0.68);
+            let p3 = egui::pos2(c.x + r * 0.90, c.y - r * 0.62);
+            painter.line_segment([p1, p2], stroke);
+            painter.line_segment([p2, p3], stroke);
+        }
+        VectorIcon::UpdateArrow => {
+            let top = egui::pos2(c.x, c.y - r * 0.85);
+            let bot = egui::pos2(c.x, c.y + r * 0.85);
+            let left = egui::pos2(c.x - r * 0.68, c.y - r * 0.12);
+            let right = egui::pos2(c.x + r * 0.68, c.y - r * 0.12);
+            painter.line_segment([bot, top], stroke);
+            painter.line_segment([left, top], stroke);
+            painter.line_segment([right, top], stroke);
+        }
+        VectorIcon::Refresh => {
+            // 270-degree circular arc + crisp arrowhead
+            let arc_r = r * 0.78;
+            let segments = 14usize;
+            let start_deg = -45.0_f32;
+            let sweep_deg = 275.0_f32;
+            let pts: Vec<egui::Pos2> = (0..=segments)
+                .map(|i| {
+                    let deg = start_deg + sweep_deg * (i as f32 / segments as f32);
+                    let rad = deg.to_radians();
+                    egui::pos2(c.x + arc_r * rad.cos(), c.y + arc_r * rad.sin())
+                })
+                .collect();
+            painter.add(egui::Shape::line(pts, stroke));
+            let tip_rad = start_deg.to_radians();
+            let tip = egui::pos2(c.x + arc_r * tip_rad.cos(), c.y + arc_r * tip_rad.sin());
+            let head = r * 0.42;
+            painter.line_segment([tip, egui::pos2(tip.x - head, tip.y - head * 0.15)], stroke);
+            painter.line_segment([tip, egui::pos2(tip.x + head * 0.1, tip.y - head)], stroke);
+        }
+        VectorIcon::Search => {
+            let lens_c = egui::pos2(c.x - r * 0.18, c.y - r * 0.18);
+            let lens_r = r * 0.58;
+            painter.circle_stroke(lens_c, lens_r, stroke);
+            let h_start = egui::pos2(lens_c.x + lens_r * 0.70, lens_c.y + lens_r * 0.70);
+            let h_end = egui::pos2(c.x + r * 0.88, c.y + r * 0.88);
+            painter.line_segment([h_start, h_end], egui::Stroke::new(sw * 1.15, color));
+        }
+        VectorIcon::Star => {
+            let inner_r = r * 0.42;
+            let pts: Vec<egui::Pos2> = (0..10)
+                .map(|i| {
+                    let rad = (-90.0_f32 + i as f32 * 36.0_f32).to_radians();
+                    let rad_len = if i % 2 == 0 { r * 0.95 } else { inner_r };
+                    egui::pos2(c.x + rad_len * rad.cos(), c.y + rad_len * rad.sin())
+                })
+                .collect();
+            for i in 0..10 {
+                let next = (i + 1) % 10;
+                painter.add(egui::Shape::convex_polygon(
+                    vec![c, pts[i], pts[next]],
+                    color,
+                    egui::Stroke::NONE,
+                ));
+            }
+        }
+        VectorIcon::Warning => {
+            let top = egui::pos2(c.x, c.y - r * 0.88);
+            let bl = egui::pos2(c.x - r * 0.92, c.y + r * 0.76);
+            let br = egui::pos2(c.x + r * 0.92, c.y + r * 0.76);
+            painter.line_segment([top, br], stroke);
+            painter.line_segment([br, bl], stroke);
+            painter.line_segment([bl, top], stroke);
+            painter.line_segment(
+                [
+                    egui::pos2(c.x, c.y - r * 0.30),
+                    egui::pos2(c.x, c.y + r * 0.22),
+                ],
+                stroke,
+            );
+            painter.circle_filled(egui::pos2(c.x, c.y + r * 0.48), (sw * 0.55).max(1.0), color);
+        }
+        VectorIcon::Gear => {
+            let ring_r = r * 0.54;
+            painter.circle_stroke(c, ring_r, egui::Stroke::new(sw * 1.15, color));
+            for i in 0..8 {
+                let rad = (i as f32 * 45.0_f32).to_radians();
+                let p0 = egui::pos2(
+                    c.x + (ring_r * 1.05) * rad.cos(),
+                    c.y + (ring_r * 1.05) * rad.sin(),
+                );
+                let p1 = egui::pos2(c.x + (r * 0.95) * rad.cos(), c.y + (r * 0.95) * rad.sin());
+                painter.line_segment([p0, p1], egui::Stroke::new(sw * 1.1, color));
+            }
+        }
+        VectorIcon::Close => {
+            let d = r * 0.66;
+            painter.line_segment(
+                [egui::pos2(c.x - d, c.y - d), egui::pos2(c.x + d, c.y + d)],
+                stroke,
+            );
+            painter.line_segment(
+                [egui::pos2(c.x + d, c.y - d), egui::pos2(c.x - d, c.y + d)],
+                stroke,
+            );
+        }
+        VectorIcon::Trash => {
+            // Lid + handle
+            painter.line_segment(
+                [
+                    egui::pos2(c.x - r * 0.78, c.y - r * 0.45),
+                    egui::pos2(c.x + r * 0.78, c.y - r * 0.45),
+                ],
+                stroke,
+            );
+            painter.line_segment(
+                [
+                    egui::pos2(c.x - r * 0.30, c.y - r * 0.75),
+                    egui::pos2(c.x + r * 0.30, c.y - r * 0.75),
+                ],
+                stroke,
+            );
+            // Bin body
+            let body = egui::Rect::from_min_max(
+                egui::pos2(c.x - r * 0.58, c.y - r * 0.42),
+                egui::pos2(c.x + r * 0.58, c.y + r * 0.80),
+            );
+            painter.rect_stroke(body, egui::Rounding::same(1.5), stroke);
+            let slat_s = egui::Stroke::new((sw * 0.85).max(1.0), color);
+            painter.line_segment(
+                [
+                    egui::pos2(c.x - r * 0.18, c.y - r * 0.18),
+                    egui::pos2(c.x - r * 0.18, c.y + r * 0.55),
+                ],
+                slat_s,
+            );
+            painter.line_segment(
+                [
+                    egui::pos2(c.x + r * 0.18, c.y - r * 0.18),
+                    egui::pos2(c.x + r * 0.18, c.y + r * 0.55),
+                ],
+                slat_s,
+            );
+        }
+        VectorIcon::Play => {
+            let pts = vec![
+                egui::pos2(c.x - r * 0.55, c.y - r * 0.78),
+                egui::pos2(c.x + r * 0.82, c.y),
+                egui::pos2(c.x - r * 0.55, c.y + r * 0.78),
+            ];
+            painter.add(egui::Shape::convex_polygon(pts, color, egui::Stroke::NONE));
+        }
+        VectorIcon::Pause => {
+            let bw = r * 0.42;
+            let bh = r * 0.78;
+            painter.rect_filled(
+                egui::Rect::from_min_max(
+                    egui::pos2(c.x - r * 0.62, c.y - bh),
+                    egui::pos2(c.x - r * 0.62 + bw, c.y + bh),
+                ),
+                egui::Rounding::same(1.0),
+                color,
+            );
+            painter.rect_filled(
+                egui::Rect::from_min_max(
+                    egui::pos2(c.x + r * 0.62 - bw, c.y - bh),
+                    egui::pos2(c.x + r * 0.62, c.y + bh),
+                ),
+                egui::Rounding::same(1.0),
+                color,
+            );
+        }
+        VectorIcon::Block => {
+            let cr = r * 0.78;
+            painter.circle_stroke(c, cr, stroke);
+            let d = cr * 0.68;
+            painter.line_segment(
+                [egui::pos2(c.x - d, c.y - d), egui::pos2(c.x + d, c.y + d)],
+                stroke,
+            );
+        }
+        VectorIcon::Sparkle => {
+            let pts = [
+                egui::pos2(c.x, c.y - r * 0.92),
+                egui::pos2(c.x + r * 0.28, c.y - r * 0.28),
+                egui::pos2(c.x + r * 0.92, c.y),
+                egui::pos2(c.x + r * 0.28, c.y + r * 0.28),
+                egui::pos2(c.x, c.y + r * 0.92),
+                egui::pos2(c.x - r * 0.28, c.y + r * 0.28),
+                egui::pos2(c.x - r * 0.92, c.y),
+                egui::pos2(c.x - r * 0.28, c.y - r * 0.28),
+            ];
+            for i in 0..8 {
+                let next = (i + 1) % 8;
+                painter.add(egui::Shape::convex_polygon(
+                    vec![c, pts[i], pts[next]],
+                    color,
+                    egui::Stroke::NONE,
+                ));
+            }
+        }
+        VectorIcon::ArrowRight => {
+            let left = egui::pos2(c.x - r * 0.78, c.y);
+            let right = egui::pos2(c.x + r * 0.78, c.y);
+            painter.line_segment([left, right], stroke);
+            painter.line_segment([egui::pos2(c.x + r * 0.14, c.y - r * 0.62), right], stroke);
+            painter.line_segment([egui::pos2(c.x + r * 0.14, c.y + r * 0.62), right], stroke);
+        }
+        VectorIcon::ArrowLeft => {
+            let left = egui::pos2(c.x - r * 0.78, c.y);
+            let right = egui::pos2(c.x + r * 0.78, c.y);
+            painter.line_segment([left, right], stroke);
+            painter.line_segment([egui::pos2(c.x - r * 0.14, c.y - r * 0.62), left], stroke);
+            painter.line_segment([egui::pos2(c.x - r * 0.14, c.y + r * 0.62), left], stroke);
+        }
+    }
+}
+
+/// Inline vector icon with no border.
+pub fn vector_icon(
+    ui: &mut egui::Ui,
+    icon: VectorIcon,
+    size: f32,
+    color: egui::Color32,
+) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(egui::vec2(size, size), egui::Sense::hover());
+    if ui.is_rect_visible(rect) {
+        draw_vector_icon(ui.painter(), rect, icon, color);
+    }
+    resp
+}
+
+/// Compact clickable button containing only a crisp vector icon.
+pub fn vector_icon_button(
+    ui: &mut egui::Ui,
+    icon: VectorIcon,
+    button_size: egui::Vec2,
+    icon_size: f32,
+    fill: Option<egui::Color32>,
+    color: egui::Color32,
+) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(button_size, egui::Sense::click());
+    if ui.is_rect_visible(rect) {
+        let visuals = ui.style().interact(&resp);
+        let bg = match fill {
+            Some(base) if resp.hovered() => base.linear_multiply(1.12),
+            Some(base) => base,
+            None => visuals.bg_fill,
+        };
+        let stroke = if fill.is_some() {
+            egui::Stroke::NONE
+        } else {
+            visuals.bg_stroke
+        };
+        ui.painter().rect(rect, visuals.rounding, bg, stroke);
+        let icon_rect =
+            egui::Rect::from_center_size(rect.center(), egui::vec2(icon_size, icon_size));
+        draw_vector_icon(ui.painter(), icon_rect, icon, color);
+    }
+    resp
+}
+
+/// Clickable button with a crisp vector icon on the left and a text label on the right.
+pub fn vector_text_button(
+    ui: &mut egui::Ui,
+    icon: VectorIcon,
+    icon_color: egui::Color32,
+    label: &str,
+    text_color: Option<egui::Color32>,
+    fill: Option<egui::Color32>,
+    small: bool,
+) -> egui::Response {
+    let font = if small {
+        egui::FontId::proportional(11.5)
+    } else {
+        egui::FontId::proportional(12.5)
+    };
+    let fg = text_color.unwrap_or_else(|| ui.visuals().text_color());
+    let galley = ui.painter().layout_no_wrap(label.to_owned(), font, fg);
+    let icon_sz = if small { 11.5_f32 } else { 13.0_f32 };
+    let pad_x = if small { 6.0_f32 } else { 8.0_f32 };
+    let pad_y = if small { 3.0_f32 } else { 4.5_f32 };
+    let gap = 4.5_f32;
+    let desired = egui::vec2(
+        pad_x * 2.0 + icon_sz + gap + galley.size().x,
+        (galley.size().y.max(icon_sz) + pad_y * 2.0).max(if small { 20.0 } else { 24.0 }),
+    );
+    let (rect, resp) = ui.allocate_exact_size(desired, egui::Sense::click());
+    if ui.is_rect_visible(rect) {
+        let visuals = ui.style().interact(&resp);
+        let bg = match fill {
+            Some(base) if resp.hovered() => base.linear_multiply(1.08),
+            Some(base) => base,
+            None => visuals.bg_fill,
+        };
+        let stroke = if fill == Some(egui::Color32::TRANSPARENT) {
+            egui::Stroke::new(1.0_f32, visuals.bg_stroke.color)
+        } else if fill.is_some() {
+            egui::Stroke::NONE
+        } else {
+            visuals.bg_stroke
+        };
+        ui.painter().rect(rect, visuals.rounding, bg, stroke);
+        let icon_center = egui::pos2(rect.left() + pad_x + icon_sz * 0.5, rect.center().y);
+        draw_vector_icon(
+            ui.painter(),
+            egui::Rect::from_center_size(icon_center, egui::vec2(icon_sz, icon_sz)),
+            icon,
+            icon_color,
+        );
+        let text_pos = egui::pos2(
+            rect.left() + pad_x + icon_sz + gap,
+            rect.center().y - galley.size().y * 0.5,
+        );
+        ui.painter().galley(text_pos, galley, fg);
+    }
+    resp
+}
+
 /// Parse beta-29 `500+0` or `500` scheduler interval strings.
 pub fn parse_interval_spec(input: &str) -> Result<(u64, Option<u64>), String> {
     let trimmed = input.trim();

@@ -1,3 +1,4 @@
+use crate::theme_ui::{vector_icon, vector_icon_button, vector_text_button, VectorIcon};
 use eframe::egui;
 use gearth_rust::{
     extension_host::ExtensionHost,
@@ -440,9 +441,9 @@ impl StoreUi {
                 i18n.text("ext.store.search.results"),
             ),
             StoreView::Sources => (
-                "Store Sources".to_owned(),
-                "Official & custom GitHub extension repositories".to_owned(),
-                "Configured repositories".to_owned(),
+                i18n.text("rust.store.sources_title"),
+                i18n.text("rust.store.sources_subtitle"),
+                i18n.text("rust.store.sources_section"),
             ),
             StoreView::Details { source, title } => {
                 let sub = self
@@ -535,15 +536,16 @@ impl StoreUi {
                         match &self.view {
                             StoreView::Details { .. } => {}
                             StoreView::Sources => {
-                                if ui
-                                    .add(
-                                        egui::Button::new(
-                                            egui::RichText::new("← Back")
-                                                .color(egui::Color32::WHITE),
-                                        )
-                                        .fill(egui::Color32::from_rgb(0x1f, 0x55, 0x6b)),
-                                    )
-                                    .clicked()
+                                if vector_text_button(
+                                    ui,
+                                    VectorIcon::ArrowLeft,
+                                    egui::Color32::WHITE,
+                                    &i18n.text("rust.store.back"),
+                                    Some(egui::Color32::WHITE),
+                                    Some(egui::Color32::from_rgb(0x1f, 0x55, 0x6b)),
+                                    false,
+                                )
+                                .clicked()
                                 {
                                     next_view = Some(self.previous_view.clone());
                                 }
@@ -565,29 +567,33 @@ impl StoreUi {
                                 }
                             }
                             _ => {
-                                if ui
-                                    .add_enabled(
-                                        ready,
-                                        egui::Button::new(
-                                            egui::RichText::new("↻").color(egui::Color32::WHITE),
+                                let refresh_clicked = ui
+                                    .add_enabled_ui(ready, |ui| {
+                                        vector_icon_button(
+                                            ui,
+                                            VectorIcon::Refresh,
+                                            egui::vec2(26.0, 24.0),
+                                            13.0,
+                                            Some(egui::Color32::from_rgb(0x1f, 0x55, 0x6b)),
+                                            egui::Color32::WHITE,
                                         )
-                                        .fill(egui::Color32::from_rgb(0x1f, 0x55, 0x6b)),
-                                    )
-                                    .on_hover_text(i18n.text("rust.store.load"))
-                                    .clicked()
-                                {
+                                        .on_hover_text(i18n.text("rust.store.load"))
+                                        .clicked()
+                                    })
+                                    .inner;
+                                if refresh_clicked {
                                     refresh_requested = true;
                                 }
                                 ui.add_space(4.0);
                                 if ui
                                     .add(
                                         egui::Button::new(
-                                            egui::RichText::new("Sources")
+                                            egui::RichText::new(i18n.text("rust.store.sources"))
                                                 .color(egui::Color32::WHITE),
                                         )
                                         .fill(egui::Color32::from_rgb(0x1f, 0x55, 0x6b)),
                                     )
-                                    .on_hover_text("Manage official & custom store repositories")
+                                    .on_hover_text(i18n.text("rust.store.sources_tooltip"))
                                     .clicked()
                                 {
                                     next_view = Some(StoreView::Sources);
@@ -757,22 +763,33 @@ impl StoreUi {
                     );
                     if is_list_view {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if !self.search.is_empty() && ui.small_button("✕").clicked() {
+                            if !self.search.is_empty()
+                                && vector_icon_button(
+                                    ui,
+                                    VectorIcon::Close,
+                                    egui::vec2(20.0, 20.0),
+                                    9.5,
+                                    None,
+                                    muted_fg,
+                                )
+                                .clicked()
+                            {
                                 self.search.clear();
                                 self.page = 0;
                             }
                             let search_resp = ui.add(
                                 egui::TextEdit::singleline(&mut self.search)
-                                    .desired_width(150.0)
-                                    .hint_text(format!("🔍 {}", i18n.text("rust.store.search"))),
+                                    .desired_width(146.0)
+                                    .hint_text(i18n.text("rust.store.search")),
                             );
                             if search_resp.changed() {
                                 self.page = 0;
                             }
+                            vector_icon(ui, VectorIcon::Search, 13.0, muted_fg);
                             if self.sources.len() > 1 {
                                 let prev_src = self.source_filter.clone();
                                 let selected_label = if self.source_filter.is_empty() {
-                                    "All stores".to_owned()
+                                    i18n.text("rust.store.all_stores")
                                 } else {
                                     self.source_filter
                                         .split('/')
@@ -781,13 +798,13 @@ impl StoreUi {
                                         .to_owned()
                                 };
                                 egui::ComboBox::from_id_salt("store-source-filter")
-                                    .width(96.0)
+                                    .width(104.0)
                                     .selected_text(selected_label)
                                     .show_ui(ui, |ui| {
                                         ui.selectable_value(
                                             &mut self.source_filter,
                                             String::new(),
-                                            "All stores",
+                                            i18n.text("rust.store.all_stores"),
                                         );
                                         for src in self.sources.iter().filter(|s| s.enabled) {
                                             ui.selectable_value(
@@ -1028,7 +1045,9 @@ impl StoreUi {
                                                                     if !src.enabled {
                                                                         ui.label(
                                                                             egui::RichText::new(
-                                                                                "Disabled",
+                                                                                i18n.text(
+                                                                                    "rust.store.disabled",
+                                                                                ),
                                                                             )
                                                                             .small()
                                                                             .color(muted_fg),
@@ -1036,13 +1055,28 @@ impl StoreUi {
                                                                     } else if let Some(s) = st {
                                                                         if let Some(err) = &s.error
                                                                         {
-                                                                            ui.colored_label(
+                                                                            let warn_col =
                                                                                 egui::Color32::from_rgb(
                                                                                     210, 120, 15,
-                                                                                ),
-                                                                                "⚠ Unavailable (repo not ready or offline)",
-                                                                            )
-                                                                            .on_hover_text(err);
+                                                                                );
+                                                                            ui.horizontal(|ui| {
+                                                                                ui.spacing_mut()
+                                                                                    .item_spacing
+                                                                                    .x = 5.0;
+                                                                                vector_icon(
+                                                                                    ui,
+                                                                                    VectorIcon::Warning,
+                                                                                    12.0,
+                                                                                    warn_col,
+                                                                                );
+                                                                                ui.colored_label(
+                                                                                    warn_col,
+                                                                                    i18n.text(
+                                                                                        "rust.store.unavailable",
+                                                                                    ),
+                                                                                )
+                                                                                .on_hover_text(err);
+                                                                            });
                                                                         } else {
                                                                             let r = s
                                                                                 .loaded_ref
@@ -1050,15 +1084,28 @@ impl StoreUi {
                                                                                 .unwrap_or(
                                                                                     &s.version,
                                                                                 );
-                                                                            ui.colored_label(
+                                                                            let ok_col =
                                                                                 egui::Color32::from_rgb(
                                                                                     0x2e, 0x8b, 0x57,
-                                                                                ),
-                                                                                format!(
-                                                                                    "✓ {} extension(s) via {r}",
-                                                                                    s.extension_count
-                                                                                ),
-                                                                            );
+                                                                                );
+                                                                            ui.horizontal(|ui| {
+                                                                                ui.spacing_mut()
+                                                                                    .item_spacing
+                                                                                    .x = 5.0;
+                                                                                vector_icon(
+                                                                                    ui,
+                                                                                    VectorIcon::Check,
+                                                                                    12.0,
+                                                                                    ok_col,
+                                                                                );
+                                                                                ui.colored_label(
+                                                                                    ok_col,
+                                                                                    format!(
+                                                                                        "{} extension(s) via {r}",
+                                                                                        s.extension_count
+                                                                                    ),
+                                                                                );
+                                                                            });
                                                                         }
                                                                     }
                                                                 });
@@ -1068,9 +1115,17 @@ impl StoreUi {
                                                                             egui::Align::Center,
                                                                         ),
                                                                         |ui| {
-                                                                            if ui
-                                                                                .small_button("✕")
-                                                                                .clicked()
+                                                                            if vector_icon_button(
+                                                                                ui,
+                                                                                VectorIcon::Close,
+                                                                                egui::vec2(
+                                                                                    20.0, 20.0,
+                                                                                ),
+                                                                                9.5,
+                                                                                None,
+                                                                                muted_fg,
+                                                                            )
+                                                                            .clicked()
                                                                             {
                                                                                 remove_idx =
                                                                                     Some(idx);
@@ -1092,7 +1147,7 @@ impl StoreUi {
                                                 ui.add_space(8.0);
                                                 ui.separator();
                                                 ui.add_space(8.0);
-                                                ui.strong("Add a custom GitHub store repository");
+                                                ui.strong(i18n.text("rust.store.add_repo_title"));
                                                 ui.add_space(4.0);
                                                 ui.horizontal(|ui| {
                                                     ui.add(
@@ -1109,7 +1164,10 @@ impl StoreUi {
                                                         .desired_width(80.0)
                                                         .hint_text("1.5.3 / main"),
                                                     );
-                                                    if ui.button("Add").clicked() {
+                                                    if ui
+                                                        .button(i18n.text("rust.store.add"))
+                                                        .clicked()
+                                                    {
                                                         let repo =
                                                             self.new_source_repo.trim().to_owned();
                                                         let version = if self
@@ -1146,7 +1204,12 @@ impl StoreUi {
                                                             }
                                                         }
                                                     }
-                                                    if ui.button("Reset defaults").clicked() {
+                                                    if ui
+                                                        .button(
+                                                            i18n.text("rust.store.reset_defaults"),
+                                                        )
+                                                        .clicked()
+                                                    {
                                                         self.sources =
                                                             extension_store::default_sources();
                                                         self.source_filter.clear();
@@ -1156,7 +1219,7 @@ impl StoreUi {
                                                 ui.add_space(10.0);
                                                 ui.label(
                                                     egui::RichText::new(
-                                                        "Custom repo layout (branch repo/1.5.3 or main):\n• .auto-generated/extensions.json (or extensions.json at root)\n• store/config.json (optional — falls back to official config)\n• store/extensions/<Title>/extension.zip (+ optional icon.png, screenshot.png)",
+                                                        i18n.text("rust.store.repo_layout_hint"),
                                                     )
                                                     .small()
                                                     .color(muted_fg),
@@ -1266,11 +1329,20 @@ impl StoreUi {
                                                                         );
                                                                     }
                                                                     if update_available {
+                                                                        let up_col = egui::Color32::from_rgb(
+                                                                            210, 120, 15,
+                                                                        );
+                                                                        vector_icon(
+                                                                            ui,
+                                                                            VectorIcon::UpdateArrow,
+                                                                            12.0,
+                                                                            up_col,
+                                                                        );
                                                                         ui.colored_label(
-                                                                            egui::Color32::from_rgb(
-                                                                                210, 120, 15,
+                                                                            up_col,
+                                                                            i18n.text(
+                                                                                "ext.store.button.update",
                                                                             ),
-                                                                            "⬆ Update",
                                                                         );
                                                                     }
                                                                 });
@@ -1415,11 +1487,16 @@ impl StoreUi {
                                                                     egui::Align::Center,
                                                                 ),
                                                                 |ui| {
+                                                                    vector_icon(
+                                                                        ui,
+                                                                        VectorIcon::ArrowRight,
+                                                                        12.0,
+                                                                        link_color,
+                                                                    );
+                                                                    ui.add_space(4.0);
                                                                     ui.label(
                                                                         egui::RichText::new(
-                                                                            format!(
-                                                                                "{count} →"
-                                                                            ),
+                                                                            format!("{count}"),
                                                                         )
                                                                         .strong()
                                                                         .color(link_color),
@@ -1449,7 +1526,7 @@ impl StoreUi {
                                             ui.add_space(36.0);
                                             ui.vertical_centered(|ui| {
                                                 ui.spinner();
-                                                ui.label("Loading extension catalogue...");
+                                                ui.label(i18n.text("rust.store.loading"));
                                             });
                                         }
                                     }
@@ -1535,7 +1612,10 @@ impl StoreUi {
                                                 };
                                                 let time_label =
                                                     format_elapsed(&ext.update_date, i18n)
-                                                        .map(|rel| format!("{rel} ago"))
+                                                        .map(|rel| {
+                                                            i18n.text("rust.store.time_ago")
+                                                                .replace("%s", &rel)
+                                                        })
                                                         .unwrap_or_else(|| ext.update_date.clone());
 
                                                 // 1) Classic Habbo forum blue header bar (#3179ac)
@@ -1555,10 +1635,14 @@ impl StoreUi {
                                                                     egui::Align::Center,
                                                                 ),
                                                                 |ui| {
+                                                                    let star_col =
+                                                                        egui::Color32::from_rgb(
+                                                                            0xff, 0xf3, 0xb0,
+                                                                        );
                                                                     ui.label(
                                                                         egui::RichText::new(
                                                                             format!(
-                                                                                "★ {} {}",
+                                                                                "{} {}",
                                                                                 ext.rating,
                                                                                 i18n.text(
                                                                                     "ext.store.extension.rating"
@@ -1567,11 +1651,13 @@ impl StoreUi {
                                                                         )
                                                                         .size(12.0)
                                                                         .strong()
-                                                                        .color(
-                                                                            egui::Color32::from_rgb(
-                                                                                0xff, 0xf3, 0xb0,
-                                                                            ),
-                                                                        ),
+                                                                        .color(star_col),
+                                                                    );
+                                                                    vector_icon(
+                                                                        ui,
+                                                                        VectorIcon::Star,
+                                                                        12.0,
+                                                                        star_col,
                                                                     );
                                                                     if catalog.source
                                                                         != extension_store::STORE_SOURCE
@@ -2061,14 +2147,21 @@ impl StoreUi {
                                                                                 })
                                                                             {
                                                                                 ui.add_space(4.0);
+                                                                                let warn_col = egui::Color32::from_rgb(
+                                                                                    210, 120, 15,
+                                                                                );
                                                                                 ui.horizontal_wrapped(
                                                                                     |ui| {
+                                                                                        vector_icon(
+                                                                                            ui,
+                                                                                            VectorIcon::Warning,
+                                                                                            12.5,
+                                                                                            warn_col,
+                                                                                        );
                                                                                         ui.colored_label(
-                                                                                            egui::Color32::from_rgb(
-                                                                                                210, 120, 15,
-                                                                                            ),
+                                                                                            warn_col,
                                                                                             format!(
-                                                                                                "⚠ {}:",
+                                                                                                "{}:",
                                                                                                 fw.name
                                                                                             ),
                                                                                         );
@@ -2083,16 +2176,24 @@ impl StoreUi {
                                                                     }
                                                                     if !ext.stable {
                                                                         ui.add_space(4.0);
-                                                                        ui.colored_label(
-                                                                            egui::Color32::from_rgb(
-                                                                                210, 120, 15,
-                                                                            ),
-                                                                            format!(
-                                                                                "⚠ {}",
-                                                                                i18n.text(
-                                                                                    "ext.store.extension.warning.unstable"
-                                                                                )
-                                                                            ),
+                                                                        let warn_col = egui::Color32::from_rgb(
+                                                                            210, 120, 15,
+                                                                        );
+                                                                        ui.horizontal_wrapped(
+                                                                            |ui| {
+                                                                                vector_icon(
+                                                                                    ui,
+                                                                                    VectorIcon::Warning,
+                                                                                    12.5,
+                                                                                    warn_col,
+                                                                                );
+                                                                                ui.colored_label(
+                                                                                    warn_col,
+                                                                                    i18n.text(
+                                                                                        "ext.store.extension.warning.unstable",
+                                                                                    ),
+                                                                                );
+                                                                            },
                                                                         );
                                                                     }
 
@@ -2144,7 +2245,9 @@ impl StoreUi {
                                                                                 .inner;
                                                                         if img_resp
                                                                             .on_hover_text(
-                                                                                "Click to enlarge",
+                                                                                i18n.text(
+                                                                                    "rust.store.click_enlarge",
+                                                                                ),
                                                                             )
                                                                             .clicked()
                                                                         {
@@ -2396,19 +2499,39 @@ impl StoreUi {
                                                                                 match install_status
                                                                                 {
                                                                                     InstallStatus::Installed => {
-                                                                                        ui.colored_label(
+                                                                                        ui.add_space(
+                                                                                            4.0,
+                                                                                        );
+                                                                                        vector_icon(
+                                                                                            ui,
+                                                                                            VectorIcon::Check,
+                                                                                            12.0,
                                                                                             egui::Color32::from_rgb(
                                                                                                 0x2e, 0x8b, 0x57,
                                                                                             ),
-                                                                                            "✓",
+                                                                                        )
+                                                                                        .on_hover_text(
+                                                                                            i18n.text(
+                                                                                                "rust.store.installed",
+                                                                                            ),
                                                                                         );
                                                                                     }
                                                                                     InstallStatus::UpdateAvailable => {
-                                                                                        ui.colored_label(
+                                                                                        ui.add_space(
+                                                                                            4.0,
+                                                                                        );
+                                                                                        vector_icon(
+                                                                                            ui,
+                                                                                            VectorIcon::UpdateArrow,
+                                                                                            12.0,
                                                                                             egui::Color32::from_rgb(
                                                                                                 210, 120, 15,
                                                                                             ),
-                                                                                            "⬆",
+                                                                                        )
+                                                                                        .on_hover_text(
+                                                                                            i18n.text(
+                                                                                                "ext.store.button.update",
+                                                                                            ),
                                                                                         );
                                                                                     }
                                                                                     _ => {}
@@ -2518,7 +2641,7 @@ impl StoreUi {
                                             ui.add_space(36.0);
                                             ui.vertical_centered(|ui| {
                                                 ui.spinner();
-                                                ui.label("Loading extension catalogue...");
+                                                ui.label(i18n.text("rust.store.loading"));
                                             });
                                         }
                                     }
@@ -2532,7 +2655,7 @@ impl StoreUi {
                     if let Some((catalog, ext, install_status, installed_record)) = detail_footer {
                         if habbo_forum_button(
                             ui,
-                            "Return",
+                            &i18n.text("rust.store.return"),
                             egui::vec2(98.0, 27.0),
                             true,
                             HabboBtnStyle::Grey,
