@@ -328,12 +328,21 @@ impl Shared {
             .clone()
             .filter(|p| p.ready.load(Ordering::Acquire) && !p.closed.load(Ordering::Acquire))
     }
+    #[cfg(test)]
     async fn activate(self: &Arc<Self>, peer: &Arc<Peer>, uri: &Uri) -> io::Result<()> {
+        self.activate_with_migration(peer, uri, false).await
+    }
+    async fn activate_with_migration(
+        self: &Arc<Self>,
+        peer: &Arc<Peer>,
+        uri: &Uri,
+        allow_city_migration: bool,
+    ) -> io::Result<()> {
         // Bound the control backlog by deferring new sessions until the
         // previous lifecycle has entered the consumer channel. Never hold
         // a peer lock or block a Tokio worker while waiting for the UI.
-        loop {
-            let claimed = {
+        let migrated_from: Option<Arc<Peer>> = loop {
+            let outcome = {
                 let mut active = self
                     .active
                     .lock()
@@ -344,23 +353,49 @@ impl Shared {
                         "Nitro connection already closed",
                     ));
                 }
-                if active.as_ref().is_some_and(|p| p.key != peer.key) {
-                    return Err(io::Error::other("another Nitro client is already active"));
-                }
-                // close() publishes Disconnected under this same lock; check
-                // its queue before claiming, without a gap for another close.
-                if self.events.flush() {
+                if let Some(previous) = active.as_ref().filter(|p| p.key != peer.key).cloned() {
+                    if allow_city_migration
+                        && previous.ready.load(Ordering::Acquire)
+                        && !previous.closed.load(Ordering::Acquire)
+                    {
+                        *active = Some(peer.clone());
+                        peer.active.store(true, Ordering::Release);
+                        Some(Some(previous))
+                    } else {
+                        return Err(io::Error::other("another Nitro client is already active"));
+                    }
+                } else if self.events.flush() {
                     *active = Some(peer.clone());
                     peer.active.store(true, Ordering::Release);
-                    true
+                    Some(None)
                 } else {
-                    false
+                    None
                 }
             };
-            if claimed {
-                break;
+            if let Some(previous) = outcome {
+                break previous;
             }
             tokio::time::sleep(Duration::from_millis(5)).await;
+        };
+        if let Some(previous) = migrated_from {
+            if let Ok(mut prev_session) = previous.extension_session.lock() {
+                if let Some(epoch) = prev_session.take() {
+                    if let Ok(mut next_session) = peer.extension_session.lock() {
+                        *next_session = Some(epoch);
+                    }
+                }
+            }
+            if let Ok(prev_meta) = previous.schedule_metadata.lock() {
+                if let Ok(mut next_meta) = peer.schedule_metadata.lock() {
+                    *next_meta = prev_meta.clone();
+                }
+            }
+            peer.ready.store(true, Ordering::Release);
+            peer.notify.notify_waiters();
+            let _ = self.events.try_send(Event::Status(
+                "HabboCity migrated smoothly to replacement WebSocket link".into(),
+            ));
+            return Ok(());
         }
         let mut database = self.options.packet_info.clone();
         let mut publish_database = false;
@@ -815,13 +850,14 @@ impl WebSocketHandler for Handler {
         let mut tick = tokio::time::interval(Duration::from_millis(20));
         let mut decoder = FrameDecoder::default();
         let mut decided = false;
+        let is_city_host = uri.host().is_some_and(crate::nitro::is_habbocity_host);
         let result:io::Result<()> = async {
             loop {
                 if self.0.stop.load(Ordering::Acquire)||peer.closed.load(Ordering::Acquire){break;}
                 tokio::select! {
                     _=stopping.changed()=>break,
                     _=tick.tick(), if direction==Direction::ToServer&&peer.ready.load(Ordering::Acquire)=>{
-                        if let Some(host)=&self.0.options.extensions{let epoch=peer.extension_session.lock().map_err(|_|io::Error::other("Nitro extension session lock poisoned"))?.ok_or_else(||io::Error::other("Nitro extension session missing"))?;host.forward_owned_injections(epoch,|direction,packet|peer.enqueue_retaining(direction,packet))?;}
+                        if let Some(host)=&self.0.options.extensions{if let Some(epoch)=*peer.extension_session.lock().map_err(|_|io::Error::other("Nitro extension session lock poisoned"))?{host.forward_owned_injections(epoch,|direction,packet|peer.enqueue_retaining(direction,packet))?;}}
                     },
                     packet=injections.recv()=>{let Some(packet)=packet else{break;};peer.queued.fetch_sub(packet.bytes().len(),Ordering::AcqRel);let mut modifier=peer.modifier.lock().await;if let Some(packet)=self.0.packet(direction,packet,true).await?{let bytes=modifier.encode(direction,packet.bytes().to_vec())?;sink.send(WsMessage::Binary(bytes.into())).await.map_err(io::Error::other)?;}},
                     message=stream.next()=>{
@@ -830,18 +866,21 @@ impl WebSocketHandler for Handler {
                             if direction==Direction::ToServer&&!decided {
                                 decided=true;
                                 let url=uri.to_string();
-                                let is_city_host=uri.host().is_some_and(crate::nitro::is_habbocity_host);
                                 let configured=self.0.options.hotels.find(&url).is_some()
                                     ||(self.0.options.city_mode&&is_city_host)
                                     ||self.0.options.websocket_urls.iter().any(|u|{let url=url.split('?').next().unwrap_or(&url);match u.strip_suffix('*'){Some(prefix)=>url.starts_with(prefix),None=>u==url}});
-                                let hello=Packet::from_bytes(bytes.to_vec()).is_ok_and(|p|p.header()==4000);
+                                let parsed_first_header=Packet::from_bytes(bytes.to_vec()).ok().map(|p|p.header());
+                                let hello=parsed_first_header==Some(4000);
+                                let city_link_control=is_city_host&&parsed_first_header.is_some_and(|h|(7701..=7705).contains(&h));
+                                let city_plain=hello||city_link_control;
+                                let city_migration=is_city_host&&parsed_first_header==Some(7702);
                                 if self.0.options.detect_nitro&&(configured||hello){
                                     {
                                         let mut modifier=peer.modifier.lock().await;
                                         if matches!(*modifier,Modifier::HabboCityPending){
-                                            if hello {
+                                            if city_plain {
                                                 *modifier=Modifier::Plain;
-                                                let _=self.0.events.try_send(Event::Status(format!("HabboCity connected (Nitro plain): {url}")));
+                                                let _=self.0.events.try_send(Event::Status(format!("HabboCity connected (Nitro EvaWire): {url}")));
                                             } else {
                                                 let keys=self.0.city_keys.lock().map_err(|_|io::Error::other("HabboCity key lock poisoned"))?.clone().ok_or_else(||io::Error::other("HabboCity keys are unavailable; import keys or enable Nitro Helper, then reload (Ctrl+F5) https://habbocity.fr/hotel"))?;
                                                 *modifier=Modifier::HabboCity(Box::new(crate::nitro_city::HabboCity::new(keys)));
@@ -849,7 +888,7 @@ impl WebSocketHandler for Handler {
                                             }
                                         }
                                     }
-                                    self.0.activate(&peer,&uri).await?;
+                                    self.0.activate_with_migration(&peer,&uri,city_migration).await?;
                                 }
                             }
                             if peer.active.load(Ordering::Acquire){
@@ -858,7 +897,7 @@ impl WebSocketHandler for Handler {
                                 let mut modifier=peer.modifier.lock().await;
                                 match modifier.decode(direction,bytes.to_vec())? {
                                     Decoded::Bypass(bytes)=>sink.send(WsMessage::Binary(bytes.into())).await.map_err(io::Error::other)?,
-                                    Decoded::PacketBytes(bytes)=>for chunk in bytes.chunks(65536){decoder.push(chunk).map_err(io::Error::other)?;while let Some(packet)=decoder.next_packet().map_err(io::Error::other)?{if let Some(packet)=self.0.packet(direction,packet,false).await?{let bytes=modifier.encode(direction,packet.bytes().to_vec())?;sink.send(WsMessage::Binary(bytes.into())).await.map_err(io::Error::other)?;}}},
+                                    Decoded::PacketBytes(bytes)=>for chunk in bytes.chunks(65536){decoder.push(chunk).map_err(io::Error::other)?;while let Some(packet)=decoder.next_packet().map_err(io::Error::other)?{if is_city_host&&(7701..=7705).contains(&packet.header()){let bytes=modifier.encode(direction,packet.bytes().to_vec())?;sink.send(WsMessage::Binary(bytes.into())).await.map_err(io::Error::other)?;}else if let Some(packet)=self.0.packet(direction,packet,false).await?{let bytes=modifier.encode(direction,packet.bytes().to_vec())?;sink.send(WsMessage::Binary(bytes.into())).await.map_err(io::Error::other)?;}}},
                                 }
                             }else{sink.send(WsMessage::Binary(bytes)).await.map_err(io::Error::other)?;}
                         }else{let close=message.is_close();sink.send(message).await.map_err(io::Error::other)?;if close{break;}}
@@ -1265,6 +1304,7 @@ mod lifecycle_tests {
     fn city_mode_peer_starts_pending_and_intercepts_habbocity_wasm() {
         let mut options = WebOptions::new("127.0.0.1:0".parse().unwrap(), PathBuf::new());
         options.city_mode = true;
+        options.fetch_packet_info = false;
         let (events, _receiver) = mpsc::sync_channel(16);
         let state = Arc::new(Shared {
             options,
@@ -1282,7 +1322,7 @@ mod lifecycle_tests {
             client: "127.0.0.1:50000".parse().unwrap(),
             uri: "wss://habblet.habbocity.fr/".into(),
         };
-        // Does not fail eagerly when city_keys are absent (allows plain Nitro 4000 auto-detection).
+        // Does not fail eagerly when city_keys are absent (allows plain Nitro 4000 / 7701 auto-detection).
         let peer = state.peer(key).unwrap();
         assert!(matches!(
             *peer.modifier.blocking_lock(),
@@ -1290,13 +1330,34 @@ mod lifecycle_tests {
         ));
         let runtime = tokio::runtime::Runtime::new().unwrap();
         runtime.block_on(async {
-            let mut handler = Handler(state, 0, None);
+            let mut handler = Handler(state.clone(), 0, None);
             let req = Request::builder()
                 .uri("https://habbocity.fr/assets/city_crypto_v2.wasm")
                 .body(Body::empty())
                 .unwrap();
             let _ = handler.handle_asset_request(req).await;
             assert_eq!(handler.1, 2);
+
+            // Simulate HabboCity Link 1 activation and seamless Link 2 (header 7702) migration.
+            let uri: Uri = "wss://websocket.habbocity.fr/websocket/".parse().unwrap();
+            state
+                .activate_with_migration(&peer, &uri, false)
+                .await
+                .unwrap();
+            let peer2 = state
+                .peer(PeerKey {
+                    client: "127.0.0.1:50001".parse().unwrap(),
+                    uri: "wss://websocket.habbocity.fr/websocket/".into(),
+                })
+                .unwrap();
+            state
+                .activate_with_migration(&peer2, &uri, true)
+                .await
+                .unwrap();
+            assert!(peer2.ready.load(Ordering::Acquire));
+            // Closing Link 1 after migration must NOT disconnect active Link 2.
+            state.finish(&peer);
+            assert!(state.active().is_some_and(|a| a.key == peer2.key));
         });
     }
 

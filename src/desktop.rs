@@ -2759,20 +2759,10 @@ impl Desktop {
             "rust.browser.nitro_connection"
         }));
         if self.city {
-            ui.horizontal(|ui| {
-                ui.hyperlink_to(
-                    self.i18n.text("rust.browser.open_habbocity"),
-                    "https://habbocity.fr/hotel",
-                );
-                ui.add_space(8.0);
-                ui.add_enabled(
-                    self.relay.is_none(),
-                    egui::Checkbox::new(
-                        &mut self.allow_city_helper,
-                        self.i18n.text("rust.browser.city_helper"),
-                    ),
-                );
-            });
+            ui.hyperlink_to(
+                self.i18n.text("rust.browser.open_habbocity"),
+                "https://habbocity.fr/hotel",
+            );
         }
         ui.horizontal(|ui| {
             ui.label(self.i18n.text("rust.browser.local_address"));
