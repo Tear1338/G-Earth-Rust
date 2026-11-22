@@ -130,11 +130,97 @@ fn int_score(bytes: &[u8], pos: usize, scan: &mut usize) -> Result<f64> {
     })
 }
 
+fn predict_wedgie(packet: &Packet) -> Result<String> {
+    let bytes = packet.body();
+    if bytes.len() > MAX_BYTES {
+        return Err(error("packet exceeds structure prediction limit"));
+    }
+    let incoming = packet.format() == PacketFormat::WedgieIncoming;
+    let mut nodes = vec![None; bytes.len() + 1];
+    nodes[0] = Some(Node {
+        previous: 0,
+        code: '\0',
+        score: 0.0,
+    });
+    let mut scan = 0usize;
+    for pos in 0..bytes.len() {
+        let current = nodes[pos]
+            .expect("byte candidate reaches every position")
+            .score;
+        let mut update = |next: usize, code: char, probability: f64| {
+            if probability <= 0.0 {
+                return;
+            }
+            let score = current + probability.ln();
+            if nodes[next].is_none_or(|node| score > node.score) {
+                nodes[next] = Some(Node {
+                    previous: pos,
+                    code,
+                    score,
+                });
+            }
+        };
+        let b = bytes[pos];
+        if b == b'H' || b == b'I' {
+            update(pos + 1, 'B', if b == b'I' { 0.62 } else { 0.55 });
+        }
+        update(pos + 1, 'b', 0.35);
+        if let Ok((value, consumed)) = crate::encoding::decode_vl64(&bytes[pos..]) {
+            if crate::encoding::encode_vl64(value) == bytes[pos..pos + consumed] {
+                let offset = (pos + 2) as f64 / 1_000_000_000.0;
+                let base = if value == 0 || value == 1 {
+                    0.50
+                } else if (-1..=100_000).contains(&value) {
+                    0.85
+                } else {
+                    0.65
+                };
+                update(pos + consumed, 'i', (base - offset).max(0.01));
+            }
+        }
+        if incoming {
+            let limit = bytes.len().min(pos.saturating_add(4096));
+            if let Some(rel) = bytes[pos..limit].iter().position(|&byte| byte == 0x02) {
+                let s = &bytes[pos..pos + rel];
+                let raw_score = string_score(s, &mut scan)?;
+                // STX (0x02) is an explicit Shockwave string terminator; boost plausible text.
+                let score = if s.is_empty() {
+                    0.75
+                } else if raw_score > 0.2 {
+                    (raw_score * 0.98).min(0.99)
+                } else {
+                    raw_score * 0.5
+                };
+                update(pos + rel + 1, 's', score);
+            }
+        } else if bytes.len() - pos >= 2 {
+            if let Ok(len) = crate::encoding::decode_b64(&bytes[pos..pos + 2]) {
+                let len = len as usize;
+                if let Some(s) = bytes.get(pos + 2..pos.saturating_add(2).saturating_add(len)) {
+                    let score = (string_score(s, &mut scan)?
+                        - (pos + 2) as f64 / 1_000_000_000_000.0)
+                        .max(0.0);
+                    update(pos + 2 + len, 's', score);
+                }
+            }
+        }
+    }
+    let mut out = String::new();
+    let mut at = bytes.len();
+    while at > 0 {
+        let node = nodes[at].expect("complete byte path");
+        out.push(node.code);
+        at = node.previous;
+    }
+    Ok(out.chars().rev().collect())
+}
+
 /// Predicts primitive field codes. The Unity option enables its extra long/short heuristics.
+/// Supports EVA_WIRE as well as WEDGIE incoming/outgoing formats.
 /// The heuristic is intentionally bounded and returns an error for oversized or costly inputs.
 pub fn predict(packet: &Packet, unity: bool) -> Result<String> {
     if packet.format() != PacketFormat::EvaWire {
-        return Err(error("structure prediction requires EVA_WIRE"));
+        return predict_wedgie(packet);
     }
     let bytes = packet.body();
     if bytes.len() > MAX_BYTES {
@@ -511,5 +597,47 @@ mod tests {
         assert!(!Packet::new_with_format(PacketFormat::WedgieIncoming, 1)
             .unwrap()
             .structure_equals(""));
+    }
+    #[test]
+    fn predicts_wedgie_incoming_and_outgoing_and_round_trips() {
+        for format in [PacketFormat::WedgieIncoming, PacketFormat::WedgieOutgoing] {
+            let empty = Packet::new_with_format(format, 42).unwrap();
+            assert_eq!(predict(&empty, false).unwrap(), "");
+
+            let mut packet = Packet::new_with_format(format, 123).unwrap();
+            packet
+                .put_string("hello habbo")
+                .unwrap()
+                .put_i32(42)
+                .unwrap()
+                .put_bool(true)
+                .unwrap()
+                .put_i32(-7)
+                .unwrap();
+            let structure = predict(&packet, false).unwrap();
+            assert_eq!(structure, "siBi", "format={format:?}");
+            let expr = predicted_expression(&packet, false).unwrap();
+            assert_eq!(expr, "{h:123}{s:\"hello habbo\"}{i:42}{b:true}{i:-7}");
+            let reparsed = crate::expression::parse_with_format(&expr, format, None).unwrap();
+            assert_eq!(reparsed.bytes(), packet.bytes());
+        }
+
+        // Outgoing WEDGIE strings are length-prefixed, so a leading VL64 int is unambiguous.
+        let mut outgoing = Packet::new_with_format(PacketFormat::WedgieOutgoing, 123).unwrap();
+        outgoing
+            .put_i32(42)
+            .unwrap()
+            .put_string("hello habbo")
+            .unwrap()
+            .put_bool(true)
+            .unwrap();
+        assert_eq!(predict(&outgoing, false).unwrap(), "isB");
+        let expr = predicted_expression(&outgoing, false).unwrap();
+        assert_eq!(
+            crate::expression::parse_with_format(&expr, PacketFormat::WedgieOutgoing, None)
+                .unwrap()
+                .bytes(),
+            outgoing.bytes()
+        );
     }
 }

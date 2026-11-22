@@ -210,6 +210,10 @@ mod interface_tests {
             french.text("rust.settings.save"),
             "Enregistrer les paramètres"
         );
-        assert_eq!(I18n::new("de").text("rust.settings.save"), "Save settings");
+        assert_eq!(
+            I18n::new("de").text("rust.settings.save"),
+            "Einstellungen speichern"
+        );
+        assert_eq!(I18n::new("xx").text("rust.settings.save"), "Save settings");
     }
 }

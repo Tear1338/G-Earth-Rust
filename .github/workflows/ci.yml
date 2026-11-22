@@ -100,6 +100,41 @@ jobs:
       - run: cargo test --locked --features desktop,web --lib
       - run: cargo clippy --locked --features desktop,web --all-targets -- -D warnings
       - run: cargo build --locked --release --features desktop,web --bin gearth-desktop
+      - name: Package macOS desktop usage and license
+        run: |
+          mkdir -p package
+          cp target/release/gearth-desktop package/gearth-desktop
+          cp README.md LICENSE LICENSE-APACHE-MAVEN NOTICE-APACHE-MAVEN package/
+          cp resources/UNICODE-LICENSE.md package/UNICODE-LICENSE.md
+          cp -r docs package/docs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: G-Earth-Rust-macOS-development
+          path: package/
+  linux-desktop:
+    timeout-minutes: 20
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --locked --features desktop,web --bin gearth-desktop -- -D warnings
+      - run: cargo test --locked --features desktop,web --bin gearth-desktop window_icon_tests
+      - run: cargo build --locked --release --features desktop,web --bin gearth-desktop
+      - name: Package Linux desktop usage and license
+        run: |
+          mkdir -p package
+          cp target/release/gearth-desktop package/gearth-desktop
+          cp README.md LICENSE LICENSE-APACHE-MAVEN NOTICE-APACHE-MAVEN package/
+          cp resources/UNICODE-LICENSE.md package/UNICODE-LICENSE.md
+          cp -r docs package/docs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: G-Earth-Rust-Linux-development
+          path: package/
   java-compatibility:
     timeout-minutes: 10
     runs-on: ubuntu-latest
@@ -301,7 +336,7 @@ jobs:
           path: '*-benchmark.csv'
   publish-development:
     if: github.event_name == 'push' && contains(github.event.head_commit.message, '[build]')
-    needs: [core, desktop, java-compatibility, web, gpython, gpresets]
+    needs: [core, desktop, linux-desktop, macos, java-compatibility, web, gpython, gpresets]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -320,13 +355,15 @@ jobs:
           zip -qr ../../formatted-source-and-lockfile.zip .
           cd ../..
           cp artifacts/G-Earth-Rust-Windows-development/gearth-desktop.exe G-Earth-Rust-Windows.exe
+          cp artifacts/G-Earth-Rust-Linux-development/gearth-desktop G-Earth-Rust-Linux
+          cp artifacts/G-Earth-Rust-macOS-development/gearth-desktop G-Earth-Rust-macOS
           cp artifacts/G-Earth-Rust-Windows-development/UNICODE-LICENSE.md UNICODE-LICENSE.md
           cp artifacts/gearth-cli-windows-latest/gearth-rust.exe G-Earth-Rust-CLI-Windows.exe
           cp artifacts/gearth-cli-ubuntu-latest/gearth-rust gearth-cli-linux
           cp artifacts/packet-microbenchmark/*-benchmark.csv .
-          sha256sum G-Earth-Rust-Windows.exe G-Earth-Rust-CLI-Windows.exe gearth-cli-linux formatted-source-and-lockfile.zip UNICODE-LICENSE.md > SHA256SUMS.txt
-          printf '%s\n' 'Development build of the incomplete Rust port. Read docs/PARITY.md before use. This is not a complete replacement for G-Earth beta-29; real client/firewall validation, Chrome TLS emulation and exact UI parity remain outstanding. No performance superiority has been established.' > release-notes.txt
-          gh release create "$BUILD_TAG" --target "$BUILD_COMMIT" --title "Rust development build $BUILD_TAG" --prerelease --notes-file release-notes.txt G-Earth-Rust-Windows.exe G-Earth-Rust-CLI-Windows.exe gearth-cli-linux formatted-source-and-lockfile.zip UNICODE-LICENSE.md SHA256SUMS.txt java-benchmark.csv rust-benchmark.csv
+          sha256sum G-Earth-Rust-Windows.exe G-Earth-Rust-Linux G-Earth-Rust-macOS G-Earth-Rust-CLI-Windows.exe gearth-cli-linux formatted-source-and-lockfile.zip UNICODE-LICENSE.md > SHA256SUMS.txt
+          printf '%s\n' 'Development build of the Rust port (Windows, Linux, macOS). Read docs/PARITY.md before use. Live official-client sessions, Chrome TLS fingerprint emulation, and final release signing remain outstanding.' > release-notes.txt
+          gh release create "$BUILD_TAG" --target "$BUILD_COMMIT" --title "Rust development build $BUILD_TAG" --prerelease --notes-file release-notes.txt G-Earth-Rust-Windows.exe G-Earth-Rust-Linux G-Earth-Rust-macOS G-Earth-Rust-CLI-Windows.exe gearth-cli-linux formatted-source-and-lockfile.zip UNICODE-LICENSE.md SHA256SUMS.txt java-benchmark.csv rust-benchmark.csv
 
   web:
     env:

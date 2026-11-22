@@ -29,11 +29,13 @@ fn store_controls_have_french_labels_and_english_fallbacks() {
     let english = I18n::new("en");
     let french = I18n::new("fr");
     let german = I18n::new("de");
+    let unknown = I18n::new("xx");
     for name in keys {
         let key = format!("rust.store.{name}");
         assert_ne!(english.text(&key), key);
         assert_ne!(french.text(&key), english.text(&key), "untranslated {key}");
-        assert_eq!(german.text(&key), english.text(&key));
+        assert_ne!(german.text(&key), key, "missing German {key}");
+        assert_eq!(unknown.text(&key), english.text(&key));
     }
 }
 
@@ -99,14 +101,12 @@ fn connection_and_browser_controls_are_available_in_french_and_english() {
     ];
     let english = I18n::new("en");
     let french = I18n::new("fr");
+    let unknown = I18n::new("xx");
     for key in keys {
         assert_ne!(english.text(key), key, "missing English: {key}");
         assert_ne!(french.text(key), english.text(key), "missing French: {key}");
-        assert_eq!(
-            I18n::new("de").text(key),
-            english.text(key),
-            "fallback: {key}"
-        );
+        assert_ne!(I18n::new("de").text(key), key, "missing German: {key}");
+        assert_eq!(unknown.text(key), english.text(key), "fallback: {key}");
     }
     assert!(french
         .text("rust.browser.city_helper")
@@ -179,6 +179,10 @@ fn scheduler_and_tool_controls_have_translations_and_fallbacks() {
     );
     assert_eq!(
         I18n::new("de").text("rust.tools.copy_output"),
+        "Ausgabe kopieren"
+    );
+    assert_eq!(
+        I18n::new("xx").text("rust.tools.copy_output"),
         "Copy output"
     );
 }
@@ -214,6 +218,10 @@ fn extension_controls_have_french_labels_and_english_fallbacks() {
     );
     assert_eq!(
         I18n::new("de").text("rust.extensions.launch"),
+        "Erweiterung starten"
+    );
+    assert_eq!(
+        I18n::new("xx").text("rust.extensions.launch"),
         "Launch extension"
     );
 }
@@ -327,4 +335,43 @@ fn developer_confirmation_has_translated_choices_and_fallbacks() {
     let french = I18n::new("fr");
     assert_eq!(french.text("rust.confirmation.yes"), "Oui");
     assert_eq!(french.text("rust.confirmation.no"), "Non");
+}
+
+#[test]
+fn every_supported_language_defines_every_rust_ui_key() {
+    let english = parse_properties(include_str!("../locales/messages_en.properties"));
+    let rust_keys: Vec<&str> = english
+        .keys()
+        .filter(|key| key.starts_with("rust."))
+        .map(String::as_str)
+        .collect();
+    assert!(rust_keys.len() >= 179);
+    let raw_bundles = [
+        ("de", include_str!("../locales/messages_de.properties")),
+        ("es", include_str!("../locales/messages_es.properties")),
+        ("fi", include_str!("../locales/messages_fi.properties")),
+        ("fr", include_str!("../locales/messages_fr.properties")),
+        ("it", include_str!("../locales/messages_it.properties")),
+        ("nl", include_str!("../locales/messages_nl.properties")),
+        ("pt", include_str!("../locales/messages_pt.properties")),
+        ("tr", include_str!("../locales/messages_tr.properties")),
+    ];
+    for (lang, content) in raw_bundles {
+        let map = parse_properties(content);
+        for key in &rust_keys {
+            assert!(
+                map.get(*key).is_some_and(|value| !value.is_empty()),
+                "locale {lang} missing {key}"
+            );
+        }
+        assert!(
+            map["rust.browser.city_helper"].contains("https://nitro.sulek.dev/habbocity"),
+            "locale {lang} mangled city_helper URL"
+        );
+        assert!(
+            map["rust.connection.coalesced_errors"].contains("{count}")
+                && map["rust.connection.coalesced_errors"].contains("{error}"),
+            "locale {lang} missing placeholders in coalesced_errors"
+        );
+    }
 }
