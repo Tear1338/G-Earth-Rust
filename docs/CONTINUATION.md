@@ -1,5 +1,9 @@
 # Continuation state
 
+## Next: validate direct Java string replacement
+
+Workspace and desktop/web checks pass for the shared Java string replacement helper. Commit and push, rebuild release and inspect CI; check the prior G-Presets rerun after a Maven HTTP 403. Continue `\b{g}`, size bounds, platform support and user-run live testing.
+
 ## Next: validate bulk cursor retention
 
 Workspace and desktop/web checks and the expanded read-safety test pass for retaining a Java bulk-replacement cursor beyond the new packet end. Commit and push, then rebuild release and inspect CI. Continue other cursor/size differences, `\b{g}`, macOS support and user-run client tests.

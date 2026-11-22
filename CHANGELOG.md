@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — Java direct string compatibility
+
+- Match beta-29 direct string cursor retention and empty-field growth behavior in the explicit Java API.
+
 ## Unreleased — Java bulk cursor
 
 - Retain the Java read cursor after a shrinking bulk string replacement, with checked out-of-range reads.

@@ -1,5 +1,9 @@
 # Compatibility with 1.5.4-beta-29
 
+## Java direct string mutation evidence
+
+Eighty beta-29 direct replacement cases cover empty/nonempty fields, varied following fields and Unicode replacements; additional cases verify cursor retention. Oversized data, other Java APIs and live compatibility remain unverified.
+
 ## Java bulk string cursor evidence
 
 A beta-29 packet oracle verifies that bulk replacement retains the original cursor after shrinking below it. Rust protects subsequent checked reads and reports zero remaining bytes; other Java cursor edge cases are not covered by this change.

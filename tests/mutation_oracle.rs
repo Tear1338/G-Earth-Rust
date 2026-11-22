@@ -3867,6 +3867,9 @@ fn mutations_match_original_java_packets_and_cursor() {
         .put_string("a")
         .unwrap();
     empty_growth.set_cursor(7).unwrap();
+    let mut java_growth = empty_growth.clone();
+    java_growth.replace_string_java(6, "x").unwrap();
+    check("empty_growth_original", &java_growth);
     empty_growth.replace_string(6, "x").unwrap();
     let (java_hex, _) = expected["empty_growth_original"].split_once(',').unwrap();
     assert_ne!(
@@ -3876,6 +3879,35 @@ fn mutations_match_original_java_packets_and_cursor() {
     empty_growth.reset();
     assert_eq!(empty_growth.read_string().unwrap(), "x");
     assert_eq!(empty_growth.read_string().unwrap(), "a");
+    let mut direct_cursor = Packet::new(5);
+    direct_cursor
+        .put_string("abcdefgh")
+        .unwrap()
+        .put_i32(42)
+        .unwrap();
+    direct_cursor
+        .set_cursor(direct_cursor.bytes().len())
+        .unwrap();
+    direct_cursor.replace_string_java(6, "x").unwrap();
+    check("direct_string_java_cursor_past_end", &direct_cursor);
+    assert_eq!(direct_cursor.remaining(), 0);
+    assert!(direct_cursor.read_u8().is_err());
+    let direct_old = ["", "a", "abc", "é"];
+    let direct_new = ["", "x", "abc", "雪", "🐱🐱"];
+    let direct_tail = ["", "a", "abc", "é"];
+    for i in 0..direct_old.len() * direct_new.len() * direct_tail.len() {
+        let mut sample = Packet::new(5);
+        sample
+            .put_string(direct_old[i % direct_old.len()])
+            .unwrap()
+            .put_string(direct_tail[(i / direct_old.len()) % direct_tail.len()])
+            .unwrap();
+        sample.set_cursor(7).unwrap();
+        sample
+            .replace_string_java(6, direct_new[i / (direct_old.len() * direct_tail.len())])
+            .unwrap();
+        check(&format!("direct_string_java_{i}"), &sample);
+    }
     let mut utf8 = Packet::new(6);
     utf8.put_utf8("café 🐱")
         .unwrap()

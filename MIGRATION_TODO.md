@@ -1,5 +1,11 @@
 # Migration tasks
 
+## Latest: Java direct string mutation
+
+- [x] Reproduce beta-29 direct empty-string growth and cursor retention, shared with Java bulk replacement; compare 80 packet cases.
+- [x] Complete workspace and desktop/web checks.
+- [ ] Rebuild release, inspect CI and check the prior G-Presets retry. Continue remaining Java cursor and size differences.
+
 ## Latest: Java bulk replacement cursor
 
 - [x] Match beta-29 cursor retention after bulk string shrink and protect checked reads beyond the end.

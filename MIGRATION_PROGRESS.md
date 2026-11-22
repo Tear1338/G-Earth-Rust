@@ -1,5 +1,9 @@
 # G-Earth Rust migration progress
 
+## Java direct string mutation
+
+The explicit Java direct string replacement now retains its cursor and reproduces Java’s empty-field growth quirk, while the strict replacement API remains unchanged. The shared encoded helper is also used by Java bulk replacement. Eighty direct beta-29 combinations plus cursor and earlier bulk fixtures pass the Java mutation oracle; 47 mutation tests pass. Workspace/all-targets tests, 169 desktop/web library tests (7 ignored), desktop/web Clippy and debug build passed. The prior commit `fd140aa` passed the Windows release CI job; its G-Presets job initially failed when Maven returned HTTP 403 and is being rerun. Java work/size limits and other cursor cases, `\b{g}`, macOS, and live clients/protocols/extensions remain open.
+
 ## Java bulk replacement cursor
 
 The explicit Java bulk-string replacement now preserves `readIndex` even if shrinking makes it exceed the packet length, as confirmed against beta-29. Rust `remaining()` saturates at zero and checked reads fail safely until the cursor is reset. The Java oracle and 46 mutation tests passed; workspace/all-targets tests, 169 desktop/web library tests (7 ignored), desktop/web Clippy, debug build and expanded read-safety test passed. Windows desktop/web release and CI run 44964776832 passed at preceding commit `1f8e6ed548216bbdbdfaa8dad85a552903857b52`. Work and size bounds, other Java cursor cases, `\b{g}`, macOS and real-client compatibility remain open.
@@ -765,4 +769,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Commit and push the validated Java bulk-replacement cursor change, then rebuild Windows desktop/web release and inspect CI. Continue other Java cursor/size differences, Flash scheduling and `Matcher.last` for `\b{g}`. The user handles live tests; clients, protocols and extensions remain unverified.
+Commit and push the validated shared Java direct string replacement helper, then rebuild Windows desktop/web release and inspect CI; check the G-Presets rerun for `fd140aa`. Continue Java size differences, Flash scheduling and `Matcher.last` for `\b{g}`. The user handles live tests; clients, protocols and extensions remain unverified.

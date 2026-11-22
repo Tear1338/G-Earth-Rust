@@ -275,6 +275,22 @@ fn java_bulk_replacement_preserves_empty_growth_quirk() {
 }
 
 #[test]
+fn java_direct_string_mutation_preserves_java_growth_and_cursor() {
+    let mut growth = Packet::new(5);
+    growth.put_string("").unwrap().put_string("a").unwrap();
+    growth.replace_string_java(6, "x").unwrap();
+    assert_eq!(&growth.bytes()[6..], &[0, 1, b'x', 1, 1, b'a']);
+    let mut shrink = Packet::new(5);
+    shrink.put_string("abcdefgh").unwrap().put_i32(42).unwrap();
+    let original_end = shrink.bytes().len();
+    shrink.set_cursor(original_end).unwrap();
+    shrink.replace_string_java(6, "x").unwrap();
+    assert_eq!(shrink.cursor(), original_end);
+    assert_eq!(shrink.remaining(), 0);
+    assert!(shrink.read_i32().is_err());
+}
+
+#[test]
 fn java_bulk_shrink_retains_cursor_and_reads_fail_safely() {
     let mut packet = Packet::new(5);
     packet.put_string("abcdefgh").unwrap().put_i32(42).unwrap();

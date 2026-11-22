@@ -4463,7 +4463,38 @@ impl Packet {
         if value.chars().count() > usize::from(u16::MAX) {
             return Err(error("short string too long"));
         }
-        self.replace_short_bytes(offset, &latin1_encode_java(value))
+        self.replace_string_java_bytes(offset, &latin1_encode_java(value))
+    }
+    fn replace_string_java_bytes(&mut self, offset: usize, value: &[u8]) -> Result<&mut Self> {
+        let prefix_end = offset
+            .checked_add(2)
+            .ok_or_else(|| error("offset overflow"))?;
+        let prefix = self
+            .bytes
+            .get(offset..prefix_end)
+            .ok_or_else(|| error("replacement outside body"))?;
+        let old_len = u16::from_be_bytes(prefix.try_into().unwrap()) as usize;
+        let old_end = prefix_end
+            .checked_add(old_len)
+            .ok_or_else(|| error("offset overflow"))?;
+        if old_end > self.bytes.len() {
+            return Err(error("truncated packet field"));
+        }
+        let suffix = prefix_end
+            .checked_add(value.len())
+            .ok_or_else(|| error("length overflow"))?;
+        let java_byte = if old_len == 0 && !value.is_empty() && old_end < self.bytes.len() {
+            Some(self.bytes.get(suffix).copied().unwrap_or(0))
+        } else {
+            None
+        };
+        let cursor = self.cursor;
+        self.replace_short_bytes(offset, value)?;
+        if let Some(byte) = java_byte {
+            self.bytes[suffix] = byte;
+        }
+        self.cursor = cursor;
+        Ok(self)
     }
     pub fn replace_utf16be(&mut self, offset: usize, value: &str) -> Result<&mut Self> {
         self.ensure_eva()?;
@@ -4625,19 +4656,7 @@ impl Packet {
                         .filter(|n| *n <= MAX_FRAME * 16)
                         .ok_or_else(|| error("bulk string replacement work limit exceeded"))?;
                 }
-                // When replacing an empty string, Java's growing copy loop
-                // leaves the first suffix byte at its old array position.
-                let suffix = offset + 2 + new_bytes.len();
-                let java_byte =
-                    if old.is_empty() && !new_bytes.is_empty() && end < candidate.bytes.len() {
-                        Some(candidate.bytes.get(suffix).copied().unwrap_or(0))
-                    } else {
-                        None
-                    };
-                candidate.replace_short_bytes(offset, &new_bytes)?;
-                if let Some(byte) = java_byte {
-                    candidate.bytes[suffix] = byte;
-                }
+                candidate.replace_string_java_bytes(offset, &new_bytes)?;
                 offset = offset.saturating_add(2).saturating_add(new_units);
                 count += 1;
                 if limit == Some(count) {

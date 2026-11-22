@@ -1,5 +1,9 @@
 # Rust migration architecture
 
+## Java direct string mutation
+
+An encoded compatibility helper shared by direct and bulk Java string replacements preserves the read cursor and reproduces Java’s empty-field growth quirk. The strict string replacement continues to clamp and avoid the quirk.
+
 ## Java-compatible cursor after bulk replacement
 
 The Java bulk string method retains its original cursor even when the packet shrinks below it. Remaining-byte calculation saturates, and EVA reads use bounds checks; the stricter existing mutation APIs keep their previous cursor behavior.

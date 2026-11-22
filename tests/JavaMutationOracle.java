@@ -2025,6 +2025,22 @@ public class JavaMutationOracle {
         emptyGrowth.setReadIndex(7);
         emptyGrowth.replaceString(6, "x");
         emit("empty_growth_original", emptyGrowth);
+        HPacket directCursor = new HPacket(5);
+        directCursor.appendString("abcdefgh").appendInt(42);
+        directCursor.setReadIndex(directCursor.toBytes().length);
+        directCursor.replaceString(6, "x");
+        emit("direct_string_java_cursor_past_end", directCursor);
+        String[] directOld = {"", "a", "abc", "é"};
+        String[] directNew = {"", "x", "abc", "雪", "🐱🐱"};
+        String[] directTail = {"", "a", "abc", "é"};
+        for (int i = 0; i < directOld.length * directNew.length * directTail.length; i++) {
+            HPacket sample = new HPacket(5);
+            sample.appendString(directOld[i % directOld.length]);
+            sample.appendString(directTail[(i / directOld.length) % directTail.length]);
+            sample.setReadIndex(7);
+            sample.replaceString(6, directNew[i / (directOld.length * directTail.length)]);
+            emit("direct_string_java_" + i, sample);
+        }
         HPacket utf8 = new HPacket(6);
         utf8.appendString("café 🐱", StandardCharsets.UTF_8).appendLongString("水🪶", StandardCharsets.UTF_8);
         emit("utf8", utf8);
