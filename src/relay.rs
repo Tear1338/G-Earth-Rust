@@ -1256,6 +1256,31 @@ fn run_session(
             }
             for (packet, encrypted) in packets {
                 progress = true;
+                if flash.is_none()
+                    && shockwave.is_none()
+                    && safety_revision.is_empty()
+                    && direction == Direction::ToServer
+                    && packet.header() == 4000
+                {
+                    let mut probe = packet.clone();
+                    if let (Ok(version), Ok(identifier)) =
+                        (probe.read_string(), probe.read_string())
+                    {
+                        if probe.remaining() == 0
+                            && !version.is_empty()
+                            && version.len() <= 1024
+                            && identifier.len() <= 1024
+                            && version.bytes().all(|b| (0x20..=0x7e).contains(&b))
+                            && identifier.bytes().all(|b| (0x20..=0x7e).contains(&b))
+                        {
+                            safety_revision.clone_from(&version);
+                            let _ = events.try_send(Event::Identified {
+                                version,
+                                identifier,
+                            });
+                        }
+                    }
+                }
                 if let Some(safety) = &options.packet_safety {
                     if let Ok(mut safety) = safety.lock() {
                         safety.observe(&safety_revision, direction, packet.header());

@@ -14,7 +14,10 @@ impl Drop for TestProcess {
     }
 }
 
-fn launch(developer: bool) -> (TestProcess, TcpStream, TcpStream) {
+fn launch_with_revision(
+    revision: Option<&str>,
+    developer: bool,
+) -> (TestProcess, TcpStream, TcpStream) {
     let remote = TcpListener::bind("127.0.0.1:0").unwrap();
     let local = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = local.local_addr().unwrap();
@@ -25,12 +28,13 @@ fn launch(developer: bool) -> (TestProcess, TcpStream, TcpStream) {
             "relay",
             &address.to_string(),
             &remote.local_addr().unwrap().to_string(),
-            "--revision",
-            "test-revision",
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    if let Some(revision) = revision {
+        command.args(["--revision", revision]);
+    }
     if developer {
         command.arg("--developer");
     }
@@ -54,6 +58,10 @@ fn launch(developer: bool) -> (TestProcess, TcpStream, TcpStream) {
         .set_read_timeout(Some(Duration::from_secs(3)))
         .unwrap();
     (process, client, server)
+}
+
+fn launch(developer: bool) -> (TestProcess, TcpStream, TcpStream) {
+    launch_with_revision(Some("test-revision"), developer)
 }
 
 #[test]
@@ -85,4 +93,43 @@ fn cli_checks_observed_ids_by_direction_and_allows_developer_override() {
     let (mut process, _client, mut server) = launch(true);
     writeln!(process.0.stdin.as_mut().unwrap(), "server {{h:322}}").unwrap();
     assert_eq!(read_frame(&mut server).unwrap().header(), 322);
+}
+
+#[test]
+fn cli_detects_flash_revision_from_hello_packet_for_safety_checks() {
+    let (mut process, mut client, mut server) = launch_with_revision(None, false);
+    let mut hello = Packet::new(4000);
+    hello
+        .put_string("PRODUCTION-202611220000-123456789")
+        .unwrap()
+        .put_string("FLASH")
+        .unwrap();
+    write_frame(&mut client, &hello).unwrap();
+    assert_eq!(read_frame(&mut server).unwrap().header(), 4000);
+
+    let mut stdout = BufReader::new(process.0.stdout.take().unwrap());
+    let mut line = String::new();
+    loop {
+        line.clear();
+        assert_ne!(stdout.read_line(&mut line).unwrap(), 0);
+        if line.contains("Identified") && line.contains("PRODUCTION-202611220000-123456789") {
+            break;
+        }
+    }
+    process.0.stdout = Some(stdout.into_inner());
+
+    let input = process.0.stdin.as_mut().unwrap();
+    writeln!(input, "server {{h:777}}").unwrap();
+    let mut errors = BufReader::new(process.0.stderr.take().unwrap());
+    let mut error = String::new();
+    errors.read_line(&mut error).unwrap();
+    assert!(
+        error.contains("packet ID 777 has not been observed"),
+        "{error}"
+    );
+
+    write_frame(&mut client, &Packet::new(777)).unwrap();
+    assert_eq!(read_frame(&mut server).unwrap().header(), 777);
+    writeln!(input, "server {{h:777}}").unwrap();
+    assert_eq!(read_frame(&mut server).unwrap().header(), 777);
 }

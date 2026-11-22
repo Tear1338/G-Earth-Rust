@@ -425,10 +425,15 @@ impl Settings {
             }
         }
         if let Some(theme) = value["theme"].as_str() {
-            // ThemeFactory falls back to the light G-Earth theme for unknown
-            // titles. Tanji is also light; its distinct appearance is not ported.
+            // ThemeFactory supports G-Earth, G-Earth Dark, and Tanji, falling back to G-Earth.
+            let canonical = match theme {
+                "G-Earth Dark" => "G-Earth Dark",
+                "Tanji" => "Tanji",
+                _ => "G-Earth",
+            };
+            self.values.insert("theme".into(), canonical.into());
             self.booleans
-                .insert("dark_mode".into(), theme == "G-Earth Dark");
+                .insert("dark_mode".into(), canonical == "G-Earth Dark");
         }
         if let (Some(host), Some(port)) = (
             value["last_connection_settings"]["host"].as_str(),
@@ -593,15 +598,21 @@ mod tests {
                 .unwrap();
             let restored = Settings::from_json(settings.to_json()).unwrap();
             assert_eq!(restored.get("language"), locale);
+            assert_eq!(restored.get("theme"), "G-Earth Dark");
             assert_eq!(restored.booleans.get("dark_mode"), Some(&true));
             assert_eq!(restored.extra["legacy_java_cache"]["language"], original);
         }
-        for theme in ["G-Earth", "Tanji", "unknown"] {
+        for (theme, expected) in [
+            ("G-Earth", "G-Earth"),
+            ("Tanji", "Tanji"),
+            ("unknown", "G-Earth"),
+        ] {
             let mut settings = Settings::default();
             settings.booleans.insert("dark_mode".into(), true);
             settings
                 .import_java_cache(serde_json::json!({"theme": theme}))
                 .unwrap();
+            assert_eq!(settings.get("theme"), expected);
             assert_eq!(settings.booleans.get("dark_mode"), Some(&false));
         }
     }
@@ -610,11 +621,13 @@ mod tests {
     fn malformed_java_language_and_theme_do_not_override_preferences() {
         let mut settings = Settings::default();
         settings.values.insert("language".into(), "fr".into());
+        settings.values.insert("theme".into(), "Tanji".into());
         settings.booleans.insert("dark_mode".into(), true);
         settings
             .import_java_cache(serde_json::json!({"language": "UNKNOWN", "theme": 12}))
             .unwrap();
         assert_eq!(settings.get("language"), "fr");
+        assert_eq!(settings.get("theme"), "Tanji");
         assert_eq!(settings.booleans.get("dark_mode"), Some(&true));
     }
 

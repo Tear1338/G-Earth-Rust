@@ -78,6 +78,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
             });
+            let mut active_revision = revision.clone();
             loop {
                 for event in events.try_iter().take(256) {
                     match event {
@@ -88,6 +89,21 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                             if m.blocked { "BLOCKED" } else { "" },
                             expression::to_lossless_expression(&m.packet)
                         ),
+                        Event::Identified {
+                            version,
+                            identifier,
+                        } => {
+                            if revision.is_none() && !version.is_empty() {
+                                active_revision = Some(version.clone());
+                            }
+                            println!(
+                                "Identified {{ version: {version:?}, identifier: {identifier:?} }}"
+                            );
+                        }
+                        Event::Disconnected => {
+                            active_revision.clone_from(&revision);
+                            println!("Disconnected");
+                        }
                         other => println!("{other:?}"),
                     }
                 }
@@ -107,7 +123,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
                                 Ok(p) => {
                                     let allowed = safety.lock().is_ok_and(|registry| {
                                         registry.may_send(
-                                            revision.as_deref(),
+                                            active_revision.as_deref(),
                                             direction,
                                             p.header(),
                                             developer_mode,

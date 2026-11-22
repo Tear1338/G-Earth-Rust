@@ -145,6 +145,73 @@ fn browse_path(
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AppTheme {
+    GEarth,
+    GEarthDark,
+    Tanji,
+}
+
+impl AppTheme {
+    const ALL: [Self; 3] = [Self::GEarth, Self::GEarthDark, Self::Tanji];
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::GEarth => "G-Earth",
+            Self::GEarthDark => "G-Earth Dark",
+            Self::Tanji => "Tanji",
+        }
+    }
+
+    fn from_settings(theme: Option<&str>, dark_mode: bool) -> Self {
+        match theme {
+            Some("G-Earth Dark") => Self::GEarthDark,
+            Some("Tanji") => Self::Tanji,
+            Some("G-Earth") => Self::GEarth,
+            _ if dark_mode => Self::GEarthDark,
+            _ => Self::GEarth,
+        }
+    }
+
+    fn is_dark(self) -> bool {
+        matches!(self, Self::GEarthDark)
+    }
+
+    fn visuals(self) -> egui::Visuals {
+        match self {
+            Self::GEarth => egui::Visuals::light(),
+            Self::GEarthDark => egui::Visuals::dark(),
+            Self::Tanji => {
+                let mut visuals = egui::Visuals::light();
+                let steel_bg = egui::Color32::from_rgb(241, 246, 251);
+                let panel_bg = egui::Color32::from_rgb(230, 238, 246);
+                let accent = egui::Color32::from_rgb(30, 111, 168);
+                let accent_soft = egui::Color32::from_rgb(197, 222, 240);
+                let border = egui::Color32::from_rgb(154, 181, 204);
+                let text = egui::Color32::from_rgb(20, 34, 48);
+                visuals.window_fill = steel_bg;
+                visuals.panel_fill = panel_bg;
+                visuals.extreme_bg_color = egui::Color32::from_rgb(250, 252, 255);
+                visuals.faint_bg_color = egui::Color32::from_rgb(222, 232, 242);
+                visuals.override_text_color = Some(text);
+                visuals.hyperlink_color = accent;
+                visuals.selection.bg_fill = accent_soft;
+                visuals.selection.stroke = egui::Stroke::new(1.0_f32, accent);
+                visuals.window_stroke = egui::Stroke::new(1.0_f32, border);
+                visuals.widgets.noninteractive.bg_fill = panel_bg;
+                visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0_f32, border);
+                visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(218, 230, 241);
+                visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0_f32, border);
+                visuals.widgets.hovered.bg_fill = accent_soft;
+                visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0_f32, accent);
+                visuals.widgets.active.bg_fill = accent;
+                visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0_f32, egui::Color32::WHITE);
+                visuals
+            }
+        }
+    }
+}
+
 fn with_gearth_icon(viewport: egui::ViewportBuilder) -> egui::ViewportBuilder {
     static ICON: OnceLock<Option<Arc<egui::IconData>>> = OnceLock::new();
     match ICON.get_or_init(|| {
@@ -172,6 +239,30 @@ mod window_icon_tests {
         assert_eq!((main.width, main.height), (64, 64));
         assert_eq!(main.rgba.len(), 64 * 64 * 4);
         assert!(Arc::ptr_eq(&main, &logger));
+    }
+
+    #[test]
+    fn themes_resolve_tanji_and_preserve_legacy_dark_mode_fallback() {
+        assert_eq!(
+            AppTheme::from_settings(Some("Tanji"), false),
+            AppTheme::Tanji
+        );
+        assert_eq!(
+            AppTheme::from_settings(Some("G-Earth Dark"), false),
+            AppTheme::GEarthDark
+        );
+        assert_eq!(
+            AppTheme::from_settings(Some("G-Earth"), true),
+            AppTheme::GEarth
+        );
+        assert_eq!(AppTheme::from_settings(None, true), AppTheme::GEarthDark);
+        assert_eq!(AppTheme::from_settings(None, false), AppTheme::GEarth);
+        assert_ne!(
+            AppTheme::Tanji.visuals().panel_fill,
+            AppTheme::GEarth.visuals().panel_fill
+        );
+        assert!(!AppTheme::Tanji.visuals().dark_mode);
+        assert!(AppTheme::GEarthDark.visuals().dark_mode);
     }
 }
 
@@ -309,7 +400,7 @@ struct Desktop {
     settings_path: PathBuf,
     settings_loaded: bool,
     legacy_cache_path: String,
-    dark_mode: bool,
+    theme: AppTheme,
     language: String,
     i18n: I18n,
     notepad: String,
@@ -985,7 +1076,7 @@ impl Default for Desktop {
             settings_path: Settings::default_path(),
             settings_loaded: false,
             legacy_cache_path: String::new(),
-            dark_mode: false,
+            theme: AppTheme::GEarth,
             language: "en".into(),
             i18n: I18n::new("en"),
             notepad: String::new(),
@@ -3877,11 +3968,7 @@ fn direction_selector(ui: &mut egui::Ui, direction: &mut Direction, i18n: &I18n)
 }
 impl eframe::App for Desktop {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
-        ctx.set_visuals(if self.dark_mode {
-            egui::Visuals::dark()
-        } else {
-            egui::Visuals::light()
-        });
+        ctx.set_visuals(self.theme.visuals());
         self.poll();
         egui::TopBottomPanel::top("tabs").show(ctx, |ui| {
             if self.developer_mode_confirmation {
@@ -3896,7 +3983,13 @@ impl eframe::App for Desktop {
                 if ui.button(self.i18n.text("rust.settings.reload")).clicked() {
                     self.load_settings();
                 }
-                ui.checkbox(&mut self.dark_mode, self.i18n.text("rust.settings.dark"));
+                egui::ComboBox::from_id_salt("theme")
+                    .selected_text(self.theme.name())
+                    .show_ui(ui, |ui| {
+                        for theme in AppTheme::ALL {
+                            ui.selectable_value(&mut self.theme, theme, theme.name());
+                        }
+                    });
                 let before = self.language.clone();
                 egui::ComboBox::from_id_salt("language")
                     .selected_text(&self.language)
@@ -4332,12 +4425,16 @@ impl Desktop {
         if self.nitro {
             self.origins = false;
         }
-        self.dark_mode = self
+        let legacy_dark = self
             .settings
             .booleans
             .get("dark_mode")
             .copied()
             .unwrap_or(false);
+        self.theme = AppTheme::from_settings(
+            self.settings.values.get("theme").map(String::as_str),
+            legacy_dark,
+        );
         self.outgoing = self
             .settings
             .booleans
@@ -4387,12 +4484,15 @@ impl Desktop {
         ] {
             self.settings.values.insert(key.into(), value.clone());
         }
+        self.settings
+            .values
+            .insert("theme".into(), self.theme.name().into());
         self.settings.booleans.extend([
             ("socks_enabled".into(), self.socks_enabled),
             ("origins".into(), self.origins),
             ("nitro".into(), self.nitro),
             ("unity".into(), self.unity),
-            ("dark_mode".into(), self.dark_mode),
+            ("dark_mode".into(), self.theme.is_dark()),
             ("outgoing".into(), self.outgoing),
             ("incoming".into(), self.incoming),
             ("logger_additional".into(), self.logger_additional),
