@@ -38,6 +38,48 @@ pub struct ScanResult {
     /// Address to resume an incomplete scan; None when the scan reached its end.
     pub next_address: Option<usize>,
 }
+/// Returns `true` when the current process has administrator/root privileges
+/// (beta-29 `AdminValidator.isAdmin()` parity).
+pub fn is_elevated() -> bool {
+    #[cfg(windows)]
+    {
+        use std::mem::size_of;
+        use windows_sys::Win32::{
+            Foundation::{CloseHandle, HANDLE},
+            Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY},
+            System::Threading::{GetCurrentProcess, OpenProcessToken},
+        };
+        let mut token: HANDLE = std::ptr::null_mut();
+        let opened = unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token) };
+        if opened == 0 || token.is_null() {
+            return false;
+        }
+        let mut elevation = TOKEN_ELEVATION { TokenIsElevated: 0 };
+        let mut len = 0u32;
+        let ok = unsafe {
+            GetTokenInformation(
+                token,
+                TokenElevation,
+                (&mut elevation as *mut TOKEN_ELEVATION).cast(),
+                size_of::<TOKEN_ELEVATION>() as u32,
+                &mut len,
+            )
+        };
+        unsafe {
+            CloseHandle(token);
+        }
+        ok != 0 && elevation.TokenIsElevated != 0
+    }
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    {
+        unsafe { libc::geteuid() == 0 }
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
+    {
+        true
+    }
+}
+
 pub fn tcp_owner(
     local: std::net::SocketAddr,
     remote: std::net::SocketAddr,

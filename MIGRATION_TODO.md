@@ -1,5 +1,12 @@
 # Migration tasks
 
+## Latest: Final Beta-29 Parity Polish (AdminValidator, Settings Persistence, Tools/Scheduler/Extensions)
+
+- [x] Add cross-platform `gearth_platform::is_elevated()` + localized `alert.adminvalidator.content` modal for unprivileged Flash/Origins connections.
+- [x] Persist `auto_detect`, `attachment_host`, `connection_port`, and `always_on_top`, and reset hidden Advanced flags when Advanced is unchecked.
+- [x] Add live Tools `Packet <-> Expression` validation + `Ctrl+Enter`, Scheduler default example packet + toggle-off edit, and startup pre-population of installed extensions in `.tableRowInactive`.
+- [ ] External / user-run boundary only: live official-client end-to-end sessions (Flash AIR, Origins, Unity WebGL, Nitro, real G-Presets/QX Scripter/G-Python gameplay), optional Chrome TLS JA3/JA4 impersonation (BoringSSL) if a live hotel rejects `rustls`, OpenJDK internal stateful `\b{g}` quirk, and paid OS code-signing certificates.
+
 ## Latest: Beta-29 Inactive Extension Rows, Confirmation Dialogs, Colorized Console, Store UX & Scheduler/Injection Parity
 
 - [x] Keep disconnected installed extensions as inactive rows with **Restart (`ButtonReload.png`)** + **Uninstall (`ButtonDelete.png`)** and beta-29 confirmation dialog (`Do not ask again`), plus modal approval popup for unknown external extensions (`Remember my choice`).

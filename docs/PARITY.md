@@ -1,5 +1,9 @@
 # Compatibility with 1.5.4-beta-29
 
+## Final Beta-29 Parity Polish
+
+- Added `gearth_platform::is_elevated()` (`TokenElevation` on Windows, `geteuid() == 0` on Unix) with the localized `alert.adminvalidator.content` warning modal, persisted `auto_detect`/`attachment_host`/`connection_port`/`always_on_top`, matched `ExtraController` Advanced-unchecked reset, added live Tools `Packet <-> Expression` validation + `Ctrl+Enter`, Scheduler default example packet + toggle-off edit, and startup pre-population of all installed extensions in the Extensions table.
+
 ## Beta-29 Inactive Extension Rows, Confirmation Dialogs, Colorized Console, Store UX & Scheduler/Injection Parity
 
 - Disconnected installed extensions remain listed in `.tableRowInactive` with **Restart (`ButtonReload.png`)** and **Uninstall (`ButtonDelete.png`)** actions guarded by the localized beta-29 confirmation dialog (`Do not ask again` persisted); unknown external extensions open the localized approval popup (`Remember my choice`).

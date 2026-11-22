@@ -352,6 +352,8 @@ enum Tab {
 struct Desktop {
     tab: Tab,
     always_on_top: bool,
+    always_on_top_applied: bool,
+    admin_warning_open: bool,
     listen: String,
     remote: String,
     status: String,
@@ -1078,6 +1080,8 @@ impl Default for Desktop {
         let mut desktop = Self {
             tab: Tab::Connection,
             always_on_top: false,
+            always_on_top_applied: false,
+            admin_warning_open: false,
             python_console: gpython_ui::PythonUi::default(),
             listen: "127.0.0.1:1234".into(),
             remote: "".into(),
@@ -1123,7 +1127,11 @@ impl Default for Desktop {
             expression: "{h:123}{i:42}{s:\"hello\"}".into(),
             direction: Direction::ToServer,
             injection_history: InjectionHistory::default(),
-            schedule_draft: ScheduleDraft::default(),
+            schedule_draft: ScheduleDraft {
+                expression: r#"{in:Chat}{i:-1}{s:"Frank loves G-Earth"}{i:0}{i:33}{i:0}{i:0}"#
+                    .into(),
+                direction: Direction::ToClient,
+            },
             interval_ms: 500,
             align_schedule: true,
             schedule_offset_ms: 0,
@@ -1875,6 +1883,11 @@ impl Desktop {
     fn start_flash_or_origins_attach(&mut self) {
         self.connection_error = None;
         self.connected_endpoint = None;
+        if !cfg!(target_os = "macos") && !gearth_platform::is_elevated() {
+            self.admin_warning_open = true;
+            self.status = self.i18n.text("alert.adminvalidator.content");
+            return;
+        }
         let default_port = if self.origins { 40001u16 } else { 30000u16 };
         let auto_detect = self.auto_detect;
         let port = if auto_detect {
@@ -5263,7 +5276,10 @@ impl Desktop {
             }
         }
         if let Some(id) = edit_active {
-            if let Some(job) = self.scheduler.jobs.iter().find(|job| job.id == id) {
+            if self.active_schedule_edit == Some(id) {
+                self.active_schedule_edit = None;
+                self.reset_active_schedule_editor();
+            } else if let Some(job) = self.scheduler.jobs.iter().find(|job| job.id == id) {
                 self.schedule_draft.expression = job
                     .source_expression
                     .clone()
@@ -5392,10 +5408,20 @@ impl Desktop {
                         self.i18n.text("tab.extra.options.pythonscripting"),
                     );
                     ui.add_space(4.0);
-                    ui.checkbox(
-                        &mut self.advanced_options,
-                        self.i18n.text("tab.extra.options.advanced"),
-                    );
+                    if ui
+                        .checkbox(
+                            &mut self.advanced_options,
+                            self.i18n.text("tab.extra.options.advanced"),
+                        )
+                        .changed()
+                        && !self.advanced_options
+                    {
+                        self.debug_stdout = false;
+                        self.socks_enabled = false;
+                        if self.relay.is_none() && self.attachment_pending.is_none() {
+                            self.disable_decryption = false;
+                        }
+                    }
                     ui.add_space(4.0);
                     ui.add_enabled_ui(self.advanced_options, |ui| {
                         group_box(ui, self.theme, egui::Margin::symmetric(8.0, 6.0), |ui| {
@@ -5574,8 +5600,26 @@ impl Desktop {
             let area_h = 84.0;
             let arrow_w = 72.0;
             let box_w = ((avail_w - 46.0 - arrow_w * 2.0) * 0.5).max(150.0);
+            let pkt_format = self.packet_format(self.direction);
+            let can_to_expr = !self.tool_input.trim().is_empty()
+                && packet_tools::wire_to_expression(
+                    &self.tool_input,
+                    pkt_format,
+                    self.direction,
+                    &self.packet_info,
+                    self.nitro && self.unity,
+                )
+                .is_ok();
+            let can_to_pkt = !self.tool_output.trim().is_empty()
+                && packet_tools::expression_to_wire(
+                    &self.tool_output,
+                    pkt_format,
+                    self.direction,
+                    &self.packet_info,
+                )
+                .is_ok();
             ui.horizontal_top(|ui| {
-                egui::ScrollArea::vertical()
+                let pkt_resp = egui::ScrollArea::vertical()
                     .id_salt("tools_packet_area")
                     .max_height(area_h)
                     .show(ui, |ui| {
@@ -5584,16 +5628,23 @@ impl Desktop {
                             egui::TextEdit::multiline(&mut self.tool_input)
                                 .font(egui::TextStyle::Monospace)
                                 .hint_text(self.i18n.text("tab.tools.packet")),
-                        );
-                    });
-                if ui
-                    .add(egui::Button::new("------>").min_size(egui::vec2(arrow_w, area_h)))
+                        )
+                    })
+                    .inner;
+                let trigger_to_expr = ui
+                    .add_enabled(
+                        can_to_expr,
+                        egui::Button::new("------>").min_size(egui::vec2(arrow_w, area_h)),
+                    )
                     .on_hover_text(self.i18n.text("rust.tools.packet_to_expression"))
                     .clicked()
-                {
+                    || (can_to_expr
+                        && pkt_resp.has_focus()
+                        && ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Enter)));
+                if trigger_to_expr {
                     match packet_tools::wire_to_expression(
                         &self.tool_input,
-                        self.packet_format(self.direction),
+                        pkt_format,
                         self.direction,
                         &self.packet_info,
                         self.nitro && self.unity,
@@ -5609,20 +5660,14 @@ impl Desktop {
                         Err(error) => self.status = error.to_string(),
                     }
                 }
-                if ui
-                    .add(egui::Button::new("<------").min_size(egui::vec2(arrow_w, area_h)))
-                    .on_hover_text(self.i18n.text("rust.tools.expression_to_packet"))
-                    .clicked()
-                {
-                    self.tool_input = packet_tools::expression_to_wire(
-                        &self.tool_output,
-                        self.packet_format(self.direction),
-                        self.direction,
-                        &self.packet_info,
+                let trigger_to_pkt_btn = ui
+                    .add_enabled(
+                        can_to_pkt,
+                        egui::Button::new("<------").min_size(egui::vec2(arrow_w, area_h)),
                     )
-                    .unwrap_or_else(|error| error.to_string());
-                }
-                egui::ScrollArea::vertical()
+                    .on_hover_text(self.i18n.text("rust.tools.expression_to_packet"))
+                    .clicked();
+                let expr_resp = egui::ScrollArea::vertical()
                     .id_salt("tools_expr_area")
                     .max_height(area_h)
                     .show(ui, |ui| {
@@ -5631,8 +5676,22 @@ impl Desktop {
                             egui::TextEdit::multiline(&mut self.tool_output)
                                 .font(egui::TextStyle::Monospace)
                                 .hint_text(self.i18n.text("tab.tools.expression")),
-                        );
-                    });
+                        )
+                    })
+                    .inner;
+                if trigger_to_pkt_btn
+                    || (can_to_pkt
+                        && expr_resp.has_focus()
+                        && ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::Enter)))
+                {
+                    self.tool_input = packet_tools::expression_to_wire(
+                        &self.tool_output,
+                        pkt_format,
+                        self.direction,
+                        &self.packet_info,
+                    )
+                    .unwrap_or_else(|error| error.to_string());
+                }
             });
         });
 
@@ -5751,6 +5810,14 @@ impl eframe::App for Desktop {
                         ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                 }
+            }
+        }
+        if !self.always_on_top_applied {
+            self.always_on_top_applied = true;
+            if self.always_on_top {
+                ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
+                    egui::WindowLevel::AlwaysOnTop,
+                ));
             }
         }
         if self.logos.is_none() {
@@ -6473,6 +6540,24 @@ impl eframe::App for Desktop {
             }
             self.logger_window.open = open;
         }
+        if self.admin_warning_open {
+            let mut open = self.admin_warning_open;
+            let mut dismiss = false;
+            egui::Window::new(self.i18n.text("alert.confirmation.windowtitle"))
+                .id(egui::Id::new("admin_validator_dialog"))
+                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                .open(&mut open)
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.label(self.i18n.text("alert.adminvalidator.content"));
+                    ui.add_space(6.0);
+                    if ui.button("OK").clicked() {
+                        dismiss = true;
+                    }
+                });
+            self.admin_warning_open = open && !dismiss;
+        }
         self.developer_mode_dialog(ctx);
         self.extension_confirmation_dialogs(ctx);
         if self.relay.is_some()
@@ -6659,10 +6744,51 @@ impl Desktop {
         }
     }
     fn start_installed_extensions(&mut self) {
+        let ext_dir = self.extensions_dir();
+        for file in gearth_rust::extension_host::discover_installed_files(&ext_dir) {
+            if let Some(fname) = file.file_name().and_then(|s| s.to_str()) {
+                let stem = file
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or(fname)
+                    .to_owned();
+                self.known_installed_extensions
+                    .entry(fname.to_owned())
+                    .or_insert_with(|| gearth_rust::extension::ExtensionInfo {
+                        title: stem,
+                        author: String::new(),
+                        version: String::new(),
+                        description: fname.to_owned(),
+                        on_click: false,
+                        file: Some(fname.to_owned()),
+                        cookie: String::new(),
+                        can_leave: true,
+                        can_delete: true,
+                    });
+            }
+        }
+        if let Ok(records) = gearth_rust::extension_store::installed(&ext_dir) {
+            for record in records {
+                if let Some(fname) = record.directory.file_name().and_then(|s| s.to_str()) {
+                    self.known_installed_extensions
+                        .entry(fname.to_owned())
+                        .or_insert_with(|| gearth_rust::extension::ExtensionInfo {
+                            title: record.title.clone(),
+                            author: String::new(),
+                            version: record.version.clone(),
+                            description: String::new(),
+                            on_click: false,
+                            file: Some(fname.to_owned()),
+                            cookie: String::new(),
+                            can_leave: true,
+                            can_delete: true,
+                        });
+                }
+            }
+        }
         let Some(host) = self.extension_host.clone() else {
             return;
         };
-        let ext_dir = self.extensions_dir();
         let runtime = PathBuf::from(&self.extension_runtime);
         let (tx, rx) = std::sync::mpsc::channel();
         self.extension_autostart_rx = Some(rx);
@@ -6941,6 +7067,18 @@ impl Desktop {
             .get("confirm_uninstall_extension")
             .copied()
             .unwrap_or(true);
+        self.always_on_top = self
+            .settings
+            .booleans
+            .get("always_on_top")
+            .copied()
+            .unwrap_or(false);
+        self.auto_detect = self
+            .settings
+            .booleans
+            .get("auto_detect")
+            .copied()
+            .unwrap_or(true);
         self.custom_hotels = self
             .settings
             .values
@@ -7141,6 +7279,8 @@ impl Desktop {
         for (key, target) in [
             ("listen", &mut self.listen),
             ("remote", &mut self.remote),
+            ("attachment_host", &mut self.attachment_host),
+            ("connection_port", &mut self.connection_port),
             ("hotel_version", &mut self.hotel_version),
             ("client_identifier", &mut self.client_identifier),
             ("packet_database", &mut self.packet_database),
@@ -7224,6 +7364,8 @@ impl Desktop {
         for (key, value) in [
             ("listen", &self.listen),
             ("remote", &self.remote),
+            ("attachment_host", &self.attachment_host),
+            ("connection_port", &self.connection_port),
             ("hotel_version", &self.hotel_version),
             ("client_identifier", &self.client_identifier),
             ("packet_database", &self.packet_database),
@@ -7251,6 +7393,8 @@ impl Desktop {
                 "confirm_uninstall_extension".into(),
                 self.confirm_uninstall_extension,
             ),
+            ("always_on_top".into(), self.always_on_top),
+            ("auto_detect".into(), self.auto_detect),
             ("scheduler_auto_start".into(), self.scheduler_auto_start),
             ("socks_enabled".into(), self.socks_enabled),
             ("origins".into(), self.origins),
