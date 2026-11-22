@@ -57,6 +57,7 @@ jobs:
     runs-on: windows-latest
     env:
       RUSTFLAGS: -C target-feature=+crt-static
+      GEARTH_BUILD_TAG: development-${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -97,6 +98,8 @@ jobs:
   macos:
     timeout-minutes: 30
     runs-on: macos-latest
+    env:
+      GEARTH_BUILD_TAG: development-${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -127,6 +130,8 @@ jobs:
   linux-desktop:
     timeout-minutes: 20
     runs-on: ubuntu-latest
+    env:
+      GEARTH_BUILD_TAG: development-${{ github.run_number }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

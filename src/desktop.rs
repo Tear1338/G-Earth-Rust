@@ -215,6 +215,7 @@ fn bounded_log_prediction(mut value: String) -> String {
 }
 
 fn main() -> eframe::Result<()> {
+    gearth_rust::update_checker::cleanup_old_binary();
     eframe::run_native(
         "G-Earth",
         eframe::NativeOptions {
@@ -299,8 +300,14 @@ struct Desktop {
     system_tray: Option<gearth_platform::SystemTray>,
     tray_initialized: bool,
     custom_hotels: Vec<String>,
+    auto_update: bool,
+    startup_update_checked: bool,
     update_task: Option<Receiver<std::io::Result<gearth_rust::update_checker::UpdateInfo>>>,
     update_result: Option<Result<gearth_rust::update_checker::UpdateInfo, String>>,
+    update_apply_task:
+        Option<Receiver<std::io::Result<gearth_rust::update_checker::UpdateApplyOutcome>>>,
+    update_apply_error: Option<String>,
+    update_close_requested: bool,
     block_header: u16,
     block_enabled: bool,
     block_direction: Direction,
@@ -1004,8 +1011,13 @@ impl Default for Desktop {
             system_tray: None,
             tray_initialized: false,
             custom_hotels: Vec::new(),
+            auto_update: true,
+            startup_update_checked: false,
             update_task: None,
             update_result: None,
+            update_apply_task: None,
+            update_apply_error: None,
+            update_close_requested: false,
             block_header: 0,
             block_enabled: false,
             block_direction: Direction::ToServer,
@@ -1195,14 +1207,56 @@ impl Desktop {
                 Err(std::sync::mpsc::TryRecvError::Empty) => {}
             }
         }
+        let mut auto_apply_info = None;
         if let Some(task) = &self.update_task {
             match task.try_recv() {
                 Ok(result) => {
-                    self.update_result = Some(result.map_err(|e| e.to_string()));
+                    match result {
+                        Ok(info) => {
+                            if info.outdated
+                                && self.auto_update
+                                && self.relay.is_none()
+                                && self.attachment_pending.is_none()
+                                && self.update_apply_task.is_none()
+                                && info.checksums_url.is_some()
+                                && (info.asset_download_url.is_some()
+                                    || info.setup_download_url.is_some())
+                            {
+                                auto_apply_info = Some(info.clone());
+                            }
+                            self.update_result = Some(Ok(info));
+                        }
+                        Err(e) => {
+                            self.update_result = Some(Err(e.to_string()));
+                        }
+                    }
                     self.update_task = None;
                 }
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                     self.update_task = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        if let Some(info) = auto_apply_info {
+            self.start_update_apply(info);
+        }
+        if let Some(task) = &self.update_apply_task {
+            match task.try_recv() {
+                Ok(Ok(_)) => {
+                    self.update_apply_task = None;
+                    self.update_apply_error = None;
+                    self.save_settings();
+                    self.update_close_requested = true;
+                }
+                Ok(Err(error)) => {
+                    let message = format!("{}: {error}", self.i18n.text("rust.info.update_failed"));
+                    self.update_apply_error = Some(message.clone());
+                    self.status = message;
+                    self.update_apply_task = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.update_apply_task = None;
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {}
             }
@@ -4810,8 +4864,18 @@ impl eframe::App for Desktop {
         if self.logos.is_none() {
             self.logos = Some(ThemeLogos::load(ctx));
         }
+        if !self.startup_update_checked {
+            self.startup_update_checked = true;
+            if self.auto_update {
+                self.start_update_check();
+            }
+        }
         ctx.set_visuals(self.theme.visuals());
         self.poll();
+        if self.update_close_requested {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+            return;
+        }
         let palette = self.theme.palette();
         egui::TopBottomPanel::top("tabs")
             .frame(
@@ -4836,12 +4900,27 @@ impl eframe::App for Desktop {
                     ui.label(egui::RichText::new(self.theme.title()).strong().size(13.5));
                     ui.label(
                         egui::RichText::new(format!(
-                            "1.5.4-beta-29 · Rust {}",
-                            env!("CARGO_PKG_VERSION")
+                            "1.5.4-beta-29 · {}",
+                            gearth_rust::update_checker::current_build_tag()
                         ))
                         .small()
                         .color(palette.text_muted),
                     );
+                    if let Some(Ok(info)) = self.update_result.clone() {
+                        if info.outdated && self.update_apply_task.is_none() {
+                            if ui
+                                .small_button(
+                                    egui::RichText::new(format!("⬆ {}", info.latest_version))
+                                        .color(egui::Color32::from_rgb(210, 120, 15))
+                                        .strong(),
+                                )
+                                .on_hover_text(self.i18n.text("rust.info.update_now"))
+                                .clicked()
+                            {
+                                self.start_update_apply(info);
+                            }
+                        }
+                    }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui
                             .small_button(self.theme.name())
@@ -5002,169 +5081,212 @@ impl eframe::App for Desktop {
                             .id_salt("info_panel")
                             .show(ui, |ui| {
                                 // Exact Info.fxml 2-column layout: large theme logo left, version/credits/links right
-                                let logo_tex =
-                                    self.logos.as_ref().and_then(|l| l.large(self.theme)).cloned();
+                                let logo_tex = self
+                                    .logos
+                                    .as_ref()
+                                    .and_then(|l| l.large(self.theme))
+                                    .cloned();
                                 ui.horizontal_top(|ui| {
-                            ui.allocate_ui_with_layout(
-                                egui::vec2(204.0, 224.0),
-                                egui::Layout::centered_and_justified(egui::Direction::TopDown),
-                                |ui| {
-                                    if let Some(tex) = &logo_tex {
-                                        ui.add(egui::Image::new((
-                                            tex.id(),
-                                            egui::vec2(192.0, 192.0),
-                                        )));
-                                    }
-                                },
-                            );
-                            ui.add_space(12.0);
-                            ui.vertical(|ui| {
-                                ui.horizontal(|ui| {
-                                    ui.label(
-                                        egui::RichText::new(format!(
-                                            "{} 1.5.4-beta-29",
-                                            self.theme.title()
-                                        ))
-                                        .size(18.0)
-                                        .strong(),
-                                    );
-                                    ui.with_layout(
-                                        egui::Layout::right_to_left(egui::Align::Center),
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(204.0, 224.0),
+                                        egui::Layout::centered_and_justified(
+                                            egui::Direction::TopDown,
+                                        ),
                                         |ui| {
-                                            if ui
-                                                .button(self.i18n.text("tab.info.donate"))
-                                                .clicked()
-                                            {
-                                                self.donate_dialog_open = true;
-                                            }
-                                            let checking = self.update_task.is_some();
-                                            if ui
-                                                .add_enabled(
-                                                    !checking,
-                                                    egui::Button::new(
-                                                        self.i18n.text("rust.info.check_updates"),
-                                                    ),
-                                                )
-                                                .clicked()
-                                            {
-                                                let (send, receive) = std::sync::mpsc::channel();
-                                                self.update_task = Some(receive);
-                                                self.update_result = None;
-                                                std::thread::spawn(move || {
-                                                    let _ = send.send(
-                                                        gearth_rust::update_checker::check_github_updates(
-                                                            gearth_rust::update_checker::DEFAULT_REPOSITORY,
-                                                            env!("CARGO_PKG_VERSION"),
-                                                        ),
-                                                    );
-                                                });
+                                            if let Some(tex) = &logo_tex {
+                                                ui.add(egui::Image::new((
+                                                    tex.id(),
+                                                    egui::vec2(192.0, 192.0),
+                                                )));
                                             }
                                         },
                                     );
-                                });
-                                ui.add_space(2.0);
-                                ui.label(
-                                    egui::RichText::new(self.i18n.text("tab.info.description"))
-                                        .color(palette.text_muted),
-                                );
-                                if self.update_task.is_some() {
-                                    ui.small(self.i18n.text("rust.info.checking_updates"));
-                                } else if let Some(result) = &self.update_result {
-                                    match result {
-                                        Ok(info) if info.outdated => {
-                                            ui.horizontal_wrapped(|ui| {
-                                                ui.colored_label(
-                                                    egui::Color32::from_rgb(210, 120, 15),
-                                                    format!(
+                                    ui.add_space(12.0);
+                                    ui.vertical(|ui| {
+                                        ui.horizontal(|ui| {
+                                            ui.label(
+                                                egui::RichText::new(format!(
+                                                    "{} 1.5.4-beta-29",
+                                                    self.theme.title()
+                                                ))
+                                                .size(18.0)
+                                                .strong(),
+                                            );
+                                            ui.with_layout(
+                                                egui::Layout::right_to_left(egui::Align::Center),
+                                                |ui| {
+                                                    if ui
+                                                        .button(self.i18n.text("tab.info.donate"))
+                                                        .clicked()
+                                                    {
+                                                        self.donate_dialog_open = true;
+                                                    }
+                                                    let checking = self.update_task.is_some()
+                                                        || self.update_apply_task.is_some();
+                                                    if ui
+                                                        .add_enabled(
+                                                            !checking,
+                                                            egui::Button::new(
+                                                                self.i18n.text(
+                                                                    "rust.info.check_updates",
+                                                                ),
+                                                            ),
+                                                        )
+                                                        .clicked()
+                                                    {
+                                                        self.start_update_check();
+                                                    }
+                                                },
+                                            );
+                                        });
+                                        ui.add_space(2.0);
+                                        ui.label(
+                                            egui::RichText::new(
+                                                self.i18n.text("tab.info.description"),
+                                            )
+                                            .color(palette.text_muted),
+                                        );
+                                        if ui
+                                            .checkbox(
+                                                &mut self.auto_update,
+                                                self.i18n.text("rust.info.auto_update"),
+                                            )
+                                            .changed()
+                                        {
+                                            self.save_settings();
+                                        }
+                                        if self.update_apply_task.is_some() {
+                                            ui.colored_label(
+                                                egui::Color32::from_rgb(210, 120, 15),
+                                                self.i18n.text("rust.info.updating"),
+                                            );
+                                        } else if self.update_task.is_some() {
+                                            ui.small(self.i18n.text("rust.info.checking_updates"));
+                                        } else if let Some(result) = self.update_result.clone() {
+                                            match result {
+                                                Ok(info) if info.outdated => {
+                                                    ui.horizontal_wrapped(|ui| {
+                                                        ui.colored_label(
+                                                            egui::Color32::from_rgb(210, 120, 15),
+                                                            format!(
+                                                                "{} ({})",
+                                                                self.i18n
+                                                                    .text("alert.outdated.title"),
+                                                                info.latest_version
+                                                            ),
+                                                        );
+                                                        let can_apply = info
+                                                            .checksums_url
+                                                            .is_some()
+                                                            && (info.asset_download_url.is_some()
+                                                                || info
+                                                                    .setup_download_url
+                                                                    .is_some());
+                                                        if can_apply
+                                                            && ui
+                                                                .button(
+                                                                    self.i18n.text(
+                                                                        "rust.info.update_now",
+                                                                    ),
+                                                                )
+                                                                .clicked()
+                                                        {
+                                                            self.start_update_apply(info.clone());
+                                                        }
+                                                        ui.hyperlink_to(
+                                                            self.i18n.text(
+                                                                "alert.outdated.content.update",
+                                                            ),
+                                                            &info.release_url,
+                                                        );
+                                                    });
+                                                }
+                                                Ok(info) => {
+                                                    ui.small(format!(
                                                         "{} ({})",
-                                                        self.i18n.text("alert.outdated.title"),
+                                                        self.i18n.text("rust.info.up_to_date"),
                                                         info.latest_version
-                                                    ),
-                                                );
-                                                ui.hyperlink_to(
-                                                    self.i18n
-                                                        .text("alert.outdated.content.update"),
-                                                    &info.release_url,
-                                                );
-                                            });
+                                                    ));
+                                                }
+                                                Err(error) => {
+                                                    ui.small(error);
+                                                }
+                                            }
                                         }
-                                        Ok(info) => {
-                                            ui.small(format!(
-                                                "{} ({})",
-                                                self.i18n.text("rust.info.up_to_date"),
-                                                info.latest_version
-                                            ));
+                                        if let Some(error) = &self.update_apply_error {
+                                            ui.colored_label(
+                                                egui::Color32::from_rgb(0xc9, 0x30, 0x2c),
+                                                error,
+                                            );
                                         }
-                                        Err(error) => {
-                                            ui.small(error);
-                                        }
-                                    }
-                                }
-                                ui.add_space(6.0);
-                                ui.horizontal(|ui| {
+                                        ui.add_space(6.0);
+                                        ui.horizontal(|ui| {
                                     ui.strong(format!("{}:", self.i18n.text("tab.info.createdby")));
                                     ui.label("sirjonasxx  ·  Rust port: 1desirable1337 / Tear1338");
                                 });
-                                ui.add_space(6.0);
-                                ui.horizontal_top(|ui| {
-                                    ui.vertical(|ui| {
-                                        ui.strong(format!(
-                                            "{}:",
-                                            self.i18n.text("tab.info.contributors")
-                                        ));
+                                        ui.add_space(6.0);
                                         ui.horizontal_top(|ui| {
                                             ui.vertical(|ui| {
-                                                for name in [
-                                                    "XePeleato",
-                                                    "Scott Stamp",
-                                                    "LittleJ",
-                                                    "ArachisH",
-                                                ] {
-                                                    ui.label(name);
-                                                }
+                                                ui.strong(format!(
+                                                    "{}:",
+                                                    self.i18n.text("tab.info.contributors")
+                                                ));
+                                                ui.horizontal_top(|ui| {
+                                                    ui.vertical(|ui| {
+                                                        for name in [
+                                                            "XePeleato",
+                                                            "Scott Stamp",
+                                                            "LittleJ",
+                                                            "ArachisH",
+                                                        ] {
+                                                            ui.label(name);
+                                                        }
+                                                    });
+                                                    ui.add_space(14.0);
+                                                    ui.vertical(|ui| {
+                                                        for name in [
+                                                            "BurakDev",
+                                                            "Mikee#0055",
+                                                            "WiredSpast",
+                                                            "Dorving",
+                                                        ] {
+                                                            ui.label(name);
+                                                        }
+                                                    });
+                                                });
                                             });
-                                            ui.add_space(14.0);
+                                            ui.add_space(28.0);
                                             ui.vertical(|ui| {
-                                                for name in [
-                                                    "BurakDev",
-                                                    "Mikee#0055",
-                                                    "WiredSpast",
-                                                    "Dorving",
-                                                ] {
-                                                    ui.label(name);
-                                                }
-                                            });
-                                        });
-                                    });
-                                    ui.add_space(28.0);
-                                    ui.vertical(|ui| {
-                                        ui.strong(format!("{}:", self.i18n.text("tab.info.links")));
-                                        ui.hyperlink_to("Darkbox", "https://darkbox.nl");
-                                        ui.hyperlink_to(
-                                            "Github - G-Earth",
-                                            "https://github.com/G-Realm/G-Earth",
-                                        );
-                                        ui.hyperlink_to(
-                                            "Github - G-Earth-Rust",
-                                            "https://github.com/Tear1338/G-Earth-Rust",
-                                        );
-                                        ui.hyperlink_to(
-                                            "Github - Tanji",
-                                            "https://github.com/ArachisH/Tanji",
-                                        );
-                                        ui.hyperlink_to(
-                                            "Discord - G-Earth",
-                                            "https://discord.gg/AVkcF8y",
-                                        );
-                                        ui.hyperlink_to(
+                                                ui.strong(format!(
+                                                    "{}:",
+                                                    self.i18n.text("tab.info.links")
+                                                ));
+                                                ui.hyperlink_to("Darkbox", "https://darkbox.nl");
+                                                ui.hyperlink_to(
+                                                    "Github - G-Earth",
+                                                    "https://github.com/G-Realm/G-Earth",
+                                                );
+                                                ui.hyperlink_to(
+                                                    "Github - G-Earth-Rust",
+                                                    "https://github.com/Tear1338/G-Earth-Rust",
+                                                );
+                                                ui.hyperlink_to(
+                                                    "Github - Tanji",
+                                                    "https://github.com/ArachisH/Tanji",
+                                                );
+                                                ui.hyperlink_to(
+                                                    "Discord - G-Earth",
+                                                    "https://discord.gg/AVkcF8y",
+                                                );
+                                                ui.hyperlink_to(
                                             "G-ExtensionStore",
                                             "https://github.com/sirjonasxx/G-ExtensionStore",
                                         );
+                                            });
+                                        });
                                     });
                                 });
                             });
-                        });
-                        });
                     }
                 }
             });
@@ -5349,6 +5471,7 @@ impl eframe::App for Desktop {
             || self.python_console.is_pending()
             || self.scheduler_hotkeys.is_some()
             || self.update_task.is_some()
+            || self.update_apply_task.is_some()
         {
             let mut delay = Duration::from_millis(50);
             if self.relay.as_ref().is_some_and(Connection::connected) {
@@ -5379,6 +5502,39 @@ fn find_java() -> PathBuf {
     PathBuf::from("java")
 }
 impl Desktop {
+    fn start_update_check(&mut self) {
+        if self.update_task.is_some() || self.update_apply_task.is_some() {
+            return;
+        }
+        let (send, receive) = std::sync::mpsc::channel();
+        self.update_task = Some(receive);
+        self.update_result = None;
+        self.update_apply_error = None;
+        std::thread::spawn(move || {
+            let _ = send.send(gearth_rust::update_checker::check_github_updates(
+                gearth_rust::update_checker::DEFAULT_REPOSITORY,
+                gearth_rust::update_checker::current_build_tag(),
+            ));
+        });
+    }
+    fn start_update_apply(&mut self, info: gearth_rust::update_checker::UpdateInfo) {
+        if self.update_apply_task.is_some() {
+            return;
+        }
+        let (send, receive) = std::sync::mpsc::channel();
+        self.update_apply_task = Some(receive);
+        self.update_apply_error = None;
+        self.status = format!(
+            "{} ({})",
+            self.i18n.text("rust.info.updating"),
+            info.latest_version
+        );
+        std::thread::spawn(move || {
+            let _ = send.send(gearth_rust::update_checker::download_and_apply_update(
+                &info,
+            ));
+        });
+    }
     fn load_settings(&mut self) {
         match Settings::read(&self.settings_path) {
             Ok(settings) => {
@@ -5409,6 +5565,12 @@ impl Desktop {
             .get("scheduler_auto_start")
             .copied()
             .unwrap_or(false);
+        self.auto_update = self
+            .settings
+            .booleans
+            .get("auto_update")
+            .copied()
+            .unwrap_or(true);
         self.custom_hotels = self
             .settings
             .values
@@ -5708,6 +5870,7 @@ impl Desktop {
                 .insert("custom_hotels".into(), self.custom_hotels.join("\n"));
         }
         self.settings.booleans.extend([
+            ("auto_update".into(), self.auto_update),
             ("scheduler_auto_start".into(), self.scheduler_auto_start),
             ("socks_enabled".into(), self.socks_enabled),
             ("origins".into(), self.origins),

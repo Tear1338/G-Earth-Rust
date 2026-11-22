@@ -1,5 +1,9 @@
 # Compatibility with 1.5.4-beta-29
 
+## Built-in SHA-256 Verified GitHub Auto-Updater
+
+- Added built-in startup and 1-click self-updating from GitHub Releases (`src/update_checker.rs`, `src/desktop.rs`, `.github/workflows/ci.yml`): compares CI-embedded `GEARTH_BUILD_TAG` against the newest GitHub release, verifies downloaded binaries against `SHA256SUMS.txt` (`sha2::Sha256`), atomically swaps `<exe>` with rollback and automatic restart (plus Windows silent installer fallback for read-only directories), and cleans up `<exe>.old` on next launch.
+
 ## Faithful G-Earth 1.5.4-beta-29 Desktop UI Replica
 
 - Replicated the original beta-29 Bootstrap/JavaFX `styling.css` palettes (`G-Earth`, `G-Earth Dark`, `Tanji`), `#888888` 5px group boxes, seamless Bootstrap tab strip, embedded official MIT theme logos (`resources/themes/`), compact `680×385` window proportions, and FXML layouts across `Connection`, `Injection`, `Tools`, `Scheduler`, `Extensions`, `Extra`, `Info`, and `Logger` (`Window | View | Packets` menu bar + `Ctrl+I`/`O`/`L`/`E` shortcuts + bottom state strip) in `src/theme_ui.rs` and `src/desktop.rs`.

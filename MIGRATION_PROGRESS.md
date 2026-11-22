@@ -1,5 +1,9 @@
 # G-Earth Rust migration progress
 
+## Built-in SHA-256 Verified GitHub Auto-Updater
+
+- **Automatic GitHub self-updater (`src/update_checker.rs`, `src/desktop.rs`, `.github/workflows/ci.yml`)**: Embedded `GEARTH_BUILD_TAG` (`development-<run_number>`) in all CI desktop builds (Windows, macOS, Linux), added numeric `development-*` + Maven version comparison, `SHA256SUMS.txt` download/verification, atomic in-place binary swap (`<exe>.old` backup + rollback + cleanup on restart) with Windows Inno Setup silent-installer fallback for read-only install directories, startup auto-update (only when disconnected), 1-click **"Update & Restart"** button & titlebar badge, and 9-language localization (`rust.info.auto_update`, `rust.info.update_now`, `rust.info.updating`, `rust.info.update_failed`).
+
 ## Faithful G-Earth 1.5.4-beta-29 Desktop UI Replica
 
 - **Original Bootstrap/JavaFX themes & embedded official logos (`src/theme_ui.rs`, `resources/themes/`)**: Replicated the exact beta-29 `styling.css` palettes for **G-Earth** (`#f4f4f4`/`#ffffff`/`#337ab7`/`#888888`), **G-Earth Dark** (`#222222`/`#333333`/`#363636`/`#5d83b4`), and **Tanji** (`#ffa500`/`#b77714`/`#e9b365`) with 5px rounded `#888888` group frames, seamless top-rounded Bootstrap tabs, and embedded official MIT theme logos (`gearth_logo.png`, `gearth_small.png`, `tanji_logo.png`, `tanji_small.png`) decoded via `eframe::icon_data::from_png_bytes` with zero new crate dependencies.
