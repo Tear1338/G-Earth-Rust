@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use eframe::egui;
 mod gpython_ui;
+mod logger_ui;
 mod store_ui;
 mod theme_ui;
 use gearth_rust::{
@@ -266,6 +267,8 @@ struct Desktop {
     logger_names: bool,
     logger_hashes: bool,
     logger_message_id: bool,
+    logger_friendly: bool,
+    selected_log_index: Option<i32>,
     logger_representation: PacketRepresentation,
     logger_extra_legacy: bool,
     logger_extra_raw_hex: bool,
@@ -979,6 +982,8 @@ impl Default for Desktop {
             logger_names: true,
             logger_hashes: false,
             logger_message_id: false,
+            logger_friendly: true,
+            selected_log_index: None,
             logger_representation: PacketRepresentation::Expression,
             logger_extra_legacy: false,
             logger_extra_raw_hex: false,
@@ -2742,6 +2747,10 @@ impl Desktop {
                     ),
                 );
                 ui.separator();
+                ui.checkbox(
+                    &mut self.logger_friendly,
+                    self.i18n.text("rust.logger.friendly_mode"),
+                );
                 ui.checkbox(&mut self.paused, self.i18n.text("rust.logger.pause"));
                 ui.checkbox(
                     &mut self.logger_capture_selected_only,
@@ -3014,6 +3023,102 @@ impl Desktop {
                 Err(e) => e.to_string(),
             };
         }
+        // Quick beginner-friendly toolbar right below the classic MenuBar
+        ui.add_space(2.0);
+        ui.horizontal_wrapped(|ui| {
+            let dark = ui.visuals().dark_mode;
+            let in_bg = if self.incoming {
+                if dark {
+                    egui::Color32::from_rgb(130, 35, 35)
+                } else {
+                    egui::Color32::from_rgb(248, 215, 218)
+                }
+            } else {
+                egui::Color32::TRANSPARENT
+            };
+            let in_fg = if self.incoming {
+                if dark {
+                    egui::Color32::WHITE
+                } else {
+                    egui::Color32::from_rgb(132, 32, 41)
+                }
+            } else {
+                self.theme.palette().text_muted
+            };
+            if ui
+                .add(
+                    egui::Button::new(
+                        egui::RichText::new(format!(
+                            "← {}",
+                            self.i18n.text("ext.logger.element.direction.incoming")
+                        ))
+                        .color(in_fg)
+                        .small(),
+                    )
+                    .fill(in_bg),
+                )
+                .clicked()
+            {
+                self.incoming = !self.incoming;
+            }
+            let out_bg = if self.outgoing {
+                if dark {
+                    egui::Color32::from_rgb(25, 80, 145)
+                } else {
+                    egui::Color32::from_rgb(207, 226, 255)
+                }
+            } else {
+                egui::Color32::TRANSPARENT
+            };
+            let out_fg = if self.outgoing {
+                if dark {
+                    egui::Color32::WHITE
+                } else {
+                    egui::Color32::from_rgb(8, 66, 152)
+                }
+            } else {
+                self.theme.palette().text_muted
+            };
+            if ui
+                .add(
+                    egui::Button::new(
+                        egui::RichText::new(format!(
+                            "→ {}",
+                            self.i18n.text("ext.logger.element.direction.outgoing")
+                        ))
+                        .color(out_fg)
+                        .small(),
+                    )
+                    .fill(out_bg),
+                )
+                .clicked()
+            {
+                self.outgoing = !self.outgoing;
+            }
+            let pause_label = if self.paused {
+                format!("▶ {}", self.i18n.text("rust.scheduler.resume"))
+            } else {
+                format!("⏸ {}", self.i18n.text("rust.logger.pause"))
+            };
+            if ui.small_button(pause_label).clicked() {
+                self.paused = !self.paused;
+            }
+            if ui
+                .small_button(format!("🗑 {}", self.i18n.text("rust.logger.clear")))
+                .clicked()
+            {
+                clear_log_contents(&mut self.logs, &mut self.logs_bytes);
+                self.selected_log_index = None;
+            }
+            let mode_label = if self.logger_friendly {
+                format!("✨ {}", self.i18n.text("rust.logger.friendly_mode"))
+            } else {
+                self.i18n.text("rust.logger.classic_mode")
+            };
+            if ui.small_button(mode_label).clicked() {
+                self.logger_friendly = !self.logger_friendly;
+            }
+        });
         ui.separator();
         let filtered: Vec<_> = self
             .logs
@@ -3028,42 +3133,9 @@ impl Desktop {
                 )
             })
             .collect();
-        let extra_lines = usize::from(
-            self.logger_extra_legacy && self.logger_representation != PacketRepresentation::Legacy,
-        ) + usize::from(
-            self.logger_extra_raw_hex && self.logger_representation != PacketRepresentation::RawHex,
-        );
-        let row_height = if self.logger_representation == PacketRepresentation::HexDump
-            || self.logger_extra_hex_dump
-        {
-            // Eight 16-byte lines, an offset/truncation footer, and the header.
-            ui.text_style_height(&egui::TextStyle::Monospace) * 13.0
-                + if self.logger_structure { 24.0 } else { 0.0 }
-        } else if self.logger_structure {
-            44.0
-        } else {
-            24.0
-        } + extra_lines as f32
-            * (ui.text_style_height(&egui::TextStyle::Monospace) + ui.spacing().item_spacing.y)
-            + if self.logger_timestamp {
-                ui.text_style_height(&egui::TextStyle::Monospace) + ui.spacing().item_spacing.y
-            } else {
-                0.0
-            }
-            + if self.logger_names || self.logger_hashes || self.logger_message_id {
-                ui.text_style_height(&egui::TextStyle::Monospace) + ui.spacing().item_spacing.y
-            } else {
-                0.0
-            }
-            + if filtered
-                .iter()
-                .any(|row| row.message.blocked || row.message.packet.edited)
-            {
-                ui.text_style_height(&egui::TextStyle::Monospace) + ui.spacing().item_spacing.y
-            } else {
-                0.0
-            };
         let mut inspection = None;
+        let mut open_injection_req: Option<(Direction, String)> = None;
+        let mut block_header_req: Option<(Direction, u16)> = None;
         let hide_empty_header = logger_display::hide_empty_byte_header(
             self.logger_display_hide_empty_header,
             self.logger_representation,
@@ -3071,177 +3143,630 @@ impl Desktop {
             self.logger_extra_hex_dump,
             self.logger_extra_raw_hex,
         );
-        let log_height = (ui.available_height() - 24.0).max(120.0);
-        egui::ScrollArea::vertical()
-            .max_height(log_height)
-            .stick_to_bottom(self.logger_autoscroll)
-            .show_rows(ui, row_height, filtered.len(), |ui, range| {
-                for i in range {
-                    let row = filtered[i];
-                    let m = &row.message;
-                    let (color, hex_color, marker_color) =
-                        log_colors(m.direction, ui.visuals().dark_mode);
-                    let rendered = render_log_row(row, &self.packet_info, display_options);
-                    let row_output = ui.allocate_ui_with_layout(
-                        egui::vec2(ui.available_width(), row_height),
-                        egui::Layout::top_down(egui::Align::Min),
-                        |ui| {
-                            if let Some(timestamp) = &rendered.timestamp {
-                                ui.monospace(timestamp);
-                            }
-                            if let Some(metadata) = &rendered.metadata {
-                                ui.add(
-                                    egui::Label::new(
-                                        egui::RichText::new(metadata).monospace().color(color),
-                                    )
-                                    .truncate(),
-                                );
-                            }
-                            if let Some(marker) = &rendered.marker {
-                                ui.label(
-                                    egui::RichText::new(marker).monospace().color(marker_color),
-                                );
-                            }
-                            let response = if hide_empty_header {
-                                ui.allocate_response(
-                                    egui::vec2(ui.available_width(), 2.0),
-                                    egui::Sense::click(),
-                                )
-                            } else {
-                                ui.add(
-                                    egui::Label::new(log_header_layout(
-                                        &rendered.header,
-                                        None,
-                                        color,
-                                        marker_color,
-                                        ui.text_style_height(&egui::TextStyle::Monospace),
-                                    ))
-                                    .truncate()
-                                    .sense(egui::Sense::click()),
-                                )
-                            };
-                            for representation in &rendered.extra_representations {
-                                ui.add(
-                                    egui::Label::new(
-                                        egui::RichText::new(representation)
-                                            .monospace()
-                                            .color(color),
-                                    )
-                                    .truncate(),
-                                );
-                            }
-                            if let Some(dump) = &rendered.dump {
-                                ui.add(
-                                    egui::Label::new(
-                                        egui::RichText::new(dump).monospace().color(hex_color),
-                                    )
-                                    .wrap_mode(egui::TextWrapMode::Extend),
-                                );
-                            }
-                            if let Some(raw_hex) = &rendered.extra_raw_hex {
-                                ui.add(
-                                    egui::Label::new(
-                                        egui::RichText::new(raw_hex).monospace().color(hex_color),
-                                    )
-                                    .truncate(),
-                                );
-                            }
-                            if let Some(structure) = &rendered.structure {
-                                ui.add(
-                                    egui::Label::new(
-                                        egui::RichText::new(structure).monospace().small(),
-                                    )
-                                    .truncate(),
-                                );
-                            }
-                            response
-                        },
-                    );
-                    let response = logger_row_response(
-                        row_output.inner,
-                        row_output.response.clone(),
-                        hide_empty_header,
-                    );
-                    response.context_menu(|ui| {
-                        if ui
-                            .button(self.i18n.text("rust.logger.copy_displayed"))
-                            .clicked()
-                        {
-                            let mut text = Vec::new();
-                            if write_log_capture(
-                                &mut text,
-                                std::iter::once(row),
-                                &self.packet_info,
-                                LogDisplayOptions {
-                                    export_hide_empty_header: hide_empty_header,
-                                    ..display_options
+        let has_selected = self.logger_friendly
+            && self
+                .selected_log_index
+                .is_some_and(|sel| self.logs.iter().any(|row| row.message.index == sel));
+        let inspector_reserve = if has_selected { 148.0 } else { 0.0 };
+        let log_height = (ui.available_height() - 24.0 - inspector_reserve).max(96.0);
+        if self.logger_friendly {
+            let palette = self.theme.palette();
+            let dark = ui.visuals().dark_mode;
+            let empty_payload = self.i18n.text("rust.logger.empty_payload");
+            let friendly_row_h = 46.0;
+            egui::ScrollArea::vertical()
+                .id_salt("friendly_logger_scroll")
+                .max_height(log_height)
+                .stick_to_bottom(self.logger_autoscroll)
+                .show_rows(ui, friendly_row_h, filtered.len(), |ui, range| {
+                    for i in range {
+                        let row = filtered[i];
+                        let m = &row.message;
+                        let selected = self.selected_log_index == Some(m.index);
+                        let (accent, badge_bg, badge_fg) = if m.blocked || m.packet.edited {
+                            (
+                                egui::Color32::from_rgb(217, 130, 15),
+                                egui::Color32::from_rgb(217, 130, 15),
+                                egui::Color32::WHITE,
+                            )
+                        } else if m.direction == Direction::ToServer {
+                            (
+                                egui::Color32::from_rgb(0, 114, 214),
+                                if dark {
+                                    egui::Color32::from_rgb(26, 94, 170)
+                                } else {
+                                    egui::Color32::from_rgb(214, 233, 255)
                                 },
-                                false,
+                                if dark {
+                                    egui::Color32::WHITE
+                                } else {
+                                    egui::Color32::from_rgb(10, 74, 158)
+                                },
                             )
-                            .is_ok()
-                            {
-                                ui.ctx().copy_text(
-                                    String::from_utf8_lossy(&text)
-                                        .trim_end_matches('\n')
-                                        .to_owned(),
-                                );
-                            }
-                            ui.close_menu();
-                        }
-                        if ui
-                            .add_enabled(
-                                !row.skipped,
-                                egui::Button::new(self.i18n.text("rust.logger.copy_packet")),
+                        } else {
+                            (
+                                egui::Color32::from_rgb(198, 40, 40),
+                                if dark {
+                                    egui::Color32::from_rgb(150, 38, 38)
+                                } else {
+                                    egui::Color32::from_rgb(253, 224, 227)
+                                },
+                                if dark {
+                                    egui::Color32::WHITE
+                                } else {
+                                    egui::Color32::from_rgb(148, 24, 34)
+                                },
                             )
-                            .clicked()
-                        {
-                            ui.ctx().copy_text(row.expression.clone());
-                            ui.close_menu();
-                        }
-                        if ui
-                            .add_enabled(
-                                !row.skipped,
-                                egui::Button::new(self.i18n.text("rust.logger.copy_hex")),
-                            )
-                            .clicked()
-                        {
-                            ui.ctx().copy_text(expression::hex(m.packet.bytes()));
-                            ui.close_menu();
-                        }
-                        if ui
-                            .button(self.i18n.text("rust.logger.inspect_bytes"))
-                            .clicked()
-                        {
-                            inspection = Some(logger_display::hex_dump(m.packet.bytes(), 4096));
-                            ui.close_menu();
-                        }
-                    });
-                    if self.logger_split {
-                        let rect = row_output.response.rect;
-                        let y = rect.bottom() - 1.0;
-                        ui.painter().line_segment(
-                            [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
-                            ui.visuals().widgets.noninteractive.bg_stroke,
-                        );
-                    }
-                    if response.hovered() && !row.skipped {
-                        let structure = row.predicted_structure.get_or_init(|| {
-                            bounded_log_prediction(
-                                gearth_rust::structure_prediction::predict(&m.packet, row.unity)
-                                    .unwrap_or_else(|_| "unavailable".into()),
-                            )
+                        };
+                        let row_bg = if selected {
+                            ui.visuals().selection.bg_fill
+                        } else if i % 2 == 1 {
+                            palette.table_row_alt_bg
+                        } else {
+                            palette.content_bg
+                        };
+                        let (names, _) = row.packet_metadata.get_or_init(|| {
+                            log_packet_metadata(&self.packet_info, m.direction, m.packet.header())
                         });
-                        response
-                            .clone()
-                            .on_hover_text(format!("Predicted structure: {structure}"));
+                        let title = if !names.is_empty() {
+                            names.replace("][", " / ")
+                        } else {
+                            format!("Packet #{}", m.packet.header())
+                        };
+                        let payload_len = if m.packet.format() == PacketFormat::EvaWire {
+                            m.packet.bytes().len().saturating_sub(4)
+                        } else {
+                            m.packet.bytes().len()
+                        };
+                        let summary = if row.skipped {
+                            row.expression.clone()
+                        } else {
+                            let (expr, _, _) = row.packet_expression.get_or_init(|| {
+                                let (expression, known) =
+                                    gearth_rust::structure_prediction::expression_with_metadata(
+                                        &m.packet,
+                                        m.direction,
+                                        &self.packet_info,
+                                        row.unity,
+                                    )
+                                    .unwrap_or_default();
+                                let clean = logger_display::java_structure_is_clean(&expression);
+                                (bounded_log_prediction(expression), known, clean)
+                            });
+                            let source = if expr.is_empty() {
+                                &row.expression
+                            } else {
+                                expr
+                            };
+                            let fields = logger_ui::parse_expression_fields(source);
+                            logger_ui::summarize_fields(&fields, &empty_payload, 140)
+                        };
+
+                        let card = egui::Frame::none()
+                            .fill(row_bg)
+                            .inner_margin(egui::Margin {
+                                left: 8.0,
+                                right: 8.0,
+                                top: 4.0,
+                                bottom: 4.0,
+                            })
+                            .show(ui, |ui| {
+                                ui.set_min_size(egui::vec2(
+                                    (ui.available_width() - 4.0).max(200.0),
+                                    friendly_row_h - 8.0,
+                                ));
+                                ui.horizontal(|ui| {
+                                    let dir_badge = if m.direction == Direction::ToServer {
+                                        format!("→ {outgoing_label}")
+                                    } else {
+                                        format!("← {incoming_label}")
+                                    };
+                                    logger_ui::badge_pill(ui, &dir_badge, badge_bg, badge_fg);
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(&title).strong().size(12.5),
+                                        )
+                                        .truncate(),
+                                    );
+                                    ui.label(
+                                        egui::RichText::new(format!(
+                                            "ID {} · {} B",
+                                            m.packet.header(),
+                                            payload_len
+                                        ))
+                                        .small()
+                                        .color(palette.text_muted),
+                                    );
+                                    if m.blocked {
+                                        logger_ui::badge_pill(
+                                            ui,
+                                            &blocked_label,
+                                            egui::Color32::from_rgb(198, 40, 40),
+                                            egui::Color32::WHITE,
+                                        );
+                                    } else if m.packet.edited {
+                                        logger_ui::badge_pill(
+                                            ui,
+                                            &replaced_label,
+                                            egui::Color32::from_rgb(217, 130, 15),
+                                            egui::Color32::WHITE,
+                                        );
+                                    }
+                                    if let Some(ts) = row.timestamp_ms {
+                                        ui.with_layout(
+                                            egui::Layout::right_to_left(egui::Align::Center),
+                                            |ui| {
+                                                ui.label(
+                                                    egui::RichText::new(
+                                                        logger_ui::format_clock_time(ts),
+                                                    )
+                                                    .small()
+                                                    .monospace()
+                                                    .color(palette.text_muted),
+                                                );
+                                            },
+                                        );
+                                    }
+                                });
+                                ui.add(
+                                    egui::Label::new(
+                                        egui::RichText::new(&summary)
+                                            .small()
+                                            .color(palette.text_muted),
+                                    )
+                                    .truncate(),
+                                );
+                            });
+                        let rect = card.response.rect;
+                        ui.painter().rect_filled(
+                            egui::Rect::from_min_size(
+                                rect.left_top(),
+                                egui::vec2(3.0, rect.height()),
+                            ),
+                            0.0,
+                            accent,
+                        );
+                        if self.logger_split {
+                            let y = rect.bottom() - 0.5;
+                            ui.painter().line_segment(
+                                [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
+                                egui::Stroke::new(0.5_f32, palette.tab_active_border),
+                            );
+                        }
+                        let response = card.response.interact(egui::Sense::click());
+                        response.context_menu(|ui| {
+                            if ui
+                                .add_enabled(
+                                    !row.skipped,
+                                    egui::Button::new(self.i18n.text("rust.logger.open_injection")),
+                                )
+                                .clicked()
+                            {
+                                open_injection_req = Some((m.direction, row.expression.clone()));
+                                ui.close_menu();
+                            }
+                            if ui
+                                .add_enabled(
+                                    !row.skipped,
+                                    egui::Button::new(self.i18n.text("rust.logger.copy_packet")),
+                                )
+                                .clicked()
+                            {
+                                ui.ctx().copy_text(row.expression.clone());
+                                ui.close_menu();
+                            }
+                            if ui
+                                .button(self.i18n.text("rust.logger.block_header"))
+                                .clicked()
+                            {
+                                block_header_req = Some((m.direction, m.packet.header()));
+                                ui.close_menu();
+                            }
+                            if ui
+                                .button(self.i18n.text("rust.logger.inspect_bytes"))
+                                .clicked()
+                            {
+                                inspection = Some(logger_display::hex_dump(m.packet.bytes(), 4096));
+                                ui.close_menu();
+                            }
+                        });
+                        if response.double_clicked() && !row.skipped {
+                            open_injection_req = Some((m.direction, row.expression.clone()));
+                        } else if response.clicked() {
+                            self.selected_log_index = Some(m.index);
+                        }
                     }
-                    if response.clicked() && !row.skipped {
-                        self.expression = row.expression.clone();
-                        self.direction = m.direction;
-                        self.tab = Tab::Injection;
-                    }
+                });
+
+            // Beginner-friendly Packet Details Inspector panel
+            if let Some(sel_idx) = self.selected_log_index {
+                if let Some(row) = self.logs.iter().find(|r| r.message.index == sel_idx) {
+                    let m = &row.message;
+                    let (names, hashes) = row.packet_metadata.get_or_init(|| {
+                        log_packet_metadata(&self.packet_info, m.direction, m.packet.header())
+                    });
+                    let title = if !names.is_empty() {
+                        names.replace("][", " / ")
+                    } else {
+                        format!("Packet #{}", m.packet.header())
+                    };
+                    let expr_source = if !row.skipped {
+                        let (expr, _, _) = row.packet_expression.get_or_init(|| {
+                            let (expression, known) =
+                                gearth_rust::structure_prediction::expression_with_metadata(
+                                    &m.packet,
+                                    m.direction,
+                                    &self.packet_info,
+                                    row.unity,
+                                )
+                                .unwrap_or_default();
+                            let clean = logger_display::java_structure_is_clean(&expression);
+                            (bounded_log_prediction(expression), known, clean)
+                        });
+                        if expr.is_empty() {
+                            row.expression.as_str()
+                        } else {
+                            expr.as_str()
+                        }
+                    } else {
+                        row.expression.as_str()
+                    };
+                    let fields = logger_ui::parse_expression_fields(expr_source);
+                    ui.add_space(4.0);
+                    group_box(ui, self.theme, egui::Margin::symmetric(8.0, 6.0), |ui| {
+                        ui.set_min_width((ui.available_width() - 4.0).max(200.0));
+                        ui.horizontal(|ui| {
+                            ui.strong(format!(
+                                "{} — {title} (ID {})",
+                                self.i18n.text("rust.logger.inspector"),
+                                m.packet.header()
+                            ));
+                            ui.label(
+                                egui::RichText::new(self.i18n.text(
+                                    if m.direction == Direction::ToServer {
+                                        "rust.logger.direction_out_desc"
+                                    } else {
+                                        "rust.logger.direction_in_desc"
+                                    },
+                                ))
+                                .small()
+                                .color(palette.text_muted),
+                            );
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if ui.small_button("✕").clicked() {
+                                        self.selected_log_index = None;
+                                    }
+                                },
+                            );
+                        });
+                        if !hashes.is_empty() {
+                            ui.small(
+                                egui::RichText::new(format!("Hash: {hashes}"))
+                                    .color(palette.text_muted),
+                            );
+                        }
+                        ui.add_space(3.0);
+                        egui::ScrollArea::vertical()
+                            .id_salt("logger_inspector_fields")
+                            .max_height(52.0)
+                            .show(ui, |ui| {
+                                if fields.is_empty() {
+                                    ui.small(
+                                        egui::RichText::new(&empty_payload)
+                                            .italics()
+                                            .color(palette.text_muted),
+                                    );
+                                } else {
+                                    ui.horizontal_wrapped(|ui| {
+                                        for field in &fields {
+                                            let bg = if field.is_string {
+                                                if dark {
+                                                    egui::Color32::from_rgb(45, 78, 52)
+                                                } else {
+                                                    egui::Color32::from_rgb(225, 244, 229)
+                                                }
+                                            } else if dark {
+                                                egui::Color32::from_rgb(56, 56, 64)
+                                            } else {
+                                                egui::Color32::from_rgb(236, 238, 242)
+                                            };
+                                            egui::Frame::none()
+                                                .fill(bg)
+                                                .rounding(egui::Rounding::same(3.0))
+                                                .inner_margin(egui::Margin::symmetric(5.0, 2.0))
+                                                .show(ui, |ui| {
+                                                    ui.horizontal(|ui| {
+                                                        ui.spacing_mut().item_spacing.x = 3.0;
+                                                        ui.label(
+                                                            egui::RichText::new(format!(
+                                                                "{}:",
+                                                                field.kind
+                                                            ))
+                                                            .small()
+                                                            .color(palette.text_muted),
+                                                        );
+                                                        ui.label(
+                                                            egui::RichText::new(&field.value)
+                                                                .small()
+                                                                .monospace(),
+                                                        );
+                                                    });
+                                                });
+                                        }
+                                    });
+                                }
+                            });
+                        ui.add_space(4.0);
+                        ui.horizontal_wrapped(|ui| {
+                            if ui
+                                .add_enabled(
+                                    !row.skipped,
+                                    egui::Button::new(format!(
+                                        "➡ {}",
+                                        self.i18n.text("rust.logger.open_injection")
+                                    )),
+                                )
+                                .clicked()
+                            {
+                                open_injection_req = Some((m.direction, row.expression.clone()));
+                            }
+                            if ui
+                                .add_enabled(
+                                    !row.skipped,
+                                    egui::Button::new(self.i18n.text("rust.logger.copy_packet")),
+                                )
+                                .clicked()
+                            {
+                                ui.ctx().copy_text(row.expression.clone());
+                            }
+                            if ui
+                                .button(format!(
+                                    "🚫 {}",
+                                    self.i18n.text("rust.logger.block_header")
+                                ))
+                                .clicked()
+                            {
+                                block_header_req = Some((m.direction, m.packet.header()));
+                            }
+                            if ui
+                                .button(self.i18n.text("rust.logger.inspect_bytes"))
+                                .clicked()
+                            {
+                                inspection = Some(logger_display::hex_dump(m.packet.bytes(), 4096));
+                            }
+                        });
+                    });
                 }
+            }
+        } else {
+            let extra_lines = usize::from(
+                self.logger_extra_legacy
+                    && self.logger_representation != PacketRepresentation::Legacy,
+            ) + usize::from(
+                self.logger_extra_raw_hex
+                    && self.logger_representation != PacketRepresentation::RawHex,
+            );
+            let row_height = if self.logger_representation == PacketRepresentation::HexDump
+                || self.logger_extra_hex_dump
+            {
+                // Eight 16-byte lines, an offset/truncation footer, and the header.
+                ui.text_style_height(&egui::TextStyle::Monospace) * 13.0
+                    + if self.logger_structure { 24.0 } else { 0.0 }
+            } else if self.logger_structure {
+                44.0
+            } else {
+                24.0
+            } + extra_lines as f32
+                * (ui.text_style_height(&egui::TextStyle::Monospace) + ui.spacing().item_spacing.y)
+                + if self.logger_timestamp {
+                    ui.text_style_height(&egui::TextStyle::Monospace) + ui.spacing().item_spacing.y
+                } else {
+                    0.0
+                }
+                + if self.logger_names || self.logger_hashes || self.logger_message_id {
+                    ui.text_style_height(&egui::TextStyle::Monospace) + ui.spacing().item_spacing.y
+                } else {
+                    0.0
+                }
+                + if filtered
+                    .iter()
+                    .any(|row| row.message.blocked || row.message.packet.edited)
+                {
+                    ui.text_style_height(&egui::TextStyle::Monospace) + ui.spacing().item_spacing.y
+                } else {
+                    0.0
+                };
+            egui::ScrollArea::vertical()
+                .max_height(log_height)
+                .stick_to_bottom(self.logger_autoscroll)
+                .show_rows(ui, row_height, filtered.len(), |ui, range| {
+                    for i in range {
+                        let row = filtered[i];
+                        let m = &row.message;
+                        let (color, hex_color, marker_color) =
+                            log_colors(m.direction, ui.visuals().dark_mode);
+                        let rendered = render_log_row(row, &self.packet_info, display_options);
+                        let row_output = ui.allocate_ui_with_layout(
+                            egui::vec2(ui.available_width(), row_height),
+                            egui::Layout::top_down(egui::Align::Min),
+                            |ui| {
+                                if let Some(timestamp) = &rendered.timestamp {
+                                    ui.monospace(timestamp);
+                                }
+                                if let Some(metadata) = &rendered.metadata {
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(metadata).monospace().color(color),
+                                        )
+                                        .truncate(),
+                                    );
+                                }
+                                if let Some(marker) = &rendered.marker {
+                                    ui.label(
+                                        egui::RichText::new(marker).monospace().color(marker_color),
+                                    );
+                                }
+                                let response = if hide_empty_header {
+                                    ui.allocate_response(
+                                        egui::vec2(ui.available_width(), 2.0),
+                                        egui::Sense::click(),
+                                    )
+                                } else {
+                                    ui.add(
+                                        egui::Label::new(log_header_layout(
+                                            &rendered.header,
+                                            None,
+                                            color,
+                                            marker_color,
+                                            ui.text_style_height(&egui::TextStyle::Monospace),
+                                        ))
+                                        .truncate()
+                                        .sense(egui::Sense::click()),
+                                    )
+                                };
+                                for representation in &rendered.extra_representations {
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(representation)
+                                                .monospace()
+                                                .color(color),
+                                        )
+                                        .truncate(),
+                                    );
+                                }
+                                if let Some(dump) = &rendered.dump {
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(dump).monospace().color(hex_color),
+                                        )
+                                        .wrap_mode(egui::TextWrapMode::Extend),
+                                    );
+                                }
+                                if let Some(raw_hex) = &rendered.extra_raw_hex {
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(raw_hex)
+                                                .monospace()
+                                                .color(hex_color),
+                                        )
+                                        .truncate(),
+                                    );
+                                }
+                                if let Some(structure) = &rendered.structure {
+                                    ui.add(
+                                        egui::Label::new(
+                                            egui::RichText::new(structure).monospace().small(),
+                                        )
+                                        .truncate(),
+                                    );
+                                }
+                                response
+                            },
+                        );
+                        let response = logger_row_response(
+                            row_output.inner,
+                            row_output.response.clone(),
+                            hide_empty_header,
+                        );
+                        response.context_menu(|ui| {
+                            if ui
+                                .button(self.i18n.text("rust.logger.copy_displayed"))
+                                .clicked()
+                            {
+                                let mut text = Vec::new();
+                                if write_log_capture(
+                                    &mut text,
+                                    std::iter::once(row),
+                                    &self.packet_info,
+                                    LogDisplayOptions {
+                                        export_hide_empty_header: hide_empty_header,
+                                        ..display_options
+                                    },
+                                    false,
+                                )
+                                .is_ok()
+                                {
+                                    ui.ctx().copy_text(
+                                        String::from_utf8_lossy(&text)
+                                            .trim_end_matches('\n')
+                                            .to_owned(),
+                                    );
+                                }
+                                ui.close_menu();
+                            }
+                            if ui
+                                .add_enabled(
+                                    !row.skipped,
+                                    egui::Button::new(self.i18n.text("rust.logger.copy_packet")),
+                                )
+                                .clicked()
+                            {
+                                ui.ctx().copy_text(row.expression.clone());
+                                ui.close_menu();
+                            }
+                            if ui
+                                .add_enabled(
+                                    !row.skipped,
+                                    egui::Button::new(self.i18n.text("rust.logger.copy_hex")),
+                                )
+                                .clicked()
+                            {
+                                ui.ctx().copy_text(expression::hex(m.packet.bytes()));
+                                ui.close_menu();
+                            }
+                            if ui
+                                .button(self.i18n.text("rust.logger.inspect_bytes"))
+                                .clicked()
+                            {
+                                inspection = Some(logger_display::hex_dump(m.packet.bytes(), 4096));
+                                ui.close_menu();
+                            }
+                        });
+                        if self.logger_split {
+                            let rect = row_output.response.rect;
+                            let y = rect.bottom() - 1.0;
+                            ui.painter().line_segment(
+                                [egui::pos2(rect.left(), y), egui::pos2(rect.right(), y)],
+                                ui.visuals().widgets.noninteractive.bg_stroke,
+                            );
+                        }
+                        if response.hovered() && !row.skipped {
+                            let structure = row.predicted_structure.get_or_init(|| {
+                                bounded_log_prediction(
+                                    gearth_rust::structure_prediction::predict(
+                                        &m.packet, row.unity,
+                                    )
+                                    .unwrap_or_else(|_| "unavailable".into()),
+                                )
+                            });
+                            response
+                                .clone()
+                                .on_hover_text(format!("Predicted structure: {structure}"));
+                        }
+                        if response.clicked() && !row.skipped {
+                            open_injection_req = Some((m.direction, row.expression.clone()));
+                        }
+                    }
+                });
+        }
+        if let Some((dir, expr)) = open_injection_req {
+            self.expression = expr;
+            self.direction = dir;
+            self.tab = Tab::Injection;
+        }
+        if let Some((dir, header)) = block_header_req {
+            let already = self.settings.rules.iter().any(|(enabled, d, h, repl)| {
+                *enabled && *d == dir && *h == header && repl.is_none()
             });
+            if !already {
+                self.settings.rules.push((true, dir, header, None));
+                self.update_rules();
+                let _ = Settings::save_rules(&self.settings_path, &self.settings.rules);
+                self.status = format!("Blocked {} packet ID {header}", dir.name());
+            }
+        }
         if let Some(dump) = inspection {
             self.packet_dump = Some(dump);
         }
@@ -5811,6 +6336,12 @@ impl Desktop {
             .get("logger_message_id")
             .copied()
             .unwrap_or(false);
+        self.logger_friendly = self
+            .settings
+            .booleans
+            .get("logger_friendly")
+            .copied()
+            .unwrap_or(true);
         self.developer_mode = self
             .settings
             .booleans
@@ -5979,6 +6510,7 @@ impl Desktop {
             ("logger_names".into(), self.logger_names),
             ("logger_hashes".into(), self.logger_hashes),
             ("logger_message_id".into(), self.logger_message_id),
+            ("logger_friendly".into(), self.logger_friendly),
             ("developer_mode".into(), self.developer_mode),
             ("disable_decryption".into(), self.disable_decryption),
             ("debug_stdout".into(), self.debug_stdout),
