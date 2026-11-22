@@ -17,12 +17,12 @@ Rust port in progress of [G-Realm/G-Earth](https://github.com/G-Realm/G-Earth), 
 - Origins transport: bidirectional plaintext framing, Diffie-Hellman substitution, HKDF-SHA256 keys and independent ChaCha20 header/data channels. Tested against original Java crypto vectors and simulated client/server sessions; a hosts-based attachment path is available, but has not been validated against the official client.
 - Authenticated loopback extension host, one-use launch tokens, Java/Python/Node external processes, connection details, packet names, interception, injection, click callbacks, language updates and console output. Java extensions still need a Java runtime.
 - Sulek HTTPS packet-name lookup, upstream Unity messages.json import and portable TSV databases, with direction-aware expression lookup.
-- Saved block/replace rules and finite schedule templates, atomic settings, legacy cache import, notepad, light/dark themes and nine upstream language resources. Individual controls are not fully localized yet.
-- Unity WebGL: authenticated local TLS communicator, gzip asset interception, four validated WASM hooks and browser reinjection, with an original-Java-patcher oracle. See [Unity setup](docs/UNITY.md).
+- Saved block/replace rules and finite/auto-starting schedule templates, atomic settings, full legacy Java cache import (`hotelsCache`, themes, history, logger settings, SOCKS), notepad, three themes (`G-Earth`, `G-Earth Dark`, `Tanji`), opt-in GitHub update check, Windows system tray, cross-OS global scheduler shortcuts (`Ctrl+Shift+0–9`), and complete localization across all nine upstream languages.
+- Unity WebGL: authenticated local TLS communicator, gzip asset interception, four validated WASM hooks, SOCKS5 routing and browser reinjection, with an original-Java-patcher oracle. See [Unity setup](docs/UNITY.md).
 - G-Python console: native dependency checks, authenticated Jupyter kernel and QtConsole launcher; existing scripting helpers are exposed. See [Python setup](docs/GPYTHON.md). Python and Qt are external runtimes.
-- Native extension store: search/filter/order, bounded installation, separate-version updates, authenticated launch and uninstall. See [Store behavior](docs/STORE.md).
-- Native Rust desktop application: Connection, Logger, Injection, Scheduler, Tools, Extensions and Info. Logger rows are virtualized and bounded by row count and byte budget.
-- CLI and Windows desktop builds through GitHub Actions.
+- Native extension store: search/filter/order, categories/systems/unstable warnings, bounded installation, separate-version updates, authenticated launch and uninstall. See [Store behavior](docs/STORE.md).
+- Native Rust desktop application: Connection (with saved custom hotels), Logger (with one-step export & WEDGIE structure prediction), Injection, Scheduler, Tools, Extensions, Extra and Info. Logger rows are virtualized and bounded by row count and byte budget.
+- Multi-OS CLI and desktop packages through GitHub Actions: Windows portable EXE & Inno Setup installer (`G-Earth-Rust-Setup-x64.exe`), macOS `.app` ZIP bundle, and Linux `.desktop` tarball.
 
 ## Run
 
@@ -42,15 +42,15 @@ cargo run --release --bin gearth-rust -- relay 127.0.0.1:1234 test-server.exampl
 
 CLI relay commands: `server EXPR`, `client EXPR`, `quit`. Binding is restricted to loopback. The CLI TCP relay does not modify system proxy settings. The desktop includes negotiated Flash decryption, scoped hostname attachment and Flash Raw-IP attachment; see [attachment setup and limits](docs/ATTACHMENT.md).
 
-For CLI packet-ID checks, append `--revision VERSION`: only IDs observed in original traffic for that revision and direction can be injected. `--developer` overrides the check. The explicit plaintext relay cannot discover a revision itself, so without `--revision` it retains the original behavior and permits unobserved IDs.
+For CLI packet-ID checks, append `--revision VERSION`: only IDs observed in original traffic for that revision and direction can be injected. `--developer` overrides the check. Plaintext EVA_WIRE relays also auto-detect Flash hello (header 4000) revisions when observed on the wire; when no revision is provided or observed, unobserved IDs remain permitted.
 
 ## Validation
 
-CI runs core and TCP loopback tests on Windows and Linux and builds the Windows desktop executable. A separate Java compatibility job downloads the pinned upstream beta-29 release, verifies its published SHA-256, invokes its actual API JAR and compares wire vectors against Rust. These finite checks cover only the declared vectors, not all G-Earth behavior.
+CI runs core and TCP loopback tests on Windows, Linux and macOS and builds desktop packages for all three platforms. A separate Java compatibility job downloads the pinned upstream beta-29 release, verifies its published SHA-256, invokes its actual API JAR and compares wire vectors against Rust. These finite checks cover only the declared vectors, not all G-Earth behavior.
 
-The source tree was inspected through GitHub and the released API JAR inventoried using [REA](https://rea.tools/). REA's Java decompiler service is unavailable in this environment; source review and executable Java oracles supply the semantic checks. [Analysis notes](docs/ANALYSIS.md). A [packet-construction microbenchmark](docs/PERFORMANCE.md) measures one narrow workload; whole-application performance is unmeasured.
+The source tree was inspected through GitHub and the released API JAR inventoried using [REA](https://rea.tools/). REA's Java decompiler service is unavailable in this environment; source review and executable Java oracles supply the semantic checks. [Analysis notes](docs/ANALYSIS.md). A [packet-construction and relay microbenchmark](docs/PERFORMANCE.md) measures narrow synthetic workloads; whole-application performance is unmeasured.
 
-Validated development builds are available in [Actions artifacts](https://github.com/Tear1338/G-Earth-Rust/actions). Older prereleases remain on [GitHub Releases](https://github.com/Tear1338/G-Earth-Rust/releases); the release-publishing integration has encountered a permission error. Desktop hostname attachment changes its marked hosts entries. Raw IP changes a loopback alias or NAT rule and requires administrator/root privileges; read its platform warnings before use. Nitro mode changes the Windows proxy only when started with that option enabled; public-certificate installation/removal requires its separate explicit buttons.
+Validated development builds and installers are published on [GitHub Releases](https://github.com/Tear1338/G-Earth-Rust/releases) and in [Actions artifacts](https://github.com/Tear1338/G-Earth-Rust/actions). Desktop hostname attachment changes its marked hosts entries. Raw IP changes a loopback alias or NAT rule and requires administrator/root privileges; read its platform warnings before use. Browser mode changes the system proxy (Windows Internet Settings, macOS `networksetup`, or Linux GNOME `gsettings`) only when started with that option enabled; public-certificate installation/removal requires its separate explicit buttons.
 
 ## Credits
 

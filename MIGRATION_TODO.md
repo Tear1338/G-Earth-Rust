@@ -1,5 +1,13 @@
 # Migration tasks
 
+## Latest: Opt-in update checker, custom hotels UI, scheduler auto-start & doc sync
+
+- [x] Verify CI run `44975988809` (11/11 jobs green) and published `development-480` multi-OS release (including `G-Earth-Rust-Setup-x64.exe`, `G-Earth-Rust-macOS-app.zip`, `G-Earth-Rust-Linux.tar.gz`).
+- [x] Add opt-in GitHub release update checker (`src/update_checker.rs`) wired into the Info tab with localized `alert.outdated.*` notices.
+- [x] Wire saved custom hotels (`settings.values["custom_hotels"]` / imported `hotelsCache`) into the Connection hotel selector with Save/Remove actions, and add persisted scheduler auto-start on connect (`rust.scheduler.auto_start`), localized across all 9 languages.
+- [x] Sync `README.md`, `docs/NITRO.md`, `docs/PARITY.md`, and summary parity table with all completed milestones.
+- [ ] External / user-run validation only: live official-client end-to-end testing (Flash AIR, Origins, Unity WebGL, Nitro, real G-Presets/G-Python game sessions), Chrome TLS JA3/JA4 impersonation if a hotel rejects `rustls`, stateful OpenJDK `\b{g}` regex quirk, and production OS code-signing certificates.
+
 ## Latest: System tray, Linux/macOS global hotkeys, one-step export, full Cacher import & multi-OS installers
 
 - [x] Verify CI run `44972822532` (11/11 jobs green) and published `development-479` multi-OS release.
@@ -458,28 +466,28 @@ The local HTTPS fixture tolerates peers closing after the full response; the pre
 
 | Feature | Status | Next evidence or work |
 |---|---|---|
-| EVA framing, fields and mutations | Partial | Signed 8/16-bit operations and UTF-8 offset reads have Java oracle coverage; remaining helpers and regex/charset cases need fixtures. |
-| WEDGIE codecs and expressions | Partial | Expand parsing corpus and validate a real Shockwave client. |
-| Packet expressions and prediction | Partial | Broaden Java comparisons and metadata/client coverage. |
-| Injection, packet tools and safety | Partial | CLI revision detection and real connection behavior. |
+| EVA framing, fields and mutations | Partial | Signed 8/16-bit operations and UTF-8 offset reads have Java oracle coverage; stateful OpenJDK `\b{g}` regex behavior remains open. |
+| WEDGIE codecs and expressions | Partial | WEDGIE structure prediction implemented; validate against a real Shockwave client. |
+| Packet expressions and prediction | Partial | EVA and WEDGIE prediction implemented; broaden live hotel metadata coverage. |
+| Injection, packet tools and safety | Partial | CLI Flash hello revision auto-detection implemented; validate on real connections. |
 | TCP relay and reconnect | Partial | Real client, firewall and lifecycle tests. |
-| RC4 and Flash attachment | Partial | Read-only process/socket and memory scan checked on an official AIR session; real encrypted traffic, key recovery, relay and multi-instance testing remain. |
+| RC4 and Flash attachment | Partial | Windows/Linux/macOS process/socket/memory discovery implemented; real encrypted traffic, key recovery, relay and multi-instance testing remain. |
 | Origins encryption and attachment | Partial | Official client end-to-end testing. |
-| Nitro proxy, crypto and assets | Partial | Real hotel and SOCKS servers, TLS fingerprint, interactive desktop controls and platform cleanup. |
-| Unity communicator and WASM hooks | Partial | Real client revisions and extensions. |
+| Nitro proxy, crypto and assets | Partial | Cross-OS proxy/CA helpers and SOCKS5 implemented; real hotel/SOCKS servers and optional Chrome TLS JA3/JA4 impersonation remain. |
+| Unity communicator and WASM hooks | Partial | SOCKS5 and WASM hooks implemented; real client revisions and extensions remain. |
 | Java extension host | Partial | Live G-Presets workflows, other extensions and lifecycle parity. |
 | G-Python and Node integrations | Partial | Real sessions and visual QtConsole validation. |
-| Packet metadata and hotel detection | Partial | More providers, Unity discovery and real hotel checks. |
-| Rules and scheduler | Partial | Restart recovery, catch-up semantics and remaining editor options. |
-| Packet logger | Partial | Java export format, direction labels, visualization and WEDGIE behavior. |
-| Settings and localization | Partial | All Java settings, complete translations and interactive import. |
-| Room, entity, inventory and catalog APIs | Partial | Remaining parsers, more Java vectors and live extensions. |
-| Extension store | Partial | More package/version cases, visual content and live workflows. |
-| Desktop UI and themes | Partial | Complete layout/control parity, tray and interactive tests. |
-| Windows distribution | Partial | Installer, signing and release QA. |
-| Linux/macOS distribution | Partial | Desktop distribution and platform proxy helpers. |
-| End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup. |
-| Performance | Open | Representative comparable end-to-end Java and Rust benchmarks. |
+| Packet metadata and hotel detection | Partial | Saved custom hotels and `hotelsCache` import implemented; real hotel checks remain. |
+| Rules and scheduler | Partial | Auto-start on connect, cross-OS global hotkeys, restart recovery and catch-up implemented; real-client scheduling remains. |
+| Packet logger | Partial | One-step export, Java export format, direction labels and WEDGIE prediction implemented; real logger QA remains. |
+| Settings and localization | Partial | Full Java cache import and 100% 9-language UI localization implemented; interactive QA remains. |
+| Room, entity, inventory and catalog APIs | Partial | All upstream parser modules implemented with Java fixtures; live extension sessions remain. |
+| Extension store | Partial | Rich cards (categories, systems, unstable warnings) implemented; live install/update workflows remain. |
+| Desktop UI and themes | Partial | 3 themes (`G-Earth`, `G-Earth Dark`, `Tanji`), Windows tray, opt-in update check implemented; interactive QA remains. |
+| Windows distribution | Partial | Portable EXE and Inno Setup installer (`G-Earth-Rust-Setup-x64.exe`) packaged in CI; paid code signing remains. |
+| Linux/macOS distribution | Partial | macOS `.app` ZIP, Linux `.desktop` tarball, and cross-OS proxy/CA/dialog/hotkey helpers implemented; signing/notarization remains. |
+| End-to-end equivalence | Open | Real supported clients, encryption, reconnect, extensions and cleanup (user-run). |
+| Performance | Partial | Packet-build, RC4/rules pipeline and loopback relay benchmarks added; full-app Java-vs-Rust measurements remain. |
 
 Open-group backreferences, selected lookarounds, atomic groups, possessive quantifiers, nested classes and Java character properties have oracle coverage; full regex parity remains open. Friend, catalog and navigator cases have Java comparisons; next compare entity edge cases.
 

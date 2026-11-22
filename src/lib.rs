@@ -34,6 +34,7 @@ pub mod shockwave;
 pub mod socks;
 mod socks_http;
 pub mod structure_prediction;
+pub mod update_checker;
 #[cfg(feature = "web")]
 pub mod web_ca;
 #[cfg(feature = "web")]

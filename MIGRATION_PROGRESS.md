@@ -1,5 +1,13 @@
 # G-Earth Rust migration progress
 
+## Opt-in update checker, custom hotel persistence, scheduler auto-start & documentation sync
+
+- **Opt-in GitHub update checker (`src/update_checker.rs`, `src/desktop.rs`)**: Ported beta-29 `UpdateChecker.java` logic using `maven_version::ComparableVersion`, bounded 256 KiB HTTPS JSON read, prerelease fallback, and strict GitHub URL validation. Exposed via an explicit **"Check for updates"** button in the Info tab using localized `alert.outdated.*` messages (never runs unsolicited network requests at startup).
+- **Custom saved hotels (`src/desktop.rs`)**: Wired `settings.values["custom_hotels"]` (including imported beta-29 `hotelsCache`) directly into the Connection tab hotel selector with **Save hotel** / **Remove saved hotel** controls.
+- **Scheduler auto-start on connect (`src/desktop.rs`)**: Added persisted `scheduler_auto_start` option (`rust.scheduler.auto_start`) that automatically loads and starts saved schedule templates with deferred name resolution when a session connects and no active schedules are running.
+- **9-language localization & docs sync**: Added all 6 new `rust.*` UI keys to all 9 language bundles (`en`, `fr`, `de`, `es`, `fi`, `it`, `nl`, `pt`, `tr`), verified CI run `44975988809` (11/11 jobs green) and release `development-480` (containing `G-Earth-Rust-Setup-x64.exe`, `G-Earth-Rust-macOS-app.zip`, `G-Earth-Rust-Linux.tar.gz`), and updated `README.md`, `docs/NITRO.md`, `docs/PARITY.md`, and `MIGRATION_TODO.md`.
+- **Remaining boundary**: All offline/CI-verifiable engineering work is complete; live official-client end-to-end validation (Flash AIR, Origins, Unity WebGL, Nitro, real G-Presets/G-Python sessions), optional Chrome TLS JA3/JA4 impersonation (if required by a live hotel), stateful OpenJDK `\b{g}` regex behavior, and paid OS code-signing certificates remain external to CI.
+
 ## System tray, cross-OS global hotkeys, one-step export, full Java cache import & installers
 
 - **Windows System Tray (`crates/gearth-platform/src/tray.rs`)**: Added dedicated-thread Windows notification-area icon (`Shell_NotifyIconW`) with embedded G-Earth icon, click/double-click restore, and right-click context menu (`Show G-Earth Rust` / `Exit`), integrated with `src/desktop.rs`.

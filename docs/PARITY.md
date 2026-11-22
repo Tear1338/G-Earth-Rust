@@ -1,5 +1,11 @@
 # Compatibility with 1.5.4-beta-29
 
+## Opt-in update checker, custom hotels UI, scheduler auto-start & multi-OS release verification
+
+- CI run `44975988809` passed 11/11 jobs and published `development-480` with Windows portable EXE + Inno Setup installer (`G-Earth-Rust-Setup-x64.exe`), macOS `.app` ZIP (`G-Earth-Rust-macOS-app.zip`), and Linux `.desktop` tarball (`G-Earth-Rust-Linux.tar.gz`).
+- Added opt-in GitHub release update checking (`src/update_checker.rs` using `maven_version::ComparableVersion`, bounded 256 KiB read, URL validation) in the Info tab, saved custom hotels (`custom_hotels` / imported `hotelsCache`) in the Connection hotel selector, and persisted scheduler auto-start on connect, with all 185 `rust.*` keys localized across all 9 languages.
+- External/user-run boundary: live official-client sessions, Chrome TLS fingerprint emulation (if a hotel requires BoringSSL JA3/JA4), stateful OpenJDK `\b{g}` regex behavior, and paid OS code-signing certificates remain outside offline CI.
+
 ## System tray, cross-OS hotkeys, one-step export, full Java cache import & installers
 
 - Windows system tray (`Shell_NotifyIconW` with restore/exit menu), Linux X11 (`libX11.so.6`) and macOS (`CGEventTapCreate`) `Ctrl+Shift+0–9` global shortcuts, one-step logger export, `hotelsCache` Java cache import, and Extension Store categories/systems/unstable badges are implemented and cross-checked.

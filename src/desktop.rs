@@ -359,9 +359,13 @@ struct Desktop {
     active_schedule_edit: Option<u64>,
     schedule_path: String,
     scheduler: Scheduler,
+    scheduler_auto_start: bool,
     scheduler_hotkeys: Option<gearth_platform::GlobalHotkeys>,
     system_tray: Option<gearth_platform::SystemTray>,
     tray_initialized: bool,
+    custom_hotels: Vec<String>,
+    update_task: Option<Receiver<std::io::Result<gearth_rust::update_checker::UpdateInfo>>>,
+    update_result: Option<Result<gearth_rust::update_checker::UpdateInfo, String>>,
     block_header: u16,
     block_enabled: bool,
     block_direction: Direction,
@@ -950,6 +954,21 @@ fn write_log_capture<'a>(
     }
     output.flush()
 }
+fn parse_custom_hotels(raw: &str) -> Vec<String> {
+    let mut hotels = Vec::new();
+    for line in raw.lines() {
+        let host = line.trim();
+        if !host.is_empty()
+            && !hotels
+                .iter()
+                .any(|existing: &String| existing.eq_ignore_ascii_case(host))
+        {
+            hotels.push(host.to_owned());
+        }
+    }
+    hotels
+}
+
 fn combine_rules(
     mut saved: Vec<Rule>,
     draft: gearth_rust::packet::Result<Option<Rule>>,
@@ -1033,9 +1052,13 @@ impl Default for Desktop {
             active_schedule_edit: None,
             schedule_path: "gearth.sched".into(),
             scheduler: Scheduler::default(),
+            scheduler_auto_start: false,
             scheduler_hotkeys: None,
             system_tray: None,
             tray_initialized: false,
+            custom_hotels: Vec::new(),
+            update_task: None,
+            update_result: None,
             block_header: 0,
             block_enabled: false,
             block_direction: Direction::ToServer,
@@ -1213,6 +1236,18 @@ impl Desktop {
                 Err(std::sync::mpsc::TryRecvError::Empty) => {}
             }
         }
+        if let Some(task) = &self.update_task {
+            match task.try_recv() {
+                Ok(result) => {
+                    self.update_result = Some(result.map_err(|e| e.to_string()));
+                    self.update_task = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.update_task = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            }
+        }
         if let Some(pending) = &self.attachment_pending {
             match pending.try_recv() {
                 Ok(result) => {
@@ -1303,6 +1338,7 @@ impl Desktop {
         self.extension_processes
             .retain_mut(|p| !matches!(p.try_wait(), Ok(Some(_))));
         let mut relay_events_drained = true;
+        let mut auto_start_schedules = false;
         if let Some(events) = &self.events {
             let mut processed_events = 0;
             for event in events.try_iter().take(512) {
@@ -1383,6 +1419,7 @@ impl Desktop {
                     }
                     Event::Listening(a) => self.status = format!("Listening on {a}"),
                     Event::Connected(a) => {
+                        auto_start_schedules = true;
                         self.logger_connection_active = true;
                         self.logger_window.on_connect();
                         if self.logger_clear_on_connect {
@@ -1431,6 +1468,21 @@ impl Desktop {
                 }
             }
             relay_events_drained = processed_events < 512;
+        }
+        if auto_start_schedules
+            && self.scheduler_auto_start
+            && self.scheduler.jobs.is_empty()
+            && !self.settings.schedules.is_empty()
+        {
+            if let Err(e) = self
+                .compile_schedules(&self.settings.schedules, true)
+                .and_then(|specs| {
+                    self.scheduler
+                        .add_batch_deferred(specs, (Instant::now(), SystemTime::now()))
+                })
+            {
+                self.status = format!("{}: {e}", self.i18n.text("rust.scheduler.start_failed"));
+            }
         }
         if let Some(relay) = &self.relay {
             if relay.connected() {
@@ -1622,8 +1674,44 @@ impl Desktop {
                         for host in hotels {
                             ui.selectable_value(&mut self.attachment_host, (*host).into(), *host);
                         }
+                        for host in &self.custom_hotels {
+                            if !hotels.iter().any(|h| h.eq_ignore_ascii_case(host)) {
+                                ui.selectable_value(
+                                    &mut self.attachment_host,
+                                    host.clone(),
+                                    host.as_str(),
+                                );
+                            }
+                        }
                     });
-                ui.text_edit_singleline(&mut self.attachment_host);
+                ui.horizontal(|ui| {
+                    ui.text_edit_singleline(&mut self.attachment_host);
+                    let trimmed = self.attachment_host.trim().to_owned();
+                    let is_saved = !trimmed.is_empty()
+                        && self
+                            .custom_hotels
+                            .iter()
+                            .any(|h| h.eq_ignore_ascii_case(&trimmed));
+                    let is_builtin = hotels.iter().any(|h| h.eq_ignore_ascii_case(&trimmed));
+                    if !trimmed.is_empty()
+                        && !is_builtin
+                        && !is_saved
+                        && ui
+                            .button(self.i18n.text("rust.connection.save_hotel"))
+                            .clicked()
+                    {
+                        self.custom_hotels.push(trimmed);
+                        self.save_settings();
+                    } else if is_saved
+                        && ui
+                            .button(self.i18n.text("rust.connection.remove_hotel"))
+                            .clicked()
+                    {
+                        self.custom_hotels
+                            .retain(|h| !h.eq_ignore_ascii_case(&trimmed));
+                        self.save_settings();
+                    }
+                });
                 ui.checkbox(
                     &mut self.flash_auto,
                     self.i18n.text("rust.connection.flash_crypto"),
@@ -3446,6 +3534,10 @@ impl Desktop {
                 Err(e) => format!("{}: {e}", self.i18n.text("rust.scheduler.start_failed")),
             };
         }
+        ui.checkbox(
+            &mut self.scheduler_auto_start,
+            self.i18n.text("rust.scheduler.auto_start"),
+        );
         if ui
             .button(self.i18n.text("rust.scheduler.clear_saved"))
             .clicked()
@@ -4135,8 +4227,9 @@ impl eframe::App for Desktop {
                         .show(ui, |ui| self.extra(ui));
                 }
                 Tab::Info => {
-                    ui.heading("G-Earth Rust");
-                    ui.label("Rust port in progress, based on G-Realm/G-Earth 1.5.4-beta-29.");
+                    ui.heading(format!("G-Earth Rust {}", env!("CARGO_PKG_VERSION")));
+                    ui.label(self.i18n.text("tab.info.description"));
+                    ui.label("Rust port based on G-Realm/G-Earth 1.5.4-beta-29.");
                     ui.hyperlink_to(
                         "Original project · sirjonasxx & contributors",
                         "https://github.com/G-Realm/G-Earth",
@@ -4145,12 +4238,68 @@ impl eframe::App for Desktop {
                         "Rust project · 1desirable1337",
                         "https://github.com/Tear1338/G-Earth-Rust",
                     );
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        let checking = self.update_task.is_some();
+                        if ui
+                            .add_enabled(
+                                !checking,
+                                egui::Button::new(self.i18n.text("rust.info.check_updates")),
+                            )
+                            .clicked()
+                        {
+                            let (send, receive) = std::sync::mpsc::channel();
+                            self.update_task = Some(receive);
+                            self.update_result = None;
+                            std::thread::spawn(move || {
+                                let _ = send.send(
+                                    gearth_rust::update_checker::check_github_updates(
+                                        gearth_rust::update_checker::DEFAULT_REPOSITORY,
+                                        env!("CARGO_PKG_VERSION"),
+                                    ),
+                                );
+                            });
+                        }
+                        if checking {
+                            ui.label(self.i18n.text("rust.info.checking_updates"));
+                        }
+                    });
+                    if let Some(result) = &self.update_result {
+                        match result {
+                            Ok(info) if info.outdated => {
+                                ui.colored_label(
+                                    egui::Color32::from_rgb(220, 140, 20),
+                                    format!(
+                                        "{} — {} ({})",
+                                        self.i18n.text("alert.outdated.title"),
+                                        self.i18n.text("alert.outdated.content.newversion"),
+                                        info.latest_version
+                                    ),
+                                );
+                                ui.hyperlink_to(
+                                    self.i18n.text("alert.outdated.content.update"),
+                                    &info.release_url,
+                                );
+                            }
+                            Ok(info) => {
+                                ui.label(format!(
+                                    "{} ({})",
+                                    self.i18n.text("rust.info.up_to_date"),
+                                    info.latest_version
+                                ));
+                            }
+                            Err(error) => {
+                                ui.label(error);
+                            }
+                        }
+                    }
+                    ui.add_space(8.0);
                     ui.label(
-                    "MIT licensed. Read docs/PARITY.md for implemented and missing functionality.",
-                );
+                        "MIT licensed. Read docs/PARITY.md for implemented and missing functionality.",
+                    );
                     ui.label(
-                    "Performance improvements have not been measured against the Java application.",
-                );
+                        "Full-application performance has not been measured against the Java application.",
+                    );
                 }
             }
         });
@@ -4212,6 +4361,7 @@ impl eframe::App for Desktop {
             || self.extension_host.is_some()
             || self.python_console.is_pending()
             || self.scheduler_hotkeys.is_some()
+            || self.update_task.is_some()
         {
             let mut delay = Duration::from_millis(50);
             if self.relay.as_ref().is_some_and(Connection::connected) {
@@ -4266,6 +4416,18 @@ impl Desktop {
             .get("python_enabled")
             .copied()
             .unwrap_or(true);
+        self.scheduler_auto_start = self
+            .settings
+            .booleans
+            .get("scheduler_auto_start")
+            .copied()
+            .unwrap_or(false);
+        self.custom_hotels = self
+            .settings
+            .values
+            .get("custom_hotels")
+            .map(|value| parse_custom_hotels(value))
+            .unwrap_or_default();
         let enabled = self
             .settings
             .booleans
@@ -4536,7 +4698,15 @@ impl Desktop {
         self.settings
             .values
             .insert("theme".into(), self.theme.name().into());
+        if self.custom_hotels.is_empty() {
+            self.settings.values.remove("custom_hotels");
+        } else {
+            self.settings
+                .values
+                .insert("custom_hotels".into(), self.custom_hotels.join("\n"));
+        }
         self.settings.booleans.extend([
+            ("scheduler_auto_start".into(), self.scheduler_auto_start),
             ("socks_enabled".into(), self.socks_enabled),
             ("origins".into(), self.origins),
             ("nitro".into(), self.nitro),
@@ -5524,5 +5694,13 @@ mod logger_prediction_tests {
             &outgoing, "roominfo", &matches, true, true
         ));
         assert!(log_row_matches(&outgoing, "42", &matches, true, true));
+    }
+
+    #[test]
+    fn custom_hotels_parse_trims_and_deduplicates_case_insensitively() {
+        let parsed = super::parse_custom_hotels(
+            "  game-test.example \n\nGAME-TEST.EXAMPLE\ngame-2.example\n",
+        );
+        assert_eq!(parsed, vec!["game-test.example", "game-2.example"]);
     }
 }
