@@ -1,5 +1,9 @@
 # Rust migration architecture
 
+## macOS TCP ownership
+
+The platform enumerates sockets for discovered client processes and matches both TCP endpoints using libproc data. It refuses attribution on inaccessible candidates, multiple owners or scoped IPv6; mapped IPv6 and real-client permissions need further verification.
+
 ## macOS Mach memory scanning
 
 The macOS platform scanner obtains a task port and scans readable writable Mach regions in overlapping chunks, using existing permutation detection. It bounds bytes, time and tables per page, supports cancellation and continuation, skips unreadable chunks and releases returned port rights. Access can be denied by macOS process security; native and real-client behavior require verification.

@@ -399,6 +399,219 @@ mod memory {
 #[cfg(target_os = "macos")]
 pub(super) use memory::scan_from;
 
+#[cfg(target_os = "macos")]
+mod sockets {
+    use libproc::net_info::SocketFDInfo;
+    use std::{
+        io, mem,
+        net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    };
+
+    const PROC_PIDFDSOCKETINFO: i32 = 3;
+    const PROX_FDTYPE_SOCKET: u32 = 2;
+    const SOCKINFO_TCP: i32 = 2;
+    const TCP_ESTABLISHED: i32 = 4;
+    const MAX_FDS: usize = 131_072;
+
+    fn file_descriptors(pid: i32) -> io::Result<Vec<libc::proc_fdinfo>> {
+        // SAFETY: A null buffer and zero size query the required allocation size.
+        let size =
+            unsafe { libc::proc_pidinfo(pid, libc::PROC_PIDLISTFDS, 0, std::ptr::null_mut(), 0) };
+        if size <= 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let mut capacity = (size as usize / mem::size_of::<libc::proc_fdinfo>())
+            .saturating_add(32)
+            .min(MAX_FDS);
+        loop {
+            let mut fds: Vec<_> = (0..capacity)
+                .map(|_| libc::proc_fdinfo {
+                    proc_fd: 0,
+                    proc_fdtype: 0,
+                })
+                .collect();
+            let bytes = capacity * mem::size_of::<libc::proc_fdinfo>();
+            // SAFETY: The vector holds `bytes` initialized writable bytes for the call.
+            let written = unsafe {
+                libc::proc_pidinfo(
+                    pid,
+                    libc::PROC_PIDLISTFDS,
+                    0,
+                    fds.as_mut_ptr().cast(),
+                    bytes as i32,
+                )
+            };
+            if written <= 0 {
+                return Err(io::Error::last_os_error());
+            }
+            if written as usize >= bytes {
+                if capacity == MAX_FDS {
+                    return Err(io::Error::other("macOS file descriptor list exceeds limit"));
+                }
+                capacity = capacity.saturating_mul(2).min(MAX_FDS);
+                continue;
+            }
+            fds.truncate(written as usize / mem::size_of::<libc::proc_fdinfo>());
+            return Ok(fds);
+        }
+    }
+
+    fn endpoint(ip: IpAddr, port: u16) -> SocketAddr {
+        SocketAddr::new(ip.to_canonical(), port)
+    }
+
+    fn socket_endpoints(info: &SocketFDInfo) -> Option<(SocketAddr, SocketAddr)> {
+        if info.psi.soi_kind != SOCKINFO_TCP
+            || info.psi.soi_type != libc::SOCK_STREAM
+            || info.psi.soi_protocol != libc::IPPROTO_TCP
+        {
+            return None;
+        }
+        // SAFETY: soi_kind identifies the active TCP member of the union.
+        let tcp = unsafe { info.psi.soi_proto.pri_tcp };
+        if tcp.tcpsi_state != TCP_ESTABLISHED {
+            return None;
+        }
+        let socket = tcp.tcpsi_ini;
+        let local_port = u16::from_be(socket.insi_lport as u16);
+        let remote_port = u16::from_be(socket.insi_fport as u16);
+        let (local, remote) = match info.psi.soi_family {
+            libc::AF_INET => {
+                // SAFETY: AF_INET identifies the IPv4 members of both address unions.
+                let (a, b) = unsafe {
+                    (
+                        socket.insi_laddr.ina_46.i46a_addr4.s_addr,
+                        socket.insi_faddr.ina_46.i46a_addr4.s_addr,
+                    )
+                };
+                (
+                    IpAddr::V4(Ipv4Addr::from(a.to_ne_bytes())),
+                    IpAddr::V4(Ipv4Addr::from(b.to_ne_bytes())),
+                )
+            }
+            libc::AF_INET6 => {
+                // SAFETY: AF_INET6 identifies the IPv6 members of both address unions.
+                let (a, b) = unsafe {
+                    (
+                        socket.insi_laddr.ina_6.s6_addr,
+                        socket.insi_faddr.ina_6.s6_addr,
+                    )
+                };
+                (IpAddr::V6(Ipv6Addr::from(a)), IpAddr::V6(Ipv6Addr::from(b)))
+            }
+            _ => return None,
+        };
+        Some((endpoint(local, local_port), endpoint(remote, remote_port)))
+    }
+
+    fn inspect_pid(pid: u32, local: SocketAddr, remote: SocketAddr) -> io::Result<bool> {
+        let pid = i32::try_from(pid)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid process ID"))?;
+        for fd in file_descriptors(pid)? {
+            if fd.proc_fdtype != PROX_FDTYPE_SOCKET {
+                continue;
+            }
+            let mut info = SocketFDInfo::default();
+            let size = mem::size_of::<SocketFDInfo>();
+            // SAFETY: libproc writes into a properly aligned, initialized SocketFDInfo allocation.
+            let written = unsafe {
+                libc::proc_pidfdinfo(
+                    pid,
+                    fd.proc_fd,
+                    PROC_PIDFDSOCKETINFO,
+                    (&mut info as *mut SocketFDInfo).cast(),
+                    size as i32,
+                )
+            };
+            if written as usize != size {
+                return Err(io::Error::other("cannot inspect macOS socket descriptor"));
+            }
+            if socket_endpoints(&info) == Some((local, remote)) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn owner_from_pids(local: SocketAddr, remote: SocketAddr, pids: &[u32]) -> Option<u32> {
+        if matches!(local, SocketAddr::V6(v) if v.scope_id() != 0)
+            || matches!(remote, SocketAddr::V6(v) if v.scope_id() != 0)
+        {
+            return None;
+        }
+        let local = endpoint(local.ip(), local.port());
+        let remote = endpoint(remote.ip(), remote.port());
+        let mut owner = None;
+        for &pid in pids {
+            match inspect_pid(pid, local, remote) {
+                Ok(true) if owner.is_some_and(|previous| previous != pid) => return None,
+                Ok(true) => owner = Some(pid),
+                Ok(false) => {}
+                Err(_) => return None,
+            }
+        }
+        owner
+    }
+
+    pub(crate) fn tcp_owner(local: SocketAddr, remote: SocketAddr) -> io::Result<Option<u32>> {
+        let pids: Vec<_> = super::processes()?
+            .into_iter()
+            .map(|process| process.pid)
+            .collect();
+        Ok(owner_from_pids(local, remote, &pids))
+    }
+
+    #[cfg(test)]
+    #[test]
+    fn identifies_a_controlled_loopback_socket_owner() {
+        use std::net::{TcpListener, TcpStream};
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (_server, _) = listener.accept().unwrap();
+        let local = client.local_addr().unwrap();
+        let remote = client.peer_addr().unwrap();
+        assert_eq!(
+            owner_from_pids(local, remote, &[std::process::id()]),
+            Some(std::process::id())
+        );
+        let wrong = SocketAddr::new(remote.ip(), remote.port().wrapping_add(1));
+        assert_eq!(owner_from_pids(local, wrong, &[std::process::id()]), None);
+        assert_eq!(
+            owner_from_pids(local, remote, &[std::process::id(), u32::MAX]),
+            None
+        );
+    }
+
+    #[cfg(test)]
+    #[test]
+    fn identifies_ipv6_loopback_when_available() {
+        use std::net::{TcpListener, TcpStream};
+        let Ok(listener) = TcpListener::bind("[::1]:0") else {
+            eprintln!("IPv6 loopback unavailable; owner fixture skipped");
+            return;
+        };
+        let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (_server, _) = listener.accept().unwrap();
+        let local = client.local_addr().unwrap();
+        let remote = client.peer_addr().unwrap();
+        assert_eq!(
+            owner_from_pids(local, remote, &[std::process::id()]),
+            Some(std::process::id())
+        );
+        eprintln!("macOS IPv6 loopback ownership verified");
+        let scoped = SocketAddr::V6(std::net::SocketAddrV6::new(
+            Ipv6Addr::LOCALHOST,
+            local.port(),
+            0,
+            1,
+        ));
+        assert_eq!(owner_from_pids(scoped, remote, &[std::process::id()]), None);
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub(super) use sockets::tcp_owner;
+
 #[cfg(test)]
 #[test]
 fn macos_client_names_use_executable_basename() {

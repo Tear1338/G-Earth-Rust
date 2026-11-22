@@ -40,7 +40,11 @@ pub fn tcp_owner(
     {
         linux::tcp_owner(local, remote)
     }
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(target_os = "macos")]
+    {
+        macos::tcp_owner(local, remote)
+    }
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         let _ = (local, remote);
         Ok(None)

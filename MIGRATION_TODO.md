@@ -1,5 +1,10 @@
 # Migration tasks
 
+## Latest: macOS TCP ownership
+
+- [x] Implement conservative libproc TCP endpoint-to-client attribution and native loopback fixtures; cross-check macOS targets.
+- [ ] Verify native IPv4/IPv6 fixtures and mapped IPv6 behavior in CI; implement privileged macOS hosts/proxy lifecycle. The user handles live tests.
+
 ## Latest: macOS Mach memory scanner
 
 - [x] Implement bounded, cancellable, read-only Mach region scanning and controlled self-process fixtures; cross-check Intel and Apple Silicon targets.

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — macOS TCP ownership
+
+- Add conservative macOS TCP socket owner discovery for selected client processes.
+
 ## Unreleased — macOS memory scanning
 
 - Add bounded, resumable, read-only Mach memory scanning for selected Habbo and Flash processes.

@@ -1,5 +1,9 @@
 # Compatibility with 1.5.4-beta-29
 
+## macOS TCP ownership status
+
+Apple Silicon and Intel cross-target Clippy pass; native IPv4/IPv6 loopback fixtures await macOS CI. Scoped IPv6 is deliberately unattributed; mapped IPv6 and actual client permissions remain unverified.
+
 ## macOS Mach scanner status
 
 Apple Silicon and Intel macOS cross-target compilation and Clippy pass. Controlled self-process tests for table discovery, cancellation and pagination await native macOS CI; actual target permissions and live client behavior are unverified. Socket ownership and macOS privileged hosts/proxy support remain open.

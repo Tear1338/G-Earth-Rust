@@ -1,5 +1,9 @@
 # G-Earth Rust migration progress
 
+## macOS TCP owner discovery
+
+The macOS platform now inspects selected client processes’ TCP socket descriptors through libproc and matches both endpoints, returning no owner on ambiguity, incomplete descriptor access or scoped IPv6. Controlled native loopback fixtures cover IPv4, inaccessible candidates and IPv6 when available; they await macOS CI. Apple Silicon and Intel cross-target Clippy, Windows workspace/all-targets tests, desktop/web Clippy and debug build pass. Native macOS CI run 44967568993 passed the scanner self-process, cancellation, pagination and release job; its overall run is still completing. Mapped IPv6, socket permissions on real clients, privileged hosts/proxy lifecycle and real client/extension compatibility remain unverified.
+
 ## macOS read-only Mach scanner
 
 Added a resumable macOS Flash memory scanner using Mach task/region/read APIs, scanning readable writable regions without writing to the target. It enforces cancellation, time/byte/table limits, chunk overlap and explicit task-access errors; returned task and region ports are released. Controlled self-process tests cover RC4-table discovery, cancellation and resuming after a byte budget, but can run only on macOS and await CI. Apple Silicon and Intel macOS cross-target Clippy pass; Windows workspace/all-targets, desktop/web Clippy and debug compilation pass. Native macOS CI for process discovery has passed workspace and desktop/web tests and is building release. Socket-owner attribution, macOS privileged hosts/proxy lifecycle, permissions with an actual client, and all real client/extension compatibility remain unverified.
@@ -789,4 +793,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Commit and push the bounded macOS Mach scanner, then inspect native macOS CI for controlled self-process discovery, cancellation, pagination and release compilation; correct any failure. Implement socket ownership and privileged hosts/proxy lifecycle. Continue Java size differences and `Matcher.last` for `\b{g}`. The user handles live tests; clients, protocols and extensions remain unverified.
+Commit and push macOS TCP owner discovery, then inspect native macOS CI for IPv4/IPv6 loopback and release compilation; correct any failure. Test mapped IPv6 separately and implement privileged hosts/proxy lifecycle. Continue Java size differences and `Matcher.last` for `\b{g}`. The user handles live tests; clients, protocols and extensions remain unverified.

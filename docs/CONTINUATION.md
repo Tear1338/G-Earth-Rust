@@ -1,5 +1,9 @@
 # Continuation state
 
+## Next: native macOS socket validation
+
+Commit and push macOS TCP owner discovery, inspect native macOS CI for IPv4/IPv6 loopback and build results, and correct any failure. Test mapped IPv6 separately, then implement privileged hosts/proxy lifecycle. Live tests belong to the user.
+
 ## Next: validate native macOS scanner
 
 Commit and push the Mach scanner, inspect native macOS CI for self-process discovery, cancellation, pagination and release compilation, and correct any failure. Then implement socket-owner attribution and privileged hosts/proxy lifecycle. The user handles live client tests.

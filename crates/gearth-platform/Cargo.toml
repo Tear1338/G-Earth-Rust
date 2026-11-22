@@ -6,6 +6,7 @@ license = "MIT"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 libc = "0.2"
+libproc = "0.15"
 mach2 = "0.7"
 
 [target.'cfg(windows)'.dependencies]
