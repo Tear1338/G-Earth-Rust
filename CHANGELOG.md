@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — bulk string parity corpus
+
+- Expand beta-29 bulk string comparison with 600 mixed-field cases.
+
 ## Unreleased — Java bulk string compatibility
 
 - Add a Java-compatible bulk string replacement method with UTF-16 scanning, ISO-8859-1 encoding and the tested empty-field growth quirk.

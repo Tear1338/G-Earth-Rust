@@ -1,5 +1,9 @@
 # G-Earth Rust migration progress
 
+## Expanded Java bulk string oracle
+
+Six hundred additional deterministic beta-29 packets exercise six mixed fields, empty strings, Unicode replacements and several replacement limits. All match the Java-compatible bulk string method; the full mutation oracle, formatting, test Clippy and 45 mutation tests passed. Windows CI run 44964380105, including release compilation, passed at code commit `beb327c9f6020b5a0023c869bc5972ab96cf9c77`; a separate local release is still running. Cursor clamping and bounded large-input behavior differ from Java. Clients, protocols and extensions remain unverified.
+
 ## Java bulk string mutation
 
 A separate `replace_strings_java` implements beta-29 bulk string replacement for non-Latin-1 input and UTF-16 scan distances. It also reproduces the original empty-string growth quirk that can alter the first byte of the following field; the existing strict API retains its safer behavior. Sixty new Java packet fixtures and 48 existing Latin-1 cases agree with beta-29; the mutation oracle, workspace/all-targets suite, desktop/web Clippy and debug build passed. The Java variant preserves Rust’s bounded transactional behavior and cursor clamping, so it does not claim parity for oversized fields or a cursor beyond the new packet end. Windows release and CI run 44656055311 passed for preceding commit `f2f2cd7dc22d720dbff31a1e9fdde5b3ede95ee4`. Real clients, protocols and extensions remain unverified.
@@ -757,4 +761,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Commit and push the validated Java bulk string mutation, then rebuild Windows desktop/web release and inspect CI. Investigate remaining cursor/size differences, Flash scheduling and `Matcher.last` state for `\b{g}`. The user handles live tests; clients, protocols and extensions remain unverified.
+Commit and push the validated expanded bulk-string oracle, then verify CI. Inspect Java cursor behavior after a shrinking bulk replacement and Rust packet invariants before selecting a safe compatibility representation; then continue Flash scheduling and `Matcher.last` for `\b{g}`. The user handles live tests; clients, protocols and extensions remain unverified.

@@ -2055,6 +2055,20 @@ public class JavaMutationOracle {
                 }
             }
         }
+        String[] bulkFields = {"", "a", "b", "é", "aa", "?"};
+        String[] bulkOld = {"", "a", "b", "é", "雪"};
+        String[] bulkNew = {"", "a", "é", "雪", "🐱", "ZZ", "🐱!"};
+        int bulkState = 0x12345678;
+        for (int i = 0; i < 600; i++) {
+            HPacket sample = new HPacket(5);
+            for (int j = 0; j < 6; j++) {
+                bulkState = bulkState * 1664525 + 1013904223;
+                sample.appendString(bulkFields[Integer.remainderUnsigned(bulkState, bulkFields.length)]);
+            }
+            sample.setReadIndex(7);
+            sample.replaceXStrings(bulkOld[i % bulkOld.length], bulkNew[(i / bulkOld.length) % bulkNew.length], new int[]{0, 1, 2, -1}[(i / (bulkOld.length * bulkNew.length)) % 4]);
+            emit("strings_unicode_mixed_" + i, sample);
+        }
         String[] oldValues = {"a", "abc", "é"};
         String[] values = {"", "a", "abc", "é"};
         int[] limits = {0, 1, 2, -1};

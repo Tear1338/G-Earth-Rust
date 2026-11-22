@@ -1,5 +1,9 @@
 # Rust migration architecture
 
+## Mixed bulk string oracle
+
+The compatibility path is checked against mixed-field beta-29 packets, including empty strings and supplementary Unicode replacements. Work and cursor safety bounds remain explicit differences.
+
 ## Java bulk string replacement
 
 The explicit Java-compatible bulk API scans the evolving packet, converts replacements with Java ISO-8859-1 semantics, advances by UTF-16 units, and reproduces Java’s empty-field growth quirk. It uses transactional mutation and a bounded total suffix movement; the existing strict bulk API remains separate.

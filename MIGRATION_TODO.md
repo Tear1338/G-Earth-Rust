@@ -1,5 +1,10 @@
 # Migration tasks
 
+## Latest: expanded Java bulk string oracle
+
+- [x] Compare 600 deterministic mixed-field packets against beta-29.
+- [ ] Verify remaining cursor and size-limit differences, `\b{g}`, platform gaps and live compatibility. The user handles client tests.
+
 ## Latest: Java bulk string replacement
 
 - [x] Add a separate beta-29-compatible bulk string method with Unicode encoding, UTF-16 scan advance and empty-string growth behavior; compare Java fixtures.

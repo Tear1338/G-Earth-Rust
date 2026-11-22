@@ -3956,6 +3956,28 @@ fn mutations_match_original_java_packets_and_cursor() {
             }
         }
     }
+    let bulk_fields = ["", "a", "b", "é", "aa", "?"];
+    let bulk_old = ["", "a", "b", "é", "雪"];
+    let bulk_new = ["", "a", "é", "雪", "🐱", "ZZ", "🐱!"];
+    let mut bulk_state = 0x12345678u32;
+    for i in 0..600 {
+        let mut sample = Packet::new(5);
+        for _ in 0..6 {
+            bulk_state = bulk_state.wrapping_mul(1664525).wrapping_add(1013904223);
+            sample
+                .put_string(bulk_fields[bulk_state as usize % bulk_fields.len()])
+                .unwrap();
+        }
+        sample.set_cursor(7).unwrap();
+        sample
+            .replace_strings_java(
+                bulk_old[i % bulk_old.len()],
+                bulk_new[(i / bulk_old.len()) % bulk_new.len()],
+                [Some(0), Some(1), Some(2), None][(i / (bulk_old.len() * bulk_new.len())) % 4],
+            )
+            .unwrap();
+        check(&format!("strings_unicode_mixed_{i}"), &sample);
+    }
     let values = ["", "a", "abc", "é"];
     let old_values = ["a", "abc", "é"];
     let limits = [Some(0), Some(1), Some(2), None];

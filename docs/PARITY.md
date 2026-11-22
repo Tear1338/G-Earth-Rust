@@ -1,5 +1,9 @@
 # Compatibility with 1.5.4-beta-29
 
+## Expanded bulk string evidence
+
+Six hundred deterministic mixed-field packets agree with beta-29 for selected empty, Latin-1 and Unicode strings and replacement limits. This does not establish parity for oversized data or cursor positions beyond the resulting packet.
+
 ## Java bulk string replacement evidence
 
 Sixty Unicode/empty-field packet cases plus 48 existing Latin-1 cases match the beta-29 API. Rust still bounds replacement work and clamps its cursor, so oversized cases and Java’s out-of-range cursor behavior remain different.
