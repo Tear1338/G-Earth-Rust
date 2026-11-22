@@ -1,5 +1,9 @@
 # Compatibility with 1.5.4-beta-29
 
+## Java substring write evidence
+
+Beta-29 fixtures cover substring replacement growing an empty field and shrinking a field with the cursor at the old packet end. Broader regex, size-limit and live compatibility remain unverified.
+
 ## Java direct string mutation evidence
 
 Eighty beta-29 direct replacement cases cover empty/nonempty fields, varied following fields and Unicode replacements; additional cases verify cursor retention. Oversized data, other Java APIs and live compatibility remain unverified.

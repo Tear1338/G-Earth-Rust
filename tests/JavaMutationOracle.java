@@ -2025,6 +2025,19 @@ public class JavaMutationOracle {
         emptyGrowth.setReadIndex(7);
         emptyGrowth.replaceString(6, "x");
         emit("empty_growth_original", emptyGrowth);
+        HPacket emptySubstringGrowth = new HPacket(5);
+        emptySubstringGrowth.appendString("").appendByte((byte) 0xff);
+        emptySubstringGrowth.setReadIndex(7);
+        java.io.PrintStream substringOriginal = System.out;
+        try { System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream())); emptySubstringGrowth.replaceXSubstrings("", "x", 1); }
+        finally { System.setOut(substringOriginal); }
+        emit("substring_empty_java_growth", emptySubstringGrowth);
+        HPacket substringCursor = new HPacket(5);
+        substringCursor.appendString("abcdefgh").appendInt(42);
+        substringCursor.setReadIndex(substringCursor.toBytes().length);
+        try { System.setOut(new java.io.PrintStream(java.io.OutputStream.nullOutputStream())); substringCursor.replaceXSubstrings("abcdefgh", "x", 1); }
+        finally { System.setOut(substringOriginal); }
+        emit("substring_java_cursor_past_end", substringCursor);
         HPacket directCursor = new HPacket(5);
         directCursor.appendString("abcdefgh").appendInt(42);
         directCursor.setReadIndex(directCursor.toBytes().length);

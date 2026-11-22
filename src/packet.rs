@@ -6055,7 +6055,7 @@ impl Packet {
                         {
                             return Err(error("packet too large"));
                         }
-                        candidate.replace_string(i, &result)?;
+                        candidate.replace_string_java(i, &result)?;
                         count += 1;
                         offset -= 1 + pattern_bytes.len() as isize;
                         if limit == Some(count) {

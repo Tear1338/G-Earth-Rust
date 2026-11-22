@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — Java substring writes
+
+- Match Java field growth and cursor behavior when regex substring mutation writes a string.
+
 ## Unreleased — Java direct string compatibility
 
 - Match beta-29 direct string cursor retention and empty-field growth behavior in the explicit Java API.

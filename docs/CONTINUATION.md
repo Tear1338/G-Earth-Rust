@@ -1,5 +1,9 @@
 # Continuation state
 
+## Next: validate Java substring writes
+
+Workspace and desktop/web checks pass for Java-compatible substring writes. Commit and push, then build release and inspect CI. Continue regex state, size bounds, macOS and user-run live compatibility work.
+
 ## Next: validate direct Java string replacement
 
 Workspace and desktop/web checks pass for the shared Java string replacement helper. Commit and push, rebuild release and inspect CI; check the prior G-Presets rerun after a Maven HTTP 403. Continue `\b{g}`, size bounds, platform support and user-run live testing.

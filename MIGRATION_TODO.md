@@ -1,5 +1,11 @@
 # Migration tasks
 
+## Latest: Java substring writes
+
+- [x] Use Java-compatible string writes for substring mutation and compare empty-growth and cursor fixtures against beta-29.
+- [x] Finish workspace and desktop/web checks.
+- [ ] Rebuild release and inspect CI. Regex and live compatibility remain open.
+
 ## Latest: Java direct string mutation
 
 - [x] Reproduce beta-29 direct empty-string growth and cursor retention, shared with Java bulk replacement; compare 80 packet cases.

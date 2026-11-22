@@ -3870,6 +3870,32 @@ fn mutations_match_original_java_packets_and_cursor() {
     let mut java_growth = empty_growth.clone();
     java_growth.replace_string_java(6, "x").unwrap();
     check("empty_growth_original", &java_growth);
+    let mut substring_growth = Packet::new(5);
+    substring_growth
+        .put_string("")
+        .unwrap()
+        .put_u8(0xff)
+        .unwrap();
+    substring_growth.set_cursor(7).unwrap();
+    substring_growth
+        .replace_substrings_java("", "x", Some(1))
+        .unwrap();
+    check("substring_empty_java_growth", &substring_growth);
+    let mut substring_cursor = Packet::new(5);
+    substring_cursor
+        .put_string("abcdefgh")
+        .unwrap()
+        .put_i32(42)
+        .unwrap();
+    substring_cursor
+        .set_cursor(substring_cursor.bytes().len())
+        .unwrap();
+    substring_cursor
+        .replace_substrings_java("abcdefgh", "x", Some(1))
+        .unwrap();
+    check("substring_java_cursor_past_end", &substring_cursor);
+    assert_eq!(substring_cursor.remaining(), 0);
+    assert!(substring_cursor.read_u8().is_err());
     empty_growth.replace_string(6, "x").unwrap();
     let (java_hex, _) = expected["empty_growth_original"].split_once(',').unwrap();
     assert_ne!(

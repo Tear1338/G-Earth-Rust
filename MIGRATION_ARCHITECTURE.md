@@ -1,5 +1,9 @@
 # Rust migration architecture
 
+## Java substring writes
+
+The Java regex substring path commits changed EVA fields through the shared Java-compatible string writer, preserving its cursor and empty-field growth behavior. The strict literal API remains separate.
+
 ## Java direct string mutation
 
 An encoded compatibility helper shared by direct and bulk Java string replacements preserves the read cursor and reproduces Java’s empty-field growth quirk. The strict string replacement continues to clamp and avoid the quirk.

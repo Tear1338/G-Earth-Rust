@@ -291,6 +291,14 @@ fn java_direct_string_mutation_preserves_java_growth_and_cursor() {
 }
 
 #[test]
+fn java_substring_empty_field_growth_keeps_java_quirk() {
+    let mut packet = Packet::new(5);
+    packet.put_string("").unwrap().put_u8(0xff).unwrap();
+    assert_eq!(packet.replace_substrings_java("", "x", Some(1)).unwrap(), 1);
+    assert_eq!(&packet.bytes()[6..], &[0, 1, b'x', 0]);
+}
+
+#[test]
 fn java_bulk_shrink_retains_cursor_and_reads_fail_safely() {
     let mut packet = Packet::new(5);
     packet.put_string("abcdefgh").unwrap().put_i32(42).unwrap();

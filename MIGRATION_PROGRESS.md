@@ -1,5 +1,9 @@
 # G-Earth Rust migration progress
 
+## Java substring mutation uses compatible writes
+
+The Java regex substring mutation path now writes changed fields through the Java-compatible string helper. Two beta-29 fixtures reproduce the empty-field growth quirk and cursor retention after shrink; the complete Java mutation oracle and 48 mutation tests pass. Workspace/all-targets tests, desktop/web Clippy and debug compilation passed. CI run 44965609759, including Windows release, passed at preceding commit `7e4a53657336aea35d083437bfeb3b440115ba9e`; its separate local release is still running. Real clients, protocols and extensions remain unverified.
+
 ## Java direct string mutation
 
 The explicit Java direct string replacement now retains its cursor and reproduces Java’s empty-field growth quirk, while the strict replacement API remains unchanged. The shared encoded helper is also used by Java bulk replacement. Eighty direct beta-29 combinations plus cursor and earlier bulk fixtures pass the Java mutation oracle; 47 mutation tests pass. Workspace/all-targets tests, 169 desktop/web library tests (7 ignored), desktop/web Clippy and debug build passed. The prior commit `fd140aa` passed the Windows release CI job; its G-Presets job initially failed when Maven returned HTTP 403 and is being rerun. Java work/size limits and other cursor cases, `\b{g}`, macOS, and live clients/protocols/extensions remain open.
@@ -769,4 +773,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Commit and push the validated shared Java direct string replacement helper, then rebuild Windows desktop/web release and inspect CI; check the G-Presets rerun for `fd140aa`. Continue Java size differences, Flash scheduling and `Matcher.last` for `\b{g}`. The user handles live tests; clients, protocols and extensions remain unverified.
+Commit and push the validated Java substring writes, then rebuild Windows desktop/web release and inspect CI. Continue Java size differences, Flash scheduling and `Matcher.last` for `\b{g}`. The user handles live tests; clients, protocols and extensions remain unverified.
