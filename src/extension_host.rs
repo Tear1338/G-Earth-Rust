@@ -1440,7 +1440,11 @@ fn safe_extension_filename(filename: &str) -> bool {
 
 /// Discover all standalone extension files stored directly inside `extensions_dir`.
 pub fn discover_installed_files(extensions_dir: &Path) -> Vec<std::path::PathBuf> {
-    let Ok(entries) = std::fs::read_dir(extensions_dir) else {
+    let dir = extensions_dir
+        .canonicalize()
+        .map(normalize_launch_path)
+        .unwrap_or_else(|_| extensions_dir.to_path_buf());
+    let Ok(entries) = std::fs::read_dir(&dir) else {
         return Vec::new();
     };
     let mut files: Vec<std::path::PathBuf> = entries
