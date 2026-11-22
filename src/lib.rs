@@ -15,6 +15,7 @@ pub mod i18n;
 pub mod injection;
 mod java_character_names;
 mod java_regex_properties;
+pub mod java_runtime;
 mod java_unicode_names;
 pub mod logger_display;
 pub mod logger_filter;

@@ -330,6 +330,7 @@ struct Desktop {
     extension_runtime: String,
     extension_path: String,
     extension_processes: Vec<Child>,
+    extension_launch_task: Option<Receiver<std::io::Result<Child>>>,
     extension_console: VecDeque<String>,
     hotel_version: String,
     client_identifier: String,
@@ -1044,6 +1045,7 @@ impl Default for Desktop {
             extension_runtime: find_java().to_string_lossy().into_owned(),
             extension_path: String::new(),
             extension_processes: Vec::new(),
+            extension_launch_task: None,
             extension_console: VecDeque::new(),
             hotel_version: String::new(),
             client_identifier: String::new(),
@@ -1360,6 +1362,23 @@ impl Desktop {
                     self.extension_console.pop_front();
                 }
                 self.extension_console.push_back(line);
+            }
+        }
+        if let Some(task) = &self.extension_launch_task {
+            match task.try_recv() {
+                Ok(Ok(child)) => {
+                    self.extension_processes.push(child);
+                    self.status = self.i18n.text("rust.extensions.launched");
+                    self.extension_launch_task = None;
+                }
+                Ok(Err(e)) => {
+                    self.status = e.to_string();
+                    self.extension_launch_task = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.extension_launch_task = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
             }
         }
         self.extension_processes
@@ -5973,20 +5992,23 @@ impl eframe::App for Desktop {
                         );
                     });
                     if let Some(host) = &self.extension_host {
+                        let launching = self.extension_launch_task.is_some();
                         if ui
-                            .button(self.i18n.text("rust.extensions.launch"))
+                            .add_enabled(
+                                !launching,
+                                egui::Button::new(self.i18n.text("rust.extensions.launch")),
+                            )
                             .clicked()
                         {
-                            match host.launch(
-                                Path::new(&self.extension_runtime),
-                                Path::new(&self.extension_path),
-                            ) {
-                                Ok(child) => {
-                                    self.extension_processes.push(child);
-                                    self.status = self.i18n.text("rust.extensions.launched");
-                                }
-                                Err(e) => self.status = e.to_string(),
-                            }
+                            let host = host.clone();
+                            let runtime = PathBuf::from(&self.extension_runtime);
+                            let ext_path = PathBuf::from(&self.extension_path);
+                            let (tx, rx) = std::sync::mpsc::channel();
+                            self.extension_launch_task = Some(rx);
+                            self.status = "Preparing runtime & launching extension...".into();
+                            std::thread::spawn(move || {
+                                let _ = tx.send(host.launch(&runtime, &ext_path));
+                            });
                         }
                     }
                 });
@@ -6071,6 +6093,7 @@ impl eframe::App for Desktop {
             || self.scheduler_hotkeys.is_some()
             || self.update_task.is_some()
             || self.update_apply_task.is_some()
+            || self.extension_launch_task.is_some()
         {
             let mut delay = Duration::from_millis(50);
             if self.relay.as_ref().is_some_and(Connection::connected) {

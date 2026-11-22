@@ -534,18 +534,25 @@ impl ExtensionHost {
             .ok_or_else(|| io::Error::other("invalid extension filename"))?
             .to_owned();
         let mut token = self.launch_token_guard(&filename)?;
-        let mut command = Command::new(executable);
-        match path
+        let ext = path
             .extension()
             .and_then(|s| s.to_str())
-            .map(str::to_ascii_lowercase)
-            .as_deref()
-        {
+            .map(str::to_ascii_lowercase);
+        let mut command = match ext.as_deref() {
             Some("jar") => {
-                command.arg("-jar").arg(&path);
+                let plan = crate::java_runtime::resolve_java_launch(
+                    executable,
+                    Some(&path),
+                    &crate::java_runtime::default_javafx_cache_dir(),
+                )?;
+                let mut cmd = Command::new(&plan.executable);
+                cmd.args(&plan.extra_jvm_args).arg("-jar").arg(&path);
+                cmd
             }
             Some("py" | "js") => {
-                command.arg(&path);
+                let mut cmd = Command::new(executable);
+                cmd.arg(&path);
+                cmd
             }
             _ => {
                 return Err(io::Error::new(
@@ -553,7 +560,7 @@ impl ExtensionHost {
                     "choose a .jar, .py or .js extension",
                 ))
             }
-        }
+        };
         command
             .arg("-p")
             .arg(self.address.port().to_string())
@@ -646,11 +653,11 @@ impl ExtensionHost {
                     .replace("{cookie}", &token.token)
             })
             .collect::<Vec<_>>();
-        let program = if matches!(
+        let is_java_cmd = matches!(
             command[0].to_ascii_lowercase().as_str(),
             "java" | "java.exe" | "javaw" | "javaw.exe"
-        ) && !java_runtime.as_os_str().is_empty()
-        {
+        );
+        let mut program = if is_java_cmd && !java_runtime.as_os_str().is_empty() {
             java_runtime.to_path_buf()
         } else {
             let program = std::path::PathBuf::from(&command[0]);
@@ -666,8 +673,26 @@ impl ExtensionHost {
                 program
             }
         };
+        let mut extra_jvm_args = Vec::new();
+        let has_module_path = command
+            .iter()
+            .any(|arg| arg == "--module-path" || arg.starts_with("--module-path="));
+        let jar_arg = command
+            .windows(2)
+            .find_map(|pair| (pair[0] == "-jar").then(|| directory.join(&pair[1])));
+        if is_java_cmd && !has_module_path && jar_arg.is_some() {
+            if let Ok(plan) = crate::java_runtime::resolve_java_launch(
+                &program,
+                jar_arg.as_deref(),
+                &crate::java_runtime::default_javafx_cache_dir(),
+            ) {
+                program = plan.executable;
+                extra_jvm_args = plan.extra_jvm_args;
+            }
+        }
         let mut child = Command::new(program);
         child
+            .args(&extra_jvm_args)
             .args(&command[1..])
             .current_dir(directory)
             .stdin(Stdio::null())
