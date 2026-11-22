@@ -357,4 +357,16 @@ fn multi_source_defaults_persistence_and_merged_queries_work() {
     );
     assert_eq!(only_custom.len(), 1);
     assert_eq!(only_custom[0].1.title, "Tear Custom Ext");
+
+    let mut author = multi.catalogs[0].extensions[0].authors[0].clone();
+    author.hotel = Some(".com".into());
+    author.username = Some("sir jonas".into());
+    assert_eq!(
+        author.avatar_url().as_deref(),
+        Some(
+            "https://www.habbo.com/habbo-imaging/avatarimage?user=sir%20jonas&direction=2&head_direction=2"
+        )
+    );
+    author.hotel = Some(".com/evil".into());
+    assert_eq!(author.avatar_url(), None);
 }

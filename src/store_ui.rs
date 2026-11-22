@@ -157,6 +157,7 @@ pub struct StoreUi {
     requested_images: HashSet<String>,
     image_tx: Option<Sender<(String, String)>>,
     image_rx: Option<Receiver<ImageDecodeResult>>,
+    zoomed_screenshot: Option<(String, String)>,
 }
 
 impl StoreUi {
@@ -189,6 +190,7 @@ impl StoreUi {
             requested_images: HashSet::new(),
             image_tx: None,
             image_rx: None,
+            zoomed_screenshot: None,
         }
     }
 
@@ -280,6 +282,7 @@ impl StoreUi {
         }
         self.view = next;
         self.page = 0;
+        self.zoomed_screenshot = None;
     }
 
     pub fn show(
@@ -446,23 +449,13 @@ impl StoreUi {
                     .catalog
                     .as_ref()
                     .and_then(|c| c.find(source, title))
-                    .map(|(cat, e)| {
-                        let author = e
-                            .authors
-                            .first()
-                            .map(|a| a.name.as_str())
-                            .unwrap_or("Unknown");
-                        let source_suffix = if cat.source != extension_store::STORE_SOURCE {
-                            format!("  ·  {}", cat.source)
-                        } else {
-                            String::new()
-                        };
-                        format!(
-                            "{}  ·  v{}{source_suffix}",
-                            i18n.text("ext.store.extension.madeby")
-                                .replace("%s", author),
-                            e.version
-                        )
+                    .map(|(_, e)| {
+                        e.description
+                            .lines()
+                            .next()
+                            .unwrap_or(&e.description)
+                            .trim()
+                            .to_owned()
                     })
                     .unwrap_or_default();
                 (title.clone(), sub, title.clone())
@@ -540,7 +533,8 @@ impl StoreUi {
                             ui.add_space(6.0);
                         }
                         match &self.view {
-                            StoreView::Details { .. } | StoreView::Sources => {
+                            StoreView::Details { .. } => {}
+                            StoreView::Sources => {
                                 if ui
                                     .add(
                                         egui::Button::new(
@@ -941,16 +935,30 @@ impl StoreUi {
 
                 ui.add_space(6.0);
 
-                // Reserve space for pagination footer
-                let list_h = (ui.available_height() - 42.0).max(200.0);
+                // Reserve space for pagination / action footer
+                let list_h = (ui.available_height() - 44.0).max(200.0);
+                let is_details_view = matches!(self.view, StoreView::Details { .. });
+                let mut detail_footer: Option<(
+                    Catalog,
+                    StoreExtension,
+                    InstallStatus,
+                    Option<Installed>,
+                )> = None;
 
-                // Rounded bordered content box (exact screenshot style)
-                egui::Frame::none()
-                    .fill(if dark {
-                        egui::Color32::from_rgb(0x21, 0x2b, 0x31)
+                // Rounded bordered content box (exact beta-29 style; grey forum backdrop on Details)
+                let box_fill = if is_details_view {
+                    if dark {
+                        egui::Color32::from_rgb(0x1b, 0x20, 0x24)
                     } else {
-                        egui::Color32::WHITE
-                    })
+                        egui::Color32::from_rgb(0xb8, 0xb6, 0xb2)
+                    }
+                } else if dark {
+                    egui::Color32::from_rgb(0x21, 0x2b, 0x31)
+                } else {
+                    egui::Color32::WHITE
+                };
+                egui::Frame::none()
+                    .fill(box_fill)
                     .stroke(egui::Stroke::new(1.2_f32, frame_border))
                     .rounding(egui::Rounding::same(5.0))
                     .inner_margin(egui::Margin::same(1.0))
@@ -1456,9 +1464,29 @@ impl StoreUi {
                                                     catalog.source, ext.title
                                                 );
                                                 let screenshot_tex = self.request_image(
-                                                    screenshot_key,
+                                                    screenshot_key.clone(),
                                                     catalog.screenshot_url(&ext),
                                                 );
+                                                let main_author = ext.authors.first().cloned();
+                                                let avatar_tex = main_author
+                                                    .as_ref()
+                                                    .and_then(|a| {
+                                                        a.avatar_url().map(|url| {
+                                                            (
+                                                                format!(
+                                                                    "avatar:{}:{}",
+                                                                    a.hotel
+                                                                        .as_deref()
+                                                                        .unwrap_or(""),
+                                                                    a.username
+                                                                        .as_deref()
+                                                                        .unwrap_or(&a.name)
+                                                                ),
+                                                                url,
+                                                            )
+                                                        })
+                                                    })
+                                                    .and_then(|(k, url)| self.request_image(k, url));
                                                 let install_status =
                                                     extension_store::install_status(
                                                         &catalog,
@@ -1473,387 +1501,691 @@ impl StoreUi {
                                                             && r.title == ext.title
                                                     })
                                                     .cloned();
+                                                detail_footer = Some((
+                                                    catalog.clone(),
+                                                    ext.clone(),
+                                                    install_status,
+                                                    installed_record,
+                                                ));
+
+                                                let post_header_bg = if dark {
+                                                    egui::Color32::from_rgb(0x23, 0x5c, 0x85)
+                                                } else {
+                                                    egui::Color32::from_rgb(0x31, 0x79, 0xac)
+                                                };
+                                                let author_col_bg = if dark {
+                                                    egui::Color32::from_rgb(0x1b, 0x38, 0x45)
+                                                } else {
+                                                    egui::Color32::from_rgb(0xc8, 0xef, 0xf8)
+                                                };
+                                                let content_col_bg = if dark {
+                                                    egui::Color32::from_rgb(0x22, 0x29, 0x2e)
+                                                } else {
+                                                    egui::Color32::WHITE
+                                                };
+                                                let quote_bg = if dark {
+                                                    egui::Color32::from_rgb(0x31, 0x39, 0x40)
+                                                } else {
+                                                    egui::Color32::from_rgb(0xcc, 0xcc, 0xcc)
+                                                };
+                                                let author_muted = if dark {
+                                                    egui::Color32::from_rgb(0xb2, 0xcb, 0xd6)
+                                                } else {
+                                                    egui::Color32::from_rgb(0x44, 0x44, 0x44)
+                                                };
+                                                let time_label =
+                                                    format_elapsed(&ext.update_date, i18n)
+                                                        .map(|rel| format!("{rel} ago"))
+                                                        .unwrap_or_else(|| ext.update_date.clone());
+
+                                                // 1) Classic Habbo forum blue header bar (#3179ac)
                                                 egui::Frame::none()
-                                                    .inner_margin(egui::Margin::same(12.0))
+                                                    .fill(post_header_bg)
+                                                    .inner_margin(egui::Margin::symmetric(8.0, 5.0))
                                                     .show(ui, |ui| {
-                                                        // Top action bar: Rating + Elapsed + Install/Launch/Uninstall
-                                                        ui.horizontal_wrapped(|ui| {
+                                                        ui.set_width(ui.available_width());
+                                                        ui.horizontal(|ui| {
                                                             ui.label(
-                                                                egui::RichText::new(format!(
-                                                                    "★ {} {}",
-                                                                    ext.rating,
-                                                                    i18n.text(
-                                                                        "ext.store.extension.rating"
-                                                                    )
-                                                                ))
-                                                                .strong(),
+                                                                egui::RichText::new(&time_label)
+                                                                    .size(12.5)
+                                                                    .color(egui::Color32::WHITE),
                                                             );
-                                                            if let Some(rel) = format_elapsed(
-                                                                &ext.update_date,
-                                                                i18n,
-                                                            ) {
-                                                                ui.label(
-                                                                    egui::RichText::new(format!(
-                                                                        "· {}",
-                                                                        i18n.text(
-                                                                            "ext.store.extension.lastupdated"
-                                                                        )
-                                                                        .replace("%s", &rel)
-                                                                    ))
-                                                                    .color(muted_fg),
-                                                                );
-                                                            }
                                                             ui.with_layout(
                                                                 egui::Layout::right_to_left(
                                                                     egui::Align::Center,
                                                                 ),
                                                                 |ui| {
-                                                                    let btn_label = match install_status
-                                                                    {
-                                                                        InstallStatus::Installed => {
-                                                                            i18n.text(
-                                                                                "ext.store.button.installed",
-                                                                            )
-                                                                        }
-                                                                        InstallStatus::UpdateAvailable => {
-                                                                            i18n.text(
-                                                                                "ext.store.button.update",
-                                                                            )
-                                                                        }
-                                                                        InstallStatus::OlderVersion => {
-                                                                            i18n.text(
-                                                                                "rust.store.install_older",
-                                                                            )
-                                                                        }
-                                                                        InstallStatus::NotInstalled => {
-                                                                            i18n.text(
-                                                                                "ext.store.button.install",
-                                                                            )
-                                                                        }
-                                                                    };
-                                                                    let btn_fill = match install_status
-                                                                    {
-                                                                        InstallStatus::Installed => {
-                                                                            egui::Color32::from_rgb(
-                                                                                0x39, 0x84, 0x39,
-                                                                            )
-                                                                        }
-                                                                        InstallStatus::UpdateAvailable => {
-                                                                            egui::Color32::from_rgb(
-                                                                                0xd5, 0x85, 0x12,
-                                                                            )
-                                                                        }
-                                                                        _ => egui::Color32::from_rgb(
-                                                                            0x1e, 0x7e, 0xb8,
-                                                                        ),
-                                                                    };
-                                                                    if ui
-                                                                        .add_enabled(
-                                                                            ready
-                                                                                && install_status
-                                                                                    != InstallStatus::Installed,
-                                                                            egui::Button::new(
-                                                                                egui::RichText::new(
-                                                                                    btn_label,
+                                                                    ui.label(
+                                                                        egui::RichText::new(
+                                                                            format!(
+                                                                                "★ {} {}",
+                                                                                ext.rating,
+                                                                                i18n.text(
+                                                                                    "ext.store.extension.rating"
                                                                                 )
-                                                                                .color(
-                                                                                    egui::Color32::WHITE,
-                                                                                )
-                                                                                .strong(),
-                                                                            )
-                                                                            .fill(btn_fill)
-                                                                            .min_size(egui::vec2(
-                                                                                104.0, 28.0,
-                                                                            )),
+                                                                            ),
                                                                         )
-                                                                        .clicked()
+                                                                        .size(12.0)
+                                                                        .strong()
+                                                                        .color(
+                                                                            egui::Color32::from_rgb(
+                                                                                0xff, 0xf3, 0xb0,
+                                                                            ),
+                                                                        ),
+                                                                    );
+                                                                    if catalog.source
+                                                                        != extension_store::STORE_SOURCE
                                                                     {
-                                                                        action =
-                                                                            Some(Action::Install(
-                                                                                Box::new((
-                                                                                    catalog.clone(),
-                                                                                    ext.clone(),
-                                                                                )),
-                                                                            ));
-                                                                    }
-                                                                    if let Some(rec) =
-                                                                        installed_record
-                                                                    {
-                                                                        if ui
-                                                                            .add_enabled(
-                                                                                host.is_some(),
-                                                                                egui::Button::new(
-                                                                                    i18n.text(
-                                                                                        "rust.store.launch",
-                                                                                    ),
-                                                                                )
-                                                                                .min_size(
-                                                                                    egui::vec2(
-                                                                                        76.0, 28.0,
-                                                                                    ),
-                                                                                ),
-                                                                            )
-                                                                            .clicked()
-                                                                        {
-                                                                            action = Some(
-                                                                                Action::Launch(
-                                                                                    Box::new(
-                                                                                        rec.clone(),
-                                                                                    ),
-                                                                                ),
-                                                                            );
-                                                                        }
-                                                                        if ui
-                                                                            .add_enabled(
-                                                                                ready,
-                                                                                egui::Button::new(
-                                                                                    i18n.text(
-                                                                                        "rust.store.uninstall",
-                                                                                    ),
-                                                                                )
-                                                                                .min_size(
-                                                                                    egui::vec2(
-                                                                                        82.0, 28.0,
-                                                                                    ),
-                                                                                ),
-                                                                            )
-                                                                            .clicked()
-                                                                        {
-                                                                            action = Some(
-                                                                                Action::Remove(
-                                                                                    Box::new(rec),
-                                                                                ),
-                                                                            );
-                                                                        }
+                                                                        ui.add_space(6.0);
+                                                                        draw_source_badge(
+                                                                            ui,
+                                                                            &catalog.source,
+                                                                        );
                                                                     }
                                                                 },
                                                             );
                                                         });
-                                                        ui.add_space(6.0);
-                                                        ui.separator();
-                                                        ui.add_space(6.0);
+                                                    });
 
-                                                        // Warnings
-                                                        if !ext.stable {
-                                                            ui.colored_label(
-                                                                egui::Color32::from_rgb(
-                                                                    210, 120, 15,
-                                                                ),
-                                                                format!(
-                                                                    "⚠ {}",
-                                                                    i18n.text(
-                                                                        "ext.store.extension.warning.unstable"
-                                                                    )
-                                                                ),
-                                                            );
-                                                            ui.add_space(4.0);
-                                                        }
-                                                        if let Some(fw) = catalog
-                                                            .config
-                                                            .frameworks
-                                                            .iter()
-                                                            .find(|f| f.name == ext.framework.name)
-                                                        {
-                                                            if fw.installation.required {
-                                                                if let Some(url) = fw
-                                                                    .installation
-                                                                    .instructions
-                                                                    .as_ref()
-                                                                    .filter(|u| {
-                                                                        u.starts_with("https://")
-                                                                    })
-                                                                {
+                                                // 2) Forum post two-column body:
+                                                //    Left 136px light-blue author sidebar + Right white content area
+                                                let total_w = ui.available_width();
+                                                let author_w = 136.0_f32;
+                                                let right_w = (total_w - author_w).max(240.0);
+                                                let bg_content_idx =
+                                                    ui.painter().add(egui::Shape::Noop);
+                                                let bg_author_idx =
+                                                    ui.painter().add(egui::Shape::Noop);
+                                                let body_resp = ui.horizontal_top(|ui| {
+                                                    ui.spacing_mut().item_spacing.x = 0.0;
+                                                    // Left author sidebar (.cb_author)
+                                                    ui.allocate_ui_with_layout(
+                                                        egui::vec2(author_w, 0.0),
+                                                        egui::Layout::top_down(egui::Align::LEFT),
+                                                        |ui| {
+                                                            ui.set_min_width(author_w);
+                                                            ui.set_max_width(author_w);
+                                                            egui::Frame::none()
+                                                                .inner_margin(egui::Margin::same(
+                                                                    8.0,
+                                                                ))
+                                                                .show(ui, |ui| {
+                                                                    if let Some(author) =
+                                                                        &main_author
+                                                                    {
+                                                                        ui.label(
+                                                                            egui::RichText::new(
+                                                                                &author.name,
+                                                                            )
+                                                                            .size(13.0)
+                                                                            .strong(),
+                                                                        );
+                                                                        ui.add_space(2.0);
+                                                                        ui.label(
+                                                                            egui::RichText::new(
+                                                                                format!(
+                                                                                    "{} {}",
+                                                                                    author.reputation,
+                                                                                    i18n.text(
+                                                                                        "ext.store.extension.author.reputation"
+                                                                                    )
+                                                                                ),
+                                                                            )
+                                                                            .size(12.0)
+                                                                            .color(author_muted),
+                                                                        );
+                                                                        ui.label(
+                                                                            egui::RichText::new(
+                                                                                format!(
+                                                                                    "{} {}",
+                                                                                    author
+                                                                                        .extensions_count,
+                                                                                    i18n.text(
+                                                                                        "ext.store.extension.author.releases"
+                                                                                    )
+                                                                                ),
+                                                                            )
+                                                                            .size(12.0)
+                                                                            .color(author_muted),
+                                                                        );
+                                                                        ui.add_space(4.0);
+                                                                        if let Some(tex) =
+                                                                            &avatar_tex
+                                                                        {
+                                                                            let sz = tex.size_vec2();
+                                                                            let scale = (110.0_f32
+                                                                                / sz.x.max(1.0))
+                                                                                .min(1.0);
+                                                                            ui.add(
+                                                                                egui::Image::new((
+                                                                                    tex.id(),
+                                                                                    sz * scale,
+                                                                                )),
+                                                                            );
+                                                                        }
+                                                                        if let Some(discord) = author
+                                                                            .discord
+                                                                            .as_deref()
+                                                                            .filter(|s| {
+                                                                                !s.trim().is_empty()
+                                                                            })
+                                                                        {
+                                                                            ui.add_space(4.0);
+                                                                            ui.label(
+                                                                                egui::RichText::new(
+                                                                                    discord,
+                                                                                )
+                                                                                .size(10.5)
+                                                                                .color(author_muted),
+                                                                            );
+                                                                        }
+                                                                    }
+                                                                });
+                                                        },
+                                                    );
+
+                                                    // Right post content (.cb_content)
+                                                    ui.allocate_ui_with_layout(
+                                                        egui::vec2(right_w, 0.0),
+                                                        egui::Layout::top_down(egui::Align::LEFT),
+                                                        |ui| {
+                                                            ui.set_min_width(right_w);
+                                                            ui.set_max_width(right_w);
+                                                            egui::Frame::none()
+                                                                .inner_margin(egui::Margin::symmetric(
+                                                                    12.0, 8.0,
+                                                                ))
+                                                                .show(ui, |ui| {
+                                                                    ui.spacing_mut()
+                                                                        .item_spacing
+                                                                        .y = 4.0;
+                                                                    // Title - vX.Y.Z
                                                                     ui.horizontal_wrapped(|ui| {
+                                                                        ui.spacing_mut()
+                                                                            .item_spacing
+                                                                            .x = 0.0;
+                                                                        ui.label(
+                                                                            egui::RichText::new(
+                                                                                &ext.title,
+                                                                            )
+                                                                            .size(13.5)
+                                                                            .strong(),
+                                                                        );
+                                                                        ui.label(
+                                                                            egui::RichText::new(
+                                                                                format!(
+                                                                                    " - v{}",
+                                                                                    ext.version
+                                                                                ),
+                                                                            )
+                                                                            .size(13.5),
+                                                                        );
+                                                                    });
+                                                                    ui.add_space(4.0);
+
+                                                                    // Description + grey quote box (.cbc_quote)
+                                                                    ui.label(
+                                                                        egui::RichText::new(
+                                                                            format!(
+                                                                                "{}:",
+                                                                                i18n.text(
+                                                                                    "ext.store.extension.details.description"
+                                                                                )
+                                                                            ),
+                                                                        )
+                                                                        .size(12.5)
+                                                                        .strong(),
+                                                                    );
+                                                                    ui.horizontal(|ui| {
+                                                                        ui.add_space(12.0);
+                                                                        egui::Frame::none()
+                                                                            .fill(quote_bg)
+                                                                            .rounding(
+                                                                                egui::Rounding::same(
+                                                                                    2.0,
+                                                                                ),
+                                                                            )
+                                                                            .inner_margin(
+                                                                                egui::Margin::same(
+                                                                                    7.0,
+                                                                                ),
+                                                                            )
+                                                                            .show(ui, |ui| {
+                                                                                ui.set_width(
+                                                                                    (ui.available_width()
+                                                                                        - 8.0)
+                                                                                        .max(120.0),
+                                                                                );
+                                                                                ui.label(
+                                                                                    egui::RichText::new(
+                                                                                        &ext.description,
+                                                                                    )
+                                                                                    .size(12.5),
+                                                                                );
+                                                                                if let Some(url) = ext
+                                                                                    .readme
+                                                                                    .as_deref()
+                                                                                    .filter(|u| {
+                                                                                        u.starts_with(
+                                                                                            "https://",
+                                                                                        )
+                                                                                    })
+                                                                                {
+                                                                                    ui.add_space(
+                                                                                        6.0,
+                                                                                    );
+                                                                                    ui.hyperlink_to(
+                                                                                        "README",
+                                                                                        url,
+                                                                                    );
+                                                                                }
+                                                                            });
+                                                                    });
+                                                                    ui.add_space(6.0);
+
+                                                                    // Auteur(s):
+                                                                    ui.horizontal_wrapped(|ui| {
+                                                                        ui.label(
+                                                                            egui::RichText::new(
+                                                                                format!(
+                                                                                    "{}:",
+                                                                                    i18n.text(
+                                                                                        "ext.store.extension.details.authors"
+                                                                                    )
+                                                                                ),
+                                                                            )
+                                                                            .size(12.5)
+                                                                            .strong(),
+                                                                        );
+                                                                        let names = ext
+                                                                            .authors
+                                                                            .iter()
+                                                                            .map(|a| {
+                                                                                a.name.as_str()
+                                                                            })
+                                                                            .collect::<Vec<_>>()
+                                                                            .join(", ");
+                                                                        ui.label(
+                                                                            egui::RichText::new(
+                                                                                names,
+                                                                            )
+                                                                            .size(12.5),
+                                                                        );
+                                                                    });
+                                                                    ui.add_space(2.0);
+
+                                                                    // Catégories: (clickable links!)
+                                                                    ui.horizontal_wrapped(|ui| {
+                                                                        ui.label(
+                                                                            egui::RichText::new(
+                                                                                format!(
+                                                                                    "{}:",
+                                                                                    i18n.text(
+                                                                                        "ext.store.extension.details.categories"
+                                                                                    )
+                                                                                ),
+                                                                            )
+                                                                            .size(12.5)
+                                                                            .strong(),
+                                                                        );
+                                                                        for (ci, cat_name) in ext
+                                                                            .categories
+                                                                            .iter()
+                                                                            .enumerate()
+                                                                        {
+                                                                            if ci > 0 {
+                                                                                ui.label(",");
+                                                                            }
+                                                                            if ui
+                                                                                .add(
+                                                                                    egui::Label::new(
+                                                                                        egui::RichText::new(
+                                                                                            cat_name,
+                                                                                        )
+                                                                                        .size(12.5)
+                                                                                        .underline()
+                                                                                        .color(
+                                                                                            link_color,
+                                                                                        ),
+                                                                                    )
+                                                                                    .sense(
+                                                                                        egui::Sense::click(),
+                                                                                    ),
+                                                                                )
+                                                                                .clicked()
+                                                                            {
+                                                                                next_view = Some(
+                                                                                    StoreView::Category(
+                                                                                        cat_name
+                                                                                            .clone(),
+                                                                                    ),
+                                                                                );
+                                                                            }
+                                                                        }
+                                                                    });
+                                                                    ui.add_space(6.0);
+
+                                                                    // Information technique + second grey quote box
+                                                                    ui.label(
+                                                                        egui::RichText::new(
+                                                                            i18n.text(
+                                                                                "ext.store.extension.details.technical_information",
+                                                                            ),
+                                                                        )
+                                                                        .size(12.5)
+                                                                        .strong(),
+                                                                    );
+                                                                    let click_here = i18n.text(
+                                                                        "ext.store.extension.details.click_here",
+                                                                    );
+                                                                    ui.horizontal(|ui| {
+                                                                        ui.add_space(12.0);
+                                                                        egui::Frame::none()
+                                                                            .fill(quote_bg)
+                                                                            .rounding(
+                                                                                egui::Rounding::same(
+                                                                                    2.0,
+                                                                                ),
+                                                                            )
+                                                                            .inner_margin(
+                                                                                egui::Margin::same(
+                                                                                    7.0,
+                                                                                ),
+                                                                            )
+                                                                            .show(ui, |ui| {
+                                                                                ui.set_width(
+                                                                                    (ui.available_width()
+                                                                                        - 8.0)
+                                                                                        .max(120.0),
+                                                                                );
+                                                                                ui.spacing_mut()
+                                                                                    .item_spacing
+                                                                                    .y = 2.0;
+                                                                                if let Some(url) = ext
+                                                                                    .releases
+                                                                                    .as_deref()
+                                                                                    .filter(|u| {
+                                                                                        u.starts_with(
+                                                                                            "https://",
+                                                                                        )
+                                                                                    })
+                                                                                {
+                                                                                    ui.horizontal(
+                                                                                        |ui| {
+                                                                                            ui.label(
+                                                                                                egui::RichText::new(
+                                                                                                    format!(
+                                                                                                        "{}:",
+                                                                                                        i18n.text(
+                                                                                                            "ext.store.extension.details.releases"
+                                                                                                        )
+                                                                                                    ),
+                                                                                                )
+                                                                                                .size(12.5),
+                                                                                            );
+                                                                                            ui.hyperlink_to(
+                                                                                                &click_here,
+                                                                                                url,
+                                                                                            );
+                                                                                        },
+                                                                                    );
+                                                                                }
+                                                                                ui.label(
+                                                                                    egui::RichText::new(
+                                                                                        format!(
+                                                                                            "{}: {}",
+                                                                                            i18n.text(
+                                                                                                "ext.store.extension.details.language"
+                                                                                            ),
+                                                                                            ext.language
+                                                                                        ),
+                                                                                    )
+                                                                                    .size(12.5),
+                                                                                );
+                                                                                if ext
+                                                                                    .source
+                                                                                    .starts_with(
+                                                                                        "https://",
+                                                                                    )
+                                                                                {
+                                                                                    ui.horizontal(
+                                                                                        |ui| {
+                                                                                            ui.label(
+                                                                                                egui::RichText::new(
+                                                                                                    format!(
+                                                                                                        "{}:",
+                                                                                                        i18n.text(
+                                                                                                            "ext.store.extension.details.source"
+                                                                                                        )
+                                                                                                    ),
+                                                                                                )
+                                                                                                .size(12.5),
+                                                                                            );
+                                                                                            ui.hyperlink_to(
+                                                                                                &click_here,
+                                                                                                &ext.source,
+                                                                                            );
+                                                                                        },
+                                                                                    );
+                                                                                }
+                                                                                ui.label(
+                                                                                    egui::RichText::new(
+                                                                                        format!(
+                                                                                            "{}: {} - v{}",
+                                                                                            i18n.text(
+                                                                                                "ext.store.extension.details.framework"
+                                                                                            ),
+                                                                                            ext.framework.name,
+                                                                                            ext.framework.version
+                                                                                        ),
+                                                                                    )
+                                                                                    .size(12.5),
+                                                                                );
+                                                                                ui.label(
+                                                                                    egui::RichText::new(
+                                                                                        format!(
+                                                                                            "{}: {}",
+                                                                                            i18n.text(
+                                                                                                "ext.store.extension.details.systems"
+                                                                                            ),
+                                                                                            ext.compatibility
+                                                                                                .systems
+                                                                                                .join(", ")
+                                                                                        ),
+                                                                                    )
+                                                                                    .size(12.5),
+                                                                                );
+                                                                                if catalog.source
+                                                                                    != extension_store::STORE_SOURCE
+                                                                                {
+                                                                                    ui.label(
+                                                                                        egui::RichText::new(
+                                                                                            format!(
+                                                                                                "Store: {}",
+                                                                                                catalog.source
+                                                                                            ),
+                                                                                        )
+                                                                                        .size(12.5),
+                                                                                    );
+                                                                                }
+                                                                            });
+                                                                    });
+                                                                    ui.add_space(6.0);
+
+                                                                    // Clients compatibles:
+                                                                    ui.horizontal_wrapped(|ui| {
+                                                                        ui.label(
+                                                                            egui::RichText::new(
+                                                                                format!(
+                                                                                    "{}:",
+                                                                                    i18n.text(
+                                                                                        "ext.store.extension.details.clients"
+                                                                                    )
+                                                                                ),
+                                                                            )
+                                                                            .size(12.5)
+                                                                            .strong(),
+                                                                        );
+                                                                        ui.label(
+                                                                            egui::RichText::new(
+                                                                                ext.compatibility
+                                                                                    .clients
+                                                                                    .join(", "),
+                                                                            )
+                                                                            .size(12.5),
+                                                                        );
+                                                                    });
+
+                                                                    // Warnings (framework requirement + unstable)
+                                                                    if let Some(fw) = catalog
+                                                                        .config
+                                                                        .frameworks
+                                                                        .iter()
+                                                                        .find(|f| {
+                                                                            f.name
+                                                                                == ext
+                                                                                    .framework
+                                                                                    .name
+                                                                        })
+                                                                    {
+                                                                        if fw.installation.required
+                                                                        {
+                                                                            if let Some(url) = fw
+                                                                                .installation
+                                                                                .instructions
+                                                                                .as_deref()
+                                                                                .filter(|u| {
+                                                                                    u.starts_with(
+                                                                                        "https://",
+                                                                                    )
+                                                                                })
+                                                                            {
+                                                                                ui.add_space(4.0);
+                                                                                ui.horizontal_wrapped(
+                                                                                    |ui| {
+                                                                                        ui.colored_label(
+                                                                                            egui::Color32::from_rgb(
+                                                                                                210, 120, 15,
+                                                                                            ),
+                                                                                            format!(
+                                                                                                "⚠ {}:",
+                                                                                                fw.name
+                                                                                            ),
+                                                                                        );
+                                                                                        ui.hyperlink_to(
+                                                                                            &click_here,
+                                                                                            url,
+                                                                                        );
+                                                                                    },
+                                                                                );
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                    if !ext.stable {
+                                                                        ui.add_space(4.0);
                                                                         ui.colored_label(
                                                                             egui::Color32::from_rgb(
                                                                                 210, 120, 15,
                                                                             ),
                                                                             format!(
-                                                                                "⚠ {} requires runtime setup:",
-                                                                                fw.name
+                                                                                "⚠ {}",
+                                                                                i18n.text(
+                                                                                    "ext.store.extension.warning.unstable"
+                                                                                )
                                                                             ),
                                                                         );
-                                                                        ui.hyperlink_to(
-                                                                            i18n.text(
-                                                                                "ext.store.extension.details.click_here",
-                                                                            ),
-                                                                            url,
-                                                                        );
-                                                                    });
-                                                                    ui.add_space(4.0);
-                                                                }
-                                                            }
-                                                        }
+                                                                    }
 
-                                                        // Description
-                                                        ui.strong(format!(
-                                                            "{}:",
-                                                            i18n.text(
-                                                                "ext.store.extension.details.description"
-                                                            )
-                                                        ));
-                                                        ui.add_space(2.0);
-                                                        ui.label(&ext.description);
-                                                        ui.add_space(8.0);
-
-                                                        // Technical info grid
-                                                        ui.strong(i18n.text(
-                                                            "ext.store.extension.details.technical_information",
-                                                        ));
-                                                        ui.add_space(4.0);
-                                                        egui::Grid::new("store_detail_tech_grid")
-                                                            .num_columns(2)
-                                                            .spacing([12.0, 4.0])
-                                                            .show(ui, |ui| {
-                                                                ui.label(
-                                                                    egui::RichText::new(format!(
-                                                                        "{}:",
-                                                                        i18n.text(
-                                                                            "ext.store.extension.details.authors"
-                                                                        )
-                                                                    ))
-                                                                    .color(muted_fg),
-                                                                );
-                                                                let authors = ext
-                                                                    .authors
-                                                                    .iter()
-                                                                    .map(|a| {
-                                                                        format!(
-                                                                            "{} ({} {})",
-                                                                            a.name,
-                                                                            a.reputation,
-                                                                            i18n.text(
-                                                                                "ext.store.extension.author.reputation"
+                                                                    // Screenshot with crisp 1px black border + click-to-zoom
+                                                                    if let Some(tex) =
+                                                                        &screenshot_tex
+                                                                    {
+                                                                        ui.add_space(8.0);
+                                                                        ui.label(
+                                                                            egui::RichText::new(
+                                                                                format!(
+                                                                                    "{}:",
+                                                                                    i18n.text(
+                                                                                        "ext.store.extension.details.screenshot"
+                                                                                    )
+                                                                                ),
                                                                             )
-                                                                        )
-                                                                    })
-                                                                    .collect::<Vec<_>>()
-                                                                    .join(", ");
-                                                                ui.label(authors);
-                                                                ui.end_row();
-
-                                                                ui.label(
-                                                                    egui::RichText::new(format!(
-                                                                        "{}:",
-                                                                        i18n.text(
-                                                                            "ext.store.extension.details.framework"
-                                                                        )
-                                                                    ))
-                                                                    .color(muted_fg),
-                                                                );
-                                                                ui.label(format!(
-                                                                    "{} v{} ({})",
-                                                                    ext.framework.name,
-                                                                    ext.framework.version,
-                                                                    ext.language
-                                                                ));
-                                                                ui.end_row();
-
-                                                                ui.label(
-                                                                    egui::RichText::new(format!(
-                                                                        "{}:",
-                                                                        i18n.text(
-                                                                            "ext.store.extension.details.systems"
-                                                                        )
-                                                                    ))
-                                                                    .color(muted_fg),
-                                                                );
-                                                                ui.label(
-                                                                    ext.compatibility
-                                                                        .systems
-                                                                        .join(", "),
-                                                                );
-                                                                ui.end_row();
-
-                                                                ui.label(
-                                                                    egui::RichText::new(format!(
-                                                                        "{}:",
-                                                                        i18n.text(
-                                                                            "ext.store.extension.details.clients"
-                                                                        )
-                                                                    ))
-                                                                    .color(muted_fg),
-                                                                );
-                                                                ui.label(
-                                                                    ext.compatibility
-                                                                        .clients
-                                                                        .join(", "),
-                                                                );
-                                                                ui.end_row();
-
-                                                                ui.label(
-                                                                    egui::RichText::new(format!(
-                                                                        "{}:",
-                                                                        i18n.text(
-                                                                            "ext.store.extension.details.categories"
-                                                                        )
-                                                                    ))
-                                                                    .color(muted_fg),
-                                                                );
-                                                                ui.label(
-                                                                    ext.categories.join(", "),
-                                                                );
-                                                                ui.end_row();
-
-                                                                ui.label(
-                                                                    egui::RichText::new("Store:")
-                                                                        .color(muted_fg),
-                                                                );
-                                                                ui.label(&catalog.source);
-                                                                ui.end_row();
-                                                            });
-
-                                                        ui.add_space(6.0);
-                                                        ui.horizontal(|ui| {
-                                                            for (label, url) in [
-                                                                (
-                                                                    i18n.text(
-                                                                        "ext.store.extension.details.source",
-                                                                    ),
-                                                                    Some(&ext.source),
-                                                                ),
-                                                                (
-                                                                    "README".into(),
-                                                                    ext.readme.as_ref(),
-                                                                ),
-                                                                (
-                                                                    i18n.text(
-                                                                        "ext.store.extension.details.releases",
-                                                                    ),
-                                                                    ext.releases.as_ref(),
-                                                                ),
-                                                            ] {
-                                                                if let Some(url) = url.filter(|u| {
-                                                                    u.starts_with("https://")
-                                                                }) {
-                                                                    ui.hyperlink_to(label, url);
-                                                                    ui.add_space(8.0);
-                                                                }
-                                                            }
-                                                        });
-
-                                                        // Lazy-loaded Screenshot
-                                                        if let Some(tex) = &screenshot_tex {
-                                                            ui.add_space(10.0);
-                                                            ui.strong(format!(
-                                                                "{}:",
-                                                                i18n.text(
-                                                                    "ext.store.extension.details.screenshot"
-                                                                )
-                                                            ));
-                                                            ui.add_space(4.0);
-                                                            let orig = tex.size_vec2();
-                                                            let max_w =
-                                                                (ui.available_width() - 8.0)
-                                                                    .max(120.0);
-                                                            let scale = (max_w / orig.x.max(1.0))
-                                                                .min(1.0);
-                                                            ui.add(egui::Image::new((
-                                                                tex.id(),
-                                                                orig * scale,
-                                                            )));
-                                                        }
-                                                    });
+                                                                            .size(12.5)
+                                                                            .strong(),
+                                                                        );
+                                                                        ui.add_space(2.0);
+                                                                        let orig = tex.size_vec2();
+                                                                        let max_w = (ui
+                                                                            .available_width()
+                                                                            - 12.0)
+                                                                            .clamp(120.0, 450.0);
+                                                                        let scale = (max_w
+                                                                            / orig.x.max(1.0))
+                                                                            .min(1.0);
+                                                                        let img_resp =
+                                                                            egui::Frame::none()
+                                                                                .stroke(
+                                                                                    egui::Stroke::new(
+                                                                                        1.0_f32,
+                                                                                        egui::Color32::BLACK,
+                                                                                    ),
+                                                                                )
+                                                                                .show(ui, |ui| {
+                                                                                    ui.add(
+                                                                                        egui::Image::new((
+                                                                                            tex.id(),
+                                                                                            orig * scale,
+                                                                                        ))
+                                                                                        .sense(
+                                                                                            egui::Sense::click(),
+                                                                                        ),
+                                                                                    )
+                                                                                })
+                                                                                .inner;
+                                                                        if img_resp
+                                                                            .on_hover_text(
+                                                                                "Click to enlarge",
+                                                                            )
+                                                                            .clicked()
+                                                                        {
+                                                                            self.zoomed_screenshot =
+                                                                                Some((
+                                                                                    ext.title
+                                                                                        .clone(),
+                                                                                    screenshot_key,
+                                                                                ));
+                                                                        }
+                                                                    }
+                                                                    ui.add_space(6.0);
+                                                                });
+                                                        },
+                                                    );
+                                                });
+                                                let post_rect = body_resp.response.rect;
+                                                let author_rect = egui::Rect::from_min_max(
+                                                    post_rect.min,
+                                                    egui::pos2(
+                                                        (post_rect.left() + author_w)
+                                                            .min(post_rect.right()),
+                                                        post_rect.bottom(),
+                                                    ),
+                                                );
+                                                ui.painter().set(
+                                                    bg_content_idx,
+                                                    egui::Shape::rect_filled(
+                                                        post_rect,
+                                                        egui::Rounding::ZERO,
+                                                        content_col_bg,
+                                                    ),
+                                                );
+                                                ui.painter().set(
+                                                    bg_author_idx,
+                                                    egui::Shape::rect_filled(
+                                                        author_rect,
+                                                        egui::Rounding::ZERO,
+                                                        author_col_bg,
+                                                    ),
+                                                );
                                             }
                                         }
                                     }
@@ -2194,10 +2526,109 @@ impl StoreUi {
                             });
                     });
 
-                // 4. Exact beta-29 Pagination Footer: [<<] [<]  1 / 5  [>] [>>]
+                // 4. Exact beta-29 Chunky Habbo Footer: [Return] ... [Launch][Uninstall][Installer] [<<][<] 1 / N [>][>>]
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
-                    if show_pagination {
+                    if let Some((catalog, ext, install_status, installed_record)) = detail_footer {
+                        if habbo_forum_button(
+                            ui,
+                            "Return",
+                            egui::vec2(98.0, 27.0),
+                            true,
+                            HabboBtnStyle::Grey,
+                            dark,
+                        ) {
+                            next_view = Some(self.previous_view.clone());
+                        }
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.spacing_mut().item_spacing.x = 5.0;
+                            let _ = habbo_forum_button(
+                                ui,
+                                ">>",
+                                egui::vec2(26.0, 27.0),
+                                false,
+                                HabboBtnStyle::White,
+                                dark,
+                            );
+                            let _ = habbo_forum_button(
+                                ui,
+                                ">",
+                                egui::vec2(26.0, 27.0),
+                                false,
+                                HabboBtnStyle::White,
+                                dark,
+                            );
+                            ui.add_space(4.0);
+                            ui.label(egui::RichText::new("1 / 1").color(muted_fg));
+                            ui.add_space(4.0);
+                            let _ = habbo_forum_button(
+                                ui,
+                                "<",
+                                egui::vec2(26.0, 27.0),
+                                false,
+                                HabboBtnStyle::White,
+                                dark,
+                            );
+                            let _ = habbo_forum_button(
+                                ui,
+                                "<<",
+                                egui::vec2(26.0, 27.0),
+                                false,
+                                HabboBtnStyle::White,
+                                dark,
+                            );
+                            ui.add_space(8.0);
+                            let (btn_label, btn_style) = match install_status {
+                                InstallStatus::Installed => (
+                                    i18n.text("ext.store.button.installed"),
+                                    HabboBtnStyle::Green,
+                                ),
+                                InstallStatus::UpdateAvailable => (
+                                    i18n.text("ext.store.button.update"),
+                                    HabboBtnStyle::Amber,
+                                ),
+                                InstallStatus::OlderVersion => (
+                                    i18n.text("rust.store.install_older"),
+                                    HabboBtnStyle::Blue,
+                                ),
+                                InstallStatus::NotInstalled => {
+                                    (i18n.text("ext.store.button.install"), HabboBtnStyle::Blue)
+                                }
+                            };
+                            if habbo_forum_button(
+                                ui,
+                                &btn_label,
+                                egui::vec2(104.0, 27.0),
+                                ready && install_status != InstallStatus::Installed,
+                                btn_style,
+                                dark,
+                            ) {
+                                action = Some(Action::Install(Box::new((catalog, ext))));
+                            }
+                            if let Some(rec) = installed_record {
+                                if habbo_forum_button(
+                                    ui,
+                                    &i18n.text("rust.store.launch"),
+                                    egui::vec2(76.0, 27.0),
+                                    host.is_some(),
+                                    HabboBtnStyle::Grey,
+                                    dark,
+                                ) {
+                                    action = Some(Action::Launch(Box::new(rec.clone())));
+                                }
+                                if habbo_forum_button(
+                                    ui,
+                                    &i18n.text("rust.store.uninstall"),
+                                    egui::vec2(84.0, 27.0),
+                                    ready,
+                                    HabboBtnStyle::Grey,
+                                    dark,
+                                ) {
+                                    action = Some(Action::Remove(Box::new(rec)));
+                                }
+                            }
+                        });
+                    } else if show_pagination {
                         ui.label(
                             egui::RichText::new(format!(
                                 "{total_items} {}",
@@ -2210,18 +2641,24 @@ impl StoreUi {
                             ui.spacing_mut().item_spacing.x = 5.0;
                             let can_next = self.page + 1 < total_pages;
                             let can_prev = self.page > 0;
-                            let page_btn = |ui: &mut egui::Ui, label: &str, enabled: bool| {
-                                ui.add_enabled(
-                                    enabled,
-                                    egui::Button::new(egui::RichText::new(label).strong())
-                                        .min_size(egui::vec2(28.0, 26.0)),
-                                )
-                                .clicked()
-                            };
-                            if page_btn(ui, ">>", can_next) {
+                            if habbo_forum_button(
+                                ui,
+                                ">>",
+                                egui::vec2(28.0, 27.0),
+                                can_next,
+                                HabboBtnStyle::White,
+                                dark,
+                            ) {
                                 self.page = total_pages - 1;
                             }
-                            if page_btn(ui, ">", can_next) {
+                            if habbo_forum_button(
+                                ui,
+                                ">",
+                                egui::vec2(28.0, 27.0),
+                                can_next,
+                                HabboBtnStyle::White,
+                                dark,
+                            ) {
                                 self.page += 1;
                             }
                             ui.add_space(6.0);
@@ -2230,16 +2667,54 @@ impl StoreUi {
                                     .color(muted_fg),
                             );
                             ui.add_space(6.0);
-                            if page_btn(ui, "<", can_prev) {
+                            if habbo_forum_button(
+                                ui,
+                                "<",
+                                egui::vec2(28.0, 27.0),
+                                can_prev,
+                                HabboBtnStyle::White,
+                                dark,
+                            ) {
                                 self.page -= 1;
                             }
-                            if page_btn(ui, "<<", can_prev) {
+                            if habbo_forum_button(
+                                ui,
+                                "<<",
+                                egui::vec2(28.0, 27.0),
+                                can_prev,
+                                HabboBtnStyle::White,
+                                dark,
+                            ) {
                                 self.page = 0;
                             }
                         });
                     }
                 });
             });
+
+        // Full-size screenshot zoom modal ("voir mieux")
+        if let Some((zoom_title, zoom_key)) = self.zoomed_screenshot.clone() {
+            if let Some(Some(tex)) = self.remote_textures.get(&zoom_key).cloned() {
+                let mut open = true;
+                egui::Window::new(format!("Screenshot — {zoom_title}"))
+                    .id(egui::Id::new("store_screenshot_zoom"))
+                    .open(&mut open)
+                    .collapsible(false)
+                    .resizable(true)
+                    .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                    .show(ui.ctx(), |ui| {
+                        let screen = ui.ctx().screen_rect().size() - egui::vec2(60.0, 90.0);
+                        let orig = tex.size_vec2();
+                        let scale = (screen.x / orig.x.max(1.0))
+                            .min(screen.y / orig.y.max(1.0))
+                            .min(1.0);
+                        ui.add(egui::Image::new((tex.id(), orig * scale)));
+                    });
+                if !open {
+                    self.zoomed_screenshot = None;
+                }
+            }
+        }
 
         if refresh_requested {
             self.start_fetch_catalog(status);
@@ -2308,6 +2783,149 @@ impl StoreUi {
             None => {}
         }
     }
+}
+
+#[derive(Clone, Copy)]
+enum HabboBtnStyle {
+    Grey,
+    Blue,
+    Green,
+    Amber,
+    White,
+}
+
+/// Chunky Habbo forum button matching beta-29 `buttons.css` (`.forumbtn` + inner lower bevel).
+fn habbo_forum_button(
+    ui: &mut egui::Ui,
+    label: &str,
+    size: egui::Vec2,
+    enabled: bool,
+    style: HabboBtnStyle,
+    dark: bool,
+) -> bool {
+    let sense = if enabled {
+        egui::Sense::click()
+    } else {
+        egui::Sense::hover()
+    };
+    let (rect, resp) = ui.allocate_exact_size(size, sense);
+    if ui.is_rect_visible(rect) {
+        let hovered = enabled && resp.hovered();
+        let active = enabled && resp.is_pointer_button_down_on();
+        let (top_fill, bot_fill, border_col, text_col) = match (style, enabled, dark) {
+            (HabboBtnStyle::Blue, true, _) => (
+                if active {
+                    egui::Color32::from_rgb(0x24, 0x87, 0xac)
+                } else if hovered {
+                    egui::Color32::from_rgb(0x2d, 0xa3, 0xce)
+                } else {
+                    egui::Color32::from_rgb(0x27, 0x92, 0xb9)
+                },
+                egui::Color32::from_rgb(0x22, 0x82, 0xa5),
+                egui::Color32::BLACK,
+                egui::Color32::WHITE,
+            ),
+            (HabboBtnStyle::Blue, false, _) => (
+                egui::Color32::from_rgb(0x3d, 0x88, 0x9d),
+                egui::Color32::from_rgb(0x35, 0x77, 0x8a),
+                egui::Color32::from_rgb(0x35, 0x5b, 0x64),
+                egui::Color32::from_rgb(0xee, 0xf7, 0xfa),
+            ),
+            (HabboBtnStyle::Green, _, _) => (
+                egui::Color32::from_rgb(0x39, 0x84, 0x39),
+                egui::Color32::from_rgb(0x2f, 0x6f, 0x2f),
+                egui::Color32::from_rgb(0x1f, 0x45, 0x1f),
+                egui::Color32::WHITE,
+            ),
+            (HabboBtnStyle::Amber, _, _) => (
+                if hovered {
+                    egui::Color32::from_rgb(0xe3, 0x92, 0x1c)
+                } else {
+                    egui::Color32::from_rgb(0xd5, 0x85, 0x12)
+                },
+                egui::Color32::from_rgb(0xb8, 0x71, 0x0d),
+                egui::Color32::BLACK,
+                egui::Color32::WHITE,
+            ),
+            (HabboBtnStyle::Grey, true, false) => (
+                if hovered {
+                    egui::Color32::from_rgb(0xdc, 0xdc, 0xdc)
+                } else {
+                    egui::Color32::from_rgb(0xd1, 0xd1, 0xd1)
+                },
+                egui::Color32::from_rgb(0xbb, 0xbb, 0xbb),
+                egui::Color32::BLACK,
+                egui::Color32::from_rgb(0x14, 0x14, 0x14),
+            ),
+            (HabboBtnStyle::Grey, true, true) => (
+                if hovered {
+                    egui::Color32::from_rgb(0x4b, 0x52, 0x57)
+                } else {
+                    egui::Color32::from_rgb(0x3e, 0x45, 0x4a)
+                },
+                egui::Color32::from_rgb(0x31, 0x37, 0x3b),
+                egui::Color32::from_rgb(0x12, 0x15, 0x17),
+                egui::Color32::WHITE,
+            ),
+            (HabboBtnStyle::Grey, false, _) => (
+                egui::Color32::from_rgb(0x9a, 0x9a, 0x9a),
+                egui::Color32::from_rgb(0x88, 0x88, 0x88),
+                egui::Color32::from_rgb(0x55, 0x55, 0x55),
+                egui::Color32::from_rgb(0xd8, 0xd8, 0xd8),
+            ),
+            (HabboBtnStyle::White, true, false) => (
+                if hovered {
+                    egui::Color32::WHITE
+                } else {
+                    egui::Color32::from_rgb(0xf3, 0xf3, 0xf3)
+                },
+                egui::Color32::from_rgb(0xd9, 0xd9, 0xd9),
+                egui::Color32::BLACK,
+                egui::Color32::from_rgb(0x14, 0x14, 0x14),
+            ),
+            (HabboBtnStyle::White, true, true) => (
+                if hovered {
+                    egui::Color32::from_rgb(0x4a, 0x51, 0x56)
+                } else {
+                    egui::Color32::from_rgb(0x3c, 0x43, 0x48)
+                },
+                egui::Color32::from_rgb(0x2f, 0x35, 0x39),
+                egui::Color32::from_rgb(0x12, 0x15, 0x17),
+                egui::Color32::WHITE,
+            ),
+            (HabboBtnStyle::White, false, false) => (
+                egui::Color32::from_rgb(0xc3, 0xc3, 0xc1),
+                egui::Color32::from_rgb(0xb8, 0xb8, 0xb6),
+                egui::Color32::from_rgb(0x7a, 0x7a, 0x7a),
+                egui::Color32::from_rgb(0x50, 0x50, 0x50),
+            ),
+            (HabboBtnStyle::White, false, true) => (
+                egui::Color32::from_rgb(0x2b, 0x30, 0x34),
+                egui::Color32::from_rgb(0x25, 0x2a, 0x2d),
+                egui::Color32::from_rgb(0x45, 0x4c, 0x52),
+                egui::Color32::from_rgb(0x72, 0x7a, 0x80),
+            ),
+        };
+        let painter = ui.painter();
+        let rounding = egui::Rounding::same(4.0);
+        // Outer crisp Habbo frame + subtle bottom drop bevel
+        painter.rect_filled(rect, rounding, border_col);
+        let inner = rect.shrink2(egui::vec2(1.8, 1.8));
+        painter.rect_filled(inner, egui::Rounding::same(2.5), bot_fill);
+        let top_half = egui::Rect::from_min_max(
+            inner.min,
+            egui::pos2(inner.right(), inner.top() + inner.height() * 0.52),
+        );
+        painter.rect_filled(top_half, egui::Rounding::same(2.0), top_fill);
+        painter.text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            label,
+            egui::FontId::proportional(12.5),
+            text_col,
+        );
+    }
+    enabled && resp.clicked()
 }
 
 fn draw_source_badge(ui: &mut egui::Ui, source: &str) {

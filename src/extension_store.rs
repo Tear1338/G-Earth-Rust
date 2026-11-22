@@ -194,6 +194,27 @@ pub struct Author {
     pub extensions_count: i32,
     pub reputation: i32,
 }
+
+impl Author {
+    pub fn avatar_url(&self) -> Option<String> {
+        let hotel = self.hotel.as_deref()?.trim();
+        let username = self.username.as_deref()?.trim();
+        if hotel.is_empty()
+            || hotel.len() > 12
+            || !hotel.starts_with('.')
+            || hotel.contains("..")
+            || !hotel.bytes().all(|b| b.is_ascii_lowercase() || b == b'.')
+            || username.is_empty()
+            || username.len() > 128
+        {
+            return None;
+        }
+        Some(format!(
+            "https://www.habbo{hotel}/habbo-imaging/avatarimage?user={}&direction=2&head_direction=2",
+            uri_component(username)
+        ))
+    }
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ExtensionFramework {
     pub name: String,
@@ -646,16 +667,33 @@ impl MultiCatalog {
 
 const MAX_IMAGE_BYTES: usize = 2 * 1024 * 1024;
 
-/// Download a bounded store icon/screenshot from GitHub raw content.
+fn allowed_image_url(url: &str) -> bool {
+    if url.starts_with("https://raw.githubusercontent.com/") {
+        return true;
+    }
+    if let Some(rest) = url.strip_prefix("https://www.habbo.") {
+        if let Some((tld, path)) = rest.split_once('/') {
+            return !tld.is_empty()
+                && tld.len() <= 10
+                && !tld.contains("..")
+                && tld.bytes().all(|b| b.is_ascii_lowercase() || b == b'.')
+                && path.starts_with("habbo-imaging/avatarimage?");
+        }
+    }
+    false
+}
+
+/// Download a bounded store icon, screenshot, or Habbo author avatar.
 pub fn fetch_image_bytes(url: &str) -> io::Result<Vec<u8>> {
-    if !url.starts_with("https://raw.githubusercontent.com/") {
+    if !allowed_image_url(url) {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "image URL must point to raw.githubusercontent.com",
+            "image URL is not an allowed store or Habbo avatar host",
         ));
     }
     let agent = ureq::AgentBuilder::new()
         .timeout(std::time::Duration::from_secs(10))
+        .user_agent("G-Earth")
         .build();
     let response = agent.get(url).call().map_err(io::Error::other)?;
     let mut bytes = Vec::new();

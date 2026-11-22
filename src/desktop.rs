@@ -6319,8 +6319,8 @@ impl eframe::App for Desktop {
                 with_gearth_icon(
                     egui::ViewportBuilder::default()
                         .with_title("G-ExtensionStore")
-                        .with_inner_size([560.0, 560.0])
-                        .with_min_inner_size([480.0, 420.0]),
+                        .with_inner_size([680.0, 680.0])
+                        .with_min_inner_size([520.0, 460.0]),
                 ),
                 |store_ctx, class| {
                     store_ctx.set_visuals(theme_visuals.clone());
