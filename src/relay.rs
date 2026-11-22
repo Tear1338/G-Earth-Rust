@@ -255,6 +255,11 @@ pub struct Config {
     pub listen: SocketAddr,
     pub remote: String,
 }
+pub(crate) struct ListenerRoute {
+    pub listen: SocketAddr,
+    pub remote: String,
+    pub host_label: Option<(String, u16)>,
+}
 #[derive(Clone, Default)]
 pub struct RelayOptions {
     pub flash_process: Option<u32>,
@@ -325,11 +330,38 @@ impl Relay {
     ) -> io::Result<(Self, Receiver<Event>)> {
         Self::start_inner(config, options, Some(upstream))
     }
+    pub(crate) fn start_multi(
+        routes: Vec<ListenerRoute>,
+        options: RelayOptions,
+    ) -> io::Result<(Self, Receiver<Event>)> {
+        Self::start_routes(routes, options, None)
+    }
     fn start_inner(
         config: Config,
         options: RelayOptions,
         raw_upstream: Option<VecDeque<TcpStream>>,
     ) -> io::Result<(Self, Receiver<Event>)> {
+        Self::start_routes(
+            vec![ListenerRoute {
+                listen: config.listen,
+                remote: config.remote,
+                host_label: None,
+            }],
+            options,
+            raw_upstream,
+        )
+    }
+    fn start_routes(
+        routes: Vec<ListenerRoute>,
+        options: RelayOptions,
+        raw_upstream: Option<VecDeque<TcpStream>>,
+    ) -> io::Result<(Self, Receiver<Event>)> {
+        if routes.is_empty() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "at least one listener route is required",
+            ));
+        }
         if options.flash_process.is_some()
             && (options.shockwave
                 || options.outgoing_rc4.is_some()
@@ -347,43 +379,64 @@ impl Relay {
             ));
         }
         let raw = raw_upstream.is_some();
-        if raw {
-            if !config.listen.is_ipv4() || !config.listen.ip().is_unspecified() {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "Raw-IP listen address must be 0.0.0.0",
-                ));
-            }
-            if options.socks.is_none()
-                && raw_upstream
-                    .as_ref()
-                    .is_none_or(|upstream| upstream.is_empty())
-            {
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidInput,
-                    "direct Raw-IP relay requires preconnected server sockets",
-                ));
-            }
-        } else if !config.listen.ip().is_loopback() {
+        if raw && routes.len() != 1 {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "listen address must be loopback",
+                "Raw-IP relay supports a single listener route",
             ));
         }
-        let remote: Vec<SocketAddr> = if raw || options.socks.is_some() {
-            Vec::new()
-        } else {
-            config.remote.to_socket_addrs()?.collect()
-        };
-        if !raw && remote.is_empty() && options.socks.is_none() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "remote has no addresses",
-            ));
+        struct BoundRoute {
+            listener: TcpListener,
+            remote_addrs: Vec<SocketAddr>,
+            remote_str: String,
+            host_label: Option<(String, u16)>,
         }
-        let listener = TcpListener::bind(config.listen)?;
-        listener.set_nonblocking(true)?;
-        let address = listener.local_addr()?;
+        let mut bound_routes = Vec::with_capacity(routes.len());
+        for route in routes {
+            if raw {
+                if !route.listen.is_ipv4() || !route.listen.ip().is_unspecified() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "Raw-IP listen address must be 0.0.0.0",
+                    ));
+                }
+                if options.socks.is_none()
+                    && raw_upstream
+                        .as_ref()
+                        .is_none_or(|upstream| upstream.is_empty())
+                {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "direct Raw-IP relay requires preconnected server sockets",
+                    ));
+                }
+            } else if !route.listen.ip().is_loopback() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "listen address must be loopback",
+                ));
+            }
+            let remote_addrs: Vec<SocketAddr> = if raw || options.socks.is_some() {
+                Vec::new()
+            } else {
+                route.remote.to_socket_addrs()?.collect()
+            };
+            if !raw && remote_addrs.is_empty() && options.socks.is_none() {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "remote has no addresses",
+                ));
+            }
+            let listener = TcpListener::bind(route.listen)?;
+            listener.set_nonblocking(true)?;
+            bound_routes.push(BoundRoute {
+                listener,
+                remote_addrs,
+                remote_str: route.remote,
+                host_label: route.host_label,
+            });
+        }
+        let address = bound_routes[0].listener.local_addr()?;
         let (events, rx) = mpsc::sync_channel(2048);
         let stop = Arc::new(AtomicBool::new(false));
         let active = Arc::new(Mutex::new(None));
@@ -404,9 +457,31 @@ impl Relay {
                     thread::sleep(Duration::from_millis(5));
                     continue;
                 }
-                match listener.accept() {
-                    Ok((client, _)) => {
+                let mut accepted = None;
+                let mut accept_err = None;
+                for (route_idx, route) in bound_routes.iter().enumerate() {
+                    match route.listener.accept() {
+                        Ok((client, _)) => {
+                            accepted = Some((route_idx, client));
+                            break;
+                        }
+                        Err(e) if e.kind() == io::ErrorKind::WouldBlock => {}
+                        Err(e) => {
+                            accept_err = Some(e);
+                            break;
+                        }
+                    }
+                }
+                match accepted {
+                    Some((route_idx, client)) => {
+                        let route = &bound_routes[route_idx];
                         let mut session_options = options.clone();
+                        if let Some((host, port)) = &route.host_label {
+                            if let Some(details) = &mut session_options.connection {
+                                details.host = host.clone();
+                                details.port = *port;
+                            }
+                        }
                         if session_options.flash_process == Some(0) {
                             if let Some(pid) = client.peer_addr().ok().and_then(|address| {
                                 client.local_addr().ok().and_then(|remote| {
@@ -421,7 +496,7 @@ impl Relay {
                         }
                         let server = if let Some(socks) = &options.socks {
                             socks
-                                .connect(&config.remote)
+                                .connect(&route.remote_str)
                                 .map_err(|error| format!("SOCKS connection failed: {error}"))
                         } else if let Some(upstream) = &mut raw_upstream {
                             upstream.pop_front().ok_or_else(|| {
@@ -430,7 +505,7 @@ impl Relay {
                         } else {
                             let mut last_error = None;
                             let mut connected = None;
-                            for addr in &remote {
+                            for addr in &route.remote_addrs {
                                 if worker_stop.load(Ordering::Acquire) {
                                     break;
                                 }
@@ -579,12 +654,17 @@ impl Relay {
                                 *metadata = Some((version, Arc::new(packets)));
                             }
                         }
-                        let _ = events.try_send(Event::Connected(
-                            server
-                                .peer_addr()
-                                .map(|v| v.to_string())
-                                .unwrap_or_default(),
-                        ));
+                        let connected_label = route
+                            .host_label
+                            .as_ref()
+                            .map(|(h, p)| format!("{h}:{p}"))
+                            .unwrap_or_else(|| {
+                                server
+                                    .peer_addr()
+                                    .map(|v| v.to_string())
+                                    .unwrap_or_default()
+                            });
+                        let _ = events.try_send(Event::Connected(connected_label));
                         let mut extension_session = None;
                         if let (Some(host), Some(details)) =
                             (&session_options.extensions, &session_options.connection)
@@ -626,12 +706,12 @@ impl Relay {
                             emit_error(&events, &worker_missed_errors, e.to_string());
                         }
                     }
-                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
-                        thread::sleep(Duration::from_millis(5))
-                    }
-                    Err(e) => {
-                        emit_error(&events, &worker_missed_errors, e.to_string());
-                        break;
+                    None => {
+                        if let Some(e) = accept_err {
+                            emit_error(&events, &worker_missed_errors, e.to_string());
+                            break;
+                        }
+                        thread::sleep(Duration::from_millis(5));
                     }
                 }
             }

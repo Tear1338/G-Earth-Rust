@@ -44,4 +44,4 @@ Name: "{group}\G-Earth Rust"; Filename: "{app}\gearth-desktop.exe"
 Name: "{autodesktop}\G-Earth Rust"; Filename: "{app}\gearth-desktop.exe"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\gearth-desktop.exe"; Description: "{cm:LaunchProgram,G-Earth Rust}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\gearth-desktop.exe"; Description: "{cm:LaunchProgram,G-Earth Rust}"; Flags: nowait postinstall skipifsilent shellexec

@@ -72,4 +72,7 @@ width, height, _, _, _, _, image_size, image_id = struct.unpack_from("<BBBBHHIH"
 icon = resource(3, image_id)
 if (width, height) != (64, 64) or len(icon) != image_size or hashlib.sha256(icon).digest() != expected:
     raise ValueError("embedded icon does not match the G-Earth image")
-print("Windows executable icon: verified G-Earth 64x64 PNG")
+manifest = resource(24, 1)
+if b"requireAdministrator" not in manifest:
+    raise ValueError("embedded Windows manifest does not request requireAdministrator")
+print("Windows executable icon + UAC requireAdministrator manifest: verified")

@@ -2,6 +2,9 @@ use std::{env, path::PathBuf, process::Command};
 
 fn main() {
     println!("cargo:rerun-if-changed=resources/gearth_icon.res");
+    println!("cargo:rerun-if-changed=resources/gearth_icon.rc");
+    println!("cargo:rerun-if-changed=resources/gearth_admin.rc");
+    println!("cargo:rerun-if-changed=resources/gearth.manifest");
     println!("cargo:rerun-if-env-changed=WINDRES");
     if env::var_os("CARGO_FEATURE_DESKTOP").is_none()
         || env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows")
@@ -9,10 +12,16 @@ fn main() {
         return;
     }
     let manifest = PathBuf::from(env::var_os("CARGO_MANIFEST_DIR").unwrap());
-    let resource = manifest.join("resources/gearth_icon.res");
+    let is_release = env::var("PROFILE").as_deref() == Ok("release");
     let target_env = env::var("CARGO_CFG_TARGET_ENV").unwrap_or_default();
     let resource = if target_env == "msvc" {
-        resource
+        if is_release {
+            println!("cargo:rustc-link-arg-bin=gearth-desktop=/MANIFEST:EMBED");
+            println!(
+                "cargo:rustc-link-arg-bin=gearth-desktop=/MANIFESTUAC:level='requireAdministrator' uiAccess='false'"
+            );
+        }
+        manifest.join("resources/gearth_icon.res")
     } else if target_env == "gnu" {
         let target = env::var("TARGET").unwrap();
         let compiler = env::var_os("WINDRES").unwrap_or_else(|| {
@@ -33,15 +42,23 @@ fn main() {
             "i686-pc-windows-gnu" => "pe-i386",
             _ => panic!("unsupported Windows GNU target: {target}"),
         };
-        let status = Command::new(compiler)
-            .arg("-J")
-            .arg("res")
+        let mut cmd = Command::new(compiler);
+        if is_release {
+            cmd.arg("-I")
+                .arg(manifest.join("resources"))
+                .arg("-i")
+                .arg(manifest.join("resources/gearth_admin.rc"));
+        } else {
+            cmd.arg("-J")
+                .arg("res")
+                .arg("-i")
+                .arg(manifest.join("resources/gearth_icon.res"));
+        }
+        let status = cmd
             .arg("-O")
             .arg("coff")
             .arg("-F")
             .arg(format)
-            .arg("-i")
-            .arg(&resource)
             .arg("-o")
             .arg(&output)
             .status()

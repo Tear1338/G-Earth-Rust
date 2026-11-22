@@ -379,6 +379,8 @@ struct Desktop {
     python_console: gpython_ui::PythonUi,
     auto_detect: bool,
     connection_port: String,
+    connected_endpoint: Option<String>,
+    connection_error: Option<String>,
     schedule_interval_input: String,
     ext_console_open: bool,
     ext_store_open: bool,
@@ -1097,6 +1099,8 @@ impl Default for Desktop {
             ),
             auto_detect: true,
             connection_port: "30000".into(),
+            connected_endpoint: None,
+            connection_error: None,
             schedule_interval_input: "500+0".into(),
             ext_console_open: false,
             ext_store_open: false,
@@ -1269,11 +1273,16 @@ impl Desktop {
                             self.relay = Some(Connection::Tcp(attachment.relay));
                             self.events = Some(attachment.events);
                             self.redirect = Some(attachment.redirect);
+                            self.connection_error = None;
                             self.status =
                                 "Waiting for the official client; reconnect Habbo now".into();
                             self.update_rules();
                         }
-                        Err(e) => self.status = format!("Attachment failed: {e}"),
+                        Err(e) => {
+                            let msg = format!("Attachment failed: {e}");
+                            self.connection_error = Some(msg.clone());
+                            self.status = msg;
+                        }
                     };
                     self.attachment_pending = None;
                     if let Some(worker) = self.attachment_worker.take() {
@@ -1442,6 +1451,8 @@ impl Desktop {
                     Event::Connected(a) => {
                         auto_start_schedules = true;
                         self.logger_connection_active = true;
+                        self.connected_endpoint = Some(a.clone());
+                        self.connection_error = None;
                         self.logger_window.on_connect();
                         if self.logger_clear_on_connect {
                             clear_log_contents(&mut self.logs, &mut self.logs_bytes);
@@ -1479,6 +1490,7 @@ impl Desktop {
                     }
                     Event::Disconnected => {
                         self.logger_connection_active = false;
+                        self.connected_endpoint = None;
                         self.logger_window.on_disconnect();
                         if self.logger_clear_on_disconnect {
                             clear_log_contents(&mut self.logs, &mut self.logs_bytes);
@@ -1646,24 +1658,40 @@ impl Desktop {
         }
     }
     fn start_flash_or_origins_attach(&mut self) {
+        self.connection_error = None;
+        self.connected_endpoint = None;
         let default_port = if self.origins { 40001u16 } else { 30000u16 };
-        let port = if self.auto_detect {
+        let auto_detect = self.auto_detect;
+        let port = if auto_detect {
             default_port
         } else {
             match self.connection_port.trim().parse::<u16>() {
                 Ok(port) if port != 0 => port,
                 _ => {
-                    self.status = self.i18n.text("alert.invalidconnection.content");
+                    let msg = self.i18n.text("alert.invalidconnection.content");
+                    self.connection_error = Some(msg.clone());
+                    self.status = msg;
                     return;
                 }
             }
         };
         let host = self.attachment_host.trim().to_owned();
-        if host.is_empty() {
-            self.status = self.i18n.text("alert.invalidconnection.content");
+        if !auto_detect && host.is_empty() {
+            let msg = self.i18n.text("alert.invalidconnection.content");
+            self.connection_error = Some(msg.clone());
+            self.status = msg;
             return;
         }
-        self.remote = format!("{host}:{port}");
+        let remote_fallback_host = if host.is_empty() {
+            if self.origins {
+                "game-od.habbo.com".to_owned()
+            } else {
+                "game-fr.habbo.com".to_owned()
+            }
+        } else {
+            host.clone()
+        };
+        self.remote = format!("{remote_fallback_host}:{port}");
         self.flash_auto = !self.origins && !self.disable_decryption;
         match self.relay_options() {
             Ok(options) => {
@@ -1671,13 +1699,45 @@ impl Desktop {
                 let (send, receive) = std::sync::mpsc::channel();
                 self.attachment_pending = Some(receive);
                 self.status = "Resolving hotel and preparing the local listener...".into();
-                self.attachment_worker = Some(std::thread::spawn(move || {
-                    let _ = send.send(gearth_rust::attachment::Attachment::start(
-                        &host, port, options, &path,
-                    ));
-                }));
+                if auto_detect {
+                    let base_hotels = if self.origins {
+                        gearth_rust::attachment::ORIGINS_HOTELS
+                    } else {
+                        gearth_rust::attachment::FLASH_HOTELS
+                    };
+                    let mut candidates: Vec<(String, u16)> = base_hotels
+                        .iter()
+                        .map(|h| ((*h).to_owned(), default_port))
+                        .collect();
+                    for custom in &self.custom_hotels {
+                        if let Some((h, p)) = custom.rsplit_once(':') {
+                            if let Ok(parsed_port) = p.parse::<u16>() {
+                                candidates.push((h.trim().to_owned(), parsed_port));
+                                continue;
+                            }
+                        }
+                        candidates.push((custom.trim().to_owned(), default_port));
+                    }
+                    self.attachment_worker = Some(std::thread::spawn(move || {
+                        let _ = send.send(gearth_rust::attachment::Attachment::start_auto_detect(
+                            &candidates,
+                            options,
+                            &path,
+                        ));
+                    }));
+                } else {
+                    self.attachment_worker = Some(std::thread::spawn(move || {
+                        let _ = send.send(gearth_rust::attachment::Attachment::start(
+                            &host, port, options, &path,
+                        ));
+                    }));
+                }
             }
-            Err(e) => self.status = e.to_string(),
+            Err(e) => {
+                let msg = e.to_string();
+                self.connection_error = Some(msg.clone());
+                self.status = msg;
+            }
         }
     }
     fn connection(&mut self, ui: &mut egui::Ui) {
@@ -1832,11 +1892,11 @@ impl Desktop {
                                 };
                                 ui.horizontal(|ui| {
                                     ui.add_enabled(
-                                        idle,
+                                        idle && !self.auto_detect,
                                         egui::TextEdit::singleline(&mut self.attachment_host)
                                             .desired_width((input_w - 28.0).max(90.0)),
                                     );
-                                    ui.add_enabled_ui(idle, |ui| {
+                                    ui.add_enabled_ui(idle && !self.auto_detect, |ui| {
                                         egui::ComboBox::from_id_salt("attach-hotel")
                                             .width(18.0)
                                             .selected_text("")
@@ -1918,21 +1978,29 @@ impl Desktop {
         let bot_left_w = (avail_w * 0.36).floor();
         let bot_right_w = (avail_w - bot_left_w - 14.0).max(260.0);
         let (state_text, state_color) = self.connection_state_display();
-        let (mut connected_host, mut connected_port) = if self.relay.is_some() {
-            if self.nitro {
-                self.listen
-                    .rsplit_once(':')
-                    .map(|(h, p)| (h.to_owned(), p.to_owned()))
-                    .unwrap_or_else(|| (self.listen.clone(), String::new()))
+        let (mut connected_host, mut connected_port) =
+            if self.relay.as_ref().is_some_and(Connection::connected) {
+                if let Some(endpoint) = &self.connected_endpoint {
+                    endpoint
+                        .rsplit_once(':')
+                        .map(|(h, p)| (h.to_owned(), p.to_owned()))
+                        .unwrap_or_else(|| (endpoint.clone(), String::new()))
+                } else if self.nitro {
+                    self.listen
+                        .rsplit_once(':')
+                        .map(|(h, p)| (h.to_owned(), p.to_owned()))
+                        .unwrap_or_else(|| (self.listen.clone(), String::new()))
+                } else {
+                    self.remote
+                        .rsplit_once(':')
+                        .map(|(h, p)| (h.to_owned(), p.to_owned()))
+                        .unwrap_or_else(|| {
+                            (self.attachment_host.clone(), self.connection_port.clone())
+                        })
+                }
             } else {
-                self.remote
-                    .rsplit_once(':')
-                    .map(|(h, p)| (h.to_owned(), p.to_owned()))
-                    .unwrap_or_else(|| (self.attachment_host.clone(), self.connection_port.clone()))
-            }
-        } else {
-            (String::new(), String::new())
-        };
+                (String::new(), String::new())
+            };
 
         ui.horizontal_top(|ui| {
             ui.allocate_ui_with_layout(
@@ -1984,7 +2052,11 @@ impl Desktop {
             );
         });
 
-        ui.add_space(8.0);
+        ui.add_space(6.0);
+        if let Some(error) = &self.connection_error {
+            ui.colored_label(egui::Color32::from_rgb(0xc9, 0x30, 0x2c), error);
+            ui.add_space(4.0);
+        }
 
         // Expandable mode-specific details below the iconic 2x2 Connection.fxml grid
         if self.nitro {
@@ -2224,6 +2296,8 @@ impl Desktop {
             clear_log_contents(&mut self.logs, &mut self.logs_bytes);
         }
         self.logger_connection_active = false;
+        self.connected_endpoint = None;
+        self.connection_error = None;
         self.status = "Disconnected".into();
         if let Some(guard) = &mut self.proxy_guard {
             match guard.restore() {
