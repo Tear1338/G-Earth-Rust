@@ -4907,8 +4907,9 @@ impl eframe::App for Desktop {
                         .color(palette.text_muted),
                     );
                     if let Some(Ok(info)) = self.update_result.clone() {
-                        if info.outdated && self.update_apply_task.is_none() {
-                            if ui
+                        if info.outdated
+                            && self.update_apply_task.is_none()
+                            && ui
                                 .small_button(
                                     egui::RichText::new(format!("⬆ {}", info.latest_version))
                                         .color(egui::Color32::from_rgb(210, 120, 15))
@@ -4916,9 +4917,8 @@ impl eframe::App for Desktop {
                                 )
                                 .on_hover_text(self.i18n.text("rust.info.update_now"))
                                 .clicked()
-                            {
-                                self.start_update_apply(info);
-                            }
+                        {
+                            self.start_update_apply(info);
                         }
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
