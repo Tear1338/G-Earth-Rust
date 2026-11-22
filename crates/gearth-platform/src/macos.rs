@@ -580,6 +580,7 @@ mod sockets {
             owner_from_pids(local, remote, &[std::process::id(), u32::MAX]),
             None
         );
+        eprintln!("macOS IPv4 loopback ownership verified");
     }
 
     #[cfg(test)]
@@ -606,6 +607,33 @@ mod sockets {
             1,
         ));
         assert_eq!(owner_from_pids(scoped, remote, &[std::process::id()]), None);
+    }
+
+    #[cfg(test)]
+    #[test]
+    fn identifies_ipv4_mapped_client_when_available() {
+        use std::net::{SocketAddrV6, TcpListener, TcpStream};
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = SocketAddrV6::new(
+            Ipv4Addr::LOCALHOST.to_ipv6_mapped(),
+            listener.local_addr().unwrap().port(),
+            0,
+            0,
+        );
+        let Ok(client) = TcpStream::connect(address) else {
+            eprintln!("macOS IPv4-mapped client unavailable; owner fixture skipped");
+            return;
+        };
+        let (_server, _) = listener.accept().unwrap();
+        assert_eq!(
+            owner_from_pids(
+                client.local_addr().unwrap(),
+                client.peer_addr().unwrap(),
+                &[std::process::id()]
+            ),
+            Some(std::process::id())
+        );
+        eprintln!("macOS IPv4-mapped client ownership verified");
     }
 }
 

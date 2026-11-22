@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased — macOS socket coverage
+
+- Report native IPv4, IPv6 and mapped-socket owner fixture coverage in CI.
+
 ## Unreleased — macOS TCP ownership
 
 - Add conservative macOS TCP socket owner discovery for selected client processes.

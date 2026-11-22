@@ -1,5 +1,9 @@
 # G-Earth Rust migration progress
 
+## macOS mapped-socket coverage
+
+The first native macOS workspace run for TCP owner discovery passed, including the non-skippable IPv4 loopback fixture; the release job is still running. Added a separate IPv4-mapped client fixture and explicit CI output for IPv4, IPv6 and mapped coverage, so unavailable cases can be distinguished from executed cases. Intel and Apple Silicon cross-target Clippy, Windows platform tests and CI YAML parsing pass. Native mapped-socket results, scoped IPv6, actual client permissions and privileged hosts/proxy lifecycle remain unverified.
+
 ## macOS TCP owner discovery
 
 The macOS platform now inspects selected client processes’ TCP socket descriptors through libproc and matches both endpoints, returning no owner on ambiguity, incomplete descriptor access or scoped IPv6. Controlled native loopback fixtures cover IPv4, inaccessible candidates and IPv6 when available; they await macOS CI. Apple Silicon and Intel cross-target Clippy, Windows workspace/all-targets tests, desktop/web Clippy and debug build pass. Native macOS CI run 44967568993 passed the scanner self-process, cancellation, pagination and release job; its overall run is still completing. Mapped IPv6, socket permissions on real clients, privileged hosts/proxy lifecycle and real client/extension compatibility remain unverified.
@@ -793,4 +797,4 @@ The migration is **not complete**. Implemented code and finite fixtures do not e
 
 ## Exact next step
 
-Commit and push macOS TCP owner discovery, then inspect native macOS CI for IPv4/IPv6 loopback and release compilation; correct any failure. Test mapped IPv6 separately and implement privileged hosts/proxy lifecycle. Continue Java size differences and `Matcher.last` for `\b{g}`. The user handles live tests; clients, protocols and extensions remain unverified.
+Commit and push the macOS mapped-socket fixture and CI coverage markers, then inspect native logs to confirm which IPv4/IPv6 cases ran and fix any failure. Implement privileged hosts/proxy lifecycle. Continue Java size differences and `Matcher.last` for `\b{g}`. The user handles live tests; clients, protocols and extensions remain unverified.

@@ -1,5 +1,9 @@
 # Rust migration architecture
 
+## macOS socket coverage reporting
+
+Native CI prints whether IPv4, IPv6 and IPv4-mapped socket owner fixtures ran or were unavailable; successful compilation alone does not prove optional network cases.
+
 ## macOS TCP ownership
 
 The platform enumerates sockets for discovered client processes and matches both TCP endpoints using libproc data. It refuses attribution on inaccessible candidates, multiple owners or scoped IPv6; mapped IPv6 and real-client permissions need further verification.

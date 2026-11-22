@@ -1,5 +1,9 @@
 # Compatibility with 1.5.4-beta-29
 
+## macOS mapped-socket evidence
+
+The initial native macOS workspace run passed the mandatory IPv4 loopback owner fixture. A mapped-IPv6 client fixture and explicit coverage markers are added; their native results remain pending.
+
 ## macOS TCP ownership status
 
 Apple Silicon and Intel cross-target Clippy pass; native IPv4/IPv6 loopback fixtures await macOS CI. Scoped IPv6 is deliberately unattributed; mapped IPv6 and actual client permissions remain unverified.

@@ -1,5 +1,10 @@
 # Migration tasks
 
+## Latest: macOS mapped-socket coverage
+
+- [x] Add an IPv4-mapped client fixture and explicit native socket coverage markers.
+- [ ] Inspect macOS CI output to confirm IPv6 and mapped cases actually ran; fix any failure and implement privileged hosts/proxy lifecycle.
+
 ## Latest: macOS TCP ownership
 
 - [x] Implement conservative libproc TCP endpoint-to-client attribution and native loopback fixtures; cross-check macOS targets.

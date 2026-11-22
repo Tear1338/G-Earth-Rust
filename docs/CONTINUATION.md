@@ -1,5 +1,9 @@
 # Continuation state
 
+## Next: inspect macOS mapped-socket CI
+
+Commit and push the mapped-socket fixture and CI coverage markers. Inspect native logs to confirm which IPv4/IPv6 cases ran, fix failures, then continue privileged macOS hosts/proxy lifecycle. Live client tests belong to the user.
+
 ## Next: native macOS socket validation
 
 Commit and push macOS TCP owner discovery, inspect native macOS CI for IPv4/IPv6 loopback and build results, and correct any failure. Test mapped IPv6 separately, then implement privileged hosts/proxy lifecycle. Live tests belong to the user.
