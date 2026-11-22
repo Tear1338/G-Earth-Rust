@@ -4398,18 +4398,19 @@ impl Desktop {
         let mut edit_active = None;
         group_box(ui, self.theme, egui::Margin::same(0.0), |ui| {
             ui.set_width(avail_w - 2.0);
-            let inner_w = (avail_w - 18.0).max(540.0);
+            let inner_w = (avail_w - 30.0).max(520.0);
             let col_idx = (inner_w * 0.09).floor();
             let col_pkt = (inner_w * 0.37).floor();
             let col_int = (inner_w * 0.16).floor();
             let col_dst = (inner_w * 0.17).floor();
-            let col_edt = (inner_w - col_idx - col_pkt - col_int - col_dst).max(96.0);
+            let col_edt = (inner_w - col_idx - col_pkt - col_int - col_dst).max(88.0);
 
             egui::Frame::none()
                 .fill(palette.table_header_bg)
                 .inner_margin(egui::Margin::symmetric(6.0, 5.0))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
                         for (w, key) in [
                             (col_idx, "tab.scheduler.table.index"),
                             (col_pkt, "tab.scheduler.table.packet"),
@@ -4421,6 +4422,8 @@ impl Desktop {
                                 egui::vec2(w, 18.0),
                                 egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
                                 |ui| {
+                                    ui.set_min_width(w);
+                                    ui.set_max_width(w);
                                     ui.label(
                                         egui::RichText::new(self.i18n.text(key))
                                             .color(palette.table_header_text)
@@ -4455,12 +4458,15 @@ impl Desktop {
                             .inner_margin(egui::Margin::symmetric(6.0, 3.0))
                             .show(ui, |ui| {
                                 ui.horizontal(|ui| {
+                                    ui.spacing_mut().item_spacing.x = 4.0;
                                     ui.allocate_ui_with_layout(
                                         egui::vec2(col_idx, 20.0),
                                         egui::Layout::centered_and_justified(
                                             egui::Direction::LeftToRight,
                                         ),
                                         |ui| {
+                                            ui.set_min_width(col_idx);
+                                            ui.set_max_width(col_idx);
                                             ui.label(format!("{}", i + 1));
                                         },
                                     );
@@ -4471,6 +4477,8 @@ impl Desktop {
                                         egui::vec2(col_pkt, 20.0),
                                         egui::Layout::left_to_right(egui::Align::Center),
                                         |ui| {
+                                            ui.set_min_width(col_pkt);
+                                            ui.set_max_width(col_pkt);
                                             ui.add(
                                                 egui::Label::new(
                                                     egui::RichText::new(expr).monospace().small(),
@@ -4491,6 +4499,8 @@ impl Desktop {
                                             egui::Direction::LeftToRight,
                                         ),
                                         |ui| {
+                                            ui.set_min_width(col_int);
+                                            ui.set_max_width(col_int);
                                             ui.label(interval_text);
                                         },
                                     );
@@ -4508,6 +4518,8 @@ impl Desktop {
                                             egui::Direction::LeftToRight,
                                         ),
                                         |ui| {
+                                            ui.set_min_width(col_dst);
+                                            ui.set_max_width(col_dst);
                                             ui.label(dest_label);
                                         },
                                     );
@@ -4515,6 +4527,8 @@ impl Desktop {
                                         egui::vec2(col_edt, 20.0),
                                         egui::Layout::left_to_right(egui::Align::Center),
                                         |ui| {
+                                            ui.set_min_width(col_edt);
+                                            ui.set_max_width(col_edt);
                                             let pause_lbl = if job.paused { "▶" } else { "⏸" };
                                             if ui
                                                 .small_button(pause_lbl)
@@ -6684,18 +6698,19 @@ impl Desktop {
         // Exact Extensions.fxml 5-column table: Title (22%) | Description (34%) | Author (18%) | Version (13%) | Edit (13%)
         group_box(ui, self.theme, egui::Margin::same(0.0), |ui| {
             ui.set_width(avail_w - 2.0);
-            let inner_w = (avail_w - 18.0).max(540.0);
+            let inner_w = (avail_w - 30.0).max(520.0);
             let col_title = (inner_w * 0.22).floor();
             let col_desc = (inner_w * 0.34).floor();
-            let col_author = (inner_w * 0.17).floor();
-            let col_ver = (inner_w * 0.12).floor();
-            let col_edit = (inner_w - col_title - col_desc - col_author - col_ver).max(80.0);
+            let col_author = (inner_w * 0.18).floor();
+            let col_ver = (inner_w * 0.11).floor();
+            let col_edit = (inner_w - col_title - col_desc - col_author - col_ver).max(76.0);
 
             egui::Frame::none()
                 .fill(palette.table_header_bg)
                 .inner_margin(egui::Margin::symmetric(6.0, 5.0))
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
                         for (w, key) in [
                             (col_title, "tab.extensions.table.title"),
                             (col_desc, "tab.extensions.table.description"),
@@ -6707,6 +6722,8 @@ impl Desktop {
                                 egui::vec2(w, 18.0),
                                 egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
                                 |ui| {
+                                    ui.set_min_width(w);
+                                    ui.set_max_width(w);
                                     ui.label(
                                         egui::RichText::new(self.i18n.text(key))
                                             .color(palette.table_header_text)
@@ -6737,14 +6754,14 @@ impl Desktop {
                         (
                             "Packet Logger",
                             "Internal packet logger",
-                            "sirjonasxx",
+                            "1desirable1337",
                             "1.5.4",
                             0u8,
                         ),
                         (
                             "G-ExtensionStore",
                             "Install and manage extensions",
-                            "sirjonasxx",
+                            "1desirable1337",
                             "1.5.4",
                             1u8,
                         ),
@@ -6762,10 +6779,13 @@ impl Desktop {
                             .inner_margin(egui::Margin::symmetric(6.0, 4.0))
                             .show(ui, |ui| {
                                 ui.horizontal(|ui| {
+                                    ui.spacing_mut().item_spacing.x = 4.0;
                                     ui.allocate_ui_with_layout(
                                         egui::vec2(col_title, 20.0),
                                         egui::Layout::left_to_right(egui::Align::Center),
                                         |ui| {
+                                            ui.set_min_width(col_title);
+                                            ui.set_max_width(col_title);
                                             ui.add(egui::Label::new(title).truncate());
                                         },
                                     );
@@ -6773,6 +6793,8 @@ impl Desktop {
                                         egui::vec2(col_desc, 20.0),
                                         egui::Layout::left_to_right(egui::Align::Center),
                                         |ui| {
+                                            ui.set_min_width(col_desc);
+                                            ui.set_max_width(col_desc);
                                             ui.add(egui::Label::new(desc).truncate());
                                         },
                                     );
@@ -6782,6 +6804,8 @@ impl Desktop {
                                             egui::Direction::LeftToRight,
                                         ),
                                         |ui| {
+                                            ui.set_min_width(col_author);
+                                            ui.set_max_width(col_author);
                                             ui.label(author);
                                         },
                                     );
@@ -6791,6 +6815,8 @@ impl Desktop {
                                             egui::Direction::LeftToRight,
                                         ),
                                         |ui| {
+                                            ui.set_min_width(col_ver);
+                                            ui.set_max_width(col_ver);
                                             ui.label(ver);
                                         },
                                     );
@@ -6800,6 +6826,8 @@ impl Desktop {
                                             egui::Direction::LeftToRight,
                                         ),
                                         |ui| {
+                                            ui.set_min_width(col_edit);
+                                            ui.set_max_width(col_edit);
                                             if ui
                                                 .small_button(
                                                     self.i18n.text("rust.extensions.open"),
@@ -6836,10 +6864,13 @@ impl Desktop {
                                 .inner_margin(egui::Margin::symmetric(6.0, 4.0))
                                 .show(ui, |ui| {
                                     ui.horizontal(|ui| {
+                                        ui.spacing_mut().item_spacing.x = 4.0;
                                         ui.allocate_ui_with_layout(
                                             egui::vec2(col_title, 20.0),
                                             egui::Layout::left_to_right(egui::Align::Center),
                                             |ui| {
+                                                ui.set_min_width(col_title);
+                                                ui.set_max_width(col_title);
                                                 ui.add(
                                                     egui::Label::new(&extension.info.title)
                                                         .truncate(),
@@ -6850,6 +6881,8 @@ impl Desktop {
                                             egui::vec2(col_desc, 20.0),
                                             egui::Layout::left_to_right(egui::Align::Center),
                                             |ui| {
+                                                ui.set_min_width(col_desc);
+                                                ui.set_max_width(col_desc);
                                                 ui.add(
                                                     egui::Label::new(&extension.info.description)
                                                         .truncate(),
@@ -6862,6 +6895,8 @@ impl Desktop {
                                                 egui::Direction::LeftToRight,
                                             ),
                                             |ui| {
+                                                ui.set_min_width(col_author);
+                                                ui.set_max_width(col_author);
                                                 ui.label(&extension.info.author);
                                             },
                                         );
@@ -6871,6 +6906,8 @@ impl Desktop {
                                                 egui::Direction::LeftToRight,
                                             ),
                                             |ui| {
+                                                ui.set_min_width(col_ver);
+                                                ui.set_max_width(col_ver);
                                                 ui.label(&extension.info.version);
                                             },
                                         );
@@ -6878,6 +6915,8 @@ impl Desktop {
                                             egui::vec2(col_edit, 20.0),
                                             egui::Layout::left_to_right(egui::Align::Center),
                                             |ui| {
+                                                ui.set_min_width(col_edit);
+                                                ui.set_max_width(col_edit);
                                                 if !extension.approved
                                                     && ui
                                                         .small_button(
