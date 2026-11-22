@@ -57,3 +57,64 @@ pub fn decode_vl64(bytes: &[u8]) -> Result<(i32, usize)> {
         n,
     ))
 }
+
+#[cfg(test)]
+mod java_oracle_tests {
+    use super::*;
+
+    #[test]
+    fn vl64_and_base64_match_beta29_java_recorded_vectors() {
+        let vl64_vectors: &[(i32, &str)] = &[
+            (0, "48"),
+            (1, "49"),
+            (-1, "4d"),
+            (2, "4a"),
+            (-2, "4e"),
+            (3, "4b"),
+            (-3, "4f"),
+            (4, "5041"),
+            (-4, "5441"),
+            (63, "534f"),
+            (-63, "574f"),
+            (64, "5050"),
+            (-64, "5450"),
+            (255, "537f"),
+            (-255, "577f"),
+            (256, "584041"),
+            (65535, "637f7f43"),
+            (-65535, "677f7f43"),
+            (1_000_000, "6050427d"),
+            (-1_000_000, "6450427d"),
+            (i32::MAX, "737f7f7f7f5f"),
+            (-i32::MAX, "777f7f7f7f5f"),
+        ];
+        for &(value, expected_hex) in vl64_vectors {
+            let encoded = encode_vl64(value);
+            let actual_hex: String = encoded.iter().map(|b| format!("{b:02x}")).collect();
+            assert_eq!(actual_hex, expected_hex, "VL64 encode mismatch for {value}");
+            let (decoded, consumed) = decode_vl64(&encoded).unwrap();
+            assert_eq!(decoded, value);
+            assert_eq!(consumed, encoded.len());
+        }
+
+        let b64_vectors: &[(u32, usize, &str)] = &[
+            (0, 1, "40"),
+            (63, 1, "7f"),
+            (0, 2, "4040"),
+            (4095, 2, "7f7f"),
+            (1234, 2, "5352"),
+            (0, 3, "404040"),
+            (262_143, 3, "7f7f7f"),
+            (100_000, 4, "40585a60"),
+        ];
+        for &(value, width, expected_hex) in b64_vectors {
+            let encoded = encode_b64(value, width).unwrap();
+            let actual_hex: String = encoded.iter().map(|b| format!("{b:02x}")).collect();
+            assert_eq!(
+                actual_hex, expected_hex,
+                "Base64 encode mismatch for ({value}, {width})"
+            );
+            assert_eq!(decode_b64(&encoded).unwrap(), value);
+        }
+    }
+}

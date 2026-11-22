@@ -96,7 +96,7 @@ pub struct PacketInfoManager {
     headers: HashMap<(Direction, u16), Vec<usize>>,
 }
 impl PacketInfoManager {
-    /// Read the upstream Sulek response or G-Earth's Unity messages.json schema.
+    /// Read Sulek, Harble, or G-Earth's Unity messages.json schema.
     pub fn from_json(version: impl Into<String>, bytes: &[u8]) -> Result<Self> {
         let json: serde_json::Value =
             serde_json::from_slice(bytes).map_err(|e| error(&e.to_string()))?;
@@ -120,33 +120,63 @@ impl PacketInfoManager {
                 return Err(error("too many packet identifiers"));
             }
             for item in list {
-                let id = item[if sulek { "id" } else { "Id" }]
-                    .as_u64()
-                    .ok_or_else(|| error("invalid packet identifier"))?;
+                let id_value = &item[if sulek { "id" } else { "Id" }];
+                let (id, string_id) = if let Some(id) = id_value.as_u64() {
+                    (id, false)
+                } else if !sulek {
+                    let parsed = id_value
+                        .as_str()
+                        .and_then(|raw| raw.trim().parse::<u64>().ok())
+                        .ok_or_else(|| error("invalid packet identifier"))?;
+                    (parsed, true)
+                } else {
+                    return Err(error("invalid packet identifier"));
+                };
                 let header =
                     u16::try_from(id).map_err(|_| error("packet identifier exceeds 65535"))?;
-                let name = item[if sulek { "name" } else { "Name" }]
-                    .as_str()
-                    .ok_or_else(|| error("missing packet name"))?;
-                let name = if sulek {
-                    ["MessageComposer", "Composer", "MessageEvent", "Event"]
-                        .iter()
-                        .find_map(|suffix| name.strip_suffix(suffix))
-                        .unwrap_or(name)
-                } else {
-                    name
+                let hash = (!sulek)
+                    .then(|| item.get("Hash").and_then(|v| v.as_str()))
+                    .flatten()
+                    .filter(|s| !s.is_empty() && s.len() <= 4096)
+                    .map(str::to_owned);
+                let structure = (!sulek)
+                    .then(|| item.get("Structure").and_then(|v| v.as_str()))
+                    .flatten()
+                    .filter(|s| !s.is_empty() && s.len() <= 4096)
+                    .map(str::to_owned);
+                let harble = !sulek
+                    && (string_id || item.get("Hash").is_some() || item.get("Structure").is_some());
+                let raw_name = item[if sulek { "name" } else { "Name" }].as_str();
+                let name = match raw_name {
+                    Some(name) => {
+                        let normalized = if sulek {
+                            ["MessageComposer", "Composer", "MessageEvent", "Event"]
+                                .iter()
+                                .find_map(|suffix| name.strip_suffix(suffix))
+                                .unwrap_or(name)
+                        } else if harble {
+                            name.strip_suffix("Composer").unwrap_or(name)
+                        } else {
+                            name
+                        };
+                        if normalized.is_empty() || normalized.len() > 4096 {
+                            return Err(error("invalid packet name"));
+                        }
+                        Some(normalized.to_owned())
+                    }
+                    None if harble => None,
+                    None => return Err(error("missing packet name")),
                 };
-                if name.is_empty() || name.len() > 4096 {
-                    return Err(error("invalid packet name"));
-                }
                 entries.push(PacketInfo {
                     header,
-                    hash: None,
-                    name: Some(name.into()),
-                    structure: None,
+                    hash,
+                    name,
+                    structure,
                     direction,
                     source: if sulek {
                         "Sulek".into()
+                    } else if harble {
+                        "Harble".into()
                     } else {
                         "G-Earth".into()
                     },
@@ -667,5 +697,37 @@ mod cache_refresh_tests {
             ))
             .is_err()
         );
+    }
+
+    #[test]
+    fn parses_harble_json_with_hashes_structures_string_ids_and_composer_trim() {
+        let json = br#"{
+            "Incoming": [
+                {"Id": "101", "Name": "RoomEntryComposer", "Hash": "abc123", "Structure": "isB"},
+                {"Id": 102, "Hash": "onlyhash", "Structure": ""}
+            ],
+            "Outgoing": [
+                {"Id": 205, "Name": "MoveAvatarComposer", "Hash": "def456", "Structure": "ii"}
+            ]
+        }"#;
+        let manager = PacketInfoManager::from_json("REV", json).unwrap();
+        assert_eq!(manager.entries().len(), 3);
+        let entry = &manager.entries()[0];
+        assert_eq!(entry.header, 101);
+        assert_eq!(entry.direction, Direction::ToClient);
+        assert_eq!(entry.name.as_deref(), Some("RoomEntry"));
+        assert_eq!(entry.hash.as_deref(), Some("abc123"));
+        assert_eq!(entry.structure.as_deref(), Some("isB"));
+        assert_eq!(entry.source, "Harble");
+        let hash_only = &manager.entries()[1];
+        assert_eq!(hash_only.header, 102);
+        assert_eq!(hash_only.name, None);
+        assert_eq!(hash_only.hash.as_deref(), Some("onlyhash"));
+        assert_eq!(hash_only.structure, None);
+        let outgoing = &manager.entries()[2];
+        assert_eq!(outgoing.header, 205);
+        assert_eq!(outgoing.direction, Direction::ToServer);
+        assert_eq!(outgoing.name.as_deref(), Some("MoveAvatar"));
+        assert_eq!(outgoing.source, "Harble");
     }
 }

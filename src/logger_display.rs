@@ -273,3 +273,29 @@ pub fn hex_dump(bytes: &[u8], byte_limit: usize) -> String {
     }
     output
 }
+
+#[cfg(test)]
+mod hexdump_java_tests {
+    use super::hex_dump;
+
+    #[test]
+    fn hex_dump_matches_beta29_java_hexdump_exact_formatting() {
+        assert_eq!(hex_dump(&[], 1024), "empty");
+        let sample: &[u8] = &[0, 9, 10, 13, 32, 33, 65, 126, 127, 0x80, 0xff];
+        assert_eq!(
+            hex_dump(sample, 1024),
+            "00000000  00 09 0a 0d 20 21 41 7e  7f 80 ff                 |\u{25a1}\u{2192}\u{00b6}\u{00a4}\u{2423}!A~\u{25a1}\u{25a1}\u{25a1}|\n0000000b"
+        );
+        let multi_line: &[u8] = &[
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 32, 65, 90,
+        ];
+        assert_eq!(
+            hex_dump(multi_line, 1024),
+            concat!(
+                "00000000  00 01 02 03 04 05 06 07  08 09 0a 0b 0c 0d 0e 0f  |\u{25a1}\u{25a1}\u{25a1}\u{25a1}\u{25a1}\u{25a1}\u{25a1}\u{25a1}\u{25a1}\u{2192}\u{00b6}\u{25a1}\u{25a1}\u{00a4}\u{25a1}\u{25a1}|\n",
+                "00000010  10 20 41 5a                                       |\u{25a1}\u{2423}AZ|\n",
+                "00000014"
+            )
+        );
+    }
+}
