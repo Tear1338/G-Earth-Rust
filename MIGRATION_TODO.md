@@ -1,5 +1,11 @@
 # Migration tasks
 
+## Latest: Faithful G-Earth 1.5.4-beta-29 Desktop UI Replica
+
+- [x] Port original beta-29 Bootstrap/JavaFX styling for `G-Earth`, `G-Earth Dark`, and `Tanji` with embedded MIT theme logos (`src/theme_ui.rs`, `resources/themes/`).
+- [x] Rebuild all desktop tabs (`Connection`, `Injection`, `Tools`, `Scheduler`, `Extensions`, `Extra`, `Info`, `Logger`) and top bar to match the original beta-29 FXML layout while keeping all Rust features, floating logger window, and 9-language localization intact.
+- [ ] External / user-run boundary only: live official-client end-to-end sessions (Flash AIR, Origins, Unity WebGL, Nitro, real G-Presets/G-Python gameplay), optional Chrome TLS JA3/JA4 impersonation (BoringSSL) if a live hotel rejects `rustls`, OpenJDK internal stateful `\b{g}` quirk, and paid OS code-signing certificates.
+
 ## Latest: Harble parity, macOS Flash resigner, Extra/Info parity & side-by-side Java benchmarks
 
 - [x] Audit all 105 beta-29 Java units with `rust-anything analyze`, add full Harble JSON schema parity (`src/packet_info.rs`), and lock in Java 21 differential tests for `Base64Encoding`, `VL64Encoding`, and `Hexdump` (`1168eae`).

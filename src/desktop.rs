@@ -2,6 +2,7 @@
 use eframe::egui;
 mod gpython_ui;
 mod store_ui;
+mod theme_ui;
 use gearth_rust::{
     connection::Connection,
     crypto::Rc4,
@@ -33,6 +34,7 @@ use std::{
     sync::{Arc, OnceLock},
     time::{Duration, Instant, SystemTime},
 };
+use theme_ui::{group_box, parse_interval_spec, tab_button, AppTheme, ThemeLogos};
 
 // Both lazy prediction caches count against the capture byte budget.
 const LOG_PREDICTION_LIMIT: usize = 1024;
@@ -145,73 +147,6 @@ fn browse_path(
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum AppTheme {
-    GEarth,
-    GEarthDark,
-    Tanji,
-}
-
-impl AppTheme {
-    const ALL: [Self; 3] = [Self::GEarth, Self::GEarthDark, Self::Tanji];
-
-    fn name(self) -> &'static str {
-        match self {
-            Self::GEarth => "G-Earth",
-            Self::GEarthDark => "G-Earth Dark",
-            Self::Tanji => "Tanji",
-        }
-    }
-
-    fn from_settings(theme: Option<&str>, dark_mode: bool) -> Self {
-        match theme {
-            Some("G-Earth Dark") => Self::GEarthDark,
-            Some("Tanji") => Self::Tanji,
-            Some("G-Earth") => Self::GEarth,
-            _ if dark_mode => Self::GEarthDark,
-            _ => Self::GEarth,
-        }
-    }
-
-    fn is_dark(self) -> bool {
-        matches!(self, Self::GEarthDark)
-    }
-
-    fn visuals(self) -> egui::Visuals {
-        match self {
-            Self::GEarth => egui::Visuals::light(),
-            Self::GEarthDark => egui::Visuals::dark(),
-            Self::Tanji => {
-                let mut visuals = egui::Visuals::light();
-                let steel_bg = egui::Color32::from_rgb(241, 246, 251);
-                let panel_bg = egui::Color32::from_rgb(230, 238, 246);
-                let accent = egui::Color32::from_rgb(30, 111, 168);
-                let accent_soft = egui::Color32::from_rgb(197, 222, 240);
-                let border = egui::Color32::from_rgb(154, 181, 204);
-                let text = egui::Color32::from_rgb(20, 34, 48);
-                visuals.window_fill = steel_bg;
-                visuals.panel_fill = panel_bg;
-                visuals.extreme_bg_color = egui::Color32::from_rgb(250, 252, 255);
-                visuals.faint_bg_color = egui::Color32::from_rgb(222, 232, 242);
-                visuals.override_text_color = Some(text);
-                visuals.hyperlink_color = accent;
-                visuals.selection.bg_fill = accent_soft;
-                visuals.selection.stroke = egui::Stroke::new(1.0_f32, accent);
-                visuals.window_stroke = egui::Stroke::new(1.0_f32, border);
-                visuals.widgets.noninteractive.bg_fill = panel_bg;
-                visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0_f32, border);
-                visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(218, 230, 241);
-                visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0_f32, border);
-                visuals.widgets.hovered.bg_fill = accent_soft;
-                visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0_f32, accent);
-                visuals.widgets.active.bg_fill = accent;
-                visuals.widgets.active.fg_stroke = egui::Stroke::new(1.0_f32, egui::Color32::WHITE);
-                visuals
-            }
-        }
-    }
-}
-
 fn with_gearth_icon(viewport: egui::ViewportBuilder) -> egui::ViewportBuilder {
     static ICON: OnceLock<Option<Arc<egui::IconData>>> = OnceLock::new();
     match ICON.get_or_init(|| {
@@ -281,12 +216,12 @@ fn bounded_log_prediction(mut value: String) -> String {
 
 fn main() -> eframe::Result<()> {
     eframe::run_native(
-        "G-Earth Rust — development",
+        "G-Earth",
         eframe::NativeOptions {
             viewport: with_gearth_icon(
                 egui::ViewportBuilder::default()
-                    .with_inner_size([1060.0, 720.0])
-                    .with_min_inner_size([780.0, 540.0]),
+                    .with_inner_size([680.0, 385.0])
+                    .with_min_inner_size([650.0, 325.0]),
             ),
             ..Default::default()
         },
@@ -435,6 +370,15 @@ struct Desktop {
     packet_download: Option<Receiver<std::io::Result<PacketInfoManager>>>,
     store: store_ui::StoreUi,
     python_console: gpython_ui::PythonUi,
+    auto_detect: bool,
+    connection_port: String,
+    schedule_interval_input: String,
+    ext_console_open: bool,
+    ext_store_open: bool,
+    ext_install_open: bool,
+    ext_gpython_open: bool,
+    donate_dialog_open: bool,
+    logos: Option<ThemeLogos>,
 }
 struct LogRow {
     message: Message,
@@ -1139,6 +1083,15 @@ impl Default for Desktop {
                     .unwrap_or_else(|| Path::new("."))
                     .join("extensions"),
             ),
+            auto_detect: true,
+            connection_port: "30000".into(),
+            schedule_interval_input: "500+0".into(),
+            ext_console_open: false,
+            ext_store_open: false,
+            ext_install_open: false,
+            ext_gpython_open: false,
+            donate_dialog_open: false,
+            logos: None,
         };
         if let Some(host) = &desktop.extension_host {
             if let Err(error) = host.set_packet_safety(desktop.packet_safety.clone()) {
@@ -1620,333 +1573,591 @@ impl Desktop {
             }
         }
     }
-    fn connection(&mut self, ui: &mut egui::Ui) {
-        ui.heading(self.i18n.text("tab.connection"));
-        if ui
-            .add_enabled(
-                self.relay.is_none() && self.attachment_pending.is_none(),
-                egui::Checkbox::new(&mut self.nitro, self.i18n.text("rust.connection.browser")),
+    fn connection_state_display(&self) -> (String, egui::Color32) {
+        if self.relay.as_ref().is_some_and(Connection::connected) {
+            (
+                self.i18n.text("tab.connection.state.connected"),
+                egui::Color32::from_rgb(0x39, 0x84, 0x39),
             )
-            .changed()
-        {
-            if self.nitro {
-                self.origins = false;
-            }
-            self.update_rules();
+        } else if self.relay.is_some() || self.attachment_pending.is_some() {
+            (
+                self.i18n.text("tab.connection.state.waiting"),
+                egui::Color32::from_rgb(0xd5, 0x85, 0x12),
+            )
+        } else {
+            (
+                self.i18n.text("tab.connection.state.notconnected"),
+                self.theme.palette().text_muted,
+            )
         }
-        if self.nitro {
-            ui.add_enabled_ui(self.relay.is_none(), |ui| {
-                egui::ComboBox::from_id_salt("browser-client")
-                    .selected_text(if self.unity {
-                        "Unity WebGL"
-                    } else {
-                        "Nitro / HTML5"
-                    })
-                    .show_ui(ui, |ui| {
-                        ui.selectable_value(&mut self.unity, false, "Nitro / HTML5");
-                        ui.selectable_value(&mut self.unity, true, "Unity WebGL");
-                    });
-            });
-            self.nitro_connection(ui);
+    }
+    fn start_flash_or_origins_attach(&mut self) {
+        let default_port = if self.origins { 40001u16 } else { 30000u16 };
+        let port = if self.auto_detect {
+            default_port
+        } else {
+            match self.connection_port.trim().parse::<u16>() {
+                Ok(port) if port != 0 => port,
+                _ => {
+                    self.status = self.i18n.text("alert.invalidconnection.content");
+                    return;
+                }
+            }
+        };
+        let host = self.attachment_host.trim().to_owned();
+        if host.is_empty() {
+            self.status = self.i18n.text("alert.invalidconnection.content");
             return;
         }
-        ui.label(if self.origins {
-            "Origins TCP · negotiated Bobba encryption"
-        } else {
-            "EVA_WIRE TCP relay"
-        });
-        if ui
-            .add_enabled(
-                self.relay.is_none() && self.attachment_pending.is_none(),
-                egui::Checkbox::new(&mut self.origins, "Origins / Shockwave"),
-            )
-            .changed()
-        {
-            let known = gearth_rust::attachment::FLASH_HOTELS
-                .contains(&self.attachment_host.as_str())
-                || gearth_rust::attachment::ORIGINS_HOTELS.contains(&self.attachment_host.as_str());
-            if known {
-                self.attachment_host = if self.origins {
-                    "game-od.habbo.com".into()
-                } else {
-                    "game-fr.habbo.com".into()
-                };
+        self.remote = format!("{host}:{port}");
+        self.flash_auto = !self.origins && !self.disable_decryption;
+        match self.relay_options() {
+            Ok(options) => {
+                let path = gearth_rust::attachment::HostsRedirect::system_path();
+                let (send, receive) = std::sync::mpsc::channel();
+                self.attachment_pending = Some(receive);
+                self.status = "Resolving hotel and preparing the local listener...".into();
+                self.attachment_worker = Some(std::thread::spawn(move || {
+                    let _ = send.send(gearth_rust::attachment::Attachment::start(
+                        &host, port, options, &path,
+                    ));
+                }));
             }
-            self.update_rules();
+            Err(e) => self.status = e.to_string(),
         }
-        egui::CollapsingHeader::new(self.i18n.text("rust.connection.attachment"))
-            .default_open(true)
-            .show(ui, |ui| {
-                let hotels = if self.origins {
-                    gearth_rust::attachment::ORIGINS_HOTELS
-                } else {
-                    gearth_rust::attachment::FLASH_HOTELS
-                };
-                egui::ComboBox::from_id_salt("attach-hotel")
-                    .selected_text(&self.attachment_host)
-                    .show_ui(ui, |ui| {
-                        for host in hotels {
-                            ui.selectable_value(&mut self.attachment_host, (*host).into(), *host);
-                        }
-                        for host in &self.custom_hotels {
-                            if !hotels.iter().any(|h| h.eq_ignore_ascii_case(host)) {
-                                ui.selectable_value(
-                                    &mut self.attachment_host,
-                                    host.clone(),
-                                    host.as_str(),
+    }
+    fn connection(&mut self, ui: &mut egui::Ui) {
+        let idle = self.relay.is_none() && self.attachment_pending.is_none();
+        let palette = self.theme.palette();
+        let avail_w = ui.available_width().max(600.0);
+        let top_left_w = (avail_w * 0.58).floor();
+        let top_right_w = (avail_w - top_left_w - 14.0).max(210.0);
+
+        // Row 1 (exact Connection.fxml top grid):
+        // Left: bordered card with Client type radios (Flash/Origins/Unity/Nitro) + Hotel version
+        // Right: Port, Host, Connect/Abort + Auto-detect
+        ui.horizontal_top(|ui| {
+            ui.allocate_ui_with_layout(
+                egui::vec2(top_left_w, 114.0),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    group_box(ui, self.theme, egui::Margin::same(0.0), |ui| {
+                        ui.set_width(top_left_w - 2.0);
+                        ui.add_space(6.0);
+                        ui.horizontal_wrapped(|ui| {
+                            ui.add_space(8.0);
+                            ui.label(self.i18n.text("tab.connection.client"));
+                            ui.add_enabled_ui(idle, |ui| {
+                                let is_flash = !self.origins && !self.nitro;
+                                let is_origins = self.origins && !self.nitro;
+                                let is_unity = self.nitro && self.unity;
+                                let is_nitro = self.nitro && !self.unity;
+                                let mut switched = false;
+                                if ui
+                                    .radio(is_flash, self.i18n.text("tab.connection.client.flash"))
+                                    .clicked()
+                                {
+                                    self.origins = false;
+                                    self.nitro = false;
+                                    self.unity = false;
+                                    self.connection_port = "30000".into();
+                                    if gearth_rust::attachment::ORIGINS_HOTELS
+                                        .contains(&self.attachment_host.as_str())
+                                    {
+                                        self.attachment_host = "game-fr.habbo.com".into();
+                                    }
+                                    switched = true;
+                                }
+                                if ui
+                                    .radio(
+                                        is_origins,
+                                        self.i18n.text("tab.connection.client.origins"),
+                                    )
+                                    .clicked()
+                                {
+                                    self.origins = true;
+                                    self.nitro = false;
+                                    self.unity = false;
+                                    self.connection_port = "40001".into();
+                                    if gearth_rust::attachment::FLASH_HOTELS
+                                        .contains(&self.attachment_host.as_str())
+                                    {
+                                        self.attachment_host = "game-od.habbo.com".into();
+                                    }
+                                    switched = true;
+                                }
+                                if ui
+                                    .radio(is_unity, self.i18n.text("tab.connection.client.unity"))
+                                    .clicked()
+                                {
+                                    self.origins = false;
+                                    self.nitro = true;
+                                    self.unity = true;
+                                    switched = true;
+                                }
+                                if ui
+                                    .radio(is_nitro, self.i18n.text("tab.connection.client.nitro"))
+                                    .clicked()
+                                {
+                                    self.origins = false;
+                                    self.nitro = true;
+                                    self.unity = false;
+                                    switched = true;
+                                }
+                                if switched {
+                                    self.update_rules();
+                                }
+                            });
+                        });
+                        ui.add_space(6.0);
+                        let rect = ui.available_rect_before_wrap();
+                        ui.painter().line_segment(
+                            [
+                                egui::pos2(rect.left(), rect.top()),
+                                egui::pos2(rect.right(), rect.top()),
+                            ],
+                            egui::Stroke::new(1.0_f32, palette.group_border),
+                        );
+                        ui.add_space(7.0);
+                        ui.horizontal(|ui| {
+                            ui.add_space(10.0);
+                            ui.vertical(|ui| {
+                                ui.label(self.i18n.text("tab.connection.version"));
+                                ui.add_space(3.0);
+                                ui.add(
+                                    egui::TextEdit::singleline(&mut self.hotel_version)
+                                        .desired_width((top_left_w - 28.0).max(160.0)),
+                                );
+                            });
+                        });
+                        ui.add_space(10.0);
+                    });
+                },
+            );
+
+            ui.add_space(10.0);
+
+            ui.allocate_ui_with_layout(
+                egui::vec2(top_right_w, 114.0),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    ui.add_space(4.0);
+                    let input_w = (top_right_w - 64.0).max(120.0);
+                    egui::Grid::new("classic-conn-inputs")
+                        .num_columns(2)
+                        .spacing([8.0, 8.0])
+                        .show(ui, |ui| {
+                            ui.label(self.i18n.text("tab.connection.port"));
+                            if self.nitro {
+                                ui.add_enabled(
+                                    idle,
+                                    egui::TextEdit::singleline(&mut self.listen)
+                                        .desired_width(input_w),
+                                );
+                            } else {
+                                ui.add_enabled(
+                                    idle && !self.auto_detect,
+                                    egui::TextEdit::singleline(&mut self.connection_port)
+                                        .desired_width(input_w),
                                 );
                             }
-                        }
-                    });
-                ui.horizontal(|ui| {
-                    ui.text_edit_singleline(&mut self.attachment_host);
-                    let trimmed = self.attachment_host.trim().to_owned();
-                    let is_saved = !trimmed.is_empty()
-                        && self
-                            .custom_hotels
-                            .iter()
-                            .any(|h| h.eq_ignore_ascii_case(&trimmed));
-                    let is_builtin = hotels.iter().any(|h| h.eq_ignore_ascii_case(&trimmed));
-                    if !trimmed.is_empty()
-                        && !is_builtin
-                        && !is_saved
-                        && ui
-                            .button(self.i18n.text("rust.connection.save_hotel"))
-                            .clicked()
-                    {
-                        self.custom_hotels.push(trimmed);
-                        self.save_settings();
-                    } else if is_saved
-                        && ui
-                            .button(self.i18n.text("rust.connection.remove_hotel"))
-                            .clicked()
-                    {
-                        self.custom_hotels
-                            .retain(|h| !h.eq_ignore_ascii_case(&trimmed));
-                        self.save_settings();
-                    }
-                });
-                ui.checkbox(
-                    &mut self.flash_auto,
-                    self.i18n.text("rust.connection.flash_crypto"),
-                );
-                ui.horizontal(|ui| {
-                    if ui
-                        .button(self.i18n.text("rust.connection.refresh"))
-                        .clicked()
-                    {
-                        match gearth_platform::habbo_processes() {
-                            Ok(processes) => self.client_processes = processes,
-                            Err(e) => self.status = e.to_string(),
-                        }
-                    }
-                    egui::ComboBox::from_id_salt("flash-process")
-                        .selected_text(if self.flash_pid == 0 {
-                            self.i18n.text("rust.connection.automatic")
-                        } else {
-                            format!("PID {}", self.flash_pid)
-                        })
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(
-                                &mut self.flash_pid,
-                                0,
-                                self.i18n.text("rust.connection.automatic"),
-                            );
-                            for p in &self.client_processes {
-                                ui.selectable_value(
-                                    &mut self.flash_pid,
-                                    p.pid,
-                                    format!("{} - PID {}", p.executable, p.pid),
+                            ui.end_row();
+
+                            ui.label(self.i18n.text("tab.connection.host"));
+                            if self.nitro {
+                                ui.add_enabled(
+                                    false,
+                                    egui::TextEdit::singleline(&mut self.attachment_host)
+                                        .desired_width(input_w),
                                 );
+                            } else {
+                                let hotels = if self.origins {
+                                    gearth_rust::attachment::ORIGINS_HOTELS
+                                } else {
+                                    gearth_rust::attachment::FLASH_HOTELS
+                                };
+                                ui.horizontal(|ui| {
+                                    ui.add_enabled(
+                                        idle,
+                                        egui::TextEdit::singleline(&mut self.attachment_host)
+                                            .desired_width((input_w - 28.0).max(90.0)),
+                                    );
+                                    ui.add_enabled_ui(idle, |ui| {
+                                        egui::ComboBox::from_id_salt("attach-hotel")
+                                            .width(18.0)
+                                            .selected_text("")
+                                            .show_ui(ui, |ui| {
+                                                for host in hotels {
+                                                    ui.selectable_value(
+                                                        &mut self.attachment_host,
+                                                        (*host).into(),
+                                                        *host,
+                                                    );
+                                                }
+                                                for host in &self.custom_hotels {
+                                                    if !hotels
+                                                        .iter()
+                                                        .any(|h| h.eq_ignore_ascii_case(host))
+                                                    {
+                                                        ui.selectable_value(
+                                                            &mut self.attachment_host,
+                                                            host.clone(),
+                                                            host.as_str(),
+                                                        );
+                                                    }
+                                                }
+                                            });
+                                    });
+                                });
+                            }
+                            ui.end_row();
+                        });
+                    ui.add_space(10.0);
+                    ui.horizontal(|ui| {
+                        let btn_w = (top_right_w - 104.0).max(96.0);
+                        if idle {
+                            let enabled = !self.nitro || self.certificate_task.is_none();
+                            if ui
+                                .add_enabled(
+                                    enabled,
+                                    egui::Button::new(
+                                        self.i18n.text("tab.connection.button.connect"),
+                                    )
+                                    .min_size(egui::vec2(btn_w, 28.0)),
+                                )
+                                .clicked()
+                            {
+                                if self.nitro {
+                                    if let Err(e) = self.start_nitro() {
+                                        self.status = e.to_string();
+                                    }
+                                } else {
+                                    self.start_flash_or_origins_attach();
+                                }
+                            }
+                        } else if ui
+                            .add(
+                                egui::Button::new(self.i18n.text("tab.connection.button.abort"))
+                                    .min_size(egui::vec2(btn_w, 28.0)),
+                            )
+                            .clicked()
+                        {
+                            self.stop_connection();
+                        }
+                        ui.add_enabled(
+                            idle && !self.nitro,
+                            egui::Checkbox::new(
+                                &mut self.auto_detect,
+                                self.i18n.text("tab.connection.autodetect"),
+                            ),
+                        );
+                    });
+                },
+            );
+        });
+
+        ui.add_space(10.0);
+
+        // Row 2 (exact Connection.fxml bottom grid):
+        // Left: Connection state label + tall centered bordered box
+        // Right: Bordered Host / Port read-only card
+        let bot_left_w = (avail_w * 0.36).floor();
+        let bot_right_w = (avail_w - bot_left_w - 14.0).max(260.0);
+        let (state_text, state_color) = self.connection_state_display();
+        let (mut connected_host, mut connected_port) = if self.relay.is_some() {
+            if self.nitro {
+                self.listen
+                    .rsplit_once(':')
+                    .map(|(h, p)| (h.to_owned(), p.to_owned()))
+                    .unwrap_or_else(|| (self.listen.clone(), String::new()))
+            } else {
+                self.remote
+                    .rsplit_once(':')
+                    .map(|(h, p)| (h.to_owned(), p.to_owned()))
+                    .unwrap_or_else(|| (self.attachment_host.clone(), self.connection_port.clone()))
+            }
+        } else {
+            (String::new(), String::new())
+        };
+
+        ui.horizontal_top(|ui| {
+            ui.allocate_ui_with_layout(
+                egui::vec2(bot_left_w, 92.0),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    ui.label(self.i18n.text("tab.connection.state"));
+                    ui.add_space(4.0);
+                    group_box(ui, self.theme, egui::Margin::same(8.0), |ui| {
+                        ui.set_min_size(egui::vec2(bot_left_w - 18.0, 56.0));
+                        ui.centered_and_justified(|ui| {
+                            ui.label(egui::RichText::new(&state_text).color(state_color).strong());
+                        });
+                    });
+                },
+            );
+
+            ui.add_space(10.0);
+
+            ui.allocate_ui_with_layout(
+                egui::vec2(bot_right_w, 92.0),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    ui.add_space(6.0);
+                    group_box(ui, self.theme, egui::Margin::symmetric(10.0, 10.0), |ui| {
+                        ui.set_width(bot_right_w - 22.0);
+                        let field_w = (bot_right_w - 100.0).max(150.0);
+                        egui::Grid::new("classic-conn-output")
+                            .num_columns(2)
+                            .spacing([12.0, 8.0])
+                            .show(ui, |ui| {
+                                ui.label(self.i18n.text("tab.connection.host"));
+                                ui.add_enabled(
+                                    false,
+                                    egui::TextEdit::singleline(&mut connected_host)
+                                        .desired_width(field_w),
+                                );
+                                ui.end_row();
+                                ui.label(self.i18n.text("tab.connection.port"));
+                                ui.add_enabled(
+                                    false,
+                                    egui::TextEdit::singleline(&mut connected_port)
+                                        .desired_width(field_w),
+                                );
+                                ui.end_row();
+                            });
+                    });
+                },
+            );
+        });
+
+        ui.add_space(8.0);
+
+        // Expandable mode-specific details below the iconic 2x2 Connection.fxml grid
+        if self.nitro {
+            egui::ScrollArea::vertical()
+                .id_salt("nitro_connection_panel")
+                .show(ui, |ui| {
+                    self.nitro_connection(ui);
+                });
+            return;
+        }
+
+        egui::CollapsingHeader::new(self.i18n.text("rust.connection.options"))
+            .id_salt("connection-advanced-drawer")
+            .show(ui, |ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt("connection_options_scroll")
+                    .max_height(260.0)
+                    .show(ui, |ui| {
+                        let hotels = if self.origins {
+                            gearth_rust::attachment::ORIGINS_HOTELS
+                        } else {
+                            gearth_rust::attachment::FLASH_HOTELS
+                        };
+                        ui.horizontal(|ui| {
+                            let trimmed = self.attachment_host.trim().to_owned();
+                            let is_saved = !trimmed.is_empty()
+                                && self
+                                    .custom_hotels
+                                    .iter()
+                                    .any(|h| h.eq_ignore_ascii_case(&trimmed));
+                            let is_builtin =
+                                hotels.iter().any(|h| h.eq_ignore_ascii_case(&trimmed));
+                            if !trimmed.is_empty()
+                                && !is_builtin
+                                && !is_saved
+                                && ui
+                                    .button(self.i18n.text("rust.connection.save_hotel"))
+                                    .clicked()
+                            {
+                                self.custom_hotels.push(trimmed);
+                                self.save_settings();
+                            } else if is_saved
+                                && ui
+                                    .button(self.i18n.text("rust.connection.remove_hotel"))
+                                    .clicked()
+                            {
+                                self.custom_hotels
+                                    .retain(|h| !h.eq_ignore_ascii_case(&trimmed));
+                                self.save_settings();
+                            }
+                            if ui
+                                .add_enabled(
+                                    idle,
+                                    egui::Button::new(
+                                        self.i18n.text("rust.connection.recover_redirects"),
+                                    ),
+                                )
+                                .clicked()
+                            {
+                                self.status =
+                                    match gearth_rust::attachment::HostsRedirect::recover_stale(
+                                        &gearth_rust::attachment::HostsRedirect::system_path(),
+                                    ) {
+                                        Ok(()) => {
+                                            self.i18n.text("rust.connection.redirects_removed")
+                                        }
+                                        Err(e) => e.to_string(),
+                                    };
                             }
                         });
-                });
-                if ui
-                    .add_enabled(
-                        self.relay.is_none() && self.attachment_pending.is_none(),
-                        egui::Button::new(self.i18n.text("rust.connection.attach")),
-                    )
-                    .clicked()
-                {
-                    let port = if self.origins { 40001 } else { 30000 };
-                    self.remote = format!("{}:{port}", self.attachment_host);
-                    self.flash_auto = !self.origins && !self.disable_decryption;
-                    match self.relay_options() {
-                        Ok(options) => {
-                            let host = self.attachment_host.clone();
-                            let path = gearth_rust::attachment::HostsRedirect::system_path();
-                            let (send, receive) = std::sync::mpsc::channel();
-                            self.attachment_pending = Some(receive);
-                            self.status =
-                                "Resolving hotel and preparing the local listener...".into();
-                            self.attachment_worker = Some(std::thread::spawn(move || {
-                                let _ = send.send(gearth_rust::attachment::Attachment::start(
-                                    &host, port, options, &path,
-                                ));
-                            }));
+                        #[cfg(target_os = "macos")]
+                        if !self.origins
+                            && ui
+                                .add_enabled(
+                                    idle,
+                                    egui::Button::new(self.i18n.text("alert.macosflash.title")),
+                                )
+                                .on_hover_text(self.i18n.text("alert.macosflash.content"))
+                                .clicked()
+                        {
+                            self.status = match gearth_platform::prepare_macos_flash_client() {
+                                Ok(backup) => format!(
+                                    "{} (backup: {})",
+                                    self.i18n.text("alert.macosflash.title"),
+                                    backup.display()
+                                ),
+                                Err(e) => {
+                                    format!("{}: {e}", self.i18n.text("alert.macosflash.failed"))
+                                }
+                            };
                         }
-                        Err(e) => self.status = e.to_string(),
-                    }
-                }
-                ui.label(self.i18n.text("rust.connection.attachment_hint"));
-                #[cfg(target_os = "macos")]
-                if !self.origins
-                    && ui
-                        .add_enabled(
-                            self.relay.is_none() && self.attachment_pending.is_none(),
-                            egui::Button::new(self.i18n.text("alert.macosflash.title")),
-                        )
-                        .on_hover_text(self.i18n.text("alert.macosflash.content"))
-                        .clicked()
-                {
-                    self.status = match gearth_platform::prepare_macos_flash_client() {
-                        Ok(backup) => format!(
-                            "{} (backup: {})",
-                            self.i18n.text("alert.macosflash.title"),
-                            backup.display()
-                        ),
-                        Err(e) => format!("{}: {e}", self.i18n.text("alert.macosflash.failed")),
-                    };
-                }
-                if ui
-                    .add_enabled(
-                        self.relay.is_none() && self.attachment_pending.is_none(),
-                        egui::Button::new(self.i18n.text("rust.connection.recover_redirects")),
-                    )
-                    .clicked()
-                {
-                    self.status = match gearth_rust::attachment::HostsRedirect::recover_stale(
-                        &gearth_rust::attachment::HostsRedirect::system_path(),
-                    ) {
-                        Ok(()) => self.i18n.text("rust.connection.redirects_removed"),
-                        Err(e) => e.to_string(),
-                    };
-                }
+                        ui.checkbox(
+                            &mut self.flash_auto,
+                            self.i18n.text("rust.connection.flash_crypto"),
+                        );
+                        ui.horizontal(|ui| {
+                            if ui
+                                .button(self.i18n.text("rust.connection.refresh"))
+                                .clicked()
+                            {
+                                match gearth_platform::habbo_processes() {
+                                    Ok(processes) => self.client_processes = processes,
+                                    Err(e) => self.status = e.to_string(),
+                                }
+                            }
+                            egui::ComboBox::from_id_salt("flash-process")
+                                .selected_text(if self.flash_pid == 0 {
+                                    self.i18n.text("rust.connection.automatic")
+                                } else {
+                                    format!("PID {}", self.flash_pid)
+                                })
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(
+                                        &mut self.flash_pid,
+                                        0,
+                                        self.i18n.text("rust.connection.automatic"),
+                                    );
+                                    for p in &self.client_processes {
+                                        ui.selectable_value(
+                                            &mut self.flash_pid,
+                                            p.pid,
+                                            format!("{} - PID {}", p.executable, p.pid),
+                                        );
+                                    }
+                                });
+                        });
+                        ui.separator();
+                        egui::Grid::new("connection-manual-options")
+                            .spacing([12.0, 6.0])
+                            .show(ui, |ui| {
+                                ui.label(self.i18n.text("rust.connection.local"));
+                                ui.add_enabled(
+                                    idle,
+                                    egui::TextEdit::singleline(&mut self.listen)
+                                        .desired_width(280.0),
+                                );
+                                ui.end_row();
+                                ui.label(self.i18n.text("rust.connection.remote"));
+                                ui.add_enabled(
+                                    idle,
+                                    egui::TextEdit::singleline(&mut self.remote)
+                                        .desired_width(280.0),
+                                );
+                                ui.end_row();
+                                ui.label(self.i18n.text("rust.connection.client_identifier"));
+                                ui.text_edit_singleline(&mut self.client_identifier);
+                                ui.end_row();
+                                ui.label(self.i18n.text("rust.connection.packet_identifiers"));
+                                ui.text_edit_singleline(&mut self.packet_database);
+                                ui.end_row();
+                                ui.label(self.i18n.text("rust.connection.outgoing_key"));
+                                ui.add(
+                                    egui::TextEdit::singleline(&mut self.outgoing_key)
+                                        .password(true),
+                                );
+                                ui.end_row();
+                                ui.label(self.i18n.text("rust.connection.incoming_key"));
+                                ui.add(
+                                    egui::TextEdit::singleline(&mut self.incoming_key)
+                                        .password(true),
+                                );
+                                ui.end_row();
+                            });
+                        ui.horizontal(|ui| {
+                            if ui
+                                .add_enabled(
+                                    idle && self.packet_download.is_none(),
+                                    egui::Button::new(self.i18n.text("rust.connection.load_sulek")),
+                                )
+                                .clicked()
+                            {
+                                let version = self.hotel_version.clone();
+                                let origins = self.origins;
+                                let socks = match configured_socks(
+                                    self.socks_enabled,
+                                    &self.socks_proxy,
+                                    &self.socks_user,
+                                    &self.socks_password,
+                                ) {
+                                    Ok(socks) => socks,
+                                    Err(error) => {
+                                        self.status = error.to_string();
+                                        return;
+                                    }
+                                };
+                                let (send, receive) = std::sync::mpsc::channel();
+                                self.packet_download = Some(receive);
+                                self.status = self.i18n.text("rust.connection.loading_identifiers");
+                                std::thread::spawn(move || {
+                                    let _ = send.send(PacketInfoManager::fetch_sulek_for_proxy(
+                                        &version, origins, socks,
+                                    ));
+                                });
+                            }
+                            ui.label(format!(
+                                "{} {}",
+                                self.packet_info.entries().len(),
+                                self.i18n.text("rust.connection.identifier_count")
+                            ));
+                            if idle
+                                && ui
+                                    .button(self.i18n.text("rust.connection.listen"))
+                                    .clicked()
+                            {
+                                match self.listen.parse() {
+                                    Ok(listen) => match self.relay_options().and_then(|options| {
+                                        Relay::start_with_options(
+                                            Config {
+                                                listen,
+                                                remote: self.remote.trim().to_owned(),
+                                            },
+                                            options,
+                                        )
+                                    }) {
+                                        Ok((relay, events)) => {
+                                            self.relay = Some(Connection::Tcp(relay));
+                                            self.events = Some(events);
+                                            self.update_rules();
+                                        }
+                                        Err(e) => self.status = e.to_string(),
+                                    },
+                                    Err(e) => self.status = format!("Invalid local address: {e}"),
+                                }
+                            }
+                        });
+                    });
             });
-        ui.add_space(12.0);
-        egui::Grid::new("connection-grid")
-            .spacing([18.0, 12.0])
-            .show(ui, |ui| {
-                ui.label(self.i18n.text("rust.connection.local"));
-                ui.add_enabled(
-                    self.relay.is_none(),
-                    egui::TextEdit::singleline(&mut self.listen).desired_width(400.0),
-                );
-                ui.end_row();
-                ui.label(self.i18n.text("rust.connection.remote"));
-                ui.add_enabled(
-                    self.relay.is_none(),
-                    egui::TextEdit::singleline(&mut self.remote).desired_width(400.0),
-                );
-                ui.end_row();
-            });
-        egui::CollapsingHeader::new(self.i18n.text("rust.connection.options")).show(ui, |ui| {
-            ui.checkbox(
-                &mut self.socks_enabled,
-                self.i18n.text("tab.extra.options.advanced.socks"),
-            );
-            egui::Grid::new("connection-options").show(ui, |ui| {
-                for (key, value) in [
-                    ("rust.connection.hotel_version", &mut self.hotel_version),
-                    (
-                        "rust.connection.client_identifier",
-                        &mut self.client_identifier,
-                    ),
-                    (
-                        "rust.connection.packet_identifiers",
-                        &mut self.packet_database,
-                    ),
-                    ("rust.connection.socks_proxy", &mut self.socks_proxy),
-                    ("rust.connection.socks_user", &mut self.socks_user),
-                ] {
-                    ui.label(self.i18n.text(key));
-                    ui.text_edit_singleline(value);
-                    ui.end_row();
-                }
-                ui.label(self.i18n.text("rust.connection.socks_password"));
-                ui.add(egui::TextEdit::singleline(&mut self.socks_password).password(true));
-                ui.end_row();
-                ui.label(self.i18n.text("rust.connection.outgoing_key"));
-                ui.add(egui::TextEdit::singleline(&mut self.outgoing_key).password(true));
-                ui.end_row();
-                ui.label(self.i18n.text("rust.connection.incoming_key"));
-                ui.add(egui::TextEdit::singleline(&mut self.incoming_key).password(true));
-                ui.end_row();
-            });
-            ui.label(self.i18n.text("rust.connection.key_hint"));
-        });
-        ui.add_space(14.0);
-        ui.horizontal(|ui| {
-            if ui
-                .add_enabled(
-                    self.relay.is_none() && self.packet_download.is_none(),
-                    egui::Button::new(self.i18n.text("rust.connection.load_sulek")),
-                )
-                .clicked()
-            {
-                let version = self.hotel_version.clone();
-                let origins = self.origins;
-                let socks = match configured_socks(
-                    self.socks_enabled,
-                    &self.socks_proxy,
-                    &self.socks_user,
-                    &self.socks_password,
-                ) {
-                    Ok(socks) => socks,
-                    Err(error) => {
-                        self.status = error.to_string();
-                        return;
-                    }
-                };
-                let (send, receive) = std::sync::mpsc::channel();
-                self.packet_download = Some(receive);
-                self.status = self.i18n.text("rust.connection.loading_identifiers");
-                std::thread::spawn(move || {
-                    let _ = send.send(PacketInfoManager::fetch_sulek_for_proxy(
-                        &version, origins, socks,
-                    ));
-                });
-            }
-            ui.label(format!(
-                "{} {}",
-                self.packet_info.entries().len(),
-                self.i18n.text("rust.connection.identifier_count")
-            ));
-        });
-        if self.relay.is_none() && self.attachment_pending.is_none() {
-            if ui
-                .button(self.i18n.text("rust.connection.listen"))
-                .clicked()
-            {
-                match self.listen.parse() {
-                    Ok(listen) => match self.relay_options().and_then(|options| {
-                        Relay::start_with_options(
-                            Config {
-                                listen,
-                                remote: self.remote.trim().to_owned(),
-                            },
-                            options,
-                        )
-                    }) {
-                        Ok((relay, events)) => {
-                            self.relay = Some(Connection::Tcp(relay));
-                            self.events = Some(events);
-                            self.update_rules();
-                        }
-                        Err(e) => self.status = e.to_string(),
-                    },
-                    Err(e) => self.status = format!("Invalid local address: {e}"),
-                }
-            }
-        } else if self.relay.is_some()
-            && ui.button(self.i18n.text("rust.connection.stop")).clicked()
-        {
-            self.stop_connection();
-        }
-        ui.add_space(20.0);
-        ui.group(|ui| {
-            ui.label(self.i18n.text("rust.connection.test_client_hint"));
-        });
     }
     fn stop_connection(&mut self) {
         if self.logger_connection_active || self.relay.as_ref().is_some_and(Connection::connected) {
@@ -2317,105 +2528,214 @@ impl Desktop {
         ui.label(if self.unity {"Unity WebGL hooks and communicator are validated on controlled fixtures; official client sessions still need regression testing."}else{"Nitro transport and beta-29 hotel adapters are implemented with finite fixture tests. Real hotel sessions and Chrome TLS emulation still need validation and work."});
     }
     fn logger(&mut self, ui: &mut egui::Ui) {
-        ui.heading(self.i18n.text("rust.logger.title"));
-        if !self.logger_window.open
-            && ui
-                .button(self.i18n.text("rust.logger.open_panel"))
-                .clicked()
-        {
-            self.logger_window.open = true;
+        // Exact UiLogger.fxml keyboard accelerators: Ctrl+I, Ctrl+O, Ctrl+L, Ctrl+E
+        if ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::I)) {
+            self.incoming = !self.incoming;
         }
-        if ui
-            .checkbox(
-                &mut self.logger_window.always_on_top,
-                self.i18n.text("ext.logger.menu.window.alwaysontop"),
-            )
-            .changed()
-        {
-            ui.ctx().request_repaint_of(egui::ViewportId::ROOT);
+        if ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::O)) {
+            self.outgoing = !self.outgoing;
         }
-        ui.horizontal(|ui| {
-            ui.checkbox(
-                &mut self.outgoing,
-                self.i18n.text("ext.logger.menu.view.outgoing"),
-            );
-            ui.checkbox(
-                &mut self.incoming,
-                self.i18n.text("ext.logger.menu.view.incoming"),
-            );
-            ui.checkbox(&mut self.paused, self.i18n.text("rust.logger.pause"));
-            ui.checkbox(
-                &mut self.logger_capture_selected_only,
-                self.i18n.text("rust.logger.capture_selected_only"),
-            )
-            .on_hover_text(self.i18n.text("rust.logger.capture_selected_hint"));
-            if ui
-                .button(self.i18n.text("ext.logger.menu.view.cleartext"))
-                .clicked()
-            {
-                clear_log_contents(&mut self.logs, &mut self.logs_bytes);
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.label(self.i18n.text("rust.logger.filter"));
-            ui.text_edit_singleline(&mut self.filter);
-            ui.label(self.i18n.text("rust.logger.packet_limit"));
-            ui.add(egui::DragValue::new(&mut self.packet_limit).range(0..=16 * 1024 * 1024));
-        });
-        ui.horizontal_wrapped(|ui| {
-            ui.checkbox(
-                &mut self.logger_additional,
-                self.i18n.text("rust.logger.additional"),
-            );
-            ui.checkbox(
-                &mut self.logger_structure,
-                self.i18n
-                    .text("ext.logger.menu.packets.displaydetails.structure"),
-            );
-            ui.checkbox(
-                &mut self.logger_java_structure_limit,
-                self.i18n.text("rust.logger.java_structure_limit"),
-            );
-            ui.checkbox(
-                &mut self.logger_java_structure_clean,
-                self.i18n.text("rust.logger.java_structure_clean"),
-            );
-            ui.checkbox(&mut self.logger_split, self.i18n.text("rust.logger.split"));
-            ui.checkbox(
-                &mut self.logger_export_separators,
-                self.i18n.text("rust.logger.export_separators"),
-            );
-            ui.checkbox(
-                &mut self.logger_export_hide_empty_header,
-                self.i18n.text("rust.logger.export_hide_empty_header"),
-            );
-            ui.checkbox(
-                &mut self.logger_display_hide_empty_header,
-                self.i18n.text("rust.logger.display_hide_empty_header"),
-            );
-            ui.checkbox(
-                &mut self.logger_names,
-                self.i18n
-                    .text("ext.logger.menu.packets.displaydetails.message.name"),
-            );
-            ui.checkbox(
-                &mut self.logger_hashes,
-                self.i18n
-                    .text("ext.logger.menu.packets.displaydetails.message.hash"),
-            );
-            ui.checkbox(
-                &mut self.logger_message_id,
-                self.i18n
-                    .text("ext.logger.menu.packets.displaydetails.message.id"),
-            );
-            let old = self.logger_antispam;
-            egui::ComboBox::from_id_salt("logger_antispam")
-                .selected_text(format!(
-                    "{}: {}",
-                    self.i18n.text("ext.logger.menu.packets.antispam"),
-                    self.i18n.text(old.translation_key())
-                ))
-                .show_ui(ui, |ui| {
+        if ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::L)) {
+            self.logger_autoscroll = !self.logger_autoscroll;
+        }
+        if ui.input(|i| i.modifiers.command && i.key_pressed(egui::Key::E)) {
+            clear_log_contents(&mut self.logs, &mut self.logs_bytes);
+        }
+
+        let mut chosen_export: Option<String> = None;
+
+        // Exact UiLogger.fxml MenuBar: Window | View | Packets + inline Filter
+        egui::menu::bar(ui, |ui| {
+            ui.menu_button(self.i18n.text("ext.logger.menu.window"), |ui| {
+                if ui
+                    .checkbox(
+                        &mut self.logger_window.always_on_top,
+                        self.i18n.text("ext.logger.menu.window.alwaysontop"),
+                    )
+                    .changed()
+                {
+                    ui.ctx().request_repaint_of(egui::ViewportId::ROOT);
+                }
+                if !self.logger_window.open
+                    && ui
+                        .button(self.i18n.text("rust.logger.open_panel"))
+                        .clicked()
+                {
+                    self.logger_window.open = true;
+                    ui.close_menu();
+                }
+                ui.menu_button(self.i18n.text("ext.logger.menu.window.onconnect"), |ui| {
+                    ui.checkbox(
+                        &mut self.logger_window.open_on_connect,
+                        self.i18n
+                            .text("ext.logger.menu.window.onconnect.openwindow"),
+                    );
+                    ui.checkbox(
+                        &mut self.logger_clear_on_connect,
+                        self.i18n.text("ext.logger.menu.window.onconnect.reset"),
+                    );
+                });
+                ui.menu_button(
+                    self.i18n.text("ext.logger.menu.window.ondisconnect"),
+                    |ui| {
+                        ui.checkbox(
+                            &mut self.logger_window.hide_on_disconnect,
+                            self.i18n
+                                .text("ext.logger.menu.window.ondisconnect.hidewindow"),
+                        );
+                        ui.checkbox(
+                            &mut self.logger_clear_on_disconnect,
+                            self.i18n.text("ext.logger.menu.window.ondisconnect.reset"),
+                        );
+                    },
+                );
+            });
+
+            ui.menu_button(self.i18n.text("ext.logger.menu.view"), |ui| {
+                ui.checkbox(
+                    &mut self.incoming,
+                    format!(
+                        "{}  (Ctrl+I)",
+                        self.i18n.text("ext.logger.menu.view.incoming")
+                    ),
+                );
+                ui.checkbox(
+                    &mut self.outgoing,
+                    format!(
+                        "{}  (Ctrl+O)",
+                        self.i18n.text("ext.logger.menu.view.outgoing")
+                    ),
+                );
+                ui.checkbox(
+                    &mut self.logger_autoscroll,
+                    format!(
+                        "{}  (Ctrl+L)",
+                        self.i18n.text("ext.logger.menu.view.autoscroll")
+                    ),
+                );
+                ui.separator();
+                ui.checkbox(&mut self.paused, self.i18n.text("rust.logger.pause"));
+                ui.checkbox(
+                    &mut self.logger_capture_selected_only,
+                    self.i18n.text("rust.logger.capture_selected_only"),
+                )
+                .on_hover_text(self.i18n.text("rust.logger.capture_selected_hint"));
+                ui.separator();
+                if ui
+                    .button(format!(
+                        "{}  (Ctrl+E)",
+                        self.i18n.text("ext.logger.menu.view.cleartext")
+                    ))
+                    .clicked()
+                {
+                    clear_log_contents(&mut self.logs, &mut self.logs_bytes);
+                    ui.close_menu();
+                }
+            });
+
+            ui.menu_button(self.i18n.text("ext.logger.menu.packets"), |ui| {
+                ui.menu_button(
+                    self.i18n.text("ext.logger.menu.packets.displaydetails"),
+                    |ui| {
+                        ui.menu_button(
+                            self.i18n
+                                .text("ext.logger.menu.packets.displaydetails.byterep"),
+                            |ui| {
+                                for mode in [
+                                    PacketRepresentation::Legacy,
+                                    PacketRepresentation::HexDump,
+                                    PacketRepresentation::RawHex,
+                                    PacketRepresentation::Expression,
+                                    PacketRepresentation::NoBytes,
+                                ] {
+                                    ui.selectable_value(
+                                        &mut self.logger_representation,
+                                        mode,
+                                        self.i18n.text(mode.translation_key()),
+                                    );
+                                }
+                                ui.separator();
+                                ui.label(self.i18n.text("rust.logger.extra"));
+                                ui.checkbox(
+                                    &mut self.logger_extra_legacy,
+                                    self.i18n
+                                        .text(PacketRepresentation::Legacy.translation_key()),
+                                );
+                                ui.checkbox(
+                                    &mut self.logger_extra_raw_hex,
+                                    self.i18n
+                                        .text(PacketRepresentation::RawHex.translation_key()),
+                                );
+                                ui.checkbox(
+                                    &mut self.logger_extra_hex_dump,
+                                    self.i18n
+                                        .text(PacketRepresentation::HexDump.translation_key()),
+                                );
+                            },
+                        );
+                        ui.menu_button(
+                            self.i18n
+                                .text("ext.logger.menu.packets.displaydetails.message"),
+                            |ui| {
+                                ui.checkbox(
+                                    &mut self.logger_names,
+                                    self.i18n.text(
+                                        "ext.logger.menu.packets.displaydetails.message.name",
+                                    ),
+                                );
+                                ui.checkbox(
+                                    &mut self.logger_hashes,
+                                    self.i18n.text(
+                                        "ext.logger.menu.packets.displaydetails.message.hash",
+                                    ),
+                                );
+                                ui.checkbox(
+                                    &mut self.logger_message_id,
+                                    self.i18n
+                                        .text("ext.logger.menu.packets.displaydetails.message.id"),
+                                );
+                            },
+                        );
+                        ui.checkbox(
+                            &mut self.logger_structure,
+                            self.i18n
+                                .text("ext.logger.menu.packets.displaydetails.structure"),
+                        );
+                        ui.checkbox(
+                            &mut self.logger_timestamp,
+                            self.i18n
+                                .text("ext.logger.menu.packets.displaydetails.timestamp"),
+                        );
+                        ui.separator();
+                        ui.checkbox(
+                            &mut self.logger_additional,
+                            self.i18n.text("rust.logger.additional"),
+                        );
+                        ui.checkbox(&mut self.logger_split, self.i18n.text("rust.logger.split"));
+                        ui.checkbox(
+                            &mut self.logger_java_structure_limit,
+                            self.i18n.text("rust.logger.java_structure_limit"),
+                        );
+                        ui.checkbox(
+                            &mut self.logger_java_structure_clean,
+                            self.i18n.text("rust.logger.java_structure_clean"),
+                        );
+                        ui.checkbox(
+                            &mut self.logger_export_separators,
+                            self.i18n.text("rust.logger.export_separators"),
+                        );
+                        ui.checkbox(
+                            &mut self.logger_export_hide_empty_header,
+                            self.i18n.text("rust.logger.export_hide_empty_header"),
+                        );
+                        ui.checkbox(
+                            &mut self.logger_display_hide_empty_header,
+                            self.i18n.text("rust.logger.display_hide_empty_header"),
+                        );
+                    },
+                );
+                ui.menu_button(self.i18n.text("ext.logger.menu.packets.antispam"), |ui| {
+                    let old = self.logger_antispam;
                     for mode in [
                         AntiSpam::None,
                         AntiSpam::Low,
@@ -2423,119 +2743,73 @@ impl Desktop {
                         AntiSpam::High,
                         AntiSpam::Ultra,
                     ] {
-                        ui.selectable_value(
+                        ui.radio_value(
                             &mut self.logger_antispam,
                             mode,
                             self.i18n.text(mode.translation_key()),
                         );
                     }
-                });
-            if old != self.logger_antispam {
-                self.logger_filter.set_mode(self.logger_antispam);
-            }
-            ui.label(format!(
-                "{}: {}",
-                self.i18n.text("ext.logger.state.filtered"),
-                self.logger_filtered
-            ));
-            if ui
-                .button(self.i18n.text("rust.logger.reset_filtered"))
-                .clicked()
-            {
-                self.logger_filtered = 0;
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.checkbox(
-                &mut self.logger_timestamp,
-                self.i18n
-                    .text("ext.logger.menu.packets.displaydetails.timestamp"),
-            );
-            ui.checkbox(
-                &mut self.logger_autoscroll,
-                self.i18n.text("ext.logger.menu.view.autoscroll"),
-            );
-            egui::ComboBox::from_id_salt("logger_representation")
-                .selected_text(format!(
-                    "{}: {}",
-                    self.i18n
-                        .text("ext.logger.menu.packets.displaydetails.byterep"),
-                    self.i18n.text(self.logger_representation.translation_key())
-                ))
-                .show_ui(ui, |ui| {
-                    for mode in [
-                        PacketRepresentation::Expression,
-                        PacketRepresentation::NoBytes,
-                        PacketRepresentation::Legacy,
-                        PacketRepresentation::RawHex,
-                        PacketRepresentation::HexDump,
-                    ] {
-                        ui.selectable_value(
-                            &mut self.logger_representation,
-                            mode,
-                            self.i18n.text(mode.translation_key()),
-                        );
+                    if old != self.logger_antispam {
+                        self.logger_filter.set_mode(self.logger_antispam);
+                    }
+                    ui.separator();
+                    if ui
+                        .button(self.i18n.text("rust.logger.reset_filtered"))
+                        .clicked()
+                    {
+                        self.logger_filtered = 0;
+                        ui.close_menu();
                     }
                 });
+                ui.checkbox(
+                    &mut self.logger_skip_big,
+                    self.i18n.text("ext.logger.menu.packets.skipbig"),
+                );
+                ui.horizontal(|ui| {
+                    ui.label(self.i18n.text("rust.logger.packet_limit"));
+                    ui.add(
+                        egui::DragValue::new(&mut self.packet_limit).range(0..=16 * 1024 * 1024),
+                    );
+                });
+                ui.separator();
+                if ui
+                    .button(self.i18n.text("ext.logger.menu.packets.exportall"))
+                    .clicked()
+                {
+                    match gearth_platform::choose_file(gearth_platform::FileKind::Text, true) {
+                        Ok(Some(selected)) => match selected.into_os_string().into_string() {
+                            Ok(path) => {
+                                self.export_path = path.clone();
+                                chosen_export = Some(path);
+                            }
+                            Err(_) => self.status = self.i18n.text("rust.dialog.invalid_path"),
+                        },
+                        Ok(None) => {}
+                        Err(error) => {
+                            self.status =
+                                format!("{}: {error}", self.i18n.text("rust.dialog.failed"));
+                        }
+                    }
+                    ui.close_menu();
+                }
+            });
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if !self.logger_window.open
+                    && ui
+                        .small_button(self.i18n.text("rust.logger.open_panel"))
+                        .clicked()
+                {
+                    self.logger_window.open = true;
+                }
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.filter)
+                        .desired_width(160.0)
+                        .hint_text(self.i18n.text("rust.logger.filter")),
+                );
+            });
         });
-        ui.horizontal_wrapped(|ui| {
-            ui.label(self.i18n.text("rust.logger.extra"));
-            ui.checkbox(
-                &mut self.logger_skip_big,
-                self.i18n.text("ext.logger.menu.packets.skipbig"),
-            );
-            ui.checkbox(
-                &mut self.logger_extra_legacy,
-                self.i18n
-                    .text(PacketRepresentation::Legacy.translation_key()),
-            );
-            ui.checkbox(
-                &mut self.logger_extra_raw_hex,
-                self.i18n
-                    .text(PacketRepresentation::RawHex.translation_key()),
-            );
-            ui.checkbox(
-                &mut self.logger_extra_hex_dump,
-                self.i18n
-                    .text(PacketRepresentation::HexDump.translation_key()),
-            );
-        });
-        ui.horizontal_wrapped(|ui| {
-            ui.checkbox(
-                &mut self.logger_window.open_on_connect,
-                format!(
-                    "{}: {}",
-                    self.i18n.text("ext.logger.menu.window.onconnect"),
-                    self.i18n
-                        .text("ext.logger.menu.window.onconnect.openwindow")
-                ),
-            );
-            ui.checkbox(
-                &mut self.logger_window.hide_on_disconnect,
-                format!(
-                    "{}: {}",
-                    self.i18n.text("ext.logger.menu.window.ondisconnect"),
-                    self.i18n
-                        .text("ext.logger.menu.window.ondisconnect.hidewindow")
-                ),
-            );
-            ui.checkbox(
-                &mut self.logger_clear_on_connect,
-                format!(
-                    "{}: {}",
-                    self.i18n.text("ext.logger.menu.window.onconnect"),
-                    self.i18n.text("ext.logger.menu.window.onconnect.reset")
-                ),
-            );
-            ui.checkbox(
-                &mut self.logger_clear_on_disconnect,
-                format!(
-                    "{}: {}",
-                    self.i18n.text("ext.logger.menu.window.ondisconnect"),
-                    self.i18n.text("ext.logger.menu.window.ondisconnect.reset")
-                ),
-            );
-        });
+
         let filter = self.filter.to_lowercase();
         if self
             .logger_search_cache
@@ -2585,67 +2859,33 @@ impl Desktop {
             self.outgoing,
             self.logger_capture_selected_only,
         );
-        ui.horizontal(|ui| {
-            ui.label(self.i18n.text("rust.logger.export_path"));
-            ui.text_edit_singleline(&mut self.export_path);
-            browse_path(
-                ui,
-                &mut self.export_path,
-                gearth_platform::FileKind::Text,
-                true,
-                &self.i18n,
-                &mut self.status,
-            );
-            let mut chosen_export = None;
-            if ui
-                .button(self.i18n.text("ext.logger.menu.packets.exportall"))
-                .clicked()
-            {
-                match gearth_platform::choose_file(gearth_platform::FileKind::Text, true) {
-                    Ok(Some(selected)) => match selected.into_os_string().into_string() {
-                        Ok(path) => {
-                            self.export_path = path.clone();
-                            chosen_export = Some(path);
-                        }
-                        Err(_) => self.status = self.i18n.text("rust.dialog.invalid_path"),
-                    },
-                    Ok(None) => {}
-                    Err(error) => {
-                        self.status = format!("{}: {error}", self.i18n.text("rust.dialog.failed"));
-                    }
-                }
-            }
-            if ui.button(self.i18n.text("rust.logger.export")).clicked() {
-                chosen_export = Some(self.export_path.clone());
-            }
-            if let Some(target_path) = chosen_export {
-                let visible = self.logs.iter().filter(|row| {
-                    log_row_matches(
-                        row,
-                        &filter,
-                        matching_metadata,
-                        display_outgoing,
-                        display_incoming,
-                    )
-                });
-                let result = logger_display::write_atomic(Path::new(&target_path), |file| {
-                    write_log_capture(
-                        std::io::BufWriter::new(file),
-                        visible,
-                        &self.packet_info,
-                        display_options,
-                        logger_display::export_separators(
-                            self.logger_split,
-                            self.logger_export_separators,
-                        ),
-                    )
-                });
-                self.status = match result {
-                    Ok(()) => format!("Capture saved to {target_path}"),
-                    Err(e) => e.to_string(),
-                };
-            }
-        });
+        if let Some(target_path) = chosen_export {
+            let visible = self.logs.iter().filter(|row| {
+                log_row_matches(
+                    row,
+                    &filter,
+                    matching_metadata,
+                    display_outgoing,
+                    display_incoming,
+                )
+            });
+            let result = logger_display::write_atomic(Path::new(&target_path), |file| {
+                write_log_capture(
+                    std::io::BufWriter::new(file),
+                    visible,
+                    &self.packet_info,
+                    display_options,
+                    logger_display::export_separators(
+                        self.logger_split,
+                        self.logger_export_separators,
+                    ),
+                )
+            });
+            self.status = match result {
+                Ok(()) => format!("Capture saved to {target_path}"),
+                Err(e) => e.to_string(),
+            };
+        }
         ui.separator();
         let filtered: Vec<_> = self
             .logs
@@ -2703,7 +2943,9 @@ impl Desktop {
             self.logger_extra_hex_dump,
             self.logger_extra_raw_hex,
         );
+        let log_height = (ui.available_height() - 24.0).max(120.0);
         egui::ScrollArea::vertical()
+            .max_height(log_height)
             .stick_to_bottom(self.logger_autoscroll)
             .show_rows(ui, row_height, filtered.len(), |ui, range| {
                 for i in range {
@@ -2893,63 +3135,29 @@ impl Desktop {
         if !open {
             self.packet_dump = None;
         }
-    }
-    fn editor(&mut self, ui: &mut egui::Ui, allow_batch: bool) {
-        let (draft, direction) = if allow_batch {
-            (&mut self.expression, &mut self.direction)
-        } else {
-            (
-                &mut self.schedule_draft.expression,
-                &mut self.schedule_draft.direction,
-            )
-        };
-        direction_selector(ui, direction, &self.i18n);
-        ui.add(
-            egui::TextEdit::multiline(draft)
-                .font(egui::TextStyle::Monospace)
-                .desired_rows(5)
-                .desired_width(f32::INFINITY),
-        );
-        let (draft, direction) = if allow_batch {
-            (&self.expression, self.direction)
-        } else {
-            (
-                &self.schedule_draft.expression,
-                self.schedule_draft.direction,
-            )
-        };
-        if draft.len() > 64 * 1024 {
-            ui.label("Preview disabled for large input; it will be validated when submitted.");
-            return;
-        }
-        let parsed = if allow_batch {
-            injection::parse_packets(
-                draft,
-                self.packet_format(direction),
-                direction,
-                &self.packet_info,
-            )
-        } else {
-            expression::parse_with_format(
-                draft,
-                self.packet_format(direction),
-                Some((direction, &self.packet_info)),
-            )
-            .map(|packet| vec![packet])
-        };
-        match parsed {
-            Ok(packets) if packets.len() == 1 => {
-                let p = &packets[0];
-                ui.label(format!("Header {} · {} bytes", p.header(), p.bytes().len()));
-                ui.monospace(packet_tools::hex_preview(p, 1024));
-            }
-            Ok(packets) => {
-                ui.label(format!("{} packets ready", packets.len()));
-            }
-            Err(e) => {
-                ui.colored_label(egui::Color32::from_rgb(180, 60, 60), e.to_string());
-            }
-        }
+        // Exact UiLogger.fxml bottom status strip
+        ui.separator();
+        let yes = self.i18n.text("ext.logger.state.true");
+        let no = self.i18n.text("ext.logger.state.false");
+        ui.horizontal_wrapped(|ui| {
+            ui.small(format!(
+                "{}: {}  |  {}: {}  |  {}: {}  |  {}: {}  |  {}: {}",
+                self.i18n.text("ext.logger.menu.view.incoming"),
+                if self.incoming { &yes } else { &no },
+                self.i18n.text("ext.logger.menu.view.outgoing"),
+                if self.outgoing { &yes } else { &no },
+                self.i18n.text("ext.logger.menu.view.autoscroll"),
+                if self.logger_autoscroll { &yes } else { &no },
+                self.i18n.text("ext.logger.state.packetinfo"),
+                if !self.packet_info.entries().is_empty() {
+                    &yes
+                } else {
+                    &no
+                },
+                self.i18n.text("ext.logger.state.filtered"),
+                self.logger_filtered,
+            ));
+        });
     }
     fn developer_mode_dialog(&mut self, ctx: &egui::Context) {
         if !self.developer_mode_confirmation {
@@ -2994,7 +3202,7 @@ impl Desktop {
         let developer_changed = ui
             .checkbox(
                 &mut self.developer_mode,
-                self.i18n.text("tab.extra.options.developmode"),
+                egui::RichText::new(self.i18n.text("tab.extra.options.developmode")).strong(),
             )
             .on_hover_text(
                 self.i18n
@@ -3014,22 +3222,25 @@ impl Desktop {
         }
     }
     fn injection(&mut self, ui: &mut egui::Ui) {
-        ui.heading(self.i18n.text("tab.injection"));
-        self.developer_mode_control(ui);
-        self.editor(ui, true);
-        // Large inputs are checked on submission to keep the editor responsive.
-        let (server_valid, client_valid) = if self.expression.len() <= 64 * 1024 {
-            let validate = |direction| {
-                injection::parse_packets(
+        // Compute live packet validation & description matching Injection.fxml header bar
+        let (corrupted, info_text, server_valid, client_valid) =
+            if self.expression.len() <= 64 * 1024 {
+                let parsed_server = injection::parse_packets(
                     &self.expression,
-                    self.packet_format(direction),
-                    direction,
+                    self.packet_format(Direction::ToServer),
+                    Direction::ToServer,
                     &self.packet_info,
-                )
-                .is_ok_and(|packets| {
+                );
+                let parsed_client = injection::parse_packets(
+                    &self.expression,
+                    self.packet_format(Direction::ToClient),
+                    Direction::ToClient,
+                    &self.packet_info,
+                );
+                let is_safe = |packets: &[gearth_rust::packet::Packet], direction| {
                     self.packet_safety.lock().is_ok_and(|safety| {
                         injection::first_unsafe_packet(
-                            &packets,
+                            packets,
                             direction,
                             Some(&self.hotel_version),
                             &safety,
@@ -3037,88 +3248,229 @@ impl Desktop {
                         )
                         .is_none()
                     })
-                })
-            };
-            (validate(Direction::ToServer), validate(Direction::ToClient))
-        } else {
-            (true, true)
-        };
-        ui.horizontal(|ui| {
-            let connected = self.relay.as_ref().is_some_and(Connection::connected);
-            if ui
-                .add_enabled(
-                    connected && server_valid,
-                    egui::Button::new(self.i18n.text("tab.injection.send.toserver")),
-                )
-                .on_disabled_hover_text(self.i18n.text(if connected {
-                    "rust.injection.invalid"
-                } else {
-                    "rust.injection.connect"
-                }))
-                .clicked()
-            {
-                self.send_injection(Direction::ToServer);
-            }
-            if ui
-                .add_enabled(
-                    connected && client_valid,
-                    egui::Button::new(self.i18n.text("tab.injection.send.toclient")),
-                )
-                .on_disabled_hover_text(self.i18n.text(if connected {
-                    "rust.injection.invalid"
-                } else {
-                    "rust.injection.connect"
-                }))
-                .clicked()
-            {
-                self.send_injection(Direction::ToClient);
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.label(self.i18n.text("tab.injection.history"));
-            if ui
-                .button(self.i18n.text("tab.injection.history.clear"))
-                .clicked()
-            {
-                self.injection_history.clear();
-                self.status = match self.injection_history.save_to_settings(&self.settings_path) {
-                    Ok(()) => "Injection history cleared".into(),
-                    Err(error) => format!("History cleared in memory; could not save: {error}"),
                 };
-            }
-        });
-        egui::ScrollArea::vertical()
-            .id_salt("injection_history")
-            .max_height(120.0)
-            .show(ui, |ui| {
-                for entry in self.injection_history.entries() {
-                    let label = if entry.direction.is_empty() {
-                        entry.expression.replace('\n', " ")
-                    } else {
-                        format!(
-                            "{}: {}",
-                            entry.direction,
-                            entry.expression.replace('\n', " ")
+                let s_ok = parsed_server
+                    .as_ref()
+                    .is_ok_and(|packets| is_safe(packets, Direction::ToServer));
+                let c_ok = parsed_client
+                    .as_ref()
+                    .is_ok_and(|packets| is_safe(packets, Direction::ToClient));
+                match parsed_server.as_ref().or(parsed_client.as_ref()) {
+                    Ok(packets) if packets.len() == 1 => {
+                        let p = &packets[0];
+                        let unsafe_tag = if !s_ok && !c_ok {
+                            format!(" [{}]", self.i18n.text("tab.injection.description.unsafe"))
+                        } else {
+                            String::new()
+                        };
+                        (
+                            false,
+                            format!(
+                                "{} ({}={}, {}={}){}",
+                                self.i18n.text("tab.injection.description.header"),
+                                self.i18n.text("tab.injection.description.id"),
+                                p.header(),
+                                self.i18n.text("tab.injection.description.length"),
+                                p.bytes().len(),
+                                unsafe_tag
+                            ),
+                            s_ok,
+                            c_ok,
                         )
-                    };
-                    if ui
-                        .add(
-                            egui::Label::new(label)
-                                .truncate()
-                                .sense(egui::Sense::click()),
-                        )
-                        .double_clicked()
-                    {
-                        self.expression = entry.expression.clone();
-                        if let Ok(direction) = Direction::parse(&entry.direction) {
-                            self.direction = direction;
-                        }
                     }
+                    Ok(packets) => (
+                        false,
+                        format!(
+                            "{} {}",
+                            packets.len(),
+                            self.i18n.text("tab.injection.description.packets")
+                        ),
+                        s_ok,
+                        c_ok,
+                    ),
+                    Err(_) => (
+                        true,
+                        format!(
+                            "{} ({}=NULL, {}=0)",
+                            self.i18n.text("tab.injection.description.header"),
+                            self.i18n.text("tab.injection.description.id"),
+                            self.i18n.text("tab.injection.description.length")
+                        ),
+                        false,
+                        false,
+                    ),
                 }
+            } else {
+                (false, "Large input".into(), true, true)
+            };
+
+        let avail_w = ui.available_width().max(580.0);
+        let history_w = 182.0;
+        let left_w = (avail_w - history_w - 14.0).max(320.0);
+        let editor_h = (ui.available_height() - 102.0).clamp(148.0, 320.0);
+
+        // Exact Injection.fxml 2-column layout: Left editor + Right 180px History list
+        ui.horizontal_top(|ui| {
+            ui.allocate_ui_with_layout(
+                egui::vec2(left_w, editor_h + 62.0),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    ui.horizontal(|ui| {
+                        let corrupt_label = format!(
+                            "{}: {}",
+                            self.i18n.text("tab.injection.corrupted"),
+                            self.i18n.text(if corrupted {
+                                "tab.injection.corrupted.true"
+                            } else {
+                                "tab.injection.corrupted.false"
+                            })
+                        );
+                        let corrupt_color = if corrupted {
+                            egui::Color32::from_rgb(0xc9, 0x30, 0x2c)
+                        } else {
+                            egui::Color32::from_rgb(0x39, 0x84, 0x39)
+                        };
+                        ui.label(
+                            egui::RichText::new(corrupt_label)
+                                .italics()
+                                .small()
+                                .color(corrupt_color),
+                        );
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.label(
+                                egui::RichText::new(&info_text)
+                                    .italics()
+                                    .small()
+                                    .color(self.theme.palette().text_muted),
+                            );
+                        });
+                    });
+                    ui.add_space(3.0);
+                    egui::ScrollArea::vertical()
+                        .id_salt("injection_input_scroll")
+                        .max_height(editor_h)
+                        .show(ui, |ui| {
+                            ui.add_sized(
+                                egui::vec2(left_w, editor_h),
+                                egui::TextEdit::multiline(&mut self.expression)
+                                    .font(egui::TextStyle::Monospace),
+                            );
+                        });
+                    ui.add_space(6.0);
+                    let connected = self.relay.as_ref().is_some_and(Connection::connected);
+                    let btn_w = ((left_w - 10.0) * 0.5).max(120.0);
+                    ui.horizontal(|ui| {
+                        if ui
+                            .add_enabled(
+                                connected && server_valid,
+                                egui::Button::new(self.i18n.text("tab.injection.send.toserver"))
+                                    .min_size(egui::vec2(btn_w, 28.0)),
+                            )
+                            .on_disabled_hover_text(self.i18n.text(if connected {
+                                "rust.injection.invalid"
+                            } else {
+                                "rust.injection.connect"
+                            }))
+                            .clicked()
+                        {
+                            self.send_injection(Direction::ToServer);
+                        }
+                        if ui
+                            .add_enabled(
+                                connected && client_valid,
+                                egui::Button::new(self.i18n.text("tab.injection.send.toclient"))
+                                    .min_size(egui::vec2(btn_w, 28.0)),
+                            )
+                            .on_disabled_hover_text(self.i18n.text(if connected {
+                                "rust.injection.invalid"
+                            } else {
+                                "rust.injection.connect"
+                            }))
+                            .clicked()
+                        {
+                            self.send_injection(Direction::ToClient);
+                        }
+                    });
+                },
+            );
+
+            ui.add_space(10.0);
+
+            ui.allocate_ui_with_layout(
+                egui::vec2(history_w, editor_h + 62.0),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(self.i18n.text("tab.injection.history"));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui
+                                .link(self.i18n.text("tab.injection.history.clear"))
+                                .clicked()
+                            {
+                                self.injection_history.clear();
+                                self.status = match self
+                                    .injection_history
+                                    .save_to_settings(&self.settings_path)
+                                {
+                                    Ok(()) => "Injection history cleared".into(),
+                                    Err(error) => {
+                                        format!(
+                                            "History cleared in memory; could not save: {error}"
+                                        )
+                                    }
+                                };
+                            }
+                        });
+                    });
+                    ui.add_space(3.0);
+                    group_box(ui, self.theme, egui::Margin::same(4.0), |ui| {
+                        ui.set_min_size(egui::vec2(history_w - 10.0, editor_h + 26.0));
+                        egui::ScrollArea::vertical()
+                            .id_salt("injection_history")
+                            .max_height(editor_h + 26.0)
+                            .show(ui, |ui| {
+                                for entry in self.injection_history.entries() {
+                                    let label = if entry.direction.is_empty() {
+                                        entry.expression.replace('\n', " ")
+                                    } else {
+                                        format!(
+                                            "{}: {}",
+                                            entry.direction,
+                                            entry.expression.replace('\n', " ")
+                                        )
+                                    };
+                                    let resp = ui
+                                        .add(
+                                            egui::Label::new(
+                                                egui::RichText::new(label).monospace().small(),
+                                            )
+                                            .truncate()
+                                            .sense(egui::Sense::click()),
+                                        )
+                                        .on_hover_text(
+                                            self.i18n.text("tab.injection.history.tooltip"),
+                                        );
+                                    if resp.double_clicked() {
+                                        self.expression = entry.expression.clone();
+                                        if let Ok(direction) = Direction::parse(&entry.direction) {
+                                            self.direction = direction;
+                                        }
+                                    }
+                                }
+                            });
+                    });
+                },
+            );
+        });
+
+        ui.add_space(6.0);
+        egui::CollapsingHeader::new(self.i18n.text("rust.rule.title"))
+            .id_salt("injection-rules-drawer")
+            .show(ui, |ui| {
+                self.injection_rules_panel(ui);
             });
-        ui.add_space(20.0);
-        ui.separator();
-        ui.heading(self.i18n.text("rust.rule.title"));
+    }
+    fn injection_rules_panel(&mut self, ui: &mut egui::Ui) {
         let mut saved_rules_changed = false;
         let changed = ui
             .add_enabled(
@@ -3358,450 +3710,607 @@ impl Desktop {
         self.interval_ms = 500;
         self.align_schedule = true;
         self.schedule_offset_ms = 0;
+        self.schedule_interval_input = "500+0".into();
         self.repeat_forever = true;
         self.repeat = 1;
     }
     fn schedule(&mut self, ui: &mut egui::Ui) {
         let mut templates_changed = false;
-        ui.heading(self.i18n.text("tab.scheduler"));
-        let mut enabled = self.scheduler_hotkeys.is_some();
-        if ui
-            .add_enabled(
-                cfg!(windows),
-                egui::Checkbox::new(&mut enabled, self.i18n.text("tab.scheduler.hotkeys")),
-            )
-            .changed()
-        {
-            if enabled {
-                let context = ui.ctx().clone();
-                match gearth_platform::GlobalHotkeys::start(move || context.request_repaint()) {
-                    Ok(hotkeys) => {
-                        let unavailable: Vec<_> = hotkeys
-                            .available()
-                            .iter()
-                            .enumerate()
-                            .filter_map(|(index, available)| {
-                                (!available).then_some(index.to_string())
-                            })
-                            .collect();
-                        self.status = if unavailable.is_empty() {
-                            "Global scheduler shortcuts enabled".into()
-                        } else {
-                            format!("Shortcuts unavailable for: {}", unavailable.join(", "))
-                        };
-                        self.scheduler_hotkeys = Some(hotkeys);
-                    }
-                    Err(error) => self.status = format!("Could not enable shortcuts: {error}"),
-                }
-            } else {
-                self.scheduler_hotkeys.take();
-                self.status = "Global scheduler shortcuts disabled".into();
-            }
-        }
-        self.editor(ui, false);
-        ui.horizontal(|ui| {
-            ui.add(
-                egui::DragValue::new(&mut self.interval_ms)
-                    .range(1..=gearth_rust::scheduler::MAX_INTERVAL_MS)
-                    .prefix(format!(
-                        "{} (ms) ",
-                        self.i18n.text("tab.scheduler.setup.interval")
-                    )),
-            );
-            ui.add(
-                egui::DragValue::new(&mut self.repeat)
-                    .range(1..=1_000_000)
-                    .prefix(format!("{} ", self.i18n.text("rust.scheduler.count"))),
-            );
-            ui.checkbox(
-                &mut self.repeat_forever,
-                self.i18n.text("rust.scheduler.forever"),
-            );
-        });
-        ui.horizontal(|ui| {
-            ui.checkbox(
-                &mut self.align_schedule,
-                self.i18n.text("rust.scheduler.align"),
-            );
-            ui.add_enabled(
-                self.align_schedule,
-                egui::DragValue::new(&mut self.schedule_offset_ms)
-                    .range(0..=self.interval_ms)
-                    .prefix(format!("{} ", self.i18n.text("rust.scheduler.offset"))),
-            );
-        });
-        let editing = self.schedule_edit.is_some() || self.active_schedule_edit.is_some();
-        if ui
-            .add_enabled(
-                editing || self.relay.as_ref().is_some_and(Connection::connected),
-                egui::Button::new(self.i18n.text(if self.active_schedule_edit.is_some() {
-                    "rust.scheduler.active_save"
-                } else if editing {
-                    "rust.scheduler.template_save"
-                } else {
-                    "rust.scheduler.add"
-                })),
-            )
-            .clicked()
-        {
-            let mut reset_active_editor = false;
-            let valid_offset = !self.align_schedule || self.schedule_offset_ms <= self.interval_ms;
-            let parsed = expression::parse_with_format(
-                &self.schedule_draft.expression,
-                self.packet_format(self.schedule_draft.direction),
-                Some((self.schedule_draft.direction, &self.packet_info)),
-            );
-            if !valid_offset {
-                self.status = "Offset must not exceed the interval".into();
-            } else {
-                self.status = match parsed.and_then(|packet| {
-                    if let Some(id) = self.active_schedule_edit {
-                        self.scheduler.update_configured(
-                            id,
-                            ScheduleSpec {
-                                packet,
-                                source_expression: Some(self.schedule_draft.expression.clone()),
-                                direction: self.schedule_draft.direction,
-                                interval_ms: self.interval_ms,
-                                offset_ms: self.align_schedule.then_some(self.schedule_offset_ms),
-                                repeat: (!self.repeat_forever).then_some(self.repeat),
-                            },
-                            (Instant::now(), SystemTime::now()),
-                        )
-                    } else if editing {
-                        Ok(())
-                    } else {
-                        self.scheduler.add_configured(
-                            packet,
-                            self.schedule_draft.direction,
-                            self.interval_ms,
-                            self.align_schedule.then_some(self.schedule_offset_ms),
-                            (!self.repeat_forever).then_some(self.repeat),
-                            (Instant::now(), SystemTime::now()),
-                        )?;
-                        self.scheduler
-                            .jobs
-                            .last_mut()
-                            .expect("newly added schedule")
-                            .source_expression = Some(self.schedule_draft.expression.clone());
-                        Ok(())
-                    }
-                }) {
-                    Ok(()) => {
-                        if self.active_schedule_edit.take().is_some() {
-                            reset_active_editor = true;
-                            "Active schedule updated; saved templates are unchanged".into()
-                        } else {
-                            let template = ScheduleTemplate {
-                                expression: self.schedule_draft.expression.clone(),
-                                direction: self.schedule_draft.direction,
-                                interval_ms: self.interval_ms,
-                                offset_ms: self.align_schedule.then_some(self.schedule_offset_ms),
-                                paused: self
-                                    .schedule_edit
-                                    .and_then(|i| self.settings.schedules.get(i))
-                                    .is_some_and(|old| old.paused),
-                                repeat: if self.repeat_forever { 0 } else { self.repeat },
-                            };
-                            if let Some(index) = self.schedule_edit.take() {
-                                if let Some(existing) = self.settings.schedules.get_mut(index) {
-                                    *existing = template;
-                                    templates_changed = true;
-                                    "Template updated; active schedules are unchanged".into()
-                                } else {
-                                    "Template no longer exists".into()
-                                }
-                            } else {
-                                self.settings.schedules.push(template);
-                                templates_changed = true;
-                                "Schedule added".into()
-                            }
-                        }
-                    }
-                    Err(e) => e.to_string(),
-                };
-            }
-            if reset_active_editor {
-                self.reset_active_schedule_editor();
-            }
-        }
-        if editing
-            && ui
-                .button(self.i18n.text("rust.scheduler.cancel_edit"))
-                .clicked()
-        {
-            let reset_active_editor = self.active_schedule_edit.is_some();
-            self.schedule_edit = None;
-            self.active_schedule_edit = None;
-            if reset_active_editor {
-                self.reset_active_schedule_editor();
-            }
-        }
-        if ui
-            .button(self.i18n.text("rust.scheduler.cancel_all"))
-            .clicked()
-        {
-            self.scheduler.jobs.clear();
-            if self.active_schedule_edit.take().is_some() {
-                self.reset_active_schedule_editor();
-            }
-        }
-        ui.label(format!(
-            "{}: {}",
-            self.i18n.text("rust.scheduler.active_count"),
-            self.scheduler.jobs.len()
-        ));
-        if ui
-            .add_enabled(
-                self.relay.as_ref().is_some_and(Connection::connected),
-                egui::Button::new(self.i18n.text("rust.scheduler.run_saved")),
-            )
-            .clicked()
-        {
-            let specs = self.compile_schedules(&self.settings.schedules, false);
-            self.status = match specs.and_then(|specs| {
-                self.scheduler
-                    .add_batch_deferred(specs, (Instant::now(), SystemTime::now()))
-            }) {
-                Ok(()) => self.i18n.text("rust.scheduler.started"),
-                Err(e) => format!("{}: {e}", self.i18n.text("rust.scheduler.start_failed")),
-            };
-        }
-        ui.checkbox(
-            &mut self.scheduler_auto_start,
-            self.i18n.text("rust.scheduler.auto_start"),
-        );
-        if ui
-            .button(self.i18n.text("rust.scheduler.clear_saved"))
-            .clicked()
-        {
-            self.settings.schedules.clear();
-            templates_changed = true;
-            self.schedule_edit = None;
-        }
-        ui.horizontal_wrapped(|ui| {
-            ui.label(self.i18n.text("rust.scheduler.file"));
-            ui.text_edit_singleline(&mut self.schedule_path);
-            browse_path(
-                ui,
-                &mut self.schedule_path,
-                gearth_platform::FileKind::Schedule,
-                false,
-                &self.i18n,
-                &mut self.status,
-            );
-            browse_path(
-                ui,
-                &mut self.schedule_path,
-                gearth_platform::FileKind::Schedule,
-                true,
-                &self.i18n,
-                &mut self.status,
-            );
-            if ui.button(self.i18n.text("rust.scheduler.import")).clicked() {
-                let result = self.read_schedule_file();
-                self.status = match result {
-                    Ok(templates) => {
-                        let count = templates.len();
-                        self.settings.schedules = templates;
-                        templates_changed = true;
-                        self.schedule_edit = None;
-                        format!("{}: {count}", self.i18n.text("rust.scheduler.imported"))
-                    }
-                    Err(error) => format!(
-                        "{}: {error}",
-                        self.i18n.text("rust.scheduler.import_failed")
-                    ),
-                };
-            }
-            if ui
-                .button(self.i18n.text("rust.scheduler.load_active"))
-                .on_hover_text(self.i18n.text("rust.scheduler.load_active_hint"))
-                .clicked()
-            {
-                let result = self.read_schedule_file().and_then(|templates| {
-                    let specs = self
-                        .compile_schedules(&templates, true)
-                        .map_err(std::io::Error::other)?;
-                    self.scheduler
-                        .replace_batch_deferred(specs, (Instant::now(), SystemTime::now()))
-                        .map_err(std::io::Error::other)?;
-                    Ok(templates)
-                });
-                self.status = match result {
-                    Ok(templates) => {
-                        let count = templates.len();
-                        if self.active_schedule_edit.take().is_some() {
-                            self.reset_active_schedule_editor();
-                        }
-                        let mut message = format!(
-                            "{}: {count} ({})",
-                            self.i18n.text("rust.scheduler.loaded_active"),
-                            self.schedule_path
-                        );
-                        if !self.relay.as_ref().is_some_and(Connection::connected) {
-                            message.push_str(&format!(
-                                " — {}",
-                                self.i18n.text("rust.scheduler.loaded_offline_hint")
-                            ));
-                        }
-                        message
-                    }
-                    Err(error) => {
-                        format!("{}: {error}", self.i18n.text("rust.scheduler.load_failed"))
-                    }
-                };
-            }
-            if ui
-                .button(self.i18n.text("rust.scheduler.export_templates"))
-                .clicked()
-            {
-                self.status =
-                    match schedule_file::format(&self.settings.schedules).and_then(|text| {
-                        schedule_file::write_atomic(Path::new(&self.schedule_path), &text)
-                    }) {
-                        Ok(()) => format!(
-                            "{}: {}",
-                            self.i18n.text("rust.scheduler.exported_templates"),
-                            self.schedule_path
-                        ),
-                        Err(error) => format!(
-                            "{}: {error}",
-                            self.i18n.text("rust.scheduler.export_failed")
-                        ),
-                    };
-            }
-            if ui
-                .button(self.i18n.text("rust.scheduler.export_active"))
-                .on_hover_text(self.i18n.text("rust.scheduler.export_active_hint"))
-                .clicked()
-            {
-                self.status =
-                    match schedule_file::format_active(&self.scheduler.jobs).and_then(|text| {
-                        schedule_file::write_atomic(Path::new(&self.schedule_path), &text)
-                    }) {
-                        Ok(()) => format!(
-                            "{}: {} ({})",
-                            self.i18n.text("rust.scheduler.exported_active"),
-                            self.scheduler.jobs.len(),
-                            self.schedule_path
-                        ),
-                        Err(error) => format!(
-                            "{}: {error}",
-                            self.i18n.text("rust.scheduler.export_failed")
-                        ),
-                    };
-            }
-        });
-        if !self.settings.schedules.is_empty() {
-            ui.label(self.i18n.text("rust.scheduler.saved_hint"));
-        }
-        let mut edit_template = None;
-        let mut remove_template = None;
-        for (i, template) in self.settings.schedules.iter_mut().enumerate() {
-            ui.horizontal(|ui| {
-                if ui
-                    .small_button(self.i18n.text("rust.action.edit"))
-                    .clicked()
-                {
-                    edit_template = Some(i);
-                }
-                if ui
-                    .small_button(self.i18n.text("rust.action.remove"))
-                    .clicked()
-                {
-                    remove_template = Some(i);
-                }
-                if ui
-                    .checkbox(
-                        &mut template.paused,
-                        self.i18n.text("rust.scheduler.paused_start"),
-                    )
-                    .changed()
-                {
-                    templates_changed = true;
-                }
-                ui.label(format!(
-                    "{}: {} every {} ms",
-                    i + 1,
-                    template.direction.name(),
-                    template.interval_ms
-                ));
-                ui.add(egui::Label::new(&template.expression).truncate());
-            });
-        }
-        if let Some(index) = edit_template {
-            let template = &self.settings.schedules[index];
-            self.schedule_draft.expression = template.expression.clone();
-            self.schedule_draft.direction = template.direction;
-            self.interval_ms = template.interval_ms;
-            self.align_schedule = template.offset_ms.is_some();
-            self.schedule_offset_ms = template.offset_ms.unwrap_or(0);
-            self.repeat_forever = template.repeat == 0;
-            self.repeat = template.repeat.max(1);
-            self.schedule_edit = Some(index);
-            self.active_schedule_edit = None;
-        }
-        if let Some(index) = remove_template {
-            self.settings.schedules.remove(index);
-            templates_changed = true;
-            self.schedule_edit = match self.schedule_edit {
-                Some(editing) if editing == index => None,
-                Some(editing) if editing > index => Some(editing - 1),
-                other => other,
-            };
-        }
+        let palette = self.theme.palette();
+        let avail_w = ui.available_width().max(580.0);
+        let table_h = (ui.available_height() - 108.0).clamp(132.0, 280.0);
+
+        // Exact Scheduler.fxml top table: Index (10%) | Packet (39%) | Interval (16%) | Destination (18%) | Edit (15%)
         let mut remove = None;
         let mut pause_change = None;
         let mut edit_active = None;
-        for (i, job) in self.scheduler.jobs.iter().enumerate() {
-            ui.horizontal(|ui| {
-                if ui
-                    .small_button(self.i18n.text(if job.paused {
-                        "rust.scheduler.resume"
-                    } else {
-                        "rust.scheduler.pause"
-                    }))
-                    .clicked()
-                {
-                    pause_change = Some((i, !job.paused));
-                }
-                if ui
-                    .small_button(self.i18n.text("rust.action.remove"))
-                    .clicked()
-                {
-                    remove = Some(i);
-                }
-                if ui
-                    .small_button(self.i18n.text("rust.action.edit"))
-                    .clicked()
-                {
-                    edit_active = Some(job.id);
-                }
-                let remaining = job
-                    .remaining
-                    .map_or_else(|| "until cancelled".to_owned(), |n| n.to_string());
-                ui.monospace(format!(
-                    "{}: {} header {} every {} ms{} - remaining {}",
-                    i + 1,
-                    job.direction.name(),
-                    job.packet.header(),
-                    job.interval.as_millis(),
-                    job.alignment_offset_ms
-                        .map_or_else(String::new, |offset| format!(" + {offset} ms")),
-                    remaining
-                ));
-                if i < 10 {
-                    if let Some(hotkeys) = &self.scheduler_hotkeys {
-                        ui.label(if hotkeys.available()[i] {
-                            format!("Ctrl+Shift+{i}")
+        group_box(ui, self.theme, egui::Margin::same(0.0), |ui| {
+            ui.set_width(avail_w - 2.0);
+            let inner_w = (avail_w - 18.0).max(540.0);
+            let col_idx = (inner_w * 0.09).floor();
+            let col_pkt = (inner_w * 0.37).floor();
+            let col_int = (inner_w * 0.16).floor();
+            let col_dst = (inner_w * 0.17).floor();
+            let col_edt = (inner_w - col_idx - col_pkt - col_int - col_dst).max(96.0);
+
+            egui::Frame::none()
+                .fill(palette.table_header_bg)
+                .inner_margin(egui::Margin::symmetric(6.0, 5.0))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        for (w, key) in [
+                            (col_idx, "tab.scheduler.table.index"),
+                            (col_pkt, "tab.scheduler.table.packet"),
+                            (col_int, "tab.scheduler.table.interval"),
+                            (col_dst, "tab.scheduler.table.destination"),
+                            (col_edt, "tab.scheduler.table.edit"),
+                        ] {
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(w, 18.0),
+                                egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
+                                |ui| {
+                                    ui.label(
+                                        egui::RichText::new(self.i18n.text(key))
+                                            .color(palette.table_header_text)
+                                            .strong(),
+                                    );
+                                },
+                            );
+                        }
+                    });
+                });
+            let sep = ui.available_rect_before_wrap();
+            ui.painter().line_segment(
+                [
+                    egui::pos2(sep.left(), sep.top()),
+                    egui::pos2(sep.right(), sep.top()),
+                ],
+                egui::Stroke::new(1.0_f32, palette.group_border),
+            );
+            egui::ScrollArea::vertical()
+                .id_salt("scheduler_active_table")
+                .max_height(table_h)
+                .show(ui, |ui| {
+                    ui.set_min_height(table_h);
+                    for (i, job) in self.scheduler.jobs.iter().enumerate() {
+                        let bg = if i % 2 == 1 {
+                            palette.table_row_alt_bg
                         } else {
-                            format!("Ctrl+Shift+{i} unavailable")
-                        });
+                            palette.content_bg
+                        };
+                        egui::Frame::none()
+                            .fill(bg)
+                            .inner_margin(egui::Margin::symmetric(6.0, 3.0))
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(col_idx, 20.0),
+                                        egui::Layout::centered_and_justified(
+                                            egui::Direction::LeftToRight,
+                                        ),
+                                        |ui| {
+                                            ui.label(format!("{}", i + 1));
+                                        },
+                                    );
+                                    let expr = job.source_expression.clone().unwrap_or_else(|| {
+                                        expression::to_lossless_expression(&job.packet)
+                                    });
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(col_pkt, 20.0),
+                                        egui::Layout::left_to_right(egui::Align::Center),
+                                        |ui| {
+                                            ui.add(
+                                                egui::Label::new(
+                                                    egui::RichText::new(expr).monospace().small(),
+                                                )
+                                                .truncate(),
+                                            );
+                                        },
+                                    );
+                                    let interval_text = match job.alignment_offset_ms {
+                                        Some(offset) => {
+                                            format!("{}+{offset}", job.interval.as_millis())
+                                        }
+                                        None => format!("{}", job.interval.as_millis()),
+                                    };
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(col_int, 20.0),
+                                        egui::Layout::centered_and_justified(
+                                            egui::Direction::LeftToRight,
+                                        ),
+                                        |ui| {
+                                            ui.label(interval_text);
+                                        },
+                                    );
+                                    let dest_label = match job.direction {
+                                        Direction::ToServer => {
+                                            self.i18n.text("rust.direction.server")
+                                        }
+                                        Direction::ToClient => {
+                                            self.i18n.text("rust.direction.client")
+                                        }
+                                    };
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(col_dst, 20.0),
+                                        egui::Layout::centered_and_justified(
+                                            egui::Direction::LeftToRight,
+                                        ),
+                                        |ui| {
+                                            ui.label(dest_label);
+                                        },
+                                    );
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(col_edt, 20.0),
+                                        egui::Layout::left_to_right(egui::Align::Center),
+                                        |ui| {
+                                            let pause_lbl = if job.paused { "▶" } else { "⏸" };
+                                            if ui
+                                                .small_button(pause_lbl)
+                                                .on_hover_text(self.i18n.text(if job.paused {
+                                                    "rust.scheduler.resume"
+                                                } else {
+                                                    "rust.scheduler.pause"
+                                                }))
+                                                .clicked()
+                                            {
+                                                pause_change = Some((i, !job.paused));
+                                            }
+                                            if ui
+                                                .small_button("✎")
+                                                .on_hover_text(self.i18n.text("rust.action.edit"))
+                                                .clicked()
+                                            {
+                                                edit_active = Some(job.id);
+                                            }
+                                            if ui
+                                                .small_button("✕")
+                                                .on_hover_text(self.i18n.text("rust.action.remove"))
+                                                .clicked()
+                                            {
+                                                remove = Some(i);
+                                            }
+                                        },
+                                    );
+                                });
+                            });
+                    }
+                });
+        });
+
+        ui.add_space(6.0);
+
+        // Exact Scheduler.fxml bottom Row 1: Packet: [input] [Clear] [S] [L]
+        ui.horizontal(|ui| {
+            ui.label(format!("{}:", self.i18n.text("tab.scheduler.setup.packet")));
+            let pkt_w = (avail_w - 224.0).max(180.0);
+            ui.add(
+                egui::TextEdit::singleline(&mut self.schedule_draft.expression)
+                    .font(egui::TextStyle::Monospace)
+                    .desired_width(pkt_w),
+            );
+            if ui
+                .button(self.i18n.text("tab.scheduler.button.clear"))
+                .on_hover_text(self.i18n.text("tab.scheduler.button.clear.tooltip"))
+                .clicked()
+            {
+                self.scheduler.jobs.clear();
+                if self.active_schedule_edit.take().is_some() {
+                    self.reset_active_schedule_editor();
+                }
+            }
+            if ui
+                .add(
+                    egui::Button::new(self.i18n.text("tab.scheduler.button.save"))
+                        .min_size(egui::vec2(28.0, 24.0)),
+                )
+                .on_hover_text(self.i18n.text("tab.scheduler.button.save.tooltip"))
+                .clicked()
+            {
+                match gearth_platform::choose_file(gearth_platform::FileKind::Schedule, true) {
+                    Ok(Some(path)) => {
+                        if let Ok(path_str) = path.into_os_string().into_string() {
+                            self.schedule_path = path_str;
+                            let formatted = if !self.scheduler.jobs.is_empty() {
+                                schedule_file::format_active(&self.scheduler.jobs)
+                            } else {
+                                schedule_file::format(&self.settings.schedules)
+                            };
+                            self.status = match formatted.and_then(|text| {
+                                schedule_file::write_atomic(Path::new(&self.schedule_path), &text)
+                            }) {
+                                Ok(()) => format!(
+                                    "{}: {}",
+                                    self.i18n.text("rust.scheduler.exported_active"),
+                                    self.schedule_path
+                                ),
+                                Err(error) => format!(
+                                    "{}: {error}",
+                                    self.i18n.text("rust.scheduler.export_failed")
+                                ),
+                            };
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        self.status = format!("{}: {e}", self.i18n.text("rust.dialog.failed"))
                     }
                 }
+            }
+            if ui
+                .add(
+                    egui::Button::new(self.i18n.text("tab.scheduler.button.load"))
+                        .min_size(egui::vec2(28.0, 24.0)),
+                )
+                .on_hover_text(self.i18n.text("tab.scheduler.button.load.tooltip"))
+                .clicked()
+            {
+                match gearth_platform::choose_file(gearth_platform::FileKind::Schedule, false) {
+                    Ok(Some(path)) => {
+                        if let Ok(path_str) = path.into_os_string().into_string() {
+                            self.schedule_path = path_str;
+                            let result = self.read_schedule_file().and_then(|templates| {
+                                let specs = self
+                                    .compile_schedules(&templates, true)
+                                    .map_err(std::io::Error::other)?;
+                                self.scheduler
+                                    .replace_batch_deferred(
+                                        specs,
+                                        (Instant::now(), SystemTime::now()),
+                                    )
+                                    .map_err(std::io::Error::other)?;
+                                Ok(templates)
+                            });
+                            self.status = match result {
+                                Ok(templates) => {
+                                    let count = templates.len();
+                                    if self.active_schedule_edit.take().is_some() {
+                                        self.reset_active_schedule_editor();
+                                    }
+                                    format!(
+                                        "{}: {count} ({})",
+                                        self.i18n.text("rust.scheduler.loaded_active"),
+                                        self.schedule_path
+                                    )
+                                }
+                                Err(error) => format!(
+                                    "{}: {error}",
+                                    self.i18n.text("rust.scheduler.load_failed")
+                                ),
+                            };
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        self.status = format!("{}: {e}", self.i18n.text("rust.dialog.failed"))
+                    }
+                }
+            }
+        });
+
+        // Exact Scheduler.fxml bottom Row 2: Interval: [500+0] (In) (Out) [Add/Edit] [x] Enable hotkeys
+        let editing = self.schedule_edit.is_some() || self.active_schedule_edit.is_some();
+        ui.horizontal(|ui| {
+            ui.label(format!(
+                "{}:",
+                self.i18n.text("tab.scheduler.setup.interval")
+            ));
+            if ui
+                .add(
+                    egui::TextEdit::singleline(&mut self.schedule_interval_input)
+                        .desired_width(74.0),
+                )
+                .changed()
+            {
+                if let Ok((delay, offset)) = parse_interval_spec(&self.schedule_interval_input) {
+                    self.interval_ms = delay;
+                    self.align_schedule = offset.is_some();
+                    self.schedule_offset_ms = offset.unwrap_or(0);
+                }
+            }
+            ui.radio_value(
+                &mut self.schedule_draft.direction,
+                Direction::ToClient,
+                self.i18n.text("tab.scheduler.direction.in"),
+            );
+            ui.radio_value(
+                &mut self.schedule_draft.direction,
+                Direction::ToServer,
+                self.i18n.text("tab.scheduler.direction.out"),
+            );
+            let add_label = if editing {
+                self.i18n.text("tab.scheduler.button.edit")
+            } else {
+                self.i18n.text("tab.scheduler.button.add")
+            };
+            if ui
+                .add_enabled(
+                    editing || self.relay.as_ref().is_some_and(Connection::connected),
+                    egui::Button::new(add_label).min_size(egui::vec2(52.0, 24.0)),
+                )
+                .clicked()
+            {
+                let mut reset_active_editor = false;
+                match parse_interval_spec(&self.schedule_interval_input) {
+                    Err(err) => self.status = err,
+                    Ok((delay, offset)) => {
+                        self.interval_ms = delay;
+                        self.align_schedule = offset.is_some();
+                        self.schedule_offset_ms = offset.unwrap_or(0);
+                        let parsed = expression::parse_with_format(
+                            &self.schedule_draft.expression,
+                            self.packet_format(self.schedule_draft.direction),
+                            Some((self.schedule_draft.direction, &self.packet_info)),
+                        );
+                        self.status = match parsed.and_then(|packet| {
+                            if let Some(id) = self.active_schedule_edit {
+                                self.scheduler.update_configured(
+                                    id,
+                                    ScheduleSpec {
+                                        packet,
+                                        source_expression: Some(
+                                            self.schedule_draft.expression.clone(),
+                                        ),
+                                        direction: self.schedule_draft.direction,
+                                        interval_ms: self.interval_ms,
+                                        offset_ms: offset,
+                                        repeat: (!self.repeat_forever).then_some(self.repeat),
+                                    },
+                                    (Instant::now(), SystemTime::now()),
+                                )
+                            } else if editing {
+                                Ok(())
+                            } else {
+                                self.scheduler.add_configured(
+                                    packet,
+                                    self.schedule_draft.direction,
+                                    self.interval_ms,
+                                    offset,
+                                    (!self.repeat_forever).then_some(self.repeat),
+                                    (Instant::now(), SystemTime::now()),
+                                )?;
+                                self.scheduler
+                                    .jobs
+                                    .last_mut()
+                                    .expect("newly added schedule")
+                                    .source_expression =
+                                    Some(self.schedule_draft.expression.clone());
+                                Ok(())
+                            }
+                        }) {
+                            Ok(()) => {
+                                if self.active_schedule_edit.take().is_some() {
+                                    reset_active_editor = true;
+                                    "Active schedule updated; saved templates are unchanged".into()
+                                } else {
+                                    let template = ScheduleTemplate {
+                                        expression: self.schedule_draft.expression.clone(),
+                                        direction: self.schedule_draft.direction,
+                                        interval_ms: self.interval_ms,
+                                        offset_ms: offset,
+                                        paused: self
+                                            .schedule_edit
+                                            .and_then(|i| self.settings.schedules.get(i))
+                                            .is_some_and(|old| old.paused),
+                                        repeat: if self.repeat_forever { 0 } else { self.repeat },
+                                    };
+                                    if let Some(index) = self.schedule_edit.take() {
+                                        if let Some(existing) =
+                                            self.settings.schedules.get_mut(index)
+                                        {
+                                            *existing = template;
+                                            templates_changed = true;
+                                            "Template updated; active schedules are unchanged"
+                                                .into()
+                                        } else {
+                                            "Template no longer exists".into()
+                                        }
+                                    } else {
+                                        self.settings.schedules.push(template);
+                                        templates_changed = true;
+                                        "Schedule added".into()
+                                    }
+                                }
+                            }
+                            Err(e) => e.to_string(),
+                        };
+                    }
+                }
+                if reset_active_editor {
+                    self.reset_active_schedule_editor();
+                }
+            }
+            if editing
+                && ui
+                    .small_button("✕")
+                    .on_hover_text(self.i18n.text("rust.scheduler.cancel_edit"))
+                    .clicked()
+            {
+                let reset_active_editor = self.active_schedule_edit.is_some();
+                self.schedule_edit = None;
+                self.active_schedule_edit = None;
+                if reset_active_editor {
+                    self.reset_active_schedule_editor();
+                }
+            }
+            let mut hotkeys_enabled = self.scheduler_hotkeys.is_some();
+            if ui
+                .checkbox(
+                    &mut hotkeys_enabled,
+                    self.i18n.text("tab.scheduler.hotkeys"),
+                )
+                .changed()
+            {
+                if hotkeys_enabled {
+                    let context = ui.ctx().clone();
+                    match gearth_platform::GlobalHotkeys::start(move || context.request_repaint()) {
+                        Ok(hotkeys) => {
+                            let unavailable: Vec<_> = hotkeys
+                                .available()
+                                .iter()
+                                .enumerate()
+                                .filter_map(|(index, available)| {
+                                    (!available).then_some(index.to_string())
+                                })
+                                .collect();
+                            self.status = if unavailable.is_empty() {
+                                "Global scheduler shortcuts enabled".into()
+                            } else {
+                                format!("Shortcuts unavailable for: {}", unavailable.join(", "))
+                            };
+                            self.scheduler_hotkeys = Some(hotkeys);
+                        }
+                        Err(error) => self.status = format!("Could not enable shortcuts: {error}"),
+                    }
+                } else {
+                    self.scheduler_hotkeys.take();
+                    self.status = "Global scheduler shortcuts disabled".into();
+                }
+            }
+        });
+
+        ui.add_space(4.0);
+        egui::CollapsingHeader::new(self.i18n.text("rust.scheduler.saved_hint"))
+            .id_salt("scheduler-templates-drawer")
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::DragValue::new(&mut self.repeat)
+                            .range(1..=1_000_000)
+                            .prefix(format!("{} ", self.i18n.text("rust.scheduler.count"))),
+                    );
+                    ui.checkbox(
+                        &mut self.repeat_forever,
+                        self.i18n.text("rust.scheduler.forever"),
+                    );
+                    ui.checkbox(
+                        &mut self.scheduler_auto_start,
+                        self.i18n.text("rust.scheduler.auto_start"),
+                    );
+                });
+                ui.horizontal(|ui| {
+                    if ui
+                        .add_enabled(
+                            self.relay.as_ref().is_some_and(Connection::connected),
+                            egui::Button::new(self.i18n.text("rust.scheduler.run_saved")),
+                        )
+                        .clicked()
+                    {
+                        let specs = self.compile_schedules(&self.settings.schedules, false);
+                        self.status = match specs.and_then(|specs| {
+                            self.scheduler
+                                .add_batch_deferred(specs, (Instant::now(), SystemTime::now()))
+                        }) {
+                            Ok(()) => self.i18n.text("rust.scheduler.started"),
+                            Err(e) => {
+                                format!("{}: {e}", self.i18n.text("rust.scheduler.start_failed"))
+                            }
+                        };
+                    }
+                    if ui
+                        .button(self.i18n.text("rust.scheduler.clear_saved"))
+                        .clicked()
+                    {
+                        self.settings.schedules.clear();
+                        templates_changed = true;
+                        self.schedule_edit = None;
+                    }
+                    if ui.button(self.i18n.text("rust.scheduler.import")).clicked() {
+                        let result = self.read_schedule_file();
+                        self.status = match result {
+                            Ok(templates) => {
+                                let count = templates.len();
+                                self.settings.schedules = templates;
+                                templates_changed = true;
+                                self.schedule_edit = None;
+                                format!("{}: {count}", self.i18n.text("rust.scheduler.imported"))
+                            }
+                            Err(error) => format!(
+                                "{}: {error}",
+                                self.i18n.text("rust.scheduler.import_failed")
+                            ),
+                        };
+                    }
+                    if ui
+                        .button(self.i18n.text("rust.scheduler.export_templates"))
+                        .clicked()
+                    {
+                        self.status = match schedule_file::format(&self.settings.schedules)
+                            .and_then(|text| {
+                                schedule_file::write_atomic(Path::new(&self.schedule_path), &text)
+                            }) {
+                            Ok(()) => format!(
+                                "{}: {}",
+                                self.i18n.text("rust.scheduler.exported_templates"),
+                                self.schedule_path
+                            ),
+                            Err(error) => format!(
+                                "{}: {error}",
+                                self.i18n.text("rust.scheduler.export_failed")
+                            ),
+                        };
+                    }
+                });
+                let mut edit_template = None;
+                let mut remove_template = None;
+                for (i, template) in self.settings.schedules.iter_mut().enumerate() {
+                    ui.horizontal(|ui| {
+                        if ui
+                            .small_button(self.i18n.text("rust.action.edit"))
+                            .clicked()
+                        {
+                            edit_template = Some(i);
+                        }
+                        if ui
+                            .small_button(self.i18n.text("rust.action.remove"))
+                            .clicked()
+                        {
+                            remove_template = Some(i);
+                        }
+                        if ui
+                            .checkbox(
+                                &mut template.paused,
+                                self.i18n.text("rust.scheduler.paused_start"),
+                            )
+                            .changed()
+                        {
+                            templates_changed = true;
+                        }
+                        ui.label(format!(
+                            "{}: {} every {} ms",
+                            i + 1,
+                            template.direction.name(),
+                            template.interval_ms
+                        ));
+                        ui.add(egui::Label::new(&template.expression).truncate());
+                    });
+                }
+                if let Some(index) = edit_template {
+                    let template = &self.settings.schedules[index];
+                    self.schedule_draft.expression = template.expression.clone();
+                    self.schedule_draft.direction = template.direction;
+                    self.interval_ms = template.interval_ms;
+                    self.align_schedule = template.offset_ms.is_some();
+                    self.schedule_offset_ms = template.offset_ms.unwrap_or(0);
+                    self.schedule_interval_input = match template.offset_ms {
+                        Some(offset) => format!("{}+{offset}", template.interval_ms),
+                        None => template.interval_ms.to_string(),
+                    };
+                    self.repeat_forever = template.repeat == 0;
+                    self.repeat = template.repeat.max(1);
+                    self.schedule_edit = Some(index);
+                    self.active_schedule_edit = None;
+                }
+                if let Some(index) = remove_template {
+                    self.settings.schedules.remove(index);
+                    templates_changed = true;
+                    self.schedule_edit = match self.schedule_edit {
+                        Some(editing) if editing == index => None,
+                        Some(editing) if editing > index => Some(editing - 1),
+                        other => other,
+                    };
+                }
             });
-        }
+
         if let Some((i, paused)) = pause_change {
             if let Err(error) = self.scheduler.set_paused(i, paused, Instant::now()) {
                 self.status = error.to_string();
@@ -3817,6 +4326,10 @@ impl Desktop {
                 self.interval_ms = job.interval.as_millis() as u64;
                 self.align_schedule = job.alignment_offset_ms.is_some();
                 self.schedule_offset_ms = job.alignment_offset_ms.unwrap_or(0);
+                self.schedule_interval_input = match job.alignment_offset_ms {
+                    Some(offset) => format!("{}+{offset}", self.interval_ms),
+                    None => self.interval_ms.to_string(),
+                };
                 self.repeat_forever = job.remaining.is_none();
                 self.repeat = job.remaining.unwrap_or(1);
                 self.active_schedule_edit = Some(id);
@@ -3856,275 +4369,403 @@ impl Desktop {
         }
     }
     fn extra(&mut self, ui: &mut egui::Ui) {
-        ui.heading(self.i18n.text("tab.extra"));
-        ui.checkbox(
-            &mut self.python_enabled,
-            self.i18n.text("tab.extra.options.pythonscripting"),
-        );
-        if ui
-            .checkbox(
-                &mut self.always_admin,
-                self.i18n.text("tab.extra.options.staffpermissions"),
-            )
-            .on_hover_text(self.i18n.text("rust.extra.staff_hint"))
-            .changed()
-        {
-            self.set_admin_enabled(self.always_admin);
-        }
-        if ui
-            .checkbox(
-                &mut self.always_on_top,
-                self.i18n.text("tab.extra.options.alwaysontop"),
-            )
-            .changed()
-        {
-            ui.ctx()
-                .send_viewport_cmd(egui::ViewportCommand::WindowLevel(if self.always_on_top {
-                    egui::WindowLevel::AlwaysOnTop
-                } else {
-                    egui::WindowLevel::Normal
-                }));
-        }
-        self.developer_mode_control(ui);
-        ui.hyperlink_to(
-            self.i18n.text("tab.extra.troubleshooting"),
-            "https://github.com/sirjonasxx/G-Earth/wiki/Troubleshooting",
-        );
-        ui.checkbox(
-            &mut self.advanced_options,
-            self.i18n.text("tab.extra.options.advanced"),
-        );
-        if self.advanced_options {
-            ui.indent("extra-advanced-options", |ui| {
-                ui.add_enabled(
-                    self.relay.is_none() && self.attachment_pending.is_none(),
-                    egui::Checkbox::new(
-                        &mut self.disable_decryption,
-                        self.i18n
-                            .text("tab.extra.options.advanced.disabledecryption"),
-                    ),
-                );
-                ui.checkbox(
-                    &mut self.debug_stdout,
-                    self.i18n.text("tab.extra.options.advanced.debugstdout"),
-                );
-            });
-        }
-        ui.separator();
-        ui.label(self.i18n.text("tab.extra.notepad"));
-        ui.add(
-            egui::TextEdit::multiline(&mut self.notepad)
-                .desired_rows(12)
-                .desired_width(f32::INFINITY),
-        );
+        let avail_w = ui.available_width().max(580.0);
+        let left_w = (avail_w * 0.50).floor();
+        let right_w = (avail_w - left_w - 14.0).max(250.0);
+        let notepad_h = (ui.available_height() - 62.0).clamp(175.0, 340.0);
+
+        // Exact Extra.fxml 2-column split:
+        // Left: Notepad + bottom row (Always on top + Troubleshooting link)
+        // Right: Developer mode (bold), Staff permissions, G-Python, Advanced + bordered SOCKS/decrypt/debug box
+        ui.horizontal_top(|ui| {
+            ui.allocate_ui_with_layout(
+                egui::vec2(left_w, notepad_h + 52.0),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    ui.label(format!("{}:", self.i18n.text("tab.extra.notepad")));
+                    ui.add_space(3.0);
+                    egui::ScrollArea::vertical()
+                        .id_salt("extra_notepad_scroll")
+                        .max_height(notepad_h)
+                        .show(ui, |ui| {
+                            ui.add_sized(
+                                egui::vec2(left_w - 4.0, notepad_h),
+                                egui::TextEdit::multiline(&mut self.notepad),
+                            );
+                        });
+                    ui.add_space(6.0);
+                    ui.horizontal(|ui| {
+                        if ui
+                            .checkbox(
+                                &mut self.always_on_top,
+                                self.i18n.text("tab.extra.options.alwaysontop"),
+                            )
+                            .changed()
+                        {
+                            ui.ctx()
+                                .send_viewport_cmd(egui::ViewportCommand::WindowLevel(
+                                    if self.always_on_top {
+                                        egui::WindowLevel::AlwaysOnTop
+                                    } else {
+                                        egui::WindowLevel::Normal
+                                    },
+                                ));
+                        }
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            ui.hyperlink_to(
+                                self.i18n.text("tab.extra.troubleshooting"),
+                                "https://github.com/sirjonasxx/G-Earth/wiki/Troubleshooting",
+                            );
+                        });
+                    });
+                },
+            );
+
+            ui.add_space(12.0);
+
+            ui.allocate_ui_with_layout(
+                egui::vec2(right_w, notepad_h + 52.0),
+                egui::Layout::top_down(egui::Align::Min),
+                |ui| {
+                    ui.add_space(4.0);
+                    self.developer_mode_control(ui);
+                    ui.add_space(4.0);
+                    if ui
+                        .checkbox(
+                            &mut self.always_admin,
+                            self.i18n.text("tab.extra.options.staffpermissions"),
+                        )
+                        .on_hover_text(self.i18n.text("rust.extra.staff_hint"))
+                        .changed()
+                    {
+                        self.set_admin_enabled(self.always_admin);
+                    }
+                    ui.add_space(4.0);
+                    ui.checkbox(
+                        &mut self.python_enabled,
+                        self.i18n.text("tab.extra.options.pythonscripting"),
+                    );
+                    ui.add_space(4.0);
+                    ui.checkbox(
+                        &mut self.advanced_options,
+                        self.i18n.text("tab.extra.options.advanced"),
+                    );
+                    ui.add_space(4.0);
+                    ui.add_enabled_ui(self.advanced_options, |ui| {
+                        group_box(ui, self.theme, egui::Margin::symmetric(8.0, 6.0), |ui| {
+                            ui.set_width((right_w - 18.0).max(220.0));
+                            ui.checkbox(
+                                &mut self.socks_enabled,
+                                self.i18n.text("tab.extra.options.advanced.socks"),
+                            );
+                            ui.add_enabled_ui(self.socks_enabled, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.label(format!(
+                                        "{}:",
+                                        self.i18n.text("tab.extra.options.advanced.proxy.ip")
+                                    ));
+                                    ui.add(
+                                        egui::TextEdit::singleline(&mut self.socks_proxy)
+                                            .hint_text("ip:port")
+                                            .desired_width((right_w - 102.0).max(120.0)),
+                                    );
+                                });
+                                ui.horizontal(|ui| {
+                                    ui.add(
+                                        egui::TextEdit::singleline(&mut self.socks_user)
+                                            .hint_text(self.i18n.text("rust.connection.socks_user"))
+                                            .desired_width(((right_w - 36.0) * 0.5).max(80.0)),
+                                    );
+                                    ui.add(
+                                        egui::TextEdit::singleline(&mut self.socks_password)
+                                            .password(true)
+                                            .hint_text(
+                                                self.i18n.text("rust.connection.socks_password"),
+                                            )
+                                            .desired_width(((right_w - 36.0) * 0.5).max(80.0)),
+                                    );
+                                });
+                            });
+                            ui.add_space(2.0);
+                            ui.add_enabled(
+                                self.relay.is_none() && self.attachment_pending.is_none(),
+                                egui::Checkbox::new(
+                                    &mut self.disable_decryption,
+                                    self.i18n
+                                        .text("tab.extra.options.advanced.disabledecryption"),
+                                ),
+                            );
+                            ui.checkbox(
+                                &mut self.debug_stdout,
+                                self.i18n.text("tab.extra.options.advanced.debugstdout"),
+                            );
+                        });
+                    });
+                },
+            );
+        });
     }
     fn tools(&mut self, ui: &mut egui::Ui) {
-        ui.heading(self.i18n.text("tab.tools"));
-        ui.horizontal(|ui| {
-            ui.label(self.i18n.text("tab.tools.type.integer"));
-            let decoded =
-                ui.add(egui::TextEdit::singleline(&mut self.tool_int).desired_width(110.0));
-            let encoded_value = packet_tools::encode_i32(&self.tool_int).ok();
-            let encode = ui
-                .add_enabled(
-                    encoded_value.is_some(),
-                    egui::Button::new(self.i18n.text("tab.tools.button.encode")),
-                )
-                .clicked()
-                || (decoded.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)));
-            if encode {
-                if let Some(value) = encoded_value {
-                    self.tool_int_encoded = value;
-                }
-            }
-            let decoded_value = packet_tools::decode_i32(&self.tool_int_encoded).ok();
-            let decode = ui
-                .add_enabled(
-                    decoded_value.is_some(),
-                    egui::Button::new(self.i18n.text("tab.tools.button.decode")),
-                )
-                .clicked();
-            let encoded =
-                ui.add(egui::TextEdit::singleline(&mut self.tool_int_encoded).desired_width(240.0));
-            if decode
-                || (encoded.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)))
-            {
-                if let Ok(value) = packet_tools::decode_i32(&self.tool_int_encoded) {
-                    self.tool_int = value.to_string();
-                }
-            }
-        });
-        ui.horizontal(|ui| {
-            ui.label(self.i18n.text("tab.tools.type.ushort"));
-            let decoded =
-                ui.add(egui::TextEdit::singleline(&mut self.tool_ushort).desired_width(110.0));
-            let encoded_value = packet_tools::encode_u16(&self.tool_ushort).ok();
-            let encode = ui
-                .add_enabled(
-                    encoded_value.is_some(),
-                    egui::Button::new(self.i18n.text("tab.tools.button.encode")),
-                )
-                .clicked()
-                || (decoded.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)));
-            if encode {
-                if let Some(value) = encoded_value {
-                    self.tool_ushort_encoded = value;
-                }
-            }
-            let decoded_value = packet_tools::decode_u16(&self.tool_ushort_encoded).ok();
-            let decode = ui
-                .add_enabled(
-                    decoded_value.is_some(),
-                    egui::Button::new(self.i18n.text("tab.tools.button.decode")),
-                )
-                .clicked();
-            let encoded = ui.add(
-                egui::TextEdit::singleline(&mut self.tool_ushort_encoded).desired_width(240.0),
-            );
-            if decode
-                || (encoded.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)))
-            {
-                if let Ok(value) = packet_tools::decode_u16(&self.tool_ushort_encoded) {
-                    self.tool_ushort = value.to_string();
-                }
-            }
-        });
-        ui.separator();
-        direction_selector(ui, &mut self.direction, &self.i18n);
-        ui.label(format!(
-            "{}: {:?}",
-            self.i18n.text("rust.tools.packet_format"),
-            self.packet_format(self.direction)
-        ));
-        ui.add(
-            egui::TextEdit::multiline(&mut self.tool_input)
-                .desired_rows(5)
-                .desired_width(f32::INFINITY)
-                .font(egui::TextStyle::Monospace),
+        let avail_w = ui.available_width().max(580.0);
+        let palette = self.theme.palette();
+
+        // Exact Tools.fxml Section 1: Encoding/Decoding
+        ui.label(
+            egui::RichText::new(format!(
+                "{}/{}",
+                self.i18n.text("tab.tools.encoding"),
+                self.i18n.text("tab.tools.decoding")
+            ))
+            .italics()
+            .color(palette.text_muted),
         );
-        ui.horizontal(|ui| {
-            if ui
-                .button(self.i18n.text("rust.tools.expression_to_hex"))
-                .clicked()
-            {
-                self.tool_output = packet_tools::expression_to_hex(
-                    &self.tool_input,
-                    self.packet_format(self.direction),
-                    self.direction,
-                    &self.packet_info,
-                )
-                .unwrap_or_else(|e| e.to_string());
-            }
-            if ui
-                .button(self.i18n.text("rust.tools.hex_to_expression"))
-                .clicked()
-            {
-                self.tool_output = packet_tools::hex_to_expression(
-                    &self.tool_input,
-                    self.packet_format(self.direction),
-                )
-                .unwrap_or_else(|e| e.to_string());
-            }
-        });
-        ui.horizontal(|ui| {
-            if ui
-                .button(self.i18n.text("rust.tools.expression_to_packet"))
-                .clicked()
-            {
-                self.tool_output = packet_tools::expression_to_wire(
-                    &self.tool_input,
-                    self.packet_format(self.direction),
-                    self.direction,
-                    &self.packet_info,
-                )
-                .unwrap_or_else(|error| error.to_string());
-            }
-            if ui
-                .button(self.i18n.text("rust.tools.packet_to_expression"))
-                .clicked()
-            {
-                match packet_tools::wire_to_expression(
-                    &self.tool_input,
-                    self.packet_format(self.direction),
-                    self.direction,
-                    &self.packet_info,
-                    self.nitro && self.unity,
-                ) {
-                    Ok((output, structured)) => {
-                        self.tool_output = output;
-                        self.status = if structured {
-                            self.i18n.text("rust.tools.converted")
-                        } else {
-                            self.i18n.text("rust.tools.structure_unavailable")
-                        };
+        ui.add_space(3.0);
+        group_box(ui, self.theme, egui::Margin::symmetric(10.0, 8.0), |ui| {
+            ui.set_width((avail_w - 22.0).max(540.0));
+            let field_w = ((avail_w - 280.0) * 0.5).max(115.0);
+            egui::Grid::new("tools-enc-dec-grid")
+                .num_columns(5)
+                .spacing([8.0, 8.0])
+                .show(ui, |ui| {
+                    ui.label(format!("{}:", self.i18n.text("tab.tools.type.integer")));
+                    let decoded = ui
+                        .add(egui::TextEdit::singleline(&mut self.tool_int).desired_width(field_w));
+                    let encoded_value = packet_tools::encode_i32(&self.tool_int).ok();
+                    let encode = ui
+                        .add_enabled(
+                            encoded_value.is_some(),
+                            egui::Button::new(self.i18n.text("tab.tools.button.encode"))
+                                .min_size(egui::vec2(72.0, 26.0)),
+                        )
+                        .clicked()
+                        || (decoded.lost_focus()
+                            && ui.input(|input| input.key_pressed(egui::Key::Enter)));
+                    if encode {
+                        if let Some(value) = encoded_value {
+                            self.tool_int_encoded = value;
+                        }
                     }
-                    Err(error) => self.status = error.to_string(),
-                }
-            }
-        });
-        ui.add(
-            egui::TextEdit::multiline(&mut self.tool_output)
-                .desired_rows(5)
-                .desired_width(f32::INFINITY)
-                .font(egui::TextStyle::Monospace),
-        );
-        if ui
-            .button(self.i18n.text("rust.tools.copy_output"))
-            .clicked()
-        {
-            ui.ctx().copy_text(self.tool_output.clone());
-        }
-        if ui
-            .button(self.i18n.text("rust.tools.reuse_output"))
-            .clicked()
-        {
-            self.tool_input.clone_from(&self.tool_output);
-        }
-        ui.separator();
-        ui.label(self.i18n.text("tab.extra.notepad"));
-        ui.add(
-            egui::TextEdit::multiline(&mut self.notepad)
-                .desired_rows(5)
-                .desired_width(f32::INFINITY),
-        );
-        ui.horizontal(|ui| {
-            ui.label("Import original Cache/cache.json");
-            ui.text_edit_singleline(&mut self.legacy_cache_path);
-            browse_path(
-                ui,
-                &mut self.legacy_cache_path,
-                gearth_platform::FileKind::Json,
-                false,
-                &self.i18n,
-                &mut self.status,
-            );
-            if ui.button("Import").clicked() {
-                let result = std::fs::read(&self.legacy_cache_path)
-                    .and_then(|bytes| serde_json::from_slice(&bytes).map_err(std::io::Error::other))
-                    .and_then(|value| self.settings.import_java_cache(value));
-                match result {
-                    Ok(()) => {
-                        self.apply_settings();
-                        self.status =
-                            "Original cache imported; use Save settings to keep it".into();
+                    let decoded_value = packet_tools::decode_i32(&self.tool_int_encoded).ok();
+                    let decode = ui
+                        .add_enabled(
+                            decoded_value.is_some(),
+                            egui::Button::new(self.i18n.text("tab.tools.button.decode"))
+                                .min_size(egui::vec2(72.0, 26.0)),
+                        )
+                        .clicked();
+                    let encoded = ui.add(
+                        egui::TextEdit::singleline(&mut self.tool_int_encoded)
+                            .desired_width(field_w),
+                    );
+                    if decode
+                        || (encoded.lost_focus()
+                            && ui.input(|input| input.key_pressed(egui::Key::Enter)))
+                    {
+                        if let Ok(value) = packet_tools::decode_i32(&self.tool_int_encoded) {
+                            self.tool_int = value.to_string();
+                        }
                     }
-                    Err(e) => self.status = e.to_string(),
+                    ui.end_row();
+
+                    ui.label(format!("{}:", self.i18n.text("tab.tools.type.ushort")));
+                    let decoded = ui.add(
+                        egui::TextEdit::singleline(&mut self.tool_ushort).desired_width(field_w),
+                    );
+                    let encoded_value = packet_tools::encode_u16(&self.tool_ushort).ok();
+                    let encode = ui
+                        .add_enabled(
+                            encoded_value.is_some(),
+                            egui::Button::new(self.i18n.text("tab.tools.button.encode"))
+                                .min_size(egui::vec2(72.0, 26.0)),
+                        )
+                        .clicked()
+                        || (decoded.lost_focus()
+                            && ui.input(|input| input.key_pressed(egui::Key::Enter)));
+                    if encode {
+                        if let Some(value) = encoded_value {
+                            self.tool_ushort_encoded = value;
+                        }
+                    }
+                    let decoded_value = packet_tools::decode_u16(&self.tool_ushort_encoded).ok();
+                    let decode = ui
+                        .add_enabled(
+                            decoded_value.is_some(),
+                            egui::Button::new(self.i18n.text("tab.tools.button.decode"))
+                                .min_size(egui::vec2(72.0, 26.0)),
+                        )
+                        .clicked();
+                    let encoded = ui.add(
+                        egui::TextEdit::singleline(&mut self.tool_ushort_encoded)
+                            .desired_width(field_w),
+                    );
+                    if decode
+                        || (encoded.lost_focus()
+                            && ui.input(|input| input.key_pressed(egui::Key::Enter)))
+                    {
+                        if let Ok(value) = packet_tools::decode_u16(&self.tool_ushort_encoded) {
+                            self.tool_ushort = value.to_string();
+                        }
+                    }
+                    ui.end_row();
+                });
+        });
+
+        ui.add_space(10.0);
+
+        // Exact Tools.fxml Section 2: Packet <-> Expression side-by-side
+        ui.label(
+            egui::RichText::new(format!(
+                "{} <-> {}",
+                self.i18n.text("tab.tools.packet"),
+                self.i18n.text("tab.tools.expression")
+            ))
+            .italics()
+            .color(palette.text_muted),
+        );
+        ui.add_space(3.0);
+        group_box(ui, self.theme, egui::Margin::symmetric(8.0, 8.0), |ui| {
+            ui.set_width((avail_w - 18.0).max(540.0));
+            let area_h = 84.0;
+            let arrow_w = 72.0;
+            let box_w = ((avail_w - 46.0 - arrow_w * 2.0) * 0.5).max(150.0);
+            ui.horizontal_top(|ui| {
+                egui::ScrollArea::vertical()
+                    .id_salt("tools_packet_area")
+                    .max_height(area_h)
+                    .show(ui, |ui| {
+                        ui.add_sized(
+                            egui::vec2(box_w, area_h),
+                            egui::TextEdit::multiline(&mut self.tool_input)
+                                .font(egui::TextStyle::Monospace)
+                                .hint_text(self.i18n.text("tab.tools.packet")),
+                        );
+                    });
+                if ui
+                    .add(egui::Button::new("------>").min_size(egui::vec2(arrow_w, area_h)))
+                    .on_hover_text(self.i18n.text("rust.tools.packet_to_expression"))
+                    .clicked()
+                {
+                    match packet_tools::wire_to_expression(
+                        &self.tool_input,
+                        self.packet_format(self.direction),
+                        self.direction,
+                        &self.packet_info,
+                        self.nitro && self.unity,
+                    ) {
+                        Ok((output, structured)) => {
+                            self.tool_output = output;
+                            self.status = if structured {
+                                self.i18n.text("rust.tools.converted")
+                            } else {
+                                self.i18n.text("rust.tools.structure_unavailable")
+                            };
+                        }
+                        Err(error) => self.status = error.to_string(),
+                    }
                 }
-            }
+                if ui
+                    .add(egui::Button::new("<------").min_size(egui::vec2(arrow_w, area_h)))
+                    .on_hover_text(self.i18n.text("rust.tools.expression_to_packet"))
+                    .clicked()
+                {
+                    self.tool_input = packet_tools::expression_to_wire(
+                        &self.tool_output,
+                        self.packet_format(self.direction),
+                        self.direction,
+                        &self.packet_info,
+                    )
+                    .unwrap_or_else(|error| error.to_string());
+                }
+                egui::ScrollArea::vertical()
+                    .id_salt("tools_expr_area")
+                    .max_height(area_h)
+                    .show(ui, |ui| {
+                        ui.add_sized(
+                            egui::vec2(box_w, area_h),
+                            egui::TextEdit::multiline(&mut self.tool_output)
+                                .font(egui::TextStyle::Monospace)
+                                .hint_text(self.i18n.text("tab.tools.expression")),
+                        );
+                    });
+            });
         });
-        ui.label(format!("Settings: {}", self.settings_path.display()));
-        ui.horizontal(|ui| {
-            ui.add(
-                egui::DragValue::new(&mut self.settings.log_limit)
-                    .range(16..=50000)
-                    .prefix("Log rows "),
-            );
-            ui.add(
-                egui::DragValue::new(&mut self.settings.log_bytes)
-                    .range(4096..=512 * 1024 * 1024)
-                    .prefix("Log memory bytes "),
-            );
-        });
+
+        ui.add_space(6.0);
+        egui::CollapsingHeader::new(self.i18n.text("rust.tools.packet_format"))
+            .id_salt("tools-extra-drawer")
+            .show(ui, |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    direction_selector(ui, &mut self.direction, &self.i18n);
+                    ui.label(format!("{:?}", self.packet_format(self.direction)));
+                    if ui
+                        .button(self.i18n.text("rust.tools.expression_to_hex"))
+                        .clicked()
+                    {
+                        self.tool_output = packet_tools::expression_to_hex(
+                            &self.tool_input,
+                            self.packet_format(self.direction),
+                            self.direction,
+                            &self.packet_info,
+                        )
+                        .unwrap_or_else(|e| e.to_string());
+                    }
+                    if ui
+                        .button(self.i18n.text("rust.tools.hex_to_expression"))
+                        .clicked()
+                    {
+                        self.tool_output = packet_tools::hex_to_expression(
+                            &self.tool_input,
+                            self.packet_format(self.direction),
+                        )
+                        .unwrap_or_else(|e| e.to_string());
+                    }
+                    if ui
+                        .button(self.i18n.text("rust.tools.copy_output"))
+                        .clicked()
+                    {
+                        ui.ctx().copy_text(self.tool_output.clone());
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.label("Import Cache/cache.json");
+                    ui.text_edit_singleline(&mut self.legacy_cache_path);
+                    browse_path(
+                        ui,
+                        &mut self.legacy_cache_path,
+                        gearth_platform::FileKind::Json,
+                        false,
+                        &self.i18n,
+                        &mut self.status,
+                    );
+                    if ui.button("Import").clicked() {
+                        let result = std::fs::read(&self.legacy_cache_path)
+                            .and_then(|bytes| {
+                                serde_json::from_slice(&bytes).map_err(std::io::Error::other)
+                            })
+                            .and_then(|value| self.settings.import_java_cache(value));
+                        match result {
+                            Ok(()) => {
+                                self.apply_settings();
+                                self.status =
+                                    "Original cache imported; use Save settings to keep it".into();
+                            }
+                            Err(e) => self.status = e.to_string(),
+                        }
+                    }
+                });
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::DragValue::new(&mut self.settings.log_limit)
+                            .range(16..=50000)
+                            .prefix("Log rows "),
+                    );
+                    ui.add(
+                        egui::DragValue::new(&mut self.settings.log_bytes)
+                            .range(4096..=512 * 1024 * 1024)
+                            .prefix("Log memory bytes "),
+                    );
+                });
+            });
     }
 }
 fn direction_selector(ui: &mut egui::Ui, direction: &mut Direction, i18n: &I18n) {
@@ -4166,215 +4807,489 @@ impl eframe::App for Desktop {
                 }
             }
         }
+        if self.logos.is_none() {
+            self.logos = Some(ThemeLogos::load(ctx));
+        }
         ctx.set_visuals(self.theme.visuals());
         self.poll();
-        egui::TopBottomPanel::top("tabs").show(ctx, |ui| {
-            if self.developer_mode_confirmation {
-                ui.disable();
-            }
-            ui.horizontal(|ui| {
-                ui.strong("G-Earth Rust");
-                ui.label("0.1.0 · development");
-                if ui.button(self.i18n.text("rust.settings.save")).clicked() {
-                    self.save_settings();
+        let palette = self.theme.palette();
+        egui::TopBottomPanel::top("tabs")
+            .frame(
+                egui::Frame::none()
+                    .fill(palette.titlebar_bg)
+                    .inner_margin(egui::Margin {
+                        left: 8.0,
+                        right: 8.0,
+                        top: 5.0,
+                        bottom: 0.0,
+                    }),
+            )
+            .show(ctx, |ui| {
+                if self.developer_mode_confirmation {
+                    ui.disable();
                 }
-                if ui.button(self.i18n.text("rust.settings.reload")).clicked() {
-                    self.load_settings();
-                }
-                egui::ComboBox::from_id_salt("theme")
-                    .selected_text(self.theme.name())
-                    .show_ui(ui, |ui| {
-                        for theme in AppTheme::ALL {
-                            ui.selectable_value(&mut self.theme, theme, theme.name());
-                        }
-                    });
-                let before = self.language.clone();
-                egui::ComboBox::from_id_salt("language")
-                    .selected_text(&self.language)
-                    .show_ui(ui, |ui| {
-                        for (code, name) in LANGUAGES {
-                            ui.selectable_value(&mut self.language, (*code).into(), *name);
-                        }
-                    });
-                if before != self.language {
-                    self.i18n = I18n::new(&self.language);
-                    if let Some(host) = &self.extension_host {
-                        if let Err(e) = host.set_language(&self.language) {
-                            self.status = e.to_string();
-                        }
+                // Compact G-Earth Titlebar strip (logo + title left, language + theme + settings right)
+                ui.horizontal(|ui| {
+                    if let Some(tex) = self.logos.as_ref().and_then(|l| l.small(self.theme)) {
+                        ui.add(egui::Image::new((tex.id(), egui::vec2(16.0, 16.0))));
                     }
-                }
-            });
-            ui.horizontal_wrapped(|ui| {
-                for (tab, name) in [
-                    (Tab::Connection, "tab.connection"),
-                    (Tab::Logger, "rust.logger.tab"),
-                    (Tab::Injection, "tab.injection"),
-                    (Tab::Scheduler, "tab.scheduler"),
-                    (Tab::Tools, "tab.tools"),
-                    (Tab::Extensions, "tab.extensions"),
-                    (Tab::Extra, "tab.extra"),
-                    (Tab::Info, "tab.info"),
-                ] {
-                    let label = if name.starts_with("tab.") || name.starts_with("rust.") {
-                        self.i18n.text(name)
-                    } else {
-                        name.to_owned()
-                    };
-                    ui.selectable_value(&mut self.tab, tab, label);
-                }
-                if ui
-                    .checkbox(
-                        &mut self.always_on_top,
-                        self.i18n.text("tab.extra.options.alwaysontop"),
-                    )
-                    .changed()
-                {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::WindowLevel(
-                        if self.always_on_top {
-                            egui::WindowLevel::AlwaysOnTop
-                        } else {
-                            egui::WindowLevel::Normal
-                        },
-                    ));
-                }
-            });
-        });
-        egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                ui.label(&self.status);
-                ui.separator();
-                ui.label(format!(
-                    "{} observed · {} retained · {} evicted",
-                    self.total,
-                    self.logs.len(),
-                    self.display_dropped
-                ));
-            });
-        });
-        egui::CentralPanel::default().show(ctx, |ui| {
-            if self.developer_mode_confirmation {
-                ui.disable();
-            }
-            match self.tab {
-                Tab::Connection => self.connection(ui),
-                Tab::Logger if self.logger_window.open => {
-                    ui.label(self.i18n.text("rust.logger.panel_open"));
-                }
-                Tab::Logger => self.logger(ui),
-                Tab::Injection => {
-                    egui::ScrollArea::vertical()
-                        .id_salt("injection_panel")
-                        .show(ui, |ui| self.injection(ui));
-                }
-                Tab::Scheduler => {
-                    egui::ScrollArea::vertical()
-                        .id_salt("scheduler_panel")
-                        .show(ui, |ui| self.schedule(ui));
-                }
-                Tab::Tools => {
-                    egui::ScrollArea::vertical()
-                        .id_salt("tools_panel")
-                        .show(ui, |ui| self.tools(ui));
-                }
-                Tab::Extensions => self.extensions(ui),
-                Tab::Extra => {
-                    egui::ScrollArea::vertical()
-                        .id_salt("extra_panel")
-                        .show(ui, |ui| self.extra(ui));
-                }
-                Tab::Info => {
-                    ui.heading(format!("G-Earth Rust {}", env!("CARGO_PKG_VERSION")));
-                    ui.label(self.i18n.text("tab.info.description"));
-                    ui.label("Rust port based on G-Realm/G-Earth 1.5.4-beta-29.");
-                    ui.label(format!(
-                        "{}: sirjonasxx & G-Realm · Rust port: 1desirable1337 / Tear1338",
-                        self.i18n.text("tab.info.createdby")
-                    ));
-                    ui.label(format!(
-                        "{}: G-Realm & Habbo scripting community",
-                        self.i18n.text("tab.info.contributors")
-                    ));
-                    ui.add_space(4.0);
-                    ui.label(format!("{}:", self.i18n.text("tab.info.links")));
-                    ui.horizontal_wrapped(|ui| {
-                        ui.hyperlink_to("G-Earth (Java)", "https://github.com/G-Realm/G-Earth");
-                        ui.hyperlink_to(
-                            "G-Earth Rust",
-                            "https://github.com/Tear1338/G-Earth-Rust",
-                        );
-                        ui.hyperlink_to(
-                            "G-ExtensionStore",
-                            "https://github.com/sirjonasxx/G-ExtensionStore",
-                        );
-                        ui.hyperlink_to("Tanji", "https://github.com/ArachisH/Tanji");
-                        ui.hyperlink_to("Darkbox", "https://darkbox.nl");
-                    });
-                    ui.add_space(8.0);
-                    ui.horizontal(|ui| {
-                        let checking = self.update_task.is_some();
+                    ui.label(egui::RichText::new(self.theme.title()).strong().size(13.5));
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "1.5.4-beta-29 · Rust {}",
+                            env!("CARGO_PKG_VERSION")
+                        ))
+                        .small()
+                        .color(palette.text_muted),
+                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui
-                            .add_enabled(
-                                !checking,
-                                egui::Button::new(self.i18n.text("rust.info.check_updates")),
-                            )
+                            .small_button(self.theme.name())
+                            .on_hover_text("Switch theme (G-Earth / G-Earth Dark / Tanji)")
                             .clicked()
                         {
-                            let (send, receive) = std::sync::mpsc::channel();
-                            self.update_task = Some(receive);
-                            self.update_result = None;
-                            std::thread::spawn(move || {
-                                let _ = send.send(
-                                    gearth_rust::update_checker::check_github_updates(
-                                        gearth_rust::update_checker::DEFAULT_REPOSITORY,
-                                        env!("CARGO_PKG_VERSION"),
-                                    ),
-                                );
+                            self.theme = self.theme.next();
+                        }
+                        let before = self.language.clone();
+                        egui::ComboBox::from_id_salt("language")
+                            .width(48.0)
+                            .selected_text(self.language.to_uppercase())
+                            .show_ui(ui, |ui| {
+                                for (code, name) in LANGUAGES {
+                                    ui.selectable_value(&mut self.language, (*code).into(), *name);
+                                }
                             });
+                        if before != self.language {
+                            self.i18n = I18n::new(&self.language);
+                            if let Some(host) = &self.extension_host {
+                                if let Err(e) = host.set_language(&self.language) {
+                                    self.status = e.to_string();
+                                }
+                            }
                         }
-                        if checking {
-                            ui.label(self.i18n.text("rust.info.checking_updates"));
-                        }
+                        ui.menu_button("⚙", |ui| {
+                            if ui.button(self.i18n.text("rust.settings.save")).clicked() {
+                                self.save_settings();
+                                ui.close_menu();
+                            }
+                            if ui.button(self.i18n.text("rust.settings.reload")).clicked() {
+                                self.load_settings();
+                                ui.close_menu();
+                            }
+                            ui.separator();
+                            for theme in AppTheme::ALL {
+                                if ui
+                                    .selectable_value(&mut self.theme, theme, theme.name())
+                                    .clicked()
+                                {
+                                    ui.close_menu();
+                                }
+                            }
+                        });
                     });
-                    if let Some(result) = &self.update_result {
-                        match result {
-                            Ok(info) if info.outdated => {
-                                ui.colored_label(
-                                    egui::Color32::from_rgb(220, 140, 20),
-                                    format!(
-                                        "{} — {} ({})",
-                                        self.i18n.text("alert.outdated.title"),
-                                        self.i18n.text("alert.outdated.content.newversion"),
-                                        info.latest_version
-                                    ),
+                });
+                ui.add_space(4.0);
+                // Exact G-Earth.fxml Bootstrap TabPane strip
+                let mut active_tab_rect = None;
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 2.0;
+                    for (tab, key) in [
+                        (Tab::Connection, "tab.connection"),
+                        (Tab::Injection, "tab.injection"),
+                        (Tab::Tools, "tab.tools"),
+                        (Tab::Scheduler, "tab.scheduler"),
+                        (Tab::Extensions, "tab.extensions"),
+                        (Tab::Extra, "tab.extra"),
+                        (Tab::Info, "tab.info"),
+                        (Tab::Logger, "rust.logger.tab"),
+                    ] {
+                        let label = self.i18n.text(key);
+                        let resp = tab_button(ui, self.tab == tab, &label, self.theme);
+                        if self.tab == tab {
+                            active_tab_rect = Some(resp.rect);
+                        }
+                        if resp.clicked() {
+                            self.tab = tab;
+                        }
+                    }
+                });
+                let bottom_rect = ui.available_rect_before_wrap();
+                ui.painter().line_segment(
+                    [
+                        egui::pos2(bottom_rect.left() - 8.0, bottom_rect.top()),
+                        egui::pos2(bottom_rect.right() + 8.0, bottom_rect.top()),
+                    ],
+                    egui::Stroke::new(1.0_f32, palette.tab_active_border),
+                );
+                if let Some(active_rect) = active_tab_rect {
+                    // Seamlessly merge active Bootstrap tab into content pane
+                    ui.painter().line_segment(
+                        [
+                            egui::pos2(active_rect.left() + 1.0, bottom_rect.top()),
+                            egui::pos2(active_rect.right() - 1.0, bottom_rect.top()),
+                        ],
+                        egui::Stroke::new(2.0_f32, palette.tab_active_bg),
+                    );
+                }
+            });
+        egui::TopBottomPanel::bottom("status")
+            .frame(
+                egui::Frame::none()
+                    .fill(palette.titlebar_bg)
+                    .stroke(egui::Stroke::new(1.0_f32, palette.tab_active_border))
+                    .inner_margin(egui::Margin::symmetric(8.0, 2.0)),
+            )
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.small(&self.status);
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        ui.small(
+                            egui::RichText::new(format!(
+                                "{} observed · {} retained",
+                                self.total,
+                                self.logs.len()
+                            ))
+                            .color(palette.text_muted),
+                        );
+                    });
+                });
+            });
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::none()
+                    .fill(palette.content_bg)
+                    .inner_margin(egui::Margin::symmetric(12.0, 10.0)),
+            )
+            .show(ctx, |ui| {
+                if self.developer_mode_confirmation {
+                    ui.disable();
+                }
+                match self.tab {
+                    Tab::Connection => {
+                        egui::ScrollArea::vertical()
+                            .id_salt("connection_panel")
+                            .show(ui, |ui| self.connection(ui));
+                    }
+                    Tab::Logger if self.logger_window.open => {
+                        ui.centered_and_justified(|ui| {
+                            ui.label(self.i18n.text("rust.logger.panel_open"));
+                        });
+                    }
+                    Tab::Logger => self.logger(ui),
+                    Tab::Injection => {
+                        egui::ScrollArea::vertical()
+                            .id_salt("injection_panel")
+                            .show(ui, |ui| self.injection(ui));
+                    }
+                    Tab::Scheduler => {
+                        egui::ScrollArea::vertical()
+                            .id_salt("scheduler_panel")
+                            .show(ui, |ui| self.schedule(ui));
+                    }
+                    Tab::Tools => {
+                        egui::ScrollArea::vertical()
+                            .id_salt("tools_panel")
+                            .show(ui, |ui| self.tools(ui));
+                    }
+                    Tab::Extensions => self.extensions(ui),
+                    Tab::Extra => {
+                        egui::ScrollArea::vertical()
+                            .id_salt("extra_panel")
+                            .show(ui, |ui| self.extra(ui));
+                    }
+                    Tab::Info => {
+                        egui::ScrollArea::vertical()
+                            .id_salt("info_panel")
+                            .show(ui, |ui| {
+                                // Exact Info.fxml 2-column layout: large theme logo left, version/credits/links right
+                                let logo_tex =
+                                    self.logos.as_ref().and_then(|l| l.large(self.theme)).cloned();
+                                ui.horizontal_top(|ui| {
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(204.0, 224.0),
+                                egui::Layout::centered_and_justified(egui::Direction::TopDown),
+                                |ui| {
+                                    if let Some(tex) = &logo_tex {
+                                        ui.add(egui::Image::new((
+                                            tex.id(),
+                                            egui::vec2(192.0, 192.0),
+                                        )));
+                                    }
+                                },
+                            );
+                            ui.add_space(12.0);
+                            ui.vertical(|ui| {
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        egui::RichText::new(format!(
+                                            "{} 1.5.4-beta-29",
+                                            self.theme.title()
+                                        ))
+                                        .size(18.0)
+                                        .strong(),
+                                    );
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            if ui
+                                                .button(self.i18n.text("tab.info.donate"))
+                                                .clicked()
+                                            {
+                                                self.donate_dialog_open = true;
+                                            }
+                                            let checking = self.update_task.is_some();
+                                            if ui
+                                                .add_enabled(
+                                                    !checking,
+                                                    egui::Button::new(
+                                                        self.i18n.text("rust.info.check_updates"),
+                                                    ),
+                                                )
+                                                .clicked()
+                                            {
+                                                let (send, receive) = std::sync::mpsc::channel();
+                                                self.update_task = Some(receive);
+                                                self.update_result = None;
+                                                std::thread::spawn(move || {
+                                                    let _ = send.send(
+                                                        gearth_rust::update_checker::check_github_updates(
+                                                            gearth_rust::update_checker::DEFAULT_REPOSITORY,
+                                                            env!("CARGO_PKG_VERSION"),
+                                                        ),
+                                                    );
+                                                });
+                                            }
+                                        },
+                                    );
+                                });
+                                ui.add_space(2.0);
+                                ui.label(
+                                    egui::RichText::new(self.i18n.text("tab.info.description"))
+                                        .color(palette.text_muted),
                                 );
-                                ui.hyperlink_to(
-                                    self.i18n.text("alert.outdated.content.update"),
-                                    &info.release_url,
-                                );
+                                if self.update_task.is_some() {
+                                    ui.small(self.i18n.text("rust.info.checking_updates"));
+                                } else if let Some(result) = &self.update_result {
+                                    match result {
+                                        Ok(info) if info.outdated => {
+                                            ui.horizontal_wrapped(|ui| {
+                                                ui.colored_label(
+                                                    egui::Color32::from_rgb(210, 120, 15),
+                                                    format!(
+                                                        "{} ({})",
+                                                        self.i18n.text("alert.outdated.title"),
+                                                        info.latest_version
+                                                    ),
+                                                );
+                                                ui.hyperlink_to(
+                                                    self.i18n
+                                                        .text("alert.outdated.content.update"),
+                                                    &info.release_url,
+                                                );
+                                            });
+                                        }
+                                        Ok(info) => {
+                                            ui.small(format!(
+                                                "{} ({})",
+                                                self.i18n.text("rust.info.up_to_date"),
+                                                info.latest_version
+                                            ));
+                                        }
+                                        Err(error) => {
+                                            ui.small(error);
+                                        }
+                                    }
+                                }
+                                ui.add_space(6.0);
+                                ui.horizontal(|ui| {
+                                    ui.strong(format!("{}:", self.i18n.text("tab.info.createdby")));
+                                    ui.label("sirjonasxx  ·  Rust port: 1desirable1337 / Tear1338");
+                                });
+                                ui.add_space(6.0);
+                                ui.horizontal_top(|ui| {
+                                    ui.vertical(|ui| {
+                                        ui.strong(format!(
+                                            "{}:",
+                                            self.i18n.text("tab.info.contributors")
+                                        ));
+                                        ui.horizontal_top(|ui| {
+                                            ui.vertical(|ui| {
+                                                for name in [
+                                                    "XePeleato",
+                                                    "Scott Stamp",
+                                                    "LittleJ",
+                                                    "ArachisH",
+                                                ] {
+                                                    ui.label(name);
+                                                }
+                                            });
+                                            ui.add_space(14.0);
+                                            ui.vertical(|ui| {
+                                                for name in [
+                                                    "BurakDev",
+                                                    "Mikee#0055",
+                                                    "WiredSpast",
+                                                    "Dorving",
+                                                ] {
+                                                    ui.label(name);
+                                                }
+                                            });
+                                        });
+                                    });
+                                    ui.add_space(28.0);
+                                    ui.vertical(|ui| {
+                                        ui.strong(format!("{}:", self.i18n.text("tab.info.links")));
+                                        ui.hyperlink_to("Darkbox", "https://darkbox.nl");
+                                        ui.hyperlink_to(
+                                            "Github - G-Earth",
+                                            "https://github.com/G-Realm/G-Earth",
+                                        );
+                                        ui.hyperlink_to(
+                                            "Github - G-Earth-Rust",
+                                            "https://github.com/Tear1338/G-Earth-Rust",
+                                        );
+                                        ui.hyperlink_to(
+                                            "Github - Tanji",
+                                            "https://github.com/ArachisH/Tanji",
+                                        );
+                                        ui.hyperlink_to(
+                                            "Discord - G-Earth",
+                                            "https://discord.gg/AVkcF8y",
+                                        );
+                                        ui.hyperlink_to(
+                                            "G-ExtensionStore",
+                                            "https://github.com/sirjonasxx/G-ExtensionStore",
+                                        );
+                                    });
+                                });
+                            });
+                        });
+                        });
+                    }
+                }
+            });
+        // Floating extension & info dialogs matching beta-29 separate windows
+        if self.ext_store_open {
+            let mut open = self.ext_store_open;
+            egui::Window::new(self.i18n.text("rust.store.title"))
+                .open(&mut open)
+                .resizable(true)
+                .default_size([720.0, 520.0])
+                .show(ctx, |ui| {
+                    egui::ScrollArea::vertical()
+                        .id_salt("store_window_scroll")
+                        .show(ui, |ui| {
+                            self.store.show(
+                                ui,
+                                self.extension_host.as_ref(),
+                                Path::new(&self.extension_runtime),
+                                &self.i18n,
+                                &mut self.status,
+                                &mut self.extension_processes,
+                            );
+                        });
+                });
+            self.ext_store_open = open;
+        }
+        if self.ext_gpython_open {
+            let mut open = self.ext_gpython_open;
+            egui::Window::new(
+                self.i18n
+                    .text("tab.extensions.button.pythonshell.windowtitle"),
+            )
+            .open(&mut open)
+            .resizable(true)
+            .default_size([560.0, 340.0])
+            .show(ctx, |ui| {
+                self.python_console.show(
+                    ui,
+                    self.extension_host.as_ref(),
+                    self.python_enabled,
+                    &self.i18n,
+                    &mut self.status,
+                );
+            });
+            self.ext_gpython_open = open;
+        }
+        if self.ext_console_open {
+            let mut open = self.ext_console_open;
+            egui::Window::new(self.i18n.text("tab.extensions.button.logs.windowtitle"))
+                .open(&mut open)
+                .resizable(true)
+                .default_size([600.0, 320.0])
+                .show(ctx, |ui| {
+                    egui::ScrollArea::vertical()
+                        .stick_to_bottom(true)
+                        .show(ui, |ui| {
+                            for line in &self.extension_console {
+                                ui.monospace(line);
                             }
-                            Ok(info) => {
-                                ui.label(format!(
-                                    "{} ({})",
-                                    self.i18n.text("rust.info.up_to_date"),
-                                    info.latest_version
-                                ));
-                            }
-                            Err(error) => {
-                                ui.label(error);
+                        });
+                });
+            self.ext_console_open = open;
+        }
+        if self.ext_install_open {
+            let mut open = self.ext_install_open;
+            egui::Window::new(self.i18n.text("tab.extensions.button.install.windowtitle"))
+                .open(&mut open)
+                .resizable(true)
+                .default_size([520.0, 160.0])
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(self.i18n.text("rust.extensions.runtime"));
+                        ui.text_edit_singleline(&mut self.extension_runtime);
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label(self.i18n.text("rust.extensions.file"));
+                        ui.text_edit_singleline(&mut self.extension_path);
+                        browse_path(
+                            ui,
+                            &mut self.extension_path,
+                            gearth_platform::FileKind::Extension,
+                            false,
+                            &self.i18n,
+                            &mut self.status,
+                        );
+                    });
+                    if let Some(host) = &self.extension_host {
+                        if ui
+                            .button(self.i18n.text("rust.extensions.launch"))
+                            .clicked()
+                        {
+                            match host.launch(
+                                Path::new(&self.extension_runtime),
+                                Path::new(&self.extension_path),
+                            ) {
+                                Ok(child) => {
+                                    self.extension_processes.push(child);
+                                    self.status = self.i18n.text("rust.extensions.launched");
+                                }
+                                Err(e) => self.status = e.to_string(),
                             }
                         }
                     }
-                    ui.add_space(8.0);
-                    ui.label(
-                        "MIT licensed. Read docs/PARITY.md for implemented and missing functionality.",
-                    );
-                    ui.label(
-                        "Full-application performance has not been measured against the Java application.",
-                    );
-                }
-            }
-        });
+                });
+            self.ext_install_open = open;
+        }
+        if self.donate_dialog_open {
+            let mut open = self.donate_dialog_open;
+            egui::Window::new(self.i18n.text("tab.info.donate.alert.title"))
+                .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                .open(&mut open)
+                .collapsible(false)
+                .resizable(false)
+                .show(ctx, |ui| {
+                    ui.label(self.i18n.text("tab.info.donate.alert.content"));
+                    let mut btc = "1GEarthEV9Ua3RcixsKTcuc1PPZd9hqri3".to_owned();
+                    ui.horizontal(|ui| {
+                        ui.add(egui::TextEdit::singleline(&mut btc).desired_width(270.0));
+                        if ui.button("Copy").clicked() {
+                            ui.ctx().copy_text(btc);
+                        }
+                    });
+                });
+            self.donate_dialog_open = open;
+        }
         if self.logger_window.open {
             let mut open = true;
             let title = self.i18n.text("rust.logger.title");
@@ -4970,103 +5885,299 @@ impl Desktop {
         })
     }
     fn extensions(&mut self, ui: &mut egui::Ui) {
-        self.python_console.show(
-            ui,
-            self.extension_host.as_ref(),
-            self.python_enabled,
-            &self.i18n,
-            &mut self.status,
-        );
-        self.store.show(
-            ui,
-            self.extension_host.as_ref(),
-            Path::new(&self.extension_runtime),
-            &self.i18n,
-            &mut self.status,
-            &mut self.extension_processes,
-        );
-        ui.heading(self.i18n.text("tab.extensions"));
-        let Some(host) = &self.extension_host else {
-            ui.label(self.i18n.text("rust.extensions.server_unavailable"));
-            return;
-        };
-        ui.label(format!(
-            "{}: {}",
-            self.i18n.text("rust.extensions.server"),
-            host.address
-        ));
-        ui.horizontal(|ui| {
-            ui.label(self.i18n.text("rust.extensions.runtime"));
-            ui.text_edit_singleline(&mut self.extension_runtime);
-        });
-        ui.horizontal(|ui| {
-            ui.label(self.i18n.text("rust.extensions.file"));
-            ui.text_edit_singleline(&mut self.extension_path);
-            browse_path(
-                ui,
-                &mut self.extension_path,
-                gearth_platform::FileKind::Extension,
-                false,
-                &self.i18n,
-                &mut self.status,
+        let palette = self.theme.palette();
+        let avail_w = ui.available_width().max(580.0);
+        let table_h = (ui.available_height() - 48.0).clamp(160.0, 340.0);
+
+        // Exact Extensions.fxml 5-column table: Title (22%) | Description (34%) | Author (18%) | Version (13%) | Edit (13%)
+        group_box(ui, self.theme, egui::Margin::same(0.0), |ui| {
+            ui.set_width(avail_w - 2.0);
+            let inner_w = (avail_w - 18.0).max(540.0);
+            let col_title = (inner_w * 0.22).floor();
+            let col_desc = (inner_w * 0.34).floor();
+            let col_author = (inner_w * 0.17).floor();
+            let col_ver = (inner_w * 0.12).floor();
+            let col_edit = (inner_w - col_title - col_desc - col_author - col_ver).max(80.0);
+
+            egui::Frame::none()
+                .fill(palette.table_header_bg)
+                .inner_margin(egui::Margin::symmetric(6.0, 5.0))
+                .show(ui, |ui| {
+                    ui.horizontal(|ui| {
+                        for (w, key) in [
+                            (col_title, "tab.extensions.table.title"),
+                            (col_desc, "tab.extensions.table.description"),
+                            (col_author, "tab.extensions.table.author"),
+                            (col_ver, "tab.extensions.table.version"),
+                            (col_edit, "tab.extensions.table.edit"),
+                        ] {
+                            ui.allocate_ui_with_layout(
+                                egui::vec2(w, 18.0),
+                                egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
+                                |ui| {
+                                    ui.label(
+                                        egui::RichText::new(self.i18n.text(key))
+                                            .color(palette.table_header_text)
+                                            .strong(),
+                                    );
+                                },
+                            );
+                        }
+                    });
+                });
+            let sep = ui.available_rect_before_wrap();
+            ui.painter().line_segment(
+                [
+                    egui::pos2(sep.left(), sep.top()),
+                    egui::pos2(sep.right(), sep.top()),
+                ],
+                egui::Stroke::new(1.0_f32, palette.group_border),
             );
+            egui::ScrollArea::vertical()
+                .id_salt("extensions_table_scroll")
+                .max_height(table_h)
+                .show(ui, |ui| {
+                    ui.set_min_height(table_h);
+                    // Built-in internal extensions (matching original G-Earth beta-29)
+                    let mut open_logger = false;
+                    let mut open_store = false;
+                    for (idx, (title, desc, author, ver, action)) in [
+                        (
+                            "Packet Logger",
+                            "Internal packet logger",
+                            "sirjonasxx",
+                            "1.5.4",
+                            0u8,
+                        ),
+                        (
+                            "G-ExtensionStore",
+                            "Install and manage extensions",
+                            "sirjonasxx",
+                            "1.5.4",
+                            1u8,
+                        ),
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    {
+                        let bg = if idx % 2 == 1 {
+                            palette.table_row_alt_bg
+                        } else {
+                            palette.content_bg
+                        };
+                        egui::Frame::none()
+                            .fill(bg)
+                            .inner_margin(egui::Margin::symmetric(6.0, 4.0))
+                            .show(ui, |ui| {
+                                ui.horizontal(|ui| {
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(col_title, 20.0),
+                                        egui::Layout::left_to_right(egui::Align::Center),
+                                        |ui| {
+                                            ui.add(egui::Label::new(title).truncate());
+                                        },
+                                    );
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(col_desc, 20.0),
+                                        egui::Layout::left_to_right(egui::Align::Center),
+                                        |ui| {
+                                            ui.add(egui::Label::new(desc).truncate());
+                                        },
+                                    );
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(col_author, 20.0),
+                                        egui::Layout::centered_and_justified(
+                                            egui::Direction::LeftToRight,
+                                        ),
+                                        |ui| {
+                                            ui.label(author);
+                                        },
+                                    );
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(col_ver, 20.0),
+                                        egui::Layout::centered_and_justified(
+                                            egui::Direction::LeftToRight,
+                                        ),
+                                        |ui| {
+                                            ui.label(ver);
+                                        },
+                                    );
+                                    ui.allocate_ui_with_layout(
+                                        egui::vec2(col_edit, 20.0),
+                                        egui::Layout::centered_and_justified(
+                                            egui::Direction::LeftToRight,
+                                        ),
+                                        |ui| {
+                                            if ui
+                                                .small_button(
+                                                    self.i18n.text("rust.extensions.open"),
+                                                )
+                                                .clicked()
+                                            {
+                                                if action == 0 {
+                                                    open_logger = true;
+                                                } else {
+                                                    open_store = true;
+                                                }
+                                            }
+                                        },
+                                    );
+                                });
+                            });
+                    }
+                    if open_logger {
+                        self.logger_window.open = true;
+                    }
+                    if open_store {
+                        self.ext_store_open = true;
+                    }
+
+                    if let Some(host) = &self.extension_host {
+                        for (idx, extension) in host.extensions().into_iter().enumerate() {
+                            let bg = if idx % 2 == 1 {
+                                palette.table_row_alt_bg
+                            } else {
+                                palette.content_bg
+                            };
+                            egui::Frame::none()
+                                .fill(bg)
+                                .inner_margin(egui::Margin::symmetric(6.0, 4.0))
+                                .show(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        ui.allocate_ui_with_layout(
+                                            egui::vec2(col_title, 20.0),
+                                            egui::Layout::left_to_right(egui::Align::Center),
+                                            |ui| {
+                                                ui.add(
+                                                    egui::Label::new(&extension.info.title)
+                                                        .truncate(),
+                                                );
+                                            },
+                                        );
+                                        ui.allocate_ui_with_layout(
+                                            egui::vec2(col_desc, 20.0),
+                                            egui::Layout::left_to_right(egui::Align::Center),
+                                            |ui| {
+                                                ui.add(
+                                                    egui::Label::new(&extension.info.description)
+                                                        .truncate(),
+                                                );
+                                            },
+                                        );
+                                        ui.allocate_ui_with_layout(
+                                            egui::vec2(col_author, 20.0),
+                                            egui::Layout::centered_and_justified(
+                                                egui::Direction::LeftToRight,
+                                            ),
+                                            |ui| {
+                                                ui.label(&extension.info.author);
+                                            },
+                                        );
+                                        ui.allocate_ui_with_layout(
+                                            egui::vec2(col_ver, 20.0),
+                                            egui::Layout::centered_and_justified(
+                                                egui::Direction::LeftToRight,
+                                            ),
+                                            |ui| {
+                                                ui.label(&extension.info.version);
+                                            },
+                                        );
+                                        ui.allocate_ui_with_layout(
+                                            egui::vec2(col_edit, 20.0),
+                                            egui::Layout::left_to_right(egui::Align::Center),
+                                            |ui| {
+                                                if !extension.approved
+                                                    && ui
+                                                        .small_button(
+                                                            self.i18n.text("rust.extensions.allow"),
+                                                        )
+                                                        .clicked()
+                                                {
+                                                    if let Err(e) = host.approve(extension.id) {
+                                                        self.status = e.to_string();
+                                                    }
+                                                }
+                                                if extension.approved
+                                                    && extension.info.on_click
+                                                    && ui
+                                                        .small_button(
+                                                            self.i18n.text("rust.extensions.open"),
+                                                        )
+                                                        .clicked()
+                                                {
+                                                    if let Err(e) = host.click(extension.id) {
+                                                        self.status = e.to_string();
+                                                    }
+                                                }
+                                                if ui
+                                                    .small_button("✕")
+                                                    .on_hover_text(self.i18n.text(
+                                                        "tab.extensions.table.edit.delete.tooltip",
+                                                    ))
+                                                    .clicked()
+                                                {
+                                                    if let Err(e) = host.disconnect(extension.id) {
+                                                        self.status = e.to_string();
+                                                    }
+                                                }
+                                            },
+                                        );
+                                    });
+                                });
+                        }
+                    } else {
+                        ui.add_space(8.0);
+                        ui.label(self.i18n.text("rust.extensions.server_unavailable"));
+                    }
+                });
         });
-        if ui
-            .button(self.i18n.text("rust.extensions.launch"))
-            .clicked()
-        {
-            match host.launch(
-                Path::new(&self.extension_runtime),
-                Path::new(&self.extension_path),
-            ) {
-                Ok(child) => {
-                    self.extension_processes.push(child);
-                    self.status = self.i18n.text("rust.extensions.launched");
-                }
-                Err(e) => self.status = e.to_string(),
-            }
-        }
-        ui.separator();
-        for extension in host.extensions() {
-            ui.horizontal(|ui| {
-                ui.label(format!(
-                    "{} {} · {}",
-                    extension.info.title, extension.info.version, extension.info.author
-                ));
-                if !extension.approved
-                    && ui.button(self.i18n.text("rust.extensions.allow")).clicked()
-                {
-                    if let Err(e) = host.approve(extension.id) {
-                        self.status = e.to_string();
-                    }
-                }
-                if extension.approved
-                    && extension.info.on_click
-                    && ui.button(self.i18n.text("rust.extensions.open")).clicked()
-                {
-                    if let Err(e) = host.click(extension.id) {
-                        self.status = e.to_string();
-                    }
-                }
+
+        ui.add_space(6.0);
+
+        // Exact Extensions.fxml bottom bar: Port: [9092] ... [G-Python Shell] [View logs] [Install]
+        ui.horizontal(|ui| {
+            ui.label(format!("{}:", self.i18n.text("tab.extensions.port")));
+            let mut port_text = self
+                .extension_host
+                .as_ref()
+                .map(|host| host.address.port().to_string())
+                .unwrap_or_else(|| "-".into());
+            ui.add_enabled(
+                false,
+                egui::TextEdit::singleline(&mut port_text).desired_width(72.0),
+            );
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if ui
-                    .button(self.i18n.text("rust.extensions.disconnect"))
+                    .add_enabled(
+                        self.extension_host.is_some(),
+                        egui::Button::new(self.i18n.text("tab.extensions.button.install"))
+                            .min_size(egui::vec2(105.0, 26.0)),
+                    )
                     .clicked()
                 {
-                    if let Err(e) = host.disconnect(extension.id) {
-                        self.status = e.to_string();
-                    }
+                    self.ext_install_open = true;
+                }
+                if ui
+                    .add(
+                        egui::Button::new(self.i18n.text("tab.extensions.button.logs"))
+                            .min_size(egui::vec2(105.0, 26.0)),
+                    )
+                    .clicked()
+                {
+                    self.ext_console_open = true;
+                }
+                if ui
+                    .add_enabled(
+                        self.python_enabled,
+                        egui::Button::new(self.i18n.text("tab.extensions.button.pythonshell"))
+                            .min_size(egui::vec2(115.0, 26.0)),
+                    )
+                    .clicked()
+                {
+                    self.ext_gpython_open = true;
                 }
             });
-        }
-        ui.separator();
-        ui.label(self.i18n.text("rust.extensions.console"));
-        egui::ScrollArea::vertical()
-            .stick_to_bottom(true)
-            .show(ui, |ui| {
-                for line in &self.extension_console {
-                    ui.monospace(line);
-                }
-            });
+        });
     }
 }
 impl Drop for Desktop {

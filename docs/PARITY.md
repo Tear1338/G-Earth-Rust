@@ -1,5 +1,9 @@
 # Compatibility with 1.5.4-beta-29
 
+## Faithful G-Earth 1.5.4-beta-29 Desktop UI Replica
+
+- Replicated the original beta-29 Bootstrap/JavaFX `styling.css` palettes (`G-Earth`, `G-Earth Dark`, `Tanji`), `#888888` 5px group boxes, seamless Bootstrap tab strip, embedded official MIT theme logos (`resources/themes/`), compact `680×385` window proportions, and FXML layouts across `Connection`, `Injection`, `Tools`, `Scheduler`, `Extensions`, `Extra`, `Info`, and `Logger` (`Window | View | Packets` menu bar + `Ctrl+I`/`O`/`L`/`E` shortcuts + bottom state strip) in `src/theme_ui.rs` and `src/desktop.rs`.
+
 ## Harble parity, macOS Flash resigner, Extra/Info UI parity & side-by-side Java benchmarks
 
 - Added full `HarblePacketInfoProvider` JSON parsing (`Hash`, `Structure`, string `Id`, optional `Name`, `Composer$` stripping) and Java 21-recorded differential tests for `Base64Encoding`, `VL64Encoding`, and `Hexdump` (`1168eae`).

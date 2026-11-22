@@ -1,5 +1,10 @@
 # G-Earth Rust migration progress
 
+## Faithful G-Earth 1.5.4-beta-29 Desktop UI Replica
+
+- **Original Bootstrap/JavaFX themes & embedded official logos (`src/theme_ui.rs`, `resources/themes/`)**: Replicated the exact beta-29 `styling.css` palettes for **G-Earth** (`#f4f4f4`/`#ffffff`/`#337ab7`/`#888888`), **G-Earth Dark** (`#222222`/`#333333`/`#363636`/`#5d83b4`), and **Tanji** (`#ffa500`/`#b77714`/`#e9b365`) with 5px rounded `#888888` group frames, seamless top-rounded Bootstrap tabs, and embedded official MIT theme logos (`gearth_logo.png`, `gearth_small.png`, `tanji_logo.png`, `tanji_small.png`) decoded via `eframe::icon_data::from_png_bytes` with zero new crate dependencies.
+- **Tab-for-tab FXML layout parity (`src/desktop.rs`)**: Rebuilt the compact `680×385` main window (resizable) and all 7+1 tabs (`Connection`, `Injection`, `Tools`, `Scheduler`, `Extensions`, `Extra`, `Info`, `Logger`) to match beta-29 FXML geometry: Connection 2×2 client/port/host/state cards, Injection 2-column editor + 182px History list with live `isCorrupted` / `header (id, length)` indicators, Tools Encoding/Decoding + side-by-side `Packet <-> Expression`, Scheduler 5-column table + `500+0` interval bar + `Clear`/`S`/`L`, Extensions 5-column table (including built-in `Packet Logger` and `G-ExtensionStore` rows) + floating Store/G-Python/Logs/Install windows, Extra 2-column Notepad + right-side options & `#888888` Advanced box, Info 2-column 192×192 theme logo + BTC Donate dialog + credits/links, and Logger `Window | View | Packets` menu bar + `Ctrl+I`/`O`/`L`/`E` shortcuts + bottom state strip.
+
 ## Harble JSON parity, macOS Flash client preparation, Extra/Info UI parity & side-by-side Java-vs-Rust benchmarks
 
 - **105-unit `rust-anything` audit & Harble JSON parity (`1168eae`)**: Audited all 343 Java beta-29 source files (23,559 lines, 105 units), added full `HarblePacketInfoProvider` JSON schema parsing (`Hash`, `Structure`, string `Id`, optional `Name`, `Composer$` stripping) in `src/packet_info.rs`, and added permanent Java 21-recorded differential tests for `Base64Encoding`, `VL64Encoding`, and `Hexdump`.
