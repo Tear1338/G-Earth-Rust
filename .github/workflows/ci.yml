@@ -80,6 +80,16 @@ jobs:
           Copy-Item -LiteralPath README.md,LICENSE,LICENSE-APACHE-MAVEN,NOTICE-APACHE-MAVEN -Destination package
           Copy-Item -LiteralPath resources/UNICODE-LICENSE.md -Destination package/UNICODE-LICENSE.md
           Copy-Item -LiteralPath docs -Destination package/docs -Recurse
+          $iscc = Get-Command iscc -ErrorAction SilentlyContinue
+          if (-not $iscc -and (Test-Path "C:\Program Files (x86)\Inno Setup 6\ISCC.exe")) {
+            $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          }
+          if ($iscc) {
+            & $iscc /DAppVersion=0.1.0 /DBinPath="$((Resolve-Path target/release/gearth-desktop.exe).Path)" packaging/windows/gearth-rust.iss
+            if ($LASTEXITCODE -eq 0 -and (Test-Path dist/G-Earth-Rust-Setup-0.1.0-x64.exe)) {
+              Copy-Item -LiteralPath dist/G-Earth-Rust-Setup-0.1.0-x64.exe -Destination package/G-Earth-Rust-Setup-x64.exe
+            }
+          }
       - uses: actions/upload-artifact@v4
         with:
           name: G-Earth-Rust-Windows-development
@@ -104,6 +114,9 @@ jobs:
         run: |
           mkdir -p package
           cp target/release/gearth-desktop package/gearth-desktop
+          bash packaging/macos/make_app_bundle.sh target/release/gearth-desktop resources/g_earth_icon.png package
+          (cd package && zip -qr G-Earth-Rust-macOS-app.zip "G-Earth Rust.app")
+          rm -rf "package/G-Earth Rust.app"
           cp README.md LICENSE LICENSE-APACHE-MAVEN NOTICE-APACHE-MAVEN package/
           cp resources/UNICODE-LICENSE.md package/UNICODE-LICENSE.md
           cp -r docs package/docs
@@ -128,9 +141,13 @@ jobs:
         run: |
           mkdir -p package
           cp target/release/gearth-desktop package/gearth-desktop
+          cp resources/g_earth_icon.png package/g_earth_icon.png
+          cp packaging/linux/gearth-rust.desktop packaging/linux/install.sh package/
+          chmod +x package/install.sh
           cp README.md LICENSE LICENSE-APACHE-MAVEN NOTICE-APACHE-MAVEN package/
           cp resources/UNICODE-LICENSE.md package/UNICODE-LICENSE.md
           cp -r docs package/docs
+          tar -czf package/G-Earth-Rust-Linux.tar.gz -C package gearth-desktop g_earth_icon.png gearth-rust.desktop install.sh README.md LICENSE LICENSE-APACHE-MAVEN NOTICE-APACHE-MAVEN UNICODE-LICENSE.md docs
       - uses: actions/upload-artifact@v4
         with:
           name: G-Earth-Rust-Linux-development
@@ -356,14 +373,21 @@ jobs:
           cd ../..
           cp artifacts/G-Earth-Rust-Windows-development/gearth-desktop.exe G-Earth-Rust-Windows.exe
           cp artifacts/G-Earth-Rust-Linux-development/gearth-desktop G-Earth-Rust-Linux
+          cp artifacts/G-Earth-Rust-Linux-development/G-Earth-Rust-Linux.tar.gz G-Earth-Rust-Linux.tar.gz
           cp artifacts/G-Earth-Rust-macOS-development/gearth-desktop G-Earth-Rust-macOS
+          cp artifacts/G-Earth-Rust-macOS-development/G-Earth-Rust-macOS-app.zip G-Earth-Rust-macOS-app.zip
           cp artifacts/G-Earth-Rust-Windows-development/UNICODE-LICENSE.md UNICODE-LICENSE.md
           cp artifacts/gearth-cli-windows-latest/gearth-rust.exe G-Earth-Rust-CLI-Windows.exe
           cp artifacts/gearth-cli-ubuntu-latest/gearth-rust gearth-cli-linux
           cp artifacts/packet-microbenchmark/*-benchmark.csv .
-          sha256sum G-Earth-Rust-Windows.exe G-Earth-Rust-Linux G-Earth-Rust-macOS G-Earth-Rust-CLI-Windows.exe gearth-cli-linux formatted-source-and-lockfile.zip UNICODE-LICENSE.md > SHA256SUMS.txt
-          printf '%s\n' 'Development build of the Rust port (Windows, Linux, macOS). Read docs/PARITY.md before use. Live official-client sessions, Chrome TLS fingerprint emulation, and final release signing remain outstanding.' > release-notes.txt
-          gh release create "$BUILD_TAG" --target "$BUILD_COMMIT" --title "Rust development build $BUILD_TAG" --prerelease --notes-file release-notes.txt G-Earth-Rust-Windows.exe G-Earth-Rust-Linux G-Earth-Rust-macOS G-Earth-Rust-CLI-Windows.exe gearth-cli-linux formatted-source-and-lockfile.zip UNICODE-LICENSE.md SHA256SUMS.txt java-benchmark.csv rust-benchmark.csv
+          assets=(G-Earth-Rust-Windows.exe G-Earth-Rust-Linux G-Earth-Rust-Linux.tar.gz G-Earth-Rust-macOS G-Earth-Rust-macOS-app.zip G-Earth-Rust-CLI-Windows.exe gearth-cli-linux formatted-source-and-lockfile.zip UNICODE-LICENSE.md)
+          if [ -f artifacts/G-Earth-Rust-Windows-development/G-Earth-Rust-Setup-x64.exe ]; then
+            cp artifacts/G-Earth-Rust-Windows-development/G-Earth-Rust-Setup-x64.exe G-Earth-Rust-Setup-x64.exe
+            assets=(G-Earth-Rust-Setup-x64.exe "${assets[@]}")
+          fi
+          sha256sum "${assets[@]}" > SHA256SUMS.txt
+          printf '%s\n' 'Development build of the Rust port (Windows EXE/installer, Linux binary/tarball, macOS binary/.app bundle). Read docs/PARITY.md before use. Live official-client sessions, Chrome TLS fingerprint emulation, and code signing remain outstanding.' > release-notes.txt
+          gh release create "$BUILD_TAG" --target "$BUILD_COMMIT" --title "Rust development build $BUILD_TAG" --prerelease --notes-file release-notes.txt "${assets[@]}" SHA256SUMS.txt java-benchmark.csv rust-benchmark.csv
 
   web:
     env:

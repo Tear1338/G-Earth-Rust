@@ -549,6 +549,25 @@ impl Settings {
                 self.booleans.insert("socks_enabled".into(), false);
             }
         }
+        if let Some(hotels) = value["hotelsCache"].as_array() {
+            let mut imported = Vec::new();
+            for entry in hotels.iter().take(256) {
+                let Some(text) = entry.as_str().map(str::trim) else {
+                    continue;
+                };
+                if !text.is_empty()
+                    && text.len() <= 256
+                    && !text.contains(['\r', '\n'])
+                    && !imported.iter().any(|existing| existing == text)
+                {
+                    imported.push(text.to_owned());
+                }
+            }
+            if !imported.is_empty() {
+                self.values
+                    .insert("custom_hotels".into(), imported.join("\n"));
+            }
+        }
         self.extra.insert("legacy_java_cache".into(), value);
         Ok(())
     }
@@ -558,6 +577,28 @@ impl Settings {
 mod tests {
     use super::{ScheduleTemplate, Settings};
     use crate::packet::Direction;
+
+    #[test]
+    fn java_hotels_cache_is_imported_deduplicated_and_sanitized() {
+        let mut settings = Settings::default();
+        settings
+            .import_java_cache(serde_json::json!({
+                "hotelsCache": [
+                    "game-custom.habbo.com:30000",
+                    " game-custom.habbo.com:30000 ",
+                    "",
+                    42,
+                    "bad\nentry",
+                    "game-alt.example:40001"
+                ]
+            }))
+            .unwrap();
+        let restored = Settings::from_json(settings.to_json()).unwrap();
+        assert_eq!(
+            restored.get("custom_hotels"),
+            "game-custom.habbo.com:30000\ngame-alt.example:40001"
+        );
+    }
 
     #[test]
     fn java_python_console_preference_is_preserved() {

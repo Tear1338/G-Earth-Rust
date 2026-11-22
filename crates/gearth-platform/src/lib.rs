@@ -8,12 +8,14 @@ mod linux;
 #[cfg(any(target_os = "macos", test))]
 mod macos;
 mod process_tree;
+mod tray;
 #[cfg(any(target_os = "macos", target_os = "linux", test))]
 mod unix_web_settings;
 pub use file_dialog::{choose_file, FileKind};
 pub use hotkeys::GlobalHotkeys;
 pub use ip_mapping::{system_ip_mapper, IpMapper};
 pub use process_tree::ProcessTree;
+pub use tray::{SystemTray, TrayEvent};
 #[derive(Clone, Debug)]
 pub struct ClientProcess {
     pub pid: u32,

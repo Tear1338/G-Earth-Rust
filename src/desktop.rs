@@ -360,6 +360,8 @@ struct Desktop {
     schedule_path: String,
     scheduler: Scheduler,
     scheduler_hotkeys: Option<gearth_platform::GlobalHotkeys>,
+    system_tray: Option<gearth_platform::SystemTray>,
+    tray_initialized: bool,
     block_header: u16,
     block_enabled: bool,
     block_direction: Direction,
@@ -1032,6 +1034,8 @@ impl Default for Desktop {
             schedule_path: "gearth.sched".into(),
             scheduler: Scheduler::default(),
             scheduler_hotkeys: None,
+            system_tray: None,
+            tray_initialized: false,
             block_header: 0,
             block_enabled: false,
             block_direction: Direction::ToServer,
@@ -2471,7 +2475,29 @@ impl Desktop {
                 &self.i18n,
                 &mut self.status,
             );
+            let mut chosen_export = None;
+            if ui
+                .button(self.i18n.text("ext.logger.menu.packets.exportall"))
+                .clicked()
+            {
+                match gearth_platform::choose_file(gearth_platform::FileKind::Text, true) {
+                    Ok(Some(selected)) => match selected.into_os_string().into_string() {
+                        Ok(path) => {
+                            self.export_path = path.clone();
+                            chosen_export = Some(path);
+                        }
+                        Err(_) => self.status = self.i18n.text("rust.dialog.invalid_path"),
+                    },
+                    Ok(None) => {}
+                    Err(error) => {
+                        self.status = format!("{}: {error}", self.i18n.text("rust.dialog.failed"));
+                    }
+                }
+            }
             if ui.button(self.i18n.text("rust.logger.export")).clicked() {
+                chosen_export = Some(self.export_path.clone());
+            }
+            if let Some(target_path) = chosen_export {
                 let visible = self.logs.iter().filter(|row| {
                     log_row_matches(
                         row,
@@ -2481,7 +2507,7 @@ impl Desktop {
                         display_incoming,
                     )
                 });
-                let result = logger_display::write_atomic(Path::new(&self.export_path), |file| {
+                let result = logger_display::write_atomic(Path::new(&target_path), |file| {
                     write_log_capture(
                         std::io::BufWriter::new(file),
                         visible,
@@ -2494,7 +2520,7 @@ impl Desktop {
                     )
                 });
                 self.status = match result {
-                    Ok(()) => format!("Capture saved to {}", self.export_path),
+                    Ok(()) => format!("Capture saved to {target_path}"),
                     Err(e) => e.to_string(),
                 };
             }
@@ -3968,6 +3994,29 @@ fn direction_selector(ui: &mut egui::Ui, direction: &mut Direction, i18n: &I18n)
 }
 impl eframe::App for Desktop {
     fn update(&mut self, ctx: &egui::Context, _: &mut eframe::Frame) {
+        if !self.tray_initialized {
+            self.tray_initialized = true;
+            let wake_ctx = ctx.clone();
+            if let Ok(tray) = gearth_platform::SystemTray::start("G-Earth Rust", move || {
+                wake_ctx.request_repaint()
+            }) {
+                self.system_tray = Some(tray);
+            }
+        }
+        if let Some(tray) = &self.system_tray {
+            while let Some(event) = tray.try_recv() {
+                match event {
+                    gearth_platform::TrayEvent::Show => {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Visible(true));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Minimized(false));
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Focus);
+                    }
+                    gearth_platform::TrayEvent::Quit => {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                }
+            }
+        }
         ctx.set_visuals(self.theme.visuals());
         self.poll();
         egui::TopBottomPanel::top("tabs").show(ctx, |ui| {

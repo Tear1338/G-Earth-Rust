@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=G-Earth Rust
+Comment=Habbo packet manipulator for Linux, Windows & macOS
+Exec=gearth-desktop
+Icon=gearth-rust
+Terminal=false
+Categories=Development;Network;Utility;
+StartupNotify=true

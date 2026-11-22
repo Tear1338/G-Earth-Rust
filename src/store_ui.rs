@@ -287,15 +287,26 @@ impl StoreUi {
                                         }
                                     });
                                     ui.label(&extension.description);
+                                    if !extension.stable {
+                                        ui.colored_label(
+                                            egui::Color32::from_rgb(200, 120, 0),
+                                            i18n.text("ext.store.extension.warning.unstable"),
+                                        );
+                                    }
                                     ui.label(format!(
-                                        "By {} · {}",
-                                        extension
-                                            .authors
-                                            .iter()
-                                            .map(|author| author.name.as_str())
-                                            .collect::<Vec<_>>()
-                                            .join(", "),
-                                        extension.compatibility.clients.join(", ")
+                                        "{} · {} · {} · {}",
+                                        i18n.text("ext.store.extension.madeby").replace(
+                                            "%s",
+                                            &extension
+                                                .authors
+                                                .iter()
+                                                .map(|author| author.name.as_str())
+                                                .collect::<Vec<_>>()
+                                                .join(", ")
+                                        ),
+                                        extension.compatibility.clients.join(", "),
+                                        extension.compatibility.systems.join(", "),
+                                        extension.categories.join(", ")
                                     ));
                                     ui.horizontal(|ui| {
                                         for (label, url) in [

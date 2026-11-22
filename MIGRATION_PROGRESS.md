@@ -1,5 +1,13 @@
 # G-Earth Rust migration progress
 
+## System tray, cross-OS global hotkeys, one-step export, full Java cache import & installers
+
+- **Windows System Tray (`crates/gearth-platform/src/tray.rs`)**: Added dedicated-thread Windows notification-area icon (`Shell_NotifyIconW`) with embedded G-Earth icon, click/double-click restore, and right-click context menu (`Show G-Earth Rust` / `Exit`), integrated with `src/desktop.rs`.
+- **Linux X11 & macOS global scheduler shortcuts (`crates/gearth-platform/src/hotkeys.rs`)**: Added runtime-`dlopen` X11 (`libX11.so.6` `XGrabKey` / `XUngrabKey`) and macOS (`ApplicationServices` `AXIsProcessTrusted` + `CGEventTapCreate` listen-only tap) `Ctrl+Shift+0–9` global shortcuts with explicit permission/session error reporting and cross-platform keycode tests.
+- **UI & Java cache polish**: Added one-step logger **"Export all"** button (`ext.logger.menu.packets.exportall` opening the save dialog and writing atomically immediately), imported beta-29 `hotelsCache` into `settings.values["custom_hotels"]` (completing import of all user-facing Java `Cacher` keys), and displayed extension store categories, compatible systems, and localized unstable warnings (`ext.store.extension.warning.unstable`).
+- **Multi-OS installer & bundle packaging (`packaging/`)**: Added Windows Inno Setup installer script (`packaging/windows/gearth-rust.iss`), macOS `.app` bundle builder (`packaging/macos/make_app_bundle.sh` + `Info.plist`), and Linux freedesktop `.desktop` + `install.sh` tarball packaging wired into GitHub Actions `publish-development`.
+- **Remaining gap**: Live official-client end-to-end validation (Flash AIR, Origins, Unity WebGL, Nitro, G-Presets, G-Python), Chrome TLS fingerprint emulation for Nitro, stateful OpenJDK `\b{g}` regex behavior, and code-signing certificates for final releases.
+
 ## Cross-platform proxy/CA/dialogs, Tanji theme, WEDGIE prediction, 9-language UI & Linux/macOS CI packaging
 
 - **macOS IPv4-mapped socket ownership (`0626118`)**: Fixed `crates/gearth-platform/src/macos.rs` to inspect `insi_vflag` (`INI_IPV4` / `INI_IPV6`) when reading XNU `in_sockinfo` unions on dual-stack `AF_INET6` sockets. All 9 CI jobs passed in run `44970664290`, including native macOS IPv4, IPv6, and IPv4-mapped loopback ownership fixtures.

@@ -1,5 +1,11 @@
 # Compatibility with 1.5.4-beta-29
 
+## System tray, cross-OS hotkeys, one-step export, full Java cache import & installers
+
+- Windows system tray (`Shell_NotifyIconW` with restore/exit menu), Linux X11 (`libX11.so.6`) and macOS (`CGEventTapCreate`) `Ctrl+Shift+0–9` global shortcuts, one-step logger export, `hotelsCache` Java cache import, and Extension Store categories/systems/unstable badges are implemented and cross-checked.
+- CI packages Windows portable EXE + Inno Setup installer (`G-Earth-Rust-Setup-x64.exe`), macOS `G-Earth Rust.app` ZIP bundle, and Linux `.desktop` + `install.sh` tarball.
+- Live official-client sessions, Chrome TLS fingerprint emulation, and production code signing remain open.
+
 ## Cross-platform parity, Tanji theme, WEDGIE prediction & 9-language i18n
 
 - Native macOS CI run `44970664290` passed IPv4, IPv6, and IPv4-mapped socket ownership fixtures after switching `macos.rs` to inspect `insi_vflag`.

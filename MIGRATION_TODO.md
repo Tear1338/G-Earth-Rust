@@ -1,5 +1,12 @@
 # Migration tasks
 
+## Latest: System tray, Linux/macOS global hotkeys, one-step export, full Cacher import & multi-OS installers
+
+- [x] Verify CI run `44972822532` (11/11 jobs green) and published `development-479` multi-OS release.
+- [x] Add Windows system tray (`tray.rs`), Linux X11 + macOS `CGEventTap` global `Ctrl+Shift+0–9` hotkeys (`hotkeys.rs`), one-step logger export, `hotelsCache` import, and rich Extension Store cards.
+- [x] Add Windows Inno Setup installer (`packaging/windows/gearth-rust.iss`), macOS `.app` bundle packager (`packaging/macos/`), and Linux `.desktop` / tarball installer (`packaging/linux/`) wired into CI.
+- [ ] Live official-client end-to-end testing (user-run: Flash AIR, Origins, Unity WebGL, Nitro, real G-Presets/G-Python game sessions), Chrome TLS fingerprint emulation if required by a hotel, and production code signing.
+
 ## Latest: Cross-platform parity, Tanji theme, WEDGIE prediction, 9-language i18n & Linux/macOS desktop CI
 
 - [x] Fix macOS IPv4-mapped socket ownership using `insi_vflag` and verify all 9 CI jobs green (run `44970664290`).
