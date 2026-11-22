@@ -222,8 +222,8 @@ fn main() -> eframe::Result<()> {
         eframe::NativeOptions {
             viewport: with_gearth_icon(
                 egui::ViewportBuilder::default()
-                    .with_inner_size([680.0, 385.0])
-                    .with_min_inner_size([650.0, 325.0]),
+                    .with_inner_size([700.0, 420.0])
+                    .with_min_inner_size([660.0, 360.0]),
             ),
             ..Default::default()
         },
@@ -3166,8 +3166,8 @@ impl Desktop {
             && self
                 .selected_log_index
                 .is_some_and(|sel| self.logs.iter().any(|row| row.message.index == sel));
-        let inspector_reserve = if has_selected { 148.0 } else { 0.0 };
-        let log_height = (ui.available_height() - 24.0 - inspector_reserve).max(96.0);
+        let inspector_reserve = if has_selected { 164.0 } else { 0.0 };
+        let log_height = (ui.available_height() - 28.0 - inspector_reserve).max(96.0);
         if self.logger_friendly {
             let palette = self.theme.palette();
             let dark = ui.visuals().dark_mode;
@@ -3979,7 +3979,7 @@ impl Desktop {
         let avail_w = ui.available_width().max(580.0);
         let history_w = 182.0;
         let left_w = (avail_w - history_w - 14.0).max(320.0);
-        let editor_h = (ui.available_height() - 102.0).clamp(148.0, 320.0);
+        let editor_h = (ui.available_height() - 114.0).clamp(110.0, 380.0);
 
         // Exact Injection.fxml 2-column layout: Left editor + Right 180px History list
         ui.horizontal_top(|ui| {
@@ -4390,7 +4390,7 @@ impl Desktop {
         let mut templates_changed = false;
         let palette = self.theme.palette();
         let avail_w = ui.available_width().max(580.0);
-        let table_h = (ui.available_height() - 108.0).clamp(132.0, 280.0);
+        let table_h = (ui.available_height() - 130.0).clamp(96.0, 380.0);
 
         // Exact Scheduler.fxml top table: Index (10%) | Packet (39%) | Interval (16%) | Destination (18%) | Edit (15%)
         let mut remove = None;
@@ -5058,7 +5058,7 @@ impl Desktop {
         let avail_w = ui.available_width().max(580.0);
         let left_w = (avail_w * 0.50).floor();
         let right_w = (avail_w - left_w - 14.0).max(250.0);
-        let notepad_h = (ui.available_height() - 62.0).clamp(175.0, 340.0);
+        let notepad_h = (ui.available_height() - 72.0).clamp(140.0, 380.0);
 
         // Exact Extra.fxml 2-column split:
         // Left: Notepad + bottom row (Always on top + Troubleshooting link)
@@ -6693,7 +6693,7 @@ impl Desktop {
     fn extensions(&mut self, ui: &mut egui::Ui) {
         let palette = self.theme.palette();
         let avail_w = ui.available_width().max(580.0);
-        let table_h = (ui.available_height() - 48.0).clamp(160.0, 340.0);
+        let table_h = (ui.available_height() - 78.0).clamp(110.0, 460.0);
 
         // Exact Extensions.fxml 5-column table: Title (22%) | Description (34%) | Author (18%) | Version (13%) | Edit (13%)
         group_box(ui, self.theme, egui::Margin::same(0.0), |ui| {
