@@ -396,6 +396,9 @@ struct Desktop {
     python_enabled: bool,
     developer_mode: bool,
     developer_mode_confirmation: bool,
+    advanced_options: bool,
+    disable_decryption: bool,
+    debug_stdout: bool,
     socks_proxy: String,
     socks_enabled: bool,
     socks_user: String,
@@ -1093,6 +1096,9 @@ impl Default for Desktop {
             python_enabled: true,
             developer_mode: false,
             developer_mode_confirmation: false,
+            advanced_options: false,
+            disable_decryption: false,
+            debug_stdout: false,
             socks_proxy: String::new(),
             socks_enabled: false,
             socks_user: String::new(),
@@ -1352,6 +1358,14 @@ impl Desktop {
                     }
                     Event::Packet(message) => {
                         self.total += 1;
+                        if self.debug_stdout {
+                            println!(
+                                "[{}] #{} {}",
+                                message.direction.name(),
+                                message.index,
+                                expression::to_lossless_expression(&message.packet)
+                            );
+                        }
                         if !self.paused {
                             if self.logger_filter.suppress(&message, Instant::now()) {
                                 self.logger_filtered = self.logger_filtered.saturating_add(1);
@@ -1756,7 +1770,7 @@ impl Desktop {
                 {
                     let port = if self.origins { 40001 } else { 30000 };
                     self.remote = format!("{}:{port}", self.attachment_host);
-                    self.flash_auto = !self.origins;
+                    self.flash_auto = !self.origins && !self.disable_decryption;
                     match self.relay_options() {
                         Ok(options) => {
                             let host = self.attachment_host.clone();
@@ -1775,6 +1789,25 @@ impl Desktop {
                     }
                 }
                 ui.label(self.i18n.text("rust.connection.attachment_hint"));
+                #[cfg(target_os = "macos")]
+                if !self.origins
+                    && ui
+                        .add_enabled(
+                            self.relay.is_none() && self.attachment_pending.is_none(),
+                            egui::Button::new(self.i18n.text("alert.macosflash.title")),
+                        )
+                        .on_hover_text(self.i18n.text("alert.macosflash.content"))
+                        .clicked()
+                {
+                    self.status = match gearth_platform::prepare_macos_flash_client() {
+                        Ok(backup) => format!(
+                            "{} (backup: {})",
+                            self.i18n.text("alert.macosflash.title"),
+                            backup.display()
+                        ),
+                        Err(e) => format!("{}: {e}", self.i18n.text("alert.macosflash.failed")),
+                    };
+                }
                 if ui
                     .add_enabled(
                         self.relay.is_none() && self.attachment_pending.is_none(),
@@ -3853,6 +3886,30 @@ impl Desktop {
                 }));
         }
         self.developer_mode_control(ui);
+        ui.hyperlink_to(
+            self.i18n.text("tab.extra.troubleshooting"),
+            "https://github.com/sirjonasxx/G-Earth/wiki/Troubleshooting",
+        );
+        ui.checkbox(
+            &mut self.advanced_options,
+            self.i18n.text("tab.extra.options.advanced"),
+        );
+        if self.advanced_options {
+            ui.indent("extra-advanced-options", |ui| {
+                ui.add_enabled(
+                    self.relay.is_none() && self.attachment_pending.is_none(),
+                    egui::Checkbox::new(
+                        &mut self.disable_decryption,
+                        self.i18n
+                            .text("tab.extra.options.advanced.disabledecryption"),
+                    ),
+                );
+                ui.checkbox(
+                    &mut self.debug_stdout,
+                    self.i18n.text("tab.extra.options.advanced.debugstdout"),
+                );
+            });
+        }
         ui.separator();
         ui.label(self.i18n.text("tab.extra.notepad"));
         ui.add(
@@ -4230,14 +4287,29 @@ impl eframe::App for Desktop {
                     ui.heading(format!("G-Earth Rust {}", env!("CARGO_PKG_VERSION")));
                     ui.label(self.i18n.text("tab.info.description"));
                     ui.label("Rust port based on G-Realm/G-Earth 1.5.4-beta-29.");
-                    ui.hyperlink_to(
-                        "Original project · sirjonasxx & contributors",
-                        "https://github.com/G-Realm/G-Earth",
-                    );
-                    ui.hyperlink_to(
-                        "Rust project · 1desirable1337",
-                        "https://github.com/Tear1338/G-Earth-Rust",
-                    );
+                    ui.label(format!(
+                        "{}: sirjonasxx & G-Realm · Rust port: 1desirable1337 / Tear1338",
+                        self.i18n.text("tab.info.createdby")
+                    ));
+                    ui.label(format!(
+                        "{}: G-Realm & Habbo scripting community",
+                        self.i18n.text("tab.info.contributors")
+                    ));
+                    ui.add_space(4.0);
+                    ui.label(format!("{}:", self.i18n.text("tab.info.links")));
+                    ui.horizontal_wrapped(|ui| {
+                        ui.hyperlink_to("G-Earth (Java)", "https://github.com/G-Realm/G-Earth");
+                        ui.hyperlink_to(
+                            "G-Earth Rust",
+                            "https://github.com/Tear1338/G-Earth-Rust",
+                        );
+                        ui.hyperlink_to(
+                            "G-ExtensionStore",
+                            "https://github.com/sirjonasxx/G-ExtensionStore",
+                        );
+                        ui.hyperlink_to("Tanji", "https://github.com/ArachisH/Tanji");
+                        ui.hyperlink_to("Darkbox", "https://darkbox.nl");
+                    });
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
                         let checking = self.update_task.is_some();
@@ -4594,6 +4666,21 @@ impl Desktop {
             .get("developer_mode")
             .copied()
             .unwrap_or(false);
+        self.disable_decryption = self
+            .settings
+            .booleans
+            .get("disable_decryption")
+            .copied()
+            .unwrap_or(false);
+        self.debug_stdout = self
+            .settings
+            .booleans
+            .get("debug_stdout")
+            .copied()
+            .unwrap_or(false);
+        if self.disable_decryption || self.debug_stdout {
+            self.advanced_options = true;
+        }
         self.developer_mode_confirmation = false;
         if let Ok(mut safety) = self.packet_safety.lock() {
             safety.set_developer_mode(self.developer_mode);
@@ -4741,6 +4828,8 @@ impl Desktop {
             ("logger_hashes".into(), self.logger_hashes),
             ("logger_message_id".into(), self.logger_message_id),
             ("developer_mode".into(), self.developer_mode),
+            ("disable_decryption".into(), self.disable_decryption),
+            ("debug_stdout".into(), self.debug_stdout),
             ("always_admin".into(), self.always_admin),
             ("python_enabled".into(), self.python_enabled),
             ("logger_extra_legacy".into(), self.logger_extra_legacy),
@@ -4852,7 +4941,7 @@ impl Desktop {
         Ok(RelayOptions {
             packet_safety: Some(self.packet_safety.clone()),
             admin_service: Some(self.admin_service.clone()),
-            flash_process: if self.flash_auto && !self.origins {
+            flash_process: if self.flash_auto && !self.origins && !self.disable_decryption {
                 if self.flash_pid != 0
                     && !gearth_platform::habbo_processes()?
                         .iter()

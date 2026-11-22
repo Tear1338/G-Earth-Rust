@@ -1,5 +1,13 @@
 # Migration tasks
 
+## Latest: Harble parity, macOS Flash resigner, Extra/Info parity & side-by-side Java benchmarks
+
+- [x] Audit all 105 beta-29 Java units with `rust-anything analyze`, add full Harble JSON schema parity (`src/packet_info.rs`), and lock in Java 21 differential tests for `Base64Encoding`, `VL64Encoding`, and `Hexdump` (`1168eae`).
+- [x] Port `MacOSFlashClientResigner` (`crates/gearth-platform/src/macos_flash_prep.rs`) with cross-platform unit tests and macOS desktop Connection UI integration.
+- [x] Add beta-29 Extra tab advanced controls (`disabledecryption`, `debugstdout`, troubleshooting link) and full localized Info tab links.
+- [x] Extend `tests/JavaBenchmark.java` with side-by-side `rc4_frame_rules` and `loopback_relay_e2e` workloads matching `tools/benchmark.rs`.
+- [ ] External / user-run boundary only: live official-client end-to-end sessions (Flash AIR, Origins, Unity WebGL, Nitro, real G-Presets/G-Python gameplay), optional Chrome TLS JA3/JA4 impersonation (BoringSSL) if a live hotel rejects `rustls`, OpenJDK internal stateful `\b{g}` quirk, and paid OS code-signing certificates.
+
 ## Latest: Opt-in update checker, custom hotels UI, scheduler auto-start & doc sync
 
 - [x] Verify CI run `44975988809` (11/11 jobs green) and published `development-480` multi-OS release (including `G-Earth-Rust-Setup-x64.exe`, `G-Earth-Rust-macOS-app.zip`, `G-Earth-Rust-Linux.tar.gz`).

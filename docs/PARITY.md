@@ -1,5 +1,11 @@
 # Compatibility with 1.5.4-beta-29
 
+## Harble parity, macOS Flash resigner, Extra/Info UI parity & side-by-side Java benchmarks
+
+- Added full `HarblePacketInfoProvider` JSON parsing (`Hash`, `Structure`, string `Id`, optional `Name`, `Composer$` stripping) and Java 21-recorded differential tests for `Base64Encoding`, `VL64Encoding`, and `Hexdump` (`1168eae`).
+- Ported `MacOSFlashClientResigner` (`crates/gearth-platform/src/macos_flash_prep.rs`) with `codesign` inspection, running-process guard, backup/rollback, and macOS desktop UI integration.
+- Added beta-29 Extra tab advanced options (`disabledecryption`, `debugstdout`, troubleshooting link), full localized Info tab links, and side-by-side Java 21 vs Rust `rc4_frame_rules` and `loopback_relay_e2e` benchmarks in `tests/JavaBenchmark.java`.
+
 ## Opt-in update checker, custom hotels UI, scheduler auto-start & multi-OS release verification
 
 - CI run `44975988809` passed 11/11 jobs and published `development-480` with Windows portable EXE + Inno Setup installer (`G-Earth-Rust-Setup-x64.exe`), macOS `.app` ZIP (`G-Earth-Rust-macOS-app.zip`), and Linux `.desktop` tarball (`G-Earth-Rust-Linux.tar.gz`).

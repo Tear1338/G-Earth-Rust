@@ -1,5 +1,12 @@
 # G-Earth Rust migration progress
 
+## Harble JSON parity, macOS Flash client preparation, Extra/Info UI parity & side-by-side Java-vs-Rust benchmarks
+
+- **105-unit `rust-anything` audit & Harble JSON parity (`1168eae`)**: Audited all 343 Java beta-29 source files (23,559 lines, 105 units), added full `HarblePacketInfoProvider` JSON schema parsing (`Hash`, `Structure`, string `Id`, optional `Name`, `Composer$` stripping) in `src/packet_info.rs`, and added permanent Java 21-recorded differential tests for `Base64Encoding`, `VL64Encoding`, and `Hexdump`.
+- **macOS Flash client preparation (`crates/gearth-platform/src/macos_flash_prep.rs`)**: Ported beta-29 `MacOSFlashClientResigner.java` / `MacOSFlashClientPreparation.java` (locating `Habbo.app`, `codesign` entitlement & Hardened Runtime inspection, running-process guard, atomic backup `Habbo.gearth-original.app` with rollback, ad-hoc re-signing with `com.apple.security.get-task-allow`) behind an injectable runner tested on all platforms and wired into the macOS Connection tab with localized `alert.macosflash.*` prompts.
+- **Extra & Info tab UI parity (`src/desktop.rs`)**: Added beta-29 `ExtraController` advanced options (`tab.extra.options.advanced`, `disabledecryption` disabling Flash RC4 decryption when disconnected, `debugstdout` printing captured packets to stdout), `tab.extra.troubleshooting` link, and full localized `InfoController` links (`tab.info.createdby`, `tab.info.contributors`, `tab.info.links`).
+- **Side-by-side Java 21 vs Rust benchmarks (`tests/JavaBenchmark.java`, `docs/PERFORMANCE.md`)**: Extended `JavaBenchmark.java` to execute all three workloads (`construct_packet`, `rc4_frame_rules`, and `loopback_relay_e2e`) identically to `tools/benchmark.rs` on the same CI runner.
+
 ## Opt-in update checker, custom hotel persistence, scheduler auto-start & documentation sync
 
 - **Opt-in GitHub update checker (`src/update_checker.rs`, `src/desktop.rs`)**: Ported beta-29 `UpdateChecker.java` logic using `maven_version::ComparableVersion`, bounded 256 KiB HTTPS JSON read, prerelease fallback, and strict GitHub URL validation. Exposed via an explicit **"Check for updates"** button in the Info tab using localized `alert.outdated.*` messages (never runs unsolicited network requests at startup).
