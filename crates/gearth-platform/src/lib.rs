@@ -154,6 +154,8 @@ pub struct SystemProxyGuard {
     inner: web_settings::ProxyGuard,
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     inner: unix_web_settings::ProxyGuard,
+    pac: bool,
+    target: String,
 }
 pub fn recover_system_proxy() -> io::Result<()> {
     #[cfg(windows)]
@@ -178,12 +180,16 @@ impl SystemProxyGuard {
         {
             Ok(Self {
                 inner: web_settings::ProxyGuard::activate(address)?,
+                pac: false,
+                target: address.to_string(),
             })
         }
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         {
             Ok(Self {
                 inner: unix_web_settings::ProxyGuard::activate(address)?,
+                pac: false,
+                target: address.to_string(),
             })
         }
         #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
@@ -194,6 +200,44 @@ impl SystemProxyGuard {
                 "automatic system proxy configuration is unavailable on this platform",
             ))
         }
+    }
+    pub fn activate_pac(
+        address: std::net::SocketAddr,
+        pac_url: &str,
+        label: impl Into<String>,
+    ) -> io::Result<Self> {
+        #[cfg(windows)]
+        {
+            let _ = address;
+            Ok(Self {
+                inner: web_settings::ProxyGuard::activate_pac(pac_url)?,
+                pac: true,
+                target: label.into(),
+            })
+        }
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
+        {
+            let _ = (pac_url, label);
+            Ok(Self {
+                inner: unix_web_settings::ProxyGuard::activate(address)?,
+                pac: false,
+                target: address.to_string(),
+            })
+        }
+        #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+        {
+            let _ = (address, pac_url, label);
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "automatic system proxy configuration is unavailable on this platform",
+            ))
+        }
+    }
+    pub fn is_pac(&self) -> bool {
+        self.pac
+    }
+    pub fn target(&self) -> &str {
+        &self.target
     }
     pub fn restore(&mut self) -> io::Result<()> {
         #[cfg(any(windows, target_os = "macos", target_os = "linux"))]

@@ -141,7 +141,7 @@ pub(crate) struct ProxyGuard {
     journal: PathBuf,
     lock: Option<File>,
     before: Vec<(&'static str, Option<Value>)>,
-    after: Vec<(&'static str, Value)>,
+    after: Vec<(&'static str, Option<Value>)>,
     active: bool,
     refresh: bool,
 }
@@ -187,7 +187,64 @@ impl ProxyGuard {
             true,
         )
     }
+    pub(crate) fn activate_pac(pac_url: &str) -> io::Result<Self> {
+        if !(pac_url.starts_with("http://127.0.0.1:") || pac_url.starts_with("http://[::1]:"))
+            || pac_url.len() > 512
+            || pac_url.bytes().any(|b| b < 0x20 || b == 0x7f)
+        {
+            return Err(io::Error::other(
+                "PAC URL must point to a local loopback HTTP endpoint",
+            ));
+        }
+        let directory = std::env::var_os("LOCALAPPDATA")
+            .or_else(|| std::env::var_os("APPDATA"))
+            .map(PathBuf::from)
+            .ok_or_else(|| io::Error::other("Windows application-data directory unavailable"))?
+            .join("G-Earth-Rust");
+        fs::create_dir_all(&directory)?;
+        Self::activate_pac_at(
+            SETTINGS,
+            &directory.join("system-proxy.lock"),
+            pac_url,
+            true,
+        )
+    }
     fn activate_at(path: &str, lock_path: &Path, server: &str, refresh: bool) -> io::Result<Self> {
+        let after = vec![
+            ("ProxyServer", Some(text(server))),
+            ("ProxyOverride", Some(text(BYPASS))),
+            (
+                "ProxyEnable",
+                Some(Value {
+                    kind: REG_DWORD,
+                    bytes: 1u32.to_le_bytes().to_vec(),
+                }),
+            ),
+            ("AutoConfigURL", None),
+        ];
+        Self::apply_values(path, lock_path, after, refresh)
+    }
+    fn activate_pac_at(
+        path: &str,
+        lock_path: &Path,
+        pac_url: &str,
+        refresh: bool,
+    ) -> io::Result<Self> {
+        let after = vec![
+            ("ProxyServer", None),
+            ("ProxyOverride", None),
+            (
+                "ProxyEnable",
+                Some(Value {
+                    kind: REG_DWORD,
+                    bytes: 0u32.to_le_bytes().to_vec(),
+                }),
+            ),
+            ("AutoConfigURL", Some(text(pac_url))),
+        ];
+        Self::apply_values(path, lock_path, after, refresh)
+    }
+    fn apply_values(path: &str, lock_path: &Path, after: After, refresh: bool) -> io::Result<Self> {
         let lock = OpenOptions::new()
             .create(true)
             .read(true)
@@ -203,21 +260,10 @@ impl ProxyGuard {
         let journal = lock_path.with_extension("state");
         Self::recover_at(path, &journal, refresh)?;
         let key = Key::open(path)?;
-        let before = ["ProxyServer", "ProxyOverride", "ProxyEnable"]
+        let before = VALUE_NAMES_V2
             .into_iter()
             .map(|name| key.read(name).map(|value| (name, value)))
             .collect::<io::Result<Vec<_>>>()?;
-        let after = vec![
-            ("ProxyServer", text(server)),
-            ("ProxyOverride", text(BYPASS)),
-            (
-                "ProxyEnable",
-                Value {
-                    kind: REG_DWORD,
-                    bytes: 1u32.to_le_bytes().to_vec(),
-                },
-            ),
-        ];
         write_journal(&journal, path, &before, &after)?;
         let guard = Self {
             path: path.into(),
@@ -229,12 +275,23 @@ impl ProxyGuard {
             refresh,
         };
         for (name, value) in &guard.after {
-            key.write(name, Some(value))?;
+            if value.is_some() || *name == "AutoConfigURL" {
+                key.write(name, value.as_ref())?;
+            }
         }
         if refresh {
             notify();
         }
         Ok(guard)
+    }
+    fn still_owned(key: &Key, after: &After) -> io::Result<bool> {
+        if let Some((_, Some(pac))) = after.iter().find(|(n, _)| *n == "AutoConfigURL") {
+            return Ok(key.read("AutoConfigURL")? == Some(pac.clone()));
+        }
+        if let Some((_, Some(server))) = after.iter().find(|(n, _)| *n == "ProxyServer") {
+            return Ok(key.read("ProxyServer")? == Some(server.clone()));
+        }
+        Ok(false)
     }
     fn recover_at(path: &str, journal: &Path, refresh: bool) -> io::Result<()> {
         let (before, after) = match read_journal(journal, path)? {
@@ -242,9 +299,9 @@ impl ProxyGuard {
             None => return Ok(()),
         };
         let key = Key::open(path)?;
-        if key.read("ProxyServer")? == Some(after[0].1.clone()) {
+        if Self::still_owned(&key, &after)? {
             for ((name, original), (_, owned)) in before.iter().zip(&after) {
-                if key.read(name)? == Some(owned.clone()) {
+                if (owned.is_some() || *name == "AutoConfigURL") && key.read(name)? == *owned {
                     key.write(name, original.as_ref())?;
                 }
             }
@@ -260,9 +317,9 @@ impl ProxyGuard {
         }
         let key = Key::open(&self.path)?;
         // Preserve a proxy that another application or the user installed afterwards.
-        if key.read("ProxyServer")? == Some(self.after[0].1.clone()) {
+        if Self::still_owned(&key, &self.after)? {
             for ((name, before), (_, owned)) in self.before.iter().zip(&self.after) {
-                if key.read(name)? == Some(owned.clone()) {
+                if (owned.is_some() || *name == "AutoConfigURL") && key.read(name)? == *owned {
                     key.write(name, before.as_ref())?;
                 }
             }
@@ -282,8 +339,14 @@ impl Drop for ProxyGuard {
     }
 }
 type Before = Vec<(&'static str, Option<Value>)>;
-type After = Vec<(&'static str, Value)>;
-const VALUE_NAMES: [&str; 3] = ["ProxyServer", "ProxyOverride", "ProxyEnable"];
+type After = Vec<(&'static str, Option<Value>)>;
+const VALUE_NAMES_V1: [&str; 3] = ["ProxyServer", "ProxyOverride", "ProxyEnable"];
+const VALUE_NAMES_V2: [&str; 4] = [
+    "ProxyServer",
+    "ProxyOverride",
+    "ProxyEnable",
+    "AutoConfigURL",
+];
 fn remove_journal(path: &Path) -> io::Result<()> {
     match fs::remove_file(path) {
         Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(()),
@@ -292,7 +355,7 @@ fn remove_journal(path: &Path) -> io::Result<()> {
 }
 fn write_journal(journal: &Path, path: &str, before: &Before, after: &After) -> io::Result<()> {
     use io::Write;
-    let mut bytes = b"GEARTH-PROXY-1\0".to_vec();
+    let mut bytes = b"GEARTH-PROXY-2\0".to_vec();
     let mut field = |value: &[u8]| {
         bytes.extend((value.len() as u32).to_le_bytes());
         bytes.extend(value);
@@ -311,8 +374,16 @@ fn write_journal(journal: &Path, path: &str, before: &Before, after: &After) -> 
         }
     }
     for (_, value) in after {
-        field(&value.kind.to_le_bytes());
-        field(&value.bytes);
+        match value {
+            Some(value) => {
+                field(&value.kind.to_le_bytes());
+                field(&value.bytes);
+            }
+            None => {
+                field(&[]);
+                field(&[]);
+            }
+        }
     }
     let temporary = journal.with_extension("pending");
     let mut file = OpenOptions::new()
@@ -334,10 +405,16 @@ fn read_journal(journal: &Path, path: &str) -> io::Result<Option<(Before, After)
     };
     let mut bytes = Vec::new();
     file.take(4 * 1024 * 1024 + 1).read_to_end(&mut bytes)?;
-    let mut tail = bytes
-        .strip_prefix(b"GEARTH-PROXY-1\0")
-        .filter(|_| bytes.len() <= 4 * 1024 * 1024)
-        .ok_or_else(|| io::Error::other("invalid saved proxy state"))?;
+    if bytes.len() > 4 * 1024 * 1024 {
+        return Err(io::Error::other("invalid saved proxy state"));
+    }
+    let (mut tail, is_v2) = if let Some(rest) = bytes.strip_prefix(b"GEARTH-PROXY-2\0") {
+        (rest, true)
+    } else if let Some(rest) = bytes.strip_prefix(b"GEARTH-PROXY-1\0") {
+        (rest, false)
+    } else {
+        return Err(io::Error::other("invalid saved proxy state"));
+    };
     fn field<'a>(tail: &mut &'a [u8]) -> io::Result<&'a [u8]> {
         let count = tail
             .get(..4)
@@ -364,16 +441,22 @@ fn read_journal(journal: &Path, path: &str) -> io::Result<Option<(Before, After)
         let kind = u32::from_le_bytes(kind.try_into().map_err(io::Error::other)?);
         Ok(Some(Value { kind, bytes }))
     }
+    let names: &[&'static str] = if is_v2 {
+        &VALUE_NAMES_V2
+    } else {
+        &VALUE_NAMES_V1
+    };
     let mut before = Vec::new();
-    for name in VALUE_NAMES {
+    for &name in names {
         before.push((name, value(&mut tail)?));
     }
     let mut after = Vec::new();
-    for name in VALUE_NAMES {
-        after.push((
-            name,
-            value(&mut tail)?.ok_or_else(|| io::Error::other("invalid saved owned proxy value"))?,
-        ));
+    for &name in names {
+        let val = value(&mut tail)?;
+        if !is_v2 && val.is_none() {
+            return Err(io::Error::other("invalid saved owned proxy value"));
+        }
+        after.push((name, val));
     }
     if !tail.is_empty() {
         return Err(io::Error::other("unexpected saved proxy data"));
@@ -624,5 +707,31 @@ mod tests {
         )
         .unwrap();
         assert_eq!(key.read("ProxyServer").unwrap(), Some(changed));
+    }
+    #[test]
+    fn pac_guard_sets_and_restores_autoconfig_url_without_touching_proxy_server() {
+        let fixture = Fixture::new();
+        let key = Key::open(&fixture.path).unwrap();
+        let previous_server = text("existing.example:8080");
+        key.write("ProxyServer", Some(&previous_server)).unwrap();
+        let pac = "http://127.0.0.1:1234/proxy.pac?v=1";
+        let mut guard =
+            ProxyGuard::activate_pac_at(&fixture.path, &fixture.directory.join("lock"), pac, false)
+                .unwrap();
+        assert_eq!(key.read("AutoConfigURL").unwrap(), Some(text(pac)));
+        assert_eq!(
+            key.read("ProxyServer").unwrap(),
+            Some(previous_server.clone())
+        );
+        assert_eq!(
+            key.read("ProxyEnable").unwrap(),
+            Some(Value {
+                kind: REG_DWORD,
+                bytes: 0u32.to_le_bytes().to_vec(),
+            })
+        );
+        guard.restore().unwrap();
+        assert_eq!(key.read("AutoConfigURL").unwrap(), None);
+        assert_eq!(key.read("ProxyServer").unwrap(), Some(previous_server));
     }
 }

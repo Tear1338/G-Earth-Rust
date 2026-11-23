@@ -501,6 +501,7 @@ struct Desktop {
     unity: bool,
     city: bool,
     system_proxy: bool,
+    system_proxy_pac: bool,
     proxy_guard: Option<gearth_platform::SystemProxyGuard>,
     public_certificate: Option<(PathBuf, Vec<u8>)>,
     certificate_task: Option<Receiver<std::io::Result<String>>>,
@@ -1250,6 +1251,7 @@ impl Default for Desktop {
             unity: false,
             city: false,
             system_proxy: cfg!(windows),
+            system_proxy_pac: cfg!(windows),
             proxy_guard: None,
             public_certificate: None,
             certificate_task: None,
@@ -1715,9 +1717,15 @@ impl Desktop {
                             clear_log_contents(&mut self.logs, &mut self.logs_bytes);
                         }
                         self.status = format!("Connected to {a}");
-                        // Keep the system proxy active in City mode because HabboCity migrates
-                        // to replacement WebSockets (link ticket 7705 -> 7702) mid-session.
-                        if !self.city {
+                        // Keep the system proxy active in City mode (HabboCity migrates links
+                        // via 7705 -> 7702) and when targeted PAC is active (PAC only touches game
+                        // hosts and leaves all other browser tabs/apps direct).
+                        let keep_proxy = self.city
+                            || self
+                                .proxy_guard
+                                .as_ref()
+                                .is_some_and(gearth_platform::SystemProxyGuard::is_pac);
+                        if !keep_proxy {
                             if let Some(guard) = &mut self.proxy_guard {
                                 match guard.restore() {
                                     Ok(()) => self.proxy_guard = None,
@@ -1760,13 +1768,32 @@ impl Desktop {
                         // Re-enable the system proxy if it was restored on connect while the
                         // local proxy is still waiting for the user to reload their hotel.
                         if self.system_proxy && self.proxy_guard.is_none() {
-                            let proxy_addr = match self.relay.as_ref() {
-                                Some(Connection::Web(proxy)) => Some(proxy.address),
-                                Some(Connection::Unity(unity)) => Some(unity.address),
+                            let reactivated = match self.relay.as_ref() {
+                                Some(Connection::Web(proxy)) => {
+                                    if self.system_proxy_pac {
+                                        let label = if self.city {
+                                            "*.habbocity.fr".to_owned()
+                                        } else {
+                                            format!("Nitro ({})", proxy.address)
+                                        };
+                                        Some(gearth_platform::SystemProxyGuard::activate_pac(
+                                            proxy.address,
+                                            &proxy.pac_url,
+                                            label,
+                                        ))
+                                    } else {
+                                        Some(gearth_platform::SystemProxyGuard::activate(
+                                            proxy.address,
+                                        ))
+                                    }
+                                }
+                                Some(Connection::Unity(unity)) => {
+                                    Some(gearth_platform::SystemProxyGuard::activate(unity.address))
+                                }
                                 _ => None,
                             };
-                            if let Some(addr) = proxy_addr {
-                                match gearth_platform::SystemProxyGuard::activate(addr) {
+                            if let Some(result) = reactivated {
+                                match result {
                                     Ok(guard) => self.proxy_guard = Some(guard),
                                     Err(e) => {
                                         self.status = format!(
@@ -2752,6 +2779,19 @@ impl Desktop {
             }
         }
         options.allow_city_helper = self.allow_city_helper;
+        options.pac_hosts = gearth_rust::web_proxy::pac_hosts_for_options(
+            self.city,
+            &options.hotels,
+            &options.websocket_urls,
+        );
+        let pac_label = if self.city {
+            "*.habbocity.fr".to_owned()
+        } else if options.pac_hosts.len() == 1 {
+            format!("*.{}", options.pac_hosts[0])
+        } else {
+            format!("{} hosts", options.pac_hosts.len())
+        };
+        let use_pac = self.system_proxy_pac && !options.pac_hosts.is_empty();
         if !self.city_key_path.trim().is_empty() {
             use std::io::Read;
             let mut bytes = Vec::new();
@@ -2762,7 +2802,15 @@ impl Desktop {
         }
         let (proxy, events) = WebProxy::start(options)?;
         if self.system_proxy {
-            self.proxy_guard = Some(gearth_platform::SystemProxyGuard::activate(proxy.address)?);
+            self.proxy_guard = Some(if use_pac {
+                gearth_platform::SystemProxyGuard::activate_pac(
+                    proxy.address,
+                    &proxy.pac_url,
+                    pac_label,
+                )?
+            } else {
+                gearth_platform::SystemProxyGuard::activate(proxy.address)?
+            });
         }
         self.status = if self.city {
             format!(
@@ -2831,6 +2879,17 @@ impl Desktop {
                 self.i18n.text("rust.browser.configure_proxy"),
             ),
         );
+        if !self.unity {
+            ui.indent("pac-proxy-indent", |ui| {
+                ui.add_enabled(
+                    self.relay.is_none() && self.system_proxy,
+                    egui::Checkbox::new(
+                        &mut self.system_proxy_pac,
+                        self.i18n.text("rust.browser.pac_proxy"),
+                    ),
+                );
+            });
+        }
         ui.label(self.i18n.text("rust.browser.proxy_hint"));
         if ui
             .add_enabled(
@@ -6999,6 +7058,7 @@ impl eframe::App for Desktop {
                     );
                 }
             });
+        let mut disable_proxy_clicked = false;
         egui::TopBottomPanel::bottom("status")
             .frame(
                 egui::Frame::none()
@@ -7008,7 +7068,49 @@ impl eframe::App for Desktop {
             )
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    ui.small(&self.status);
+                    if let Some(guard) = &self.proxy_guard {
+                        let dark = ui.visuals().dark_mode;
+                        let (badge_bg, badge_fg, label_key) = if guard.is_pac() {
+                            (
+                                if dark {
+                                    egui::Color32::from_rgb(28, 92, 62)
+                                } else {
+                                    egui::Color32::from_rgb(209, 240, 224)
+                                },
+                                if dark {
+                                    egui::Color32::WHITE
+                                } else {
+                                    egui::Color32::from_rgb(16, 86, 48)
+                                },
+                                "rust.browser.proxy_active_pac",
+                            )
+                        } else {
+                            (
+                                if dark {
+                                    egui::Color32::from_rgb(154, 96, 16)
+                                } else {
+                                    egui::Color32::from_rgb(255, 238, 200)
+                                },
+                                if dark {
+                                    egui::Color32::WHITE
+                                } else {
+                                    egui::Color32::from_rgb(122, 70, 6)
+                                },
+                                "rust.browser.proxy_active_global",
+                            )
+                        };
+                        let badge_text =
+                            format!("{}: {}", self.i18n.text(label_key), guard.target());
+                        logger_ui::badge_pill(ui, &badge_text, badge_bg, badge_fg);
+                        if ui
+                            .small_button(self.i18n.text("rust.browser.disable_proxy"))
+                            .clicked()
+                        {
+                            disable_proxy_clicked = true;
+                        }
+                        ui.separator();
+                    }
+                    ui.add(egui::Label::new(egui::RichText::new(&self.status).small()).truncate());
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.small(
                             egui::RichText::new(format!(
@@ -7021,6 +7123,19 @@ impl eframe::App for Desktop {
                     });
                 });
             });
+        if disable_proxy_clicked {
+            if let Some(guard) = &mut self.proxy_guard {
+                match guard.restore() {
+                    Ok(()) => {
+                        self.proxy_guard = None;
+                        self.status = self.i18n.text("rust.browser.proxy_restored");
+                    }
+                    Err(e) => {
+                        self.status = format!("Proxy restoration failed: {e}");
+                    }
+                }
+            }
+        }
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::none()
@@ -8426,6 +8541,26 @@ impl Desktop {
             .copied()
             .unwrap_or(false);
         self.city = self.settings.booleans.get("city").copied().unwrap_or(false);
+        self.system_proxy = self
+            .settings
+            .booleans
+            .get("system_proxy")
+            .copied()
+            .unwrap_or(cfg!(windows));
+        self.system_proxy_pac = self
+            .settings
+            .booleans
+            .get("system_proxy_pac")
+            .copied()
+            .unwrap_or(cfg!(windows));
+        self.allow_city_helper = self
+            .settings
+            .booleans
+            .get("allow_city_helper")
+            .copied()
+            .unwrap_or(false);
+        self.nitro_urls = self.settings.get("nitro_urls").to_owned();
+        self.city_key_path = self.settings.get("city_key_path").to_owned();
         if self.city {
             self.nitro = true;
             self.unity = false;
@@ -8509,6 +8644,8 @@ impl Desktop {
             ("socks_proxy", &self.socks_proxy),
             ("socks_user", &self.socks_user),
             ("extension_runtime", &self.extension_runtime),
+            ("nitro_urls", &self.nitro_urls),
+            ("city_key_path", &self.city_key_path),
             ("notepad", &self.notepad),
             ("language", &self.language),
         ] {
@@ -8538,6 +8675,9 @@ impl Desktop {
             ("nitro".into(), self.nitro),
             ("unity".into(), self.unity),
             ("city".into(), self.city),
+            ("system_proxy".into(), self.system_proxy),
+            ("system_proxy_pac".into(), self.system_proxy_pac),
+            ("allow_city_helper".into(), self.allow_city_helper),
             ("dark_mode".into(), self.theme.is_dark()),
             ("outgoing".into(), self.outgoing),
             ("incoming".into(), self.incoming),

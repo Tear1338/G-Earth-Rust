@@ -95,6 +95,8 @@ pub struct WebOptions {
     pub city_mode: bool,
     pub allow_city_helper: bool,
     pub city_keys: Option<crate::nitro_city::CityKeys>,
+    /// Domains/hosts routed through the proxy by the built-in `/proxy.pac` script.
+    pub pac_hosts: Vec<String>,
 }
 impl WebOptions {
     pub fn new(listen: SocketAddr, identity_directory: PathBuf) -> Self {
@@ -117,8 +119,113 @@ impl WebOptions {
             city_mode: false,
             allow_city_helper: false,
             city_keys: None,
+            pac_hosts: Vec::new(),
         }
     }
+}
+
+fn extract_pac_domain(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let host = if trimmed.contains("://") {
+        let cleaned = trimmed.trim_end_matches('*');
+        cleaned
+            .parse::<Uri>()
+            .ok()
+            .and_then(|u| u.host().map(str::to_owned))
+            .or_else(|| {
+                let after = cleaned.split("://").nth(1)?;
+                let authority = after.split('/').next()?;
+                Some(authority.split(':').next()?.to_owned())
+            })?
+    } else {
+        trimmed
+            .trim_start_matches("*.")
+            .split('/')
+            .next()?
+            .split(':')
+            .next()?
+            .to_owned()
+    };
+    let host = host.trim().trim_end_matches('.').to_ascii_lowercase();
+    if host.is_empty()
+        || !host
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b".-".contains(&b))
+    {
+        return None;
+    }
+    // Use the registrable root domain (last 2 labels) for multi-subdomain game hosts
+    // so both page assets (e.g. habbocity.fr, cdn.habbocity.fr) and websocket subdomains route cleanly.
+    let parts: Vec<&str> = host.split('.').collect();
+    if parts.len() >= 3 && parts.last().is_some_and(|tld| tld.len() >= 2) {
+        let root = format!("{}.{}", parts[parts.len() - 2], parts[parts.len() - 1]);
+        Some(root)
+    } else {
+        Some(host)
+    }
+}
+
+/// Compute the targeted PAC host list for City or Nitro mode.
+pub fn pac_hosts_for_options(
+    city_mode: bool,
+    hotels: &Hotels,
+    websocket_urls: &[String],
+) -> Vec<String> {
+    if city_mode {
+        return vec!["habbocity.fr".into()];
+    }
+    let mut domains = Vec::new();
+    for url in websocket_urls {
+        if let Some(d) = extract_pac_domain(url) {
+            if !domains.contains(&d) {
+                domains.push(d);
+            }
+        }
+    }
+    for hotel in &hotels.entries {
+        for url in &hotel.websocket_urls {
+            if let Some(d) = extract_pac_domain(url) {
+                if !domains.contains(&d) {
+                    domains.push(d);
+                }
+            }
+        }
+    }
+    domains
+}
+
+/// Generate a standards-compliant PAC script that proxies only `hosts` (and their subdomains)
+/// through `address` while keeping all other browser tabs and system apps `DIRECT`.
+pub fn generate_pac_script(address: SocketAddr, hosts: &[String]) -> String {
+    let proxy = format!("PROXY {address}; DIRECT");
+    let mut conditions = Vec::new();
+    for raw in hosts {
+        let domain = raw
+            .trim()
+            .trim_start_matches("*.")
+            .trim_end_matches('.')
+            .to_ascii_lowercase();
+        if domain.is_empty()
+            || !domain
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b".-".contains(&b))
+        {
+            continue;
+        }
+        conditions.push(format!(
+            "h === \"{domain}\" || shExpMatch(h, \"*.{domain}\")"
+        ));
+    }
+    if conditions.is_empty() {
+        return format!("function FindProxyForURL(url, host) {{\n  return \"{proxy}\";\n}}\n");
+    }
+    format!(
+        "function FindProxyForURL(url, host) {{\n  var h = (host || \"\").toLowerCase();\n  if ({}) {{\n    return \"{proxy}\";\n  }}\n  return \"DIRECT\";\n}}\n",
+        conditions.join(" ||\n      ")
+    )
 }
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct PeerKey {
@@ -605,9 +712,29 @@ impl Shared {
     }
 }
 #[derive(Clone)]
-struct Handler(Arc<Shared>, u8, Option<crate::unity_assets::UnityAsset>);
+struct Handler(
+    Arc<Shared>,
+    u8,
+    Option<crate::unity_assets::UnityAsset>,
+    Arc<str>,
+);
 impl Handler {
     async fn handle_asset_request(&mut self, mut request: Request<Body>) -> RequestOrResponse {
+        if request.method() == hudsucker::hyper::Method::GET
+            && request.uri().path() == "/proxy.pac"
+            && matches!(
+                request.uri().host(),
+                None | Some("127.0.0.1") | Some("localhost") | Some("::1") | Some("[::1]")
+            )
+        {
+            return Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "application/x-ns-proxy-autoconfig")
+                .header("cache-control", "no-store")
+                .body(Body::from(self.3.as_ref().to_owned()))
+                .unwrap()
+                .into();
+        }
         let is_city_wasm = request
             .uri()
             .host()
@@ -973,6 +1100,7 @@ pub struct WebProxy {
     stop: Option<oneshot::Sender<()>>,
     worker: Option<JoinHandle<()>>,
     pub address: SocketAddr,
+    pub pac_url: String,
     pub certificate_path: PathBuf,
     pub certificate_der: Vec<u8>,
 }
@@ -987,6 +1115,12 @@ impl WebProxy {
         let address = listener.local_addr()?;
         listener.set_nonblocking(true)?;
         let (events, receiver) = mpsc::sync_channel(2048);
+        let pac_script: Arc<str> = Arc::from(generate_pac_script(address, &options.pac_hosts));
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() % 1_000_000)
+            .unwrap_or(1);
+        let pac_url = format!("http://{address}/proxy.pac?v={nonce}");
         let state = Arc::new(Shared {
             city_keys: Mutex::new(options.city_keys.clone()),
             options,
@@ -1012,7 +1146,7 @@ impl WebProxy {
             let provider=aws_lc_rs::default_provider();let _=provider.clone().install_default();let mut roots=rustls::RootCertStore::empty();roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());for der in &actor.options.extra_roots{roots.add(CertificateDer::from(der.clone())).map_err(io::Error::other)?;}
             let tls=rustls::ClientConfig::builder_with_provider(Arc::new(provider)).with_safe_default_protocol_versions().map_err(io::Error::other)?.with_root_certificates(roots).with_no_client_auth();
             let connector=hyper_rustls::HttpsConnectorBuilder::new().with_tls_config(tls.clone()).https_or_http().enable_http1().wrap_connector(crate::socks_http::OutboundConnector::new(actor.options.upstream_socks.clone()));let listener=tokio::net::TcpListener::from_std(listener)?;
-            let mut builder=Proxy::builder().with_listener(listener).with_ca(ca).with_http_connector(connector).with_websocket_connector(Connector::Rustls(Arc::new(tls))).with_http_handler(Handler(actor.clone(),0,None)).with_websocket_handler(Handler(actor.clone(),0,None));
+            let mut builder=Proxy::builder().with_listener(listener).with_ca(ca).with_http_connector(connector).with_websocket_connector(Connector::Rustls(Arc::new(tls))).with_http_handler(Handler(actor.clone(),0,None,pac_script.clone())).with_websocket_handler(Handler(actor.clone(),0,None,pac_script.clone()));
             if let Some(socks)=actor.options.upstream_socks.clone(){builder=builder.with_upstream_dialer(crate::web_socks::dialer(socks));}
             let proxy=builder.build().map_err(io::Error::other)?;
             let flush_actor=actor.clone(); tokio::spawn(async move { while !flush_actor.stop.load(Ordering::Acquire) { flush_actor.events.flush(); tokio::time::sleep(Duration::from_millis(5)).await; } });
@@ -1036,6 +1170,7 @@ impl WebProxy {
             stop: Some(stop),
             worker: Some(worker),
             address,
+            pac_url,
             certificate_path: identity.certificate_path,
             certificate_der: identity.certificate_der,
         };
@@ -1177,7 +1312,7 @@ mod unity_http_tests {
         });
         options.detect_nitro = false;
         let (mut proxy, _) = WebProxy::start(options).unwrap();
-        let mut handler = Handler(proxy.state.clone(), 0, None);
+        let mut handler = Handler(proxy.state.clone(), 0, None, Arc::from(""));
         let runtime = tokio::runtime::Runtime::new().unwrap();
         runtime.block_on(async{
             use http_body_util::BodyExt;
@@ -1337,7 +1472,7 @@ mod lifecycle_tests {
         });
         let runtime = tokio::runtime::Runtime::new().unwrap();
         runtime.block_on(async {
-            let mut handler = Handler(state, 2, None);
+            let mut handler = Handler(state, 2, None, Arc::from(""));
             let response = Response::builder()
                 .status(200)
                 .body(Body::from(b"\0asm\x01\0\0\0".to_vec()))
@@ -1384,7 +1519,7 @@ mod lifecycle_tests {
         ));
         let runtime = tokio::runtime::Runtime::new().unwrap();
         runtime.block_on(async {
-            let mut handler = Handler(state.clone(), 0, None);
+            let mut handler = Handler(state.clone(), 0, None, Arc::from(""));
             let req = Request::builder()
                 .uri("https://habbocity.fr/assets/city_crypto_v2.wasm")
                 .body(Body::empty())
@@ -1437,6 +1572,33 @@ mod lifecycle_tests {
             combined.extend_from_slice(Packet::new(2419).bytes());
             assert_eq!(first_evawire_header(&combined), Some(7701));
             assert_eq!(first_evawire_header(&[0, 0, 0, 1, 0x1E]), None);
+
+            // Verify PAC script generation and live /proxy.pac HTTP handler.
+            let pac_hosts = pac_hosts_for_options(true, &Hotels::beta29(), &[]);
+            assert_eq!(pac_hosts, vec!["habbocity.fr".to_owned()]);
+            let pac = generate_pac_script("127.0.0.1:1234".parse().unwrap(), &pac_hosts);
+            assert!(pac.contains(r#"h === "habbocity.fr" || shExpMatch(h, "*.habbocity.fr")"#));
+            assert!(pac.contains(r#"PROXY 127.0.0.1:1234; DIRECT"#));
+            assert!(pac.contains(r#"return "DIRECT";"#));
+
+            let mut pac_handler = Handler(state.clone(), 0, None, Arc::from(pac.as_str()));
+            let pac_req = Request::builder()
+                .method(hudsucker::hyper::Method::GET)
+                .uri("/proxy.pac?v=42")
+                .body(Body::empty())
+                .unwrap();
+            match pac_handler.handle_asset_request(pac_req).await {
+                RequestOrResponse::Response(resp) => {
+                    assert_eq!(resp.status(), StatusCode::OK);
+                    assert_eq!(
+                        resp.headers()
+                            .get("content-type")
+                            .and_then(|v| v.to_str().ok()),
+                        Some("application/x-ns-proxy-autoconfig")
+                    );
+                }
+                RequestOrResponse::Request(_) => panic!("expected /proxy.pac response"),
+            }
         });
     }
 
@@ -2421,6 +2583,7 @@ mod lifecycle_tests {
             stop: None,
             worker: None,
             address: "127.0.0.1:0".parse().unwrap(),
+            pac_url: String::new(),
             certificate_path: PathBuf::new(),
             certificate_der: Vec::new(),
         };
