@@ -348,6 +348,152 @@ impl PacketInfoManager {
     pub fn entries(&self) -> &[PacketInfo] {
         &self.entries
     }
+    /// Overlay user-defined packet names (e.g. HabboCity custom headers) with top priority.
+    /// Existing `"Custom"` entries are replaced so calling this repeatedly is idempotent.
+    pub fn with_custom_names(&self, custom: &[(Direction, u16, String)]) -> Self {
+        let mut merged = Vec::with_capacity(custom.len() + self.entries.len());
+        for (direction, header, name) in custom {
+            let trimmed = name.trim();
+            if trimmed.is_empty() || trimmed.len() > 256 {
+                continue;
+            }
+            merged.push(PacketInfo {
+                header: *header,
+                hash: None,
+                name: Some(trimmed.to_owned()),
+                structure: None,
+                direction: *direction,
+                source: "Custom".into(),
+            });
+        }
+        for entry in &self.entries {
+            if entry.source != "Custom" {
+                merged.push(entry.clone());
+            }
+        }
+        Self::new(self.version.clone(), merged)
+    }
+    /// Parse custom packet names from either `{ "incoming": { "7701": "Name" }, "outgoing": { ... } }`
+    /// or standard Sulek/Harble JSON schemas.
+    pub fn parse_custom_names_json(bytes: &[u8]) -> std::io::Result<Vec<(Direction, u16, String)>> {
+        if bytes.len() > 2 * 1024 * 1024 {
+            return Err(std::io::Error::other(
+                "custom packet names file exceeds 2 MiB",
+            ));
+        }
+        let value: serde_json::Value =
+            serde_json::from_slice(bytes).map_err(std::io::Error::other)?;
+        if value.get("messages").is_some()
+            || value
+                .get("Incoming")
+                .is_some_and(serde_json::Value::is_array)
+            || value
+                .get("incoming")
+                .is_some_and(serde_json::Value::is_array)
+        {
+            let parsed = Self::from_json("custom", bytes).map_err(std::io::Error::other)?;
+            let mut out = Vec::new();
+            for entry in parsed.entries() {
+                if let Some(name) = &entry.name {
+                    out.push((entry.direction, entry.header, name.clone()));
+                }
+            }
+            return Ok(out);
+        }
+        let obj = value
+            .as_object()
+            .ok_or_else(|| std::io::Error::other("custom packet names must be a JSON object"))?;
+        let mut result = Vec::new();
+        for (key, direction) in [
+            ("incoming", Direction::ToClient),
+            ("Incoming", Direction::ToClient),
+            ("outgoing", Direction::ToServer),
+            ("Outgoing", Direction::ToServer),
+        ] {
+            if let Some(map) = obj.get(key).and_then(serde_json::Value::as_object) {
+                for (raw_id, raw_name) in map {
+                    let header = raw_id.trim().parse::<u16>().map_err(|_| {
+                        std::io::Error::other(format!("invalid custom packet header: {raw_id}"))
+                    })?;
+                    let name = raw_name
+                        .as_str()
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty() && s.len() <= 256)
+                        .ok_or_else(|| std::io::Error::other("invalid custom packet name"))?;
+                    result.push((direction, header, name.to_owned()));
+                }
+            }
+        }
+        result.sort_by(|a, b| (a.0.name(), a.1).cmp(&(b.0.name(), b.1)));
+        result.dedup_by(|a, b| a.0 == b.0 && a.1 == b.1);
+        Ok(result)
+    }
+    pub fn load_custom_names(
+        path: &std::path::Path,
+    ) -> std::io::Result<Vec<(Direction, u16, String)>> {
+        use std::io::Read;
+        let file = match std::fs::File::open(path) {
+            Ok(file) => file,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(e) => return Err(e),
+        };
+        let mut bytes = Vec::new();
+        file.take(2 * 1024 * 1024 + 1).read_to_end(&mut bytes)?;
+        Self::parse_custom_names_json(&bytes)
+    }
+    pub fn save_custom_names(
+        path: &std::path::Path,
+        entries: &[(Direction, u16, String)],
+    ) -> std::io::Result<()> {
+        use std::io::Write;
+        let mut incoming = serde_json::Map::new();
+        let mut outgoing = serde_json::Map::new();
+        for (direction, header, name) in entries {
+            let trimmed = name.trim();
+            if trimmed.is_empty() || trimmed.len() > 256 {
+                continue;
+            }
+            let target = match direction {
+                Direction::ToClient => &mut incoming,
+                Direction::ToServer => &mut outgoing,
+            };
+            target.insert(
+                header.to_string(),
+                serde_json::Value::String(trimmed.into()),
+            );
+        }
+        let root = serde_json::json!({
+            "incoming": incoming,
+            "outgoing": outgoing,
+        });
+        let bytes = serde_json::to_vec_pretty(&root).map_err(std::io::Error::other)?;
+        let parent = path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(|| std::path::Path::new("."));
+        std::fs::create_dir_all(parent)?;
+        let mut random = [0; 16];
+        getrandom::fill(&mut random).map_err(|e| std::io::Error::other(e.to_string()))?;
+        let suffix = random
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>();
+        let temporary = parent.join(format!(".custom-packets-{suffix}.tmp"));
+        let result = (|| {
+            let mut file = std::fs::OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&temporary)?;
+            file.write_all(&bytes)?;
+            file.sync_all()?;
+            drop(file);
+            std::fs::rename(&temporary, path)
+        })();
+        if result.is_err() {
+            let _ = std::fs::remove_file(&temporary);
+        }
+        result
+    }
     pub fn by_name(&self, direction: Direction, name: &str) -> Option<&PacketInfo> {
         self.names
             .get(&(direction, name.to_owned()))
@@ -729,5 +875,67 @@ mod cache_refresh_tests {
         assert_eq!(outgoing.direction, Direction::ToServer);
         assert_eq!(outgoing.name.as_deref(), Some("MoveAvatar"));
         assert_eq!(outgoing.source, "Harble");
+    }
+
+    #[test]
+    fn custom_packet_names_overlay_and_roundtrip_json() {
+        let base = PacketInfoManager::new(
+            "NITRO",
+            vec![PacketInfo {
+                header: 1314,
+                hash: None,
+                name: Some("UnitChat".into()),
+                structure: None,
+                direction: Direction::ToServer,
+                source: "Sulek".into(),
+            }],
+        );
+        let custom = vec![
+            (Direction::ToServer, 1314, "CityChat".into()),
+            (Direction::ToClient, 7701, "CityLinkAck".into()),
+        ];
+        let overlaid = base.with_custom_names(&custom);
+        assert_eq!(
+            overlaid
+                .by_header(Direction::ToServer, 1314)
+                .next()
+                .unwrap()
+                .name
+                .as_deref(),
+            Some("CityChat")
+        );
+        assert_eq!(
+            overlaid
+                .by_name(Direction::ToClient, "CityLinkAck")
+                .unwrap()
+                .header,
+            7701
+        );
+        // Re-applying replaces old Custom entries idempotently without duplicating.
+        let updated =
+            overlaid.with_custom_names(&[(Direction::ToClient, 7705, "CityTicket".into())]);
+        assert!(updated
+            .by_name(Direction::ToClient, "CityLinkAck")
+            .is_none());
+        assert_eq!(
+            updated
+                .by_header(Direction::ToServer, 1314)
+                .next()
+                .unwrap()
+                .name
+                .as_deref(),
+            Some("UnitChat")
+        );
+
+        let dir =
+            std::env::temp_dir().join(format!("gearth-custom-packets-{}", std::process::id()));
+        let path = dir.join("custom-packets.json");
+        PacketInfoManager::save_custom_names(&path, &custom).unwrap();
+        let reloaded = PacketInfoManager::load_custom_names(&path).unwrap();
+        assert_eq!(reloaded.len(), 2);
+        assert!(reloaded.contains(&(Direction::ToServer, 1314, "CityChat".into())));
+        assert!(reloaded.contains(&(Direction::ToClient, 7701, "CityLinkAck".into())));
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir(&dir);
     }
 }

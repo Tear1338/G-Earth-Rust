@@ -396,6 +396,18 @@ struct Desktop {
     logger_antispam: AntiSpam,
     logger_filter: LoggerFilter,
     logger_filtered: u64,
+    logger_hide_noisy: bool,
+    logger_hidden_headers: HashSet<(Direction, u16)>,
+    logger_presets: Vec<logger_ui::LoggerFilterPreset>,
+    logger_preset_name: String,
+    logger_stats: logger_ui::LoggerStats,
+    logger_show_stats: bool,
+    custom_packet_names: Vec<(Direction, u16, String)>,
+    custom_names_window_open: bool,
+    custom_name_direction: Direction,
+    custom_name_header: u16,
+    custom_name_input: String,
+    rename_header_dialog: Option<(Direction, u16, String)>,
     packet_dump: Option<String>,
     expression: String,
     direction: Direction,
@@ -1126,6 +1138,18 @@ impl Default for Desktop {
             logger_antispam: AntiSpam::None,
             logger_filter: LoggerFilter::default(),
             logger_filtered: 0,
+            logger_hide_noisy: false,
+            logger_hidden_headers: HashSet::new(),
+            logger_presets: Vec::new(),
+            logger_preset_name: String::new(),
+            logger_stats: logger_ui::LoggerStats::default(),
+            logger_show_stats: false,
+            custom_packet_names: Vec::new(),
+            custom_names_window_open: false,
+            custom_name_direction: Direction::ToClient,
+            custom_name_header: 0,
+            custom_name_input: String::new(),
+            rename_header_dialog: None,
             packet_dump: None,
             expression: "{h:123}{i:42}{s:\"hello\"}".into(),
             direction: Direction::ToServer,
@@ -1475,7 +1499,8 @@ impl Desktop {
                                     safety.register_metadata(&database.version, &database);
                                 }
                             }
-                            self.packet_info = database;
+                            self.packet_info =
+                                database.with_custom_names(&self.custom_packet_names);
                             invalidate_log_expressions(&mut self.logs);
                             self.logger_search_cache = None;
                             self.packet_database.clear();
@@ -1595,12 +1620,17 @@ impl Desktop {
                 match event {
                     Event::Status(status) => self.status = status,
                     Event::PacketIdentifiers(database) => {
-                        self.packet_info = database;
+                        self.packet_info = database.with_custom_names(&self.custom_packet_names);
                         invalidate_log_expressions(&mut self.logs);
                         self.logger_search_cache = None;
                     }
                     Event::Packet(message) => {
                         self.total += 1;
+                        self.logger_stats.record(
+                            message.direction,
+                            message.packet.header(),
+                            Instant::now(),
+                        );
                         if self.debug_stdout {
                             println!(
                                 "[{}] #{} {}",
@@ -3245,22 +3275,6 @@ impl Desktop {
             });
         });
 
-        let filter = self.filter.to_lowercase();
-        if self
-            .logger_search_cache
-            .as_ref()
-            .is_none_or(|(cached, _)| cached != &filter)
-        {
-            self.logger_search_cache = Some((
-                filter.clone(),
-                matching_packet_metadata(&self.packet_info, &filter),
-            ));
-        }
-        let matching_metadata = &self
-            .logger_search_cache
-            .as_ref()
-            .expect("search cache initialized")
-            .1;
         let skipped_label = format!("<{}>", self.i18n.text("ext.logger.element.skipped"));
         let timestamp_label = self.i18n.text("ext.logger.element.timestamp");
         let blocked_label = self.i18n.text("ext.logger.element.blocked");
@@ -3295,14 +3309,49 @@ impl Desktop {
             self.logger_capture_selected_only,
         );
         if let Some(target_path) = chosen_export {
+            let export_filter = self.filter.to_lowercase();
+            if self
+                .logger_search_cache
+                .as_ref()
+                .is_none_or(|(cached, _)| cached != &export_filter)
+            {
+                self.logger_search_cache = Some((
+                    export_filter.clone(),
+                    matching_packet_metadata(&self.packet_info, &export_filter),
+                ));
+            }
+            let matching_metadata = &self
+                .logger_search_cache
+                .as_ref()
+                .expect("search cache initialized")
+                .1;
+            let hide_noisy = self.logger_hide_noisy;
+            let hidden_headers = &self.logger_hidden_headers;
+            let packet_info = &self.packet_info;
             let visible = self.logs.iter().filter(|row| {
-                log_row_matches(
+                if !log_row_matches(
                     row,
-                    &filter,
+                    &export_filter,
                     matching_metadata,
                     display_outgoing,
                     display_incoming,
-                )
+                ) {
+                    return false;
+                }
+                let dir = row.message.direction;
+                let hdr = row.message.packet.header();
+                if hidden_headers.contains(&(dir, hdr)) {
+                    return false;
+                }
+                if hide_noisy {
+                    let (names, _) = row
+                        .packet_metadata
+                        .get_or_init(|| log_packet_metadata(packet_info, dir, hdr));
+                    if logger_ui::is_noisy_packet(dir, hdr, names) {
+                        return false;
+                    }
+                }
+                true
             });
             let result = logger_display::write_atomic(Path::new(&target_path), |file| {
                 write_log_capture(
@@ -3321,6 +3370,7 @@ impl Desktop {
                 Err(e) => e.to_string(),
             };
         }
+        let (rate_total, rate_in, rate_out) = self.logger_stats.rates(Instant::now());
         // Quick beginner-friendly toolbar right below the classic MenuBar
         ui.add_space(2.0);
         ui.horizontal_wrapped(|ui| {
@@ -3421,7 +3471,224 @@ impl Desktop {
             .clicked()
             {
                 clear_log_contents(&mut self.logs, &mut self.logs_bytes);
+                self.logger_stats.reset();
                 self.selected_log_index = None;
+            }
+            // 1-click noisy/ping packet suppressor toggle
+            let noisy_bg = if self.logger_hide_noisy {
+                if dark {
+                    egui::Color32::from_rgb(138, 88, 16)
+                } else {
+                    egui::Color32::from_rgb(255, 240, 204)
+                }
+            } else {
+                egui::Color32::TRANSPARENT
+            };
+            let noisy_fg = if self.logger_hide_noisy {
+                if dark {
+                    egui::Color32::WHITE
+                } else {
+                    egui::Color32::from_rgb(130, 78, 8)
+                }
+            } else {
+                self.theme.palette().text_muted
+            };
+            if vector_text_button(
+                ui,
+                VectorIcon::Block,
+                noisy_fg,
+                &self.i18n.text("rust.logger.hide_noisy"),
+                Some(noisy_fg),
+                Some(noisy_bg),
+                true,
+            )
+            .clicked()
+            {
+                self.logger_hide_noisy = !self.logger_hide_noisy;
+            }
+            if !self.logger_hidden_headers.is_empty() {
+                let mut remove_hidden = None;
+                let mut clear_all_hidden = false;
+                ui.menu_button(
+                    format!(
+                        "{} ({})",
+                        self.i18n.text("rust.logger.hidden_headers"),
+                        self.logger_hidden_headers.len()
+                    ),
+                    |ui| {
+                        let mut sorted: Vec<_> =
+                            self.logger_hidden_headers.iter().copied().collect();
+                        sorted.sort_by(|a, b| (a.0.name(), a.1).cmp(&(b.0.name(), b.1)));
+                        for (dir, hdr) in sorted {
+                            let (names, _) = log_packet_metadata(&self.packet_info, dir, hdr);
+                            let label = if names.is_empty() {
+                                format!("{} #{hdr}", dir.name())
+                            } else {
+                                format!("{} {} (#{hdr})", dir.name(), names.replace("][", " / "))
+                            };
+                            ui.horizontal(|ui| {
+                                ui.label(label);
+                                if ui.small_button("x").clicked() {
+                                    remove_hidden = Some((dir, hdr));
+                                }
+                            });
+                        }
+                        ui.separator();
+                        if ui
+                            .button(self.i18n.text("rust.logger.clear_hidden"))
+                            .clicked()
+                        {
+                            clear_all_hidden = true;
+                            ui.close_menu();
+                        }
+                    },
+                );
+                if let Some(pair) = remove_hidden {
+                    self.logger_hidden_headers.remove(&pair);
+                }
+                if clear_all_hidden {
+                    self.logger_hidden_headers.clear();
+                }
+            }
+            // Filter Presets menu (apply / save / delete)
+            let mut apply_preset_idx = None;
+            let mut delete_preset_idx = None;
+            let mut save_new_preset = false;
+            ui.menu_button(self.i18n.text("rust.logger.presets"), |ui| {
+                ui.set_min_width(220.0);
+                if self.logger_presets.is_empty() {
+                    ui.small(
+                        egui::RichText::new(self.i18n.text("rust.logger.no_presets"))
+                            .italics()
+                            .color(self.theme.palette().text_muted),
+                    );
+                } else {
+                    for (idx, preset) in self.logger_presets.iter().enumerate() {
+                        ui.horizontal(|ui| {
+                            if ui.button(&preset.name).clicked() {
+                                apply_preset_idx = Some(idx);
+                                ui.close_menu();
+                            }
+                            if ui
+                                .small_button(self.i18n.text("rust.action.remove"))
+                                .clicked()
+                            {
+                                delete_preset_idx = Some(idx);
+                            }
+                        });
+                    }
+                }
+                ui.separator();
+                ui.horizontal(|ui| {
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.logger_preset_name)
+                            .desired_width(130.0)
+                            .hint_text(self.i18n.text("rust.logger.preset_name")),
+                    );
+                    if ui
+                        .add_enabled(
+                            !self.logger_preset_name.trim().is_empty(),
+                            egui::Button::new(self.i18n.text("rust.logger.save_preset")),
+                        )
+                        .clicked()
+                    {
+                        save_new_preset = true;
+                    }
+                });
+            });
+            if let Some(idx) = apply_preset_idx {
+                if let Some(preset) = self.logger_presets.get(idx).cloned() {
+                    self.filter = preset.query;
+                    self.logger_hide_noisy = preset.hide_noisy;
+                    self.incoming = preset.incoming;
+                    self.outgoing = preset.outgoing;
+                    self.logger_hidden_headers = preset.hidden_headers.into_iter().collect();
+                    self.status = format!("Applied logger preset: {}", preset.name);
+                }
+            }
+            if let Some(idx) = delete_preset_idx {
+                if idx < self.logger_presets.len() {
+                    self.logger_presets.remove(idx);
+                    self.save_settings();
+                }
+            }
+            if save_new_preset {
+                let name = self.logger_preset_name.trim().to_owned();
+                if !name.is_empty() {
+                    let mut hidden: Vec<_> = self.logger_hidden_headers.iter().copied().collect();
+                    hidden.sort_by(|a, b| (a.0.name(), a.1).cmp(&(b.0.name(), b.1)));
+                    let preset = logger_ui::LoggerFilterPreset {
+                        name: name.clone(),
+                        query: self.filter.clone(),
+                        hide_noisy: self.logger_hide_noisy,
+                        incoming: self.incoming,
+                        outgoing: self.outgoing,
+                        hidden_headers: hidden,
+                    };
+                    if let Some(existing) = self
+                        .logger_presets
+                        .iter_mut()
+                        .find(|p| p.name.eq_ignore_ascii_case(&name))
+                    {
+                        *existing = preset;
+                    } else {
+                        self.logger_presets.push(preset);
+                    }
+                    self.logger_preset_name.clear();
+                    self.save_settings();
+                }
+            }
+            // Stats toggle + live rate
+            let stats_label = format!(
+                "{} ({rate_total:.1} {})",
+                self.i18n.text("rust.logger.stats"),
+                self.i18n.text("rust.logger.pkt_per_sec")
+            );
+            let stats_bg = if self.logger_show_stats {
+                if dark {
+                    egui::Color32::from_rgb(35, 86, 62)
+                } else {
+                    egui::Color32::from_rgb(212, 237, 224)
+                }
+            } else {
+                egui::Color32::TRANSPARENT
+            };
+            let stats_fg = if self.logger_show_stats {
+                if dark {
+                    egui::Color32::WHITE
+                } else {
+                    egui::Color32::from_rgb(20, 90, 50)
+                }
+            } else {
+                ui_fg
+            };
+            if vector_text_button(
+                ui,
+                VectorIcon::Star,
+                stats_fg,
+                &stats_label,
+                Some(stats_fg),
+                Some(stats_bg),
+                true,
+            )
+            .clicked()
+            {
+                self.logger_show_stats = !self.logger_show_stats;
+            }
+            // Custom packet names manager button (HabboCity / custom headers)
+            let custom_label = if self.custom_packet_names.is_empty() {
+                self.i18n.text("rust.logger.custom_names")
+            } else {
+                format!(
+                    "{} ({})",
+                    self.i18n.text("rust.logger.custom_names"),
+                    self.custom_packet_names.len()
+                )
+            };
+            if vector_text_button(ui, VectorIcon::Gear, ui_fg, &custom_label, None, None, true)
+                .clicked()
+            {
+                self.custom_names_window_open = true;
             }
             if self.logger_friendly {
                 if vector_text_button(
@@ -3444,23 +3711,127 @@ impl Desktop {
                 self.logger_friendly = true;
             }
         });
+        if self.logger_show_stats {
+            let palette = self.theme.palette();
+            let top = self.logger_stats.top_headers(8);
+            let mut stats_filter_req = None;
+            let mut stats_hide_req = None;
+            group_box(ui, self.theme, egui::Margin::symmetric(8.0, 4.0), |ui| {
+                ui.horizontal_wrapped(|ui| {
+                    ui.strong(format!(
+                        "{rate_total:.1} {}",
+                        self.i18n.text("rust.logger.pkt_per_sec")
+                    ));
+                    ui.small(
+                        egui::RichText::new(format!(
+                            "(← {rate_in:.1} · → {rate_out:.1} | Total: ← {} · → {})",
+                            self.logger_stats.total_in, self.logger_stats.total_out
+                        ))
+                        .color(palette.text_muted),
+                    );
+                    if !top.is_empty() {
+                        ui.separator();
+                        ui.small(
+                            egui::RichText::new(format!(
+                                "{}:",
+                                self.i18n.text("rust.logger.top_headers")
+                            ))
+                            .color(palette.text_muted),
+                        );
+                        for (dir, hdr, count) in &top {
+                            let (names, _) = log_packet_metadata(&self.packet_info, *dir, *hdr);
+                            let arrow = if *dir == Direction::ToServer {
+                                "→"
+                            } else {
+                                "←"
+                            };
+                            let chip = if names.is_empty() {
+                                format!("{arrow} #{hdr} ({count})")
+                            } else {
+                                let short = names.split("][").next().unwrap_or(&names);
+                                format!("{arrow} {short} #{hdr} ({count})")
+                            };
+                            let resp = ui.small_button(&chip).on_hover_text(format!(
+                                "{} · {}",
+                                self.i18n.text("rust.logger.filter"),
+                                self.i18n.text("rust.logger.hide_header")
+                            ));
+                            if resp.clicked() {
+                                stats_filter_req = Some(hdr.to_string());
+                            } else if resp.secondary_clicked() {
+                                stats_hide_req = Some((*dir, *hdr));
+                            }
+                        }
+                    }
+                });
+            });
+            if let Some(q) = stats_filter_req {
+                self.filter = q;
+            }
+            if let Some(pair) = stats_hide_req {
+                self.logger_hidden_headers.insert(pair);
+            }
+        }
         ui.separator();
+        let (display_incoming, display_outgoing) = logger_display::displayed_directions(
+            self.incoming,
+            self.outgoing,
+            self.logger_capture_selected_only,
+        );
+        let filter = self.filter.to_lowercase();
+        if self
+            .logger_search_cache
+            .as_ref()
+            .is_none_or(|(cached, _)| cached != &filter)
+        {
+            self.logger_search_cache = Some((
+                filter.clone(),
+                matching_packet_metadata(&self.packet_info, &filter),
+            ));
+        }
+        let matching_metadata = &self
+            .logger_search_cache
+            .as_ref()
+            .expect("search cache initialized")
+            .1;
+        let hide_noisy = self.logger_hide_noisy;
+        let hidden_headers = &self.logger_hidden_headers;
+        let packet_info_ref = &self.packet_info;
         let filtered: Vec<_> = self
             .logs
             .iter()
             .filter(|row| {
-                log_row_matches(
+                if !log_row_matches(
                     row,
                     &filter,
                     matching_metadata,
                     display_outgoing,
                     display_incoming,
-                )
+                ) {
+                    return false;
+                }
+                let dir = row.message.direction;
+                let hdr = row.message.packet.header();
+                if hidden_headers.contains(&(dir, hdr)) {
+                    return false;
+                }
+                if hide_noisy {
+                    let (names, _) = row
+                        .packet_metadata
+                        .get_or_init(|| log_packet_metadata(packet_info_ref, dir, hdr));
+                    if logger_ui::is_noisy_packet(dir, hdr, names) {
+                        return false;
+                    }
+                }
+                true
             })
             .collect();
         let mut inspection = None;
         let mut open_injection_req: Option<(Direction, String)> = None;
         let mut block_header_req: Option<(Direction, u16)> = None;
+        let mut hide_header_req: Option<(Direction, u16)> = None;
+        let mut rename_header_req: Option<(Direction, u16, String)> = None;
+        let mut copy_status_req: Option<String> = None;
         let hide_empty_header = logger_display::hide_empty_byte_header(
             self.logger_display_hide_empty_header,
             self.logger_representation,
@@ -3681,6 +4052,85 @@ impl Desktop {
                                 ui.close_menu();
                             }
                             if ui
+                                .add_enabled(
+                                    !row.skipped,
+                                    egui::Button::new(self.i18n.text("rust.logger.copy_python")),
+                                )
+                                .clicked()
+                            {
+                                let fields = logger_ui::parse_expression_fields(
+                                    row.packet_expression
+                                        .get()
+                                        .map(|(e, _, _)| e.as_str())
+                                        .filter(|s| !s.is_empty())
+                                        .unwrap_or(&row.expression),
+                                );
+                                let name_opt = (!names.is_empty()).then_some(title.as_str());
+                                let snippet = logger_ui::to_gpython_snippet(
+                                    m.direction,
+                                    m.packet.header(),
+                                    name_opt,
+                                    &row.expression,
+                                    &fields,
+                                );
+                                ui.ctx().copy_text(snippet);
+                                copy_status_req = Some(format!(
+                                    "Copied G-Python snippet for header {}",
+                                    m.packet.header()
+                                ));
+                                ui.close_menu();
+                            }
+                            if ui
+                                .add_enabled(
+                                    !row.skipped,
+                                    egui::Button::new(self.i18n.text("rust.logger.copy_java")),
+                                )
+                                .clicked()
+                            {
+                                let fields = logger_ui::parse_expression_fields(
+                                    row.packet_expression
+                                        .get()
+                                        .map(|(e, _, _)| e.as_str())
+                                        .filter(|s| !s.is_empty())
+                                        .unwrap_or(&row.expression),
+                                );
+                                let name_opt = (!names.is_empty()).then_some(title.as_str());
+                                let snippet = logger_ui::to_java_snippet(
+                                    m.direction,
+                                    m.packet.header(),
+                                    name_opt,
+                                    &row.expression,
+                                    &fields,
+                                );
+                                ui.ctx().copy_text(snippet);
+                                copy_status_req = Some(format!(
+                                    "Copied Java snippet for header {}",
+                                    m.packet.header()
+                                ));
+                                ui.close_menu();
+                            }
+                            ui.separator();
+                            if ui
+                                .button(self.i18n.text("rust.logger.hide_header"))
+                                .clicked()
+                            {
+                                hide_header_req = Some((m.direction, m.packet.header()));
+                                ui.close_menu();
+                            }
+                            if ui
+                                .button(self.i18n.text("rust.logger.rename_header"))
+                                .clicked()
+                            {
+                                let existing = if !names.is_empty() {
+                                    names.split("][").next().unwrap_or("").to_owned()
+                                } else {
+                                    String::new()
+                                };
+                                rename_header_req =
+                                    Some((m.direction, m.packet.header(), existing));
+                                ui.close_menu();
+                            }
+                            if ui
                                 .button(self.i18n.text("rust.logger.block_header"))
                                 .clicked()
                             {
@@ -3860,6 +4310,66 @@ impl Desktop {
                                 .clicked()
                             {
                                 ui.ctx().copy_text(row.expression.clone());
+                            }
+                            if ui
+                                .add_enabled(
+                                    !row.skipped,
+                                    egui::Button::new(self.i18n.text("rust.logger.copy_python")),
+                                )
+                                .clicked()
+                            {
+                                let name_opt = (!names.is_empty()).then_some(title.as_str());
+                                let snippet = logger_ui::to_gpython_snippet(
+                                    m.direction,
+                                    m.packet.header(),
+                                    name_opt,
+                                    &row.expression,
+                                    &fields,
+                                );
+                                ui.ctx().copy_text(snippet);
+                                copy_status_req = Some(format!(
+                                    "Copied G-Python snippet for header {}",
+                                    m.packet.header()
+                                ));
+                            }
+                            if ui
+                                .add_enabled(
+                                    !row.skipped,
+                                    egui::Button::new(self.i18n.text("rust.logger.copy_java")),
+                                )
+                                .clicked()
+                            {
+                                let name_opt = (!names.is_empty()).then_some(title.as_str());
+                                let snippet = logger_ui::to_java_snippet(
+                                    m.direction,
+                                    m.packet.header(),
+                                    name_opt,
+                                    &row.expression,
+                                    &fields,
+                                );
+                                ui.ctx().copy_text(snippet);
+                                copy_status_req = Some(format!(
+                                    "Copied Java snippet for header {}",
+                                    m.packet.header()
+                                ));
+                            }
+                            if ui
+                                .button(self.i18n.text("rust.logger.hide_header"))
+                                .clicked()
+                            {
+                                hide_header_req = Some((m.direction, m.packet.header()));
+                            }
+                            if ui
+                                .button(self.i18n.text("rust.logger.rename_header"))
+                                .clicked()
+                            {
+                                let existing = if !names.is_empty() {
+                                    names.split("][").next().unwrap_or("").to_owned()
+                                } else {
+                                    String::new()
+                                };
+                                rename_header_req =
+                                    Some((m.direction, m.packet.header(), existing));
                             }
                             if vector_text_button(
                                 ui,
@@ -4061,6 +4571,108 @@ impl Desktop {
                                 ui.close_menu();
                             }
                             if ui
+                                .add_enabled(
+                                    !row.skipped,
+                                    egui::Button::new(self.i18n.text("rust.logger.copy_python")),
+                                )
+                                .clicked()
+                            {
+                                let (names, _) = row.packet_metadata.get_or_init(|| {
+                                    log_packet_metadata(
+                                        &self.packet_info,
+                                        m.direction,
+                                        m.packet.header(),
+                                    )
+                                });
+                                let expr_src = row
+                                    .packet_expression
+                                    .get()
+                                    .map(|(e, _, _)| e.as_str())
+                                    .filter(|s| !s.is_empty())
+                                    .unwrap_or(&row.expression);
+                                let fields = logger_ui::parse_expression_fields(expr_src);
+                                let title = names.replace("][", " / ");
+                                let name_opt = (!title.is_empty()).then_some(title.as_str());
+                                let snippet = logger_ui::to_gpython_snippet(
+                                    m.direction,
+                                    m.packet.header(),
+                                    name_opt,
+                                    &row.expression,
+                                    &fields,
+                                );
+                                ui.ctx().copy_text(snippet);
+                                copy_status_req = Some(format!(
+                                    "Copied G-Python snippet for header {}",
+                                    m.packet.header()
+                                ));
+                                ui.close_menu();
+                            }
+                            if ui
+                                .add_enabled(
+                                    !row.skipped,
+                                    egui::Button::new(self.i18n.text("rust.logger.copy_java")),
+                                )
+                                .clicked()
+                            {
+                                let (names, _) = row.packet_metadata.get_or_init(|| {
+                                    log_packet_metadata(
+                                        &self.packet_info,
+                                        m.direction,
+                                        m.packet.header(),
+                                    )
+                                });
+                                let expr_src = row
+                                    .packet_expression
+                                    .get()
+                                    .map(|(e, _, _)| e.as_str())
+                                    .filter(|s| !s.is_empty())
+                                    .unwrap_or(&row.expression);
+                                let fields = logger_ui::parse_expression_fields(expr_src);
+                                let title = names.replace("][", " / ");
+                                let name_opt = (!title.is_empty()).then_some(title.as_str());
+                                let snippet = logger_ui::to_java_snippet(
+                                    m.direction,
+                                    m.packet.header(),
+                                    name_opt,
+                                    &row.expression,
+                                    &fields,
+                                );
+                                ui.ctx().copy_text(snippet);
+                                copy_status_req = Some(format!(
+                                    "Copied Java snippet for header {}",
+                                    m.packet.header()
+                                ));
+                                ui.close_menu();
+                            }
+                            ui.separator();
+                            if ui
+                                .button(self.i18n.text("rust.logger.hide_header"))
+                                .clicked()
+                            {
+                                hide_header_req = Some((m.direction, m.packet.header()));
+                                ui.close_menu();
+                            }
+                            if ui
+                                .button(self.i18n.text("rust.logger.rename_header"))
+                                .clicked()
+                            {
+                                let (names, _) = row.packet_metadata.get_or_init(|| {
+                                    log_packet_metadata(
+                                        &self.packet_info,
+                                        m.direction,
+                                        m.packet.header(),
+                                    )
+                                });
+                                let existing = if !names.is_empty() {
+                                    names.split("][").next().unwrap_or("").to_owned()
+                                } else {
+                                    String::new()
+                                };
+                                rename_header_req =
+                                    Some((m.direction, m.packet.header(), existing));
+                                ui.close_menu();
+                            }
+                            if ui
                                 .button(self.i18n.text("rust.logger.inspect_bytes"))
                                 .clicked()
                             {
@@ -4109,6 +4721,212 @@ impl Desktop {
                 self.update_rules();
                 let _ = Settings::save_rules(&self.settings_path, &self.settings.rules);
                 self.status = format!("Blocked {} packet ID {header}", dir.name());
+            }
+        }
+        if let Some((dir, header)) = hide_header_req {
+            self.logger_hidden_headers.insert((dir, header));
+            self.status = format!("Hidden {} header {header} in logger", dir.name());
+        }
+        if let Some((dir, header, existing)) = rename_header_req {
+            self.rename_header_dialog = Some((dir, header, existing));
+        }
+        if let Some(msg) = copy_status_req {
+            self.status = msg;
+        }
+        // Quick Rename Header modal
+        if let Some((dir, header, mut name_buf)) = self.rename_header_dialog.clone() {
+            let mut open = true;
+            let mut save_it = false;
+            let mut cancel_it = false;
+            egui::Window::new(format!(
+                "{} — {} #{header}",
+                self.i18n.text("rust.logger.rename_header"),
+                dir.name()
+            ))
+            .open(&mut open)
+            .collapsible(false)
+            .resizable(false)
+            .show(ui.ctx(), |ui| {
+                let edit = ui.add(
+                    egui::TextEdit::singleline(&mut name_buf)
+                        .desired_width(260.0)
+                        .hint_text(self.i18n.text("rust.logger.custom_name_hint")),
+                );
+                if edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    save_it = true;
+                }
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    if ui.button(self.i18n.text("rust.rule.save")).clicked() {
+                        save_it = true;
+                    }
+                    if ui.button(self.i18n.text("rust.rule.cancel")).clicked() {
+                        cancel_it = true;
+                    }
+                });
+            });
+            if save_it {
+                self.upsert_custom_packet_name(dir, header, name_buf);
+                self.rename_header_dialog = None;
+            } else if cancel_it || !open {
+                self.rename_header_dialog = None;
+            } else {
+                self.rename_header_dialog = Some((dir, header, name_buf));
+            }
+        }
+        // Custom Packet Names Manager window (HabboCity / custom Nitro headers)
+        if self.custom_names_window_open {
+            let mut open = self.custom_names_window_open;
+            let mut remove_custom: Option<(Direction, u16)> = None;
+            let mut add_custom = false;
+            let mut import_custom = false;
+            let mut export_custom = false;
+            egui::Window::new(self.i18n.text("rust.logger.custom_names"))
+                .open(&mut open)
+                .resizable(true)
+                .default_width(480.0)
+                .show(ui.ctx(), |ui| {
+                    ui.small(format!("{}", self.custom_packet_names_path().display()));
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        direction_selector(ui, &mut self.custom_name_direction, &self.i18n);
+                        ui.add(
+                            egui::DragValue::new(&mut self.custom_name_header)
+                                .prefix("#")
+                                .range(0..=u16::MAX),
+                        );
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.custom_name_input)
+                                .desired_width(180.0)
+                                .hint_text(self.i18n.text("rust.logger.custom_name_hint")),
+                        );
+                        if ui
+                            .add_enabled(
+                                !self.custom_name_input.trim().is_empty(),
+                                egui::Button::new(self.i18n.text("rust.rule.save")),
+                            )
+                            .clicked()
+                        {
+                            add_custom = true;
+                        }
+                    });
+                    ui.add_space(4.0);
+                    ui.horizontal(|ui| {
+                        if ui
+                            .button(self.i18n.text("rust.logger.import_custom_names"))
+                            .clicked()
+                        {
+                            import_custom = true;
+                        }
+                        if ui
+                            .button(self.i18n.text("rust.logger.export_custom_names"))
+                            .clicked()
+                        {
+                            export_custom = true;
+                        }
+                    });
+                    ui.separator();
+                    egui::ScrollArea::vertical()
+                        .id_salt("custom_packet_names_scroll")
+                        .max_height(260.0)
+                        .show(ui, |ui| {
+                            if self.custom_packet_names.is_empty() {
+                                ui.small(
+                                    egui::RichText::new(
+                                        self.i18n.text("rust.logger.no_custom_names"),
+                                    )
+                                    .italics()
+                                    .color(self.theme.palette().text_muted),
+                                );
+                            } else {
+                                for (dir, hdr, name) in &self.custom_packet_names {
+                                    ui.horizontal(|ui| {
+                                        ui.monospace(format!("{} #{hdr:<5}", dir.name()));
+                                        ui.strong(name);
+                                        ui.with_layout(
+                                            egui::Layout::right_to_left(egui::Align::Center),
+                                            |ui| {
+                                                if ui
+                                                    .small_button(
+                                                        self.i18n.text("rust.action.remove"),
+                                                    )
+                                                    .clicked()
+                                                {
+                                                    remove_custom = Some((*dir, *hdr));
+                                                }
+                                            },
+                                        );
+                                    });
+                                }
+                            }
+                        });
+                });
+            self.custom_names_window_open = open;
+            if add_custom {
+                let name = std::mem::take(&mut self.custom_name_input);
+                self.upsert_custom_packet_name(
+                    self.custom_name_direction,
+                    self.custom_name_header,
+                    name,
+                );
+            }
+            if let Some((dir, hdr)) = remove_custom {
+                self.remove_custom_packet_name(dir, hdr);
+            }
+            if import_custom {
+                match gearth_platform::choose_file(gearth_platform::FileKind::Json, false) {
+                    Ok(Some(selected)) => match PacketInfoManager::load_custom_names(&selected) {
+                        Ok(imported) => {
+                            let count = imported.len();
+                            for (dir, hdr, name) in imported {
+                                if let Some(existing) = self
+                                    .custom_packet_names
+                                    .iter_mut()
+                                    .find(|(d, h, _)| *d == dir && *h == hdr)
+                                {
+                                    existing.2 = name;
+                                } else {
+                                    self.custom_packet_names.push((dir, hdr, name));
+                                }
+                            }
+                            self.custom_packet_names
+                                .sort_by(|a, b| (a.0.name(), a.1).cmp(&(b.0.name(), b.1)));
+                            self.apply_custom_packet_names();
+                            let _ = PacketInfoManager::save_custom_names(
+                                &self.custom_packet_names_path(),
+                                &self.custom_packet_names,
+                            );
+                            self.status = format!("Imported {count} custom packet names");
+                        }
+                        Err(e) => self.status = format!("Import failed: {e}"),
+                    },
+                    Ok(None) => {}
+                    Err(e) => {
+                        self.status = format!("{}: {e}", self.i18n.text("rust.dialog.failed"))
+                    }
+                }
+            }
+            if export_custom {
+                match gearth_platform::choose_file(gearth_platform::FileKind::Json, true) {
+                    Ok(Some(selected)) => {
+                        match PacketInfoManager::save_custom_names(
+                            &selected,
+                            &self.custom_packet_names,
+                        ) {
+                            Ok(()) => {
+                                self.status = format!(
+                                    "Exported custom packet names to {}",
+                                    selected.display()
+                                )
+                            }
+                            Err(e) => self.status = format!("Export failed: {e}"),
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(e) => {
+                        self.status = format!("{}: {e}", self.i18n.text("rust.dialog.failed"))
+                    }
+                }
             }
         }
         if let Some(dump) = inspection {
@@ -7440,6 +8258,32 @@ impl Desktop {
             .unwrap_or(false);
         self.logger_antispam = AntiSpam::from_setting(self.settings.get("logger_antispam"));
         self.logger_filter.set_mode(self.logger_antispam);
+        self.logger_hide_noisy = self
+            .settings
+            .booleans
+            .get("logger_hide_noisy")
+            .copied()
+            .unwrap_or(false);
+        self.logger_show_stats = self
+            .settings
+            .booleans
+            .get("logger_show_stats")
+            .copied()
+            .unwrap_or(false);
+        self.logger_hidden_headers =
+            logger_ui::parse_hidden_headers_setting(self.settings.get("logger_hidden_headers"));
+        self.logger_presets =
+            logger_ui::parse_filter_presets(self.settings.get("logger_filter_presets"));
+        if let Ok(custom) = PacketInfoManager::load_custom_names(&self.custom_packet_names_path()) {
+            self.custom_packet_names = custom;
+            if !self.custom_packet_names.is_empty() {
+                self.packet_info = self
+                    .packet_info
+                    .with_custom_names(&self.custom_packet_names);
+                invalidate_log_expressions(&mut self.logs);
+                self.logger_search_cache = None;
+            }
+        }
         self.packet_limit = self
             .settings
             .values
@@ -7638,6 +8482,22 @@ impl Desktop {
         self.settings
             .values
             .insert("logger_packet_limit".into(), self.packet_limit.to_string());
+        if self.logger_hidden_headers.is_empty() {
+            self.settings.values.remove("logger_hidden_headers");
+        } else {
+            self.settings.values.insert(
+                "logger_hidden_headers".into(),
+                logger_ui::format_hidden_headers_setting(&self.logger_hidden_headers),
+            );
+        }
+        if self.logger_presets.is_empty() {
+            self.settings.values.remove("logger_filter_presets");
+        } else {
+            self.settings.values.insert(
+                "logger_filter_presets".into(),
+                logger_ui::serialize_filter_presets(&self.logger_presets),
+            );
+        }
         for (key, value) in [
             ("listen", &self.listen),
             ("remote", &self.remote),
@@ -7743,6 +8603,8 @@ impl Desktop {
                 "logger_clear_on_disconnect".into(),
                 self.logger_clear_on_disconnect,
             ),
+            ("logger_hide_noisy".into(), self.logger_hide_noisy),
+            ("logger_show_stats".into(), self.logger_show_stats),
         ]);
         match self.settings.save(&self.settings_path) {
             Ok(()) => {
@@ -7751,6 +8613,57 @@ impl Desktop {
             }
             Err(e) => self.status = e.to_string(),
         }
+    }
+    fn custom_packet_names_path(&self) -> PathBuf {
+        self.settings_path
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("custom-packets.json")
+    }
+    fn apply_custom_packet_names(&mut self) {
+        self.packet_info = self
+            .packet_info
+            .with_custom_names(&self.custom_packet_names);
+        invalidate_log_expressions(&mut self.logs);
+        self.logger_search_cache = None;
+    }
+    fn upsert_custom_packet_name(&mut self, direction: Direction, header: u16, name: String) {
+        let trimmed = name.trim();
+        if trimmed.is_empty() {
+            self.remove_custom_packet_name(direction, header);
+            return;
+        }
+        if let Some(existing) = self
+            .custom_packet_names
+            .iter_mut()
+            .find(|(d, h, _)| *d == direction && *h == header)
+        {
+            existing.2 = trimmed.to_owned();
+        } else {
+            self.custom_packet_names
+                .push((direction, header, trimmed.to_owned()));
+            self.custom_packet_names
+                .sort_by(|a, b| (a.0.name(), a.1).cmp(&(b.0.name(), b.1)));
+        }
+        self.apply_custom_packet_names();
+        match PacketInfoManager::save_custom_names(
+            &self.custom_packet_names_path(),
+            &self.custom_packet_names,
+        ) {
+            Ok(()) => {
+                self.status = format!("Named {} header {header} as {trimmed}", direction.name());
+            }
+            Err(e) => self.status = format!("Custom name updated in memory; save failed: {e}"),
+        }
+    }
+    fn remove_custom_packet_name(&mut self, direction: Direction, header: u16) {
+        self.custom_packet_names
+            .retain(|(d, h, _)| !(*d == direction && *h == header));
+        self.apply_custom_packet_names();
+        let _ = PacketInfoManager::save_custom_names(
+            &self.custom_packet_names_path(),
+            &self.custom_packet_names,
+        );
     }
     fn packet_format(&self, direction: Direction) -> PacketFormat {
         if self.origins && !self.nitro {
@@ -7788,8 +8701,7 @@ impl Desktop {
         } else if self.packet_info.version != self.hotel_version {
             self.packet_info = PacketInfoManager::default();
         }
-        invalidate_log_expressions(&mut self.logs);
-        self.logger_search_cache = None;
+        self.apply_custom_packet_names();
         Ok(())
     }
     fn relay_options(&mut self) -> std::io::Result<RelayOptions> {

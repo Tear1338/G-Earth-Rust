@@ -1,11 +1,376 @@
-//! Beginner-friendly packet logger formatting, field decoding, and UI helpers.
+//! Beginner-friendly packet logger formatting, field decoding, snippet export, presets, and stats.
 use eframe::egui;
+use gearth_rust::packet::Direction;
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    time::{Duration, Instant},
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DecodedField {
     pub kind: &'static str,
     pub value: String,
     pub is_string: bool,
+}
+
+/// Detect common high-frequency / noisy keepalive & ping packets (Nitro, Flash, HabboCity).
+pub fn is_noisy_packet(direction: Direction, header: u16, names: &str) -> bool {
+    // HabboCity link control frames (7701..=7705)
+    if (7701..=7705).contains(&header) {
+        return true;
+    }
+    // Common Nitro / PRODUCTION-201611291003-338511768 ping/latency/telemetry headers
+    let noisy_id = match direction {
+        Direction::ToServer => matches!(header, 295 | 215 | 2596 | 170 | 3457),
+        Direction::ToClient => matches!(header, 10 | 3928),
+    };
+    if noisy_id {
+        return true;
+    }
+    if !names.is_empty() {
+        let lower = names.to_ascii_lowercase();
+        for token in [
+            "ping",
+            "pong",
+            "latency",
+            "keepalive",
+            "heartbeat",
+            "eventtracker",
+            "eventlog",
+            "clientpong",
+            "clientping",
+        ] {
+            if lower.contains(token) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LoggerFilterPreset {
+    pub name: String,
+    pub query: String,
+    pub hide_noisy: bool,
+    pub incoming: bool,
+    pub outgoing: bool,
+    pub hidden_headers: Vec<(Direction, u16)>,
+}
+
+pub fn parse_filter_presets(raw: &str) -> Vec<LoggerFilterPreset> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    let Ok(serde_json::Value::Array(items)) = serde_json::from_str::<serde_json::Value>(trimmed)
+    else {
+        return Vec::new();
+    };
+    let mut presets = Vec::new();
+    for item in items.into_iter().take(64) {
+        let Some(name) = item
+            .get("name")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty() && s.len() <= 80)
+        else {
+            continue;
+        };
+        let query = item
+            .get("query")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_owned();
+        let hide_noisy = item
+            .get("hide_noisy")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        let incoming = item
+            .get("incoming")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        let outgoing = item
+            .get("outgoing")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
+        let mut hidden_headers = Vec::new();
+        if let Some(arr) = item.get("hidden_headers").and_then(|v| v.as_array()) {
+            for entry in arr.iter().take(256) {
+                let dir = entry
+                    .get("direction")
+                    .and_then(|v| v.as_str())
+                    .and_then(|s| Direction::parse(s).ok());
+                let header = entry
+                    .get("header")
+                    .and_then(|v| v.as_u64())
+                    .and_then(|n| u16::try_from(n).ok());
+                if let (Some(d), Some(h)) = (dir, header) {
+                    if !hidden_headers.contains(&(d, h)) {
+                        hidden_headers.push((d, h));
+                    }
+                }
+            }
+        }
+        presets.push(LoggerFilterPreset {
+            name: name.to_owned(),
+            query,
+            hide_noisy,
+            incoming,
+            outgoing,
+            hidden_headers,
+        });
+    }
+    presets
+}
+
+pub fn serialize_filter_presets(presets: &[LoggerFilterPreset]) -> String {
+    let arr: Vec<serde_json::Value> = presets
+        .iter()
+        .map(|p| {
+            let hidden: Vec<serde_json::Value> = p
+                .hidden_headers
+                .iter()
+                .map(|(d, h)| serde_json::json!({ "direction": d.name(), "header": h }))
+                .collect();
+            serde_json::json!({
+                "name": p.name,
+                "query": p.query,
+                "hide_noisy": p.hide_noisy,
+                "incoming": p.incoming,
+                "outgoing": p.outgoing,
+                "hidden_headers": hidden,
+            })
+        })
+        .collect();
+    serde_json::to_string(&arr).unwrap_or_else(|_| "[]".into())
+}
+
+pub fn format_hidden_headers_setting(hidden: &HashSet<(Direction, u16)>) -> String {
+    let mut sorted: Vec<_> = hidden.iter().copied().collect();
+    sorted.sort_by(|a, b| (a.0.name(), a.1).cmp(&(b.0.name(), b.1)));
+    let arr: Vec<serde_json::Value> = sorted
+        .into_iter()
+        .map(|(d, h)| serde_json::json!({ "direction": d.name(), "header": h }))
+        .collect();
+    serde_json::to_string(&arr).unwrap_or_else(|_| "[]".into())
+}
+
+pub fn parse_hidden_headers_setting(raw: &str) -> HashSet<(Direction, u16)> {
+    let mut set = HashSet::new();
+    let Ok(serde_json::Value::Array(items)) = serde_json::from_str::<serde_json::Value>(raw.trim())
+    else {
+        return set;
+    };
+    for entry in items.into_iter().take(512) {
+        let dir = entry
+            .get("direction")
+            .and_then(|v| v.as_str())
+            .and_then(|s| Direction::parse(s).ok());
+        let header = entry
+            .get("header")
+            .and_then(|v| v.as_u64())
+            .and_then(|n| u16::try_from(n).ok());
+        if let (Some(d), Some(h)) = (dir, header) {
+            set.insert((d, h));
+        }
+    }
+    set
+}
+
+fn python_field_literal(field: &DecodedField) -> String {
+    match field.kind {
+        "Bool" => {
+            if field.value.eq_ignore_ascii_case("true") {
+                "True".into()
+            } else {
+                "False".into()
+            }
+        }
+        _ => field.value.clone(),
+    }
+}
+
+fn java_field_literal(field: &DecodedField) -> String {
+    match field.kind {
+        "Byte" => format!("(byte) {}", field.value),
+        "Short" => format!("(short) {}", field.value),
+        "Long" => format!("{}L", field.value),
+        "Float" => format!("{}f", field.value),
+        _ => field.value.clone(),
+    }
+}
+
+fn escape_double_quoted(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+/// Generate a ready-to-use G-Python snippet for a logged packet.
+pub fn to_gpython_snippet(
+    direction: Direction,
+    header: u16,
+    name: Option<&str>,
+    expression: &str,
+    fields: &[DecodedField],
+) -> String {
+    let primary_name = name
+        .and_then(|n| n.split(" / ").next())
+        .map(str::trim)
+        .filter(|n| !n.is_empty());
+    let header_arg = match primary_name {
+        Some(n) => format!("\"{}\"", escape_double_quoted(n)),
+        None => header.to_string(),
+    };
+    let (send_fn, dir_const, dir_label) = match direction {
+        Direction::ToServer => ("send_to_server", "Direction.TO_SERVER", "TOSERVER"),
+        Direction::ToClient => ("send_to_client", "Direction.TO_CLIENT", "TOCLIENT"),
+    };
+    let title = primary_name
+        .map(|n| format!("{n} (ID {header})"))
+        .unwrap_or_else(|| format!("ID {header}"));
+    let mut args = vec![header_arg.clone()];
+    for f in fields {
+        args.push(python_field_literal(f));
+    }
+    let build_line = if !fields.is_empty() || !expression.contains("{hex:") {
+        format!("packet = HPacket({})", args.join(", "))
+    } else {
+        format!(
+            "packet = HPacket.from_string(\"{}\")",
+            escape_double_quoted(expression)
+        )
+    };
+    format!(
+        "from g_python.hpacket import HPacket\nfrom g_python.hdirection import Direction\n\n# {title} - {dir_label}\n{build_line}\next.{send_fn}(packet)\n\n# Intercept:\n# def on_packet(message):\n#     packet = message.packet\n# ext.intercept({dir_const}, on_packet, {header_arg})"
+    )
+}
+
+/// Generate a ready-to-use G-Earth Java API snippet for a logged packet.
+pub fn to_java_snippet(
+    direction: Direction,
+    header: u16,
+    name: Option<&str>,
+    expression: &str,
+    fields: &[DecodedField],
+) -> String {
+    let primary_name = name
+        .and_then(|n| n.split(" / ").next())
+        .map(str::trim)
+        .filter(|n| !n.is_empty());
+    let (send_fn, dir_enum, dir_label) = match direction {
+        Direction::ToServer => ("sendToServer", "HMessage.Direction.TOSERVER", "TOSERVER"),
+        Direction::ToClient => ("sendToClient", "HMessage.Direction.TOCLIENT", "TOCLIENT"),
+    };
+    let title = primary_name
+        .map(|n| format!("{n} (ID {header})"))
+        .unwrap_or_else(|| format!("ID {header}"));
+    let build_line = if !fields.is_empty() || !expression.contains("{hex:") {
+        let mut args = Vec::new();
+        if let Some(n) = primary_name {
+            args.push(format!("\"{}\"", escape_double_quoted(n)));
+            args.push(dir_enum.to_owned());
+        } else {
+            args.push(header.to_string());
+        }
+        for f in fields {
+            args.push(java_field_literal(f));
+        }
+        format!("HPacket packet = new HPacket({});", args.join(", "))
+    } else {
+        format!(
+            "HPacket packet = new HPacket(\"{}\");",
+            escape_double_quoted(expression)
+        )
+    };
+    let intercept_target = match primary_name {
+        Some(n) => format!("\"{}\"", escape_double_quoted(n)),
+        None => header.to_string(),
+    };
+    format!(
+        "// {title} - {dir_label}\n{build_line}\n{send_fn}(packet);\n\n// Intercept:\n// intercept({dir_enum}, {intercept_target}, hMessage -> {{\n//     HPacket p = hMessage.getPacket();\n// }});"
+    )
+}
+
+/// Lightweight rolling statistics for the Packet Logger (packets/sec + top headers).
+#[derive(Default)]
+pub struct LoggerStats {
+    recent: VecDeque<(Instant, Direction)>,
+    counts: HashMap<(Direction, u16), u64>,
+    pub total_in: u64,
+    pub total_out: u64,
+    started_at: Option<Instant>,
+}
+
+impl LoggerStats {
+    const WINDOW: Duration = Duration::from_secs(5);
+
+    pub fn record(&mut self, direction: Direction, header: u16, now: Instant) {
+        if self.started_at.is_none() {
+            self.started_at = Some(now);
+        }
+        self.prune(now);
+        if self.recent.len() >= 10_000 {
+            self.recent.pop_front();
+        }
+        self.recent.push_back((now, direction));
+        *self.counts.entry((direction, header)).or_insert(0) += 1;
+        match direction {
+            Direction::ToClient => self.total_in = self.total_in.saturating_add(1),
+            Direction::ToServer => self.total_out = self.total_out.saturating_add(1),
+        }
+    }
+
+    fn prune(&mut self, now: Instant) {
+        while self
+            .recent
+            .front()
+            .is_some_and(|(ts, _)| now.saturating_duration_since(*ts) > Self::WINDOW)
+        {
+            self.recent.pop_front();
+        }
+    }
+
+    /// Returns `(total_per_sec, incoming_per_sec, outgoing_per_sec)` over the rolling 5s window.
+    pub fn rates(&mut self, now: Instant) -> (f64, f64, f64) {
+        self.prune(now);
+        if self.recent.is_empty() {
+            return (0.0, 0.0, 0.0);
+        }
+        let elapsed = self
+            .started_at
+            .map(|start| now.saturating_duration_since(start).as_secs_f64())
+            .unwrap_or(5.0)
+            .clamp(1.0, Self::WINDOW.as_secs_f64());
+        let mut inc = 0usize;
+        let mut out = 0usize;
+        for (_, dir) in &self.recent {
+            match dir {
+                Direction::ToClient => inc += 1,
+                Direction::ToServer => out += 1,
+            }
+        }
+        let total = (inc + out) as f64 / elapsed;
+        (total, inc as f64 / elapsed, out as f64 / elapsed)
+    }
+
+    pub fn top_headers(&self, limit: usize) -> Vec<(Direction, u16, u64)> {
+        let mut items: Vec<_> = self
+            .counts
+            .iter()
+            .map(|(&(dir, header), &count)| (dir, header, count))
+            .collect();
+        items.sort_by(|a, b| b.2.cmp(&a.2).then_with(|| a.1.cmp(&b.1)));
+        items.truncate(limit);
+        items
+    }
+
+    pub fn reset(&mut self) {
+        self.recent.clear();
+        self.counts.clear();
+        self.total_in = 0;
+        self.total_out = 0;
+        self.started_at = None;
+    }
 }
 
 /// Extract typed payload fields from a G-Earth structured/predicted expression.
@@ -183,5 +548,88 @@ mod tests {
         );
         assert_eq!(summarize_fields(&[], "(empty)", 120), "(empty)");
         assert_eq!(format_clock_time(3_661_045), "01:01:01.045");
+    }
+
+    #[test]
+    fn noisy_packet_detection_covers_pings_and_city_links() {
+        assert!(is_noisy_packet(Direction::ToServer, 2596, ""));
+        assert!(is_noisy_packet(Direction::ToClient, 3928, ""));
+        assert!(is_noisy_packet(Direction::ToClient, 7701, ""));
+        assert!(is_noisy_packet(Direction::ToServer, 999, "LatencyPing"));
+        assert!(!is_noisy_packet(Direction::ToServer, 1314, "Chat"));
+    }
+
+    #[test]
+    fn filter_presets_and_hidden_headers_roundtrip() {
+        let presets = vec![LoggerFilterPreset {
+            name: "Chat only".into(),
+            query: "chat".into(),
+            hide_noisy: true,
+            incoming: true,
+            outgoing: false,
+            hidden_headers: vec![(Direction::ToClient, 1640), (Direction::ToServer, 2596)],
+        }];
+        let json = serialize_filter_presets(&presets);
+        let parsed = parse_filter_presets(&json);
+        assert_eq!(parsed, presets);
+
+        let mut hidden = HashSet::new();
+        hidden.insert((Direction::ToClient, 10));
+        hidden.insert((Direction::ToServer, 295));
+        let encoded = format_hidden_headers_setting(&hidden);
+        assert_eq!(parse_hidden_headers_setting(&encoded), hidden);
+    }
+
+    #[test]
+    fn snippet_generators_emit_valid_gpython_and_java() {
+        let fields = parse_expression_fields(r#"{out:Chat}{s:"salut"}{i:0}{b:true}"#);
+        let py = to_gpython_snippet(
+            Direction::ToServer,
+            1314,
+            Some("Chat"),
+            r#"{out:Chat}{s:"salut"}{i:0}{b:true}"#,
+            &fields,
+        );
+        assert!(py.contains(r#"HPacket("Chat", "salut", 0, True)"#));
+        assert!(py.contains("ext.send_to_server(packet)"));
+        assert!(py.contains("Direction.TO_SERVER"));
+
+        let java = to_java_snippet(
+            Direction::ToServer,
+            1314,
+            Some("Chat"),
+            r#"{out:Chat}{s:"salut"}{i:0}{b:true}"#,
+            &fields,
+        );
+        assert!(
+            java.contains(r#"new HPacket("Chat", HMessage.Direction.TOSERVER, "salut", 0, true)"#)
+        );
+        assert!(java.contains("sendToServer(packet);"));
+
+        let raw_py =
+            to_gpython_snippet(Direction::ToClient, 9999, None, "{h:9999}{hex:01 02}", &[]);
+        assert!(raw_py.contains(r#"HPacket.from_string("{h:9999}{hex:01 02}")"#));
+        assert!(raw_py.contains("ext.send_to_client(packet)"));
+    }
+
+    #[test]
+    fn logger_stats_tracks_rates_and_top_headers() {
+        let mut stats = LoggerStats::default();
+        let t0 = Instant::now();
+        stats.record(Direction::ToClient, 1640, t0);
+        stats.record(Direction::ToClient, 1640, t0);
+        stats.record(Direction::ToServer, 1314, t0);
+        let (total, inc, out) = stats.rates(t0);
+        assert!(total >= 2.9 && inc >= 1.9 && out >= 0.9);
+        let top = stats.top_headers(2);
+        assert_eq!(
+            top,
+            vec![
+                (Direction::ToClient, 1640, 2),
+                (Direction::ToServer, 1314, 1)
+            ]
+        );
+        stats.reset();
+        assert!(stats.top_headers(5).is_empty());
     }
 }
