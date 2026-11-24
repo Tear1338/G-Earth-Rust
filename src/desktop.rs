@@ -7012,6 +7012,21 @@ impl eframe::App for Desktop {
                                 }
                             }
                         }
+                        ui.add_space(6.0);
+                        if let Some(tex) = self.logos.as_ref().and_then(|l| l.fluxer.as_ref()) {
+                            let fluxer_resp = ui
+                                .add(
+                                    egui::Image::new((tex.id(), egui::vec2(18.0, 18.0)))
+                                        .rounding(egui::Rounding::same(4.0))
+                                        .sense(egui::Sense::click()),
+                                )
+                                .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                .on_hover_text("Fluxer Community — https://fluxer.gg/OqH9tI3d");
+                            if fluxer_resp.clicked() {
+                                ui.ctx()
+                                    .open_url(egui::OpenUrl::new_tab("https://fluxer.gg/OqH9tI3d"));
+                            }
+                        }
                     });
                 });
                 ui.add_space(4.0);
