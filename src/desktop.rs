@@ -7377,14 +7377,45 @@ impl eframe::App for Desktop {
                                                     "Github - Tanji",
                                                     "https://github.com/ArachisH/Tanji",
                                                 );
+                                                ui.horizontal(|ui| {
+                                                    ui.spacing_mut().item_spacing.x = 5.0;
+                                                    if let Some(tex) = self
+                                                        .logos
+                                                        .as_ref()
+                                                        .and_then(|l| l.fluxer.as_ref())
+                                                    {
+                                                        let img_resp = ui
+                                                            .add(
+                                                                egui::Image::new((
+                                                                    tex.id(),
+                                                                    egui::vec2(16.0, 16.0),
+                                                                ))
+                                                                .rounding(egui::Rounding::same(3.0))
+                                                                .sense(egui::Sense::click()),
+                                                            )
+                                                            .on_hover_cursor(
+                                                                egui::CursorIcon::PointingHand,
+                                                            )
+                                                            .on_hover_text(
+                                                                "https://fluxer.gg/OqH9tI3d",
+                                                            );
+                                                        if img_resp.clicked() {
+                                                            ui.ctx().open_url(
+                                                                egui::OpenUrl::new_tab(
+                                                                    "https://fluxer.gg/OqH9tI3d",
+                                                                ),
+                                                            );
+                                                        }
+                                                    }
+                                                    ui.hyperlink_to(
+                                                        "Fluxer - Community",
+                                                        "https://fluxer.gg/OqH9tI3d",
+                                                    );
+                                                });
                                                 ui.hyperlink_to(
-                                                    "Discord - G-Earth",
-                                                    "https://discord.gg/AVkcF8y",
+                                                    "G-ExtensionStore",
+                                                    "https://github.com/Tear1338/G-ExtensionStore",
                                                 );
-                                                ui.hyperlink_to(
-                                            "G-ExtensionStore",
-                                            "https://github.com/sirjonasxx/G-ExtensionStore",
-                                        );
                                             });
                                         });
                                     });

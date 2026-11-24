@@ -265,6 +265,7 @@ pub struct ThemeLogos {
     pub btn_edit: Option<egui::TextureHandle>,
     pub btn_pause: Option<egui::TextureHandle>,
     pub btn_resume: Option<egui::TextureHandle>,
+    pub fluxer: Option<egui::TextureHandle>,
     pub flags: HashMap<&'static str, egui::TextureHandle>,
 }
 
@@ -368,6 +369,11 @@ impl ThemeLogos {
                 ctx,
                 "btn_resume",
                 include_bytes!("../resources/ui/ButtonResume.png"),
+            ),
+            fluxer: load_png_texture(
+                ctx,
+                "fluxer_logo",
+                include_bytes!("../docs/assets/fluxer-logo.png"),
             ),
             flags,
         }
