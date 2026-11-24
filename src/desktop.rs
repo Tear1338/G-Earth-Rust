@@ -7328,95 +7328,56 @@ impl eframe::App for Desktop {
                                     ui.label("sirjonasxx  ·  Rust port: 1desirable1337 / Tear1338");
                                 });
                                         ui.add_space(6.0);
-                                        ui.horizontal_top(|ui| {
-                                            ui.vertical(|ui| {
-                                                ui.strong(format!(
-                                                    "{}:",
-                                                    self.i18n.text("tab.info.contributors")
-                                                ));
-                                                ui.horizontal_top(|ui| {
-                                                    ui.vertical(|ui| {
-                                                        for name in [
-                                                            "XePeleato",
-                                                            "Scott Stamp",
-                                                            "LittleJ",
-                                                            "ArachisH",
-                                                        ] {
-                                                            ui.label(name);
-                                                        }
-                                                    });
-                                                    ui.add_space(14.0);
-                                                    ui.vertical(|ui| {
-                                                        for name in [
-                                                            "BurakDev",
-                                                            "Mikee#0055",
-                                                            "WiredSpast",
-                                                            "Dorving",
-                                                        ] {
-                                                            ui.label(name);
-                                                        }
-                                                    });
-                                                });
-                                            });
-                                            ui.add_space(28.0);
-                                            ui.vertical(|ui| {
-                                                ui.strong(format!(
-                                                    "{}:",
-                                                    self.i18n.text("tab.info.links")
-                                                ));
-                                                ui.hyperlink_to("Darkbox", "https://darkbox.nl");
-                                                ui.hyperlink_to(
-                                                    "Github - G-Earth",
-                                                    "https://github.com/G-Realm/G-Earth",
-                                                );
-                                                ui.hyperlink_to(
-                                                    "Github - G-Earth-Rust",
-                                                    "https://github.com/Tear1338/G-Earth-Rust",
-                                                );
-                                                ui.hyperlink_to(
-                                                    "Github - Tanji",
-                                                    "https://github.com/ArachisH/Tanji",
-                                                );
-                                                ui.horizontal(|ui| {
-                                                    ui.spacing_mut().item_spacing.x = 5.0;
-                                                    if let Some(tex) = self
-                                                        .logos
-                                                        .as_ref()
-                                                        .and_then(|l| l.fluxer.as_ref())
-                                                    {
-                                                        let img_resp = ui
-                                                            .add(
-                                                                egui::Image::new((
-                                                                    tex.id(),
-                                                                    egui::vec2(16.0, 16.0),
-                                                                ))
-                                                                .rounding(egui::Rounding::same(3.0))
-                                                                .sense(egui::Sense::click()),
-                                                            )
-                                                            .on_hover_cursor(
-                                                                egui::CursorIcon::PointingHand,
-                                                            )
-                                                            .on_hover_text(
-                                                                "https://fluxer.gg/OqH9tI3d",
-                                                            );
-                                                        if img_resp.clicked() {
-                                                            ui.ctx().open_url(
-                                                                egui::OpenUrl::new_tab(
-                                                                    "https://fluxer.gg/OqH9tI3d",
-                                                                ),
-                                                            );
-                                                        }
+                                        ui.vertical(|ui| {
+                                            ui.strong(format!(
+                                                "{}:",
+                                                self.i18n.text("tab.info.links")
+                                            ));
+                                            ui.hyperlink_to(
+                                                "Github - G-Earth",
+                                                "https://github.com/G-Realm/G-Earth",
+                                            );
+                                            ui.hyperlink_to(
+                                                "Github - G-Earth-Rust",
+                                                "https://github.com/Tear1338/G-Earth-Rust",
+                                            );
+                                            ui.horizontal(|ui| {
+                                                ui.spacing_mut().item_spacing.x = 5.0;
+                                                if let Some(tex) = self
+                                                    .logos
+                                                    .as_ref()
+                                                    .and_then(|l| l.fluxer.as_ref())
+                                                {
+                                                    let img_resp = ui
+                                                        .add(
+                                                            egui::Image::new((
+                                                                tex.id(),
+                                                                egui::vec2(16.0, 16.0),
+                                                            ))
+                                                            .rounding(egui::Rounding::same(3.0))
+                                                            .sense(egui::Sense::click()),
+                                                        )
+                                                        .on_hover_cursor(
+                                                            egui::CursorIcon::PointingHand,
+                                                        )
+                                                        .on_hover_text(
+                                                            "https://fluxer.gg/OqH9tI3d",
+                                                        );
+                                                    if img_resp.clicked() {
+                                                        ui.ctx().open_url(egui::OpenUrl::new_tab(
+                                                            "https://fluxer.gg/OqH9tI3d",
+                                                        ));
                                                     }
-                                                    ui.hyperlink_to(
-                                                        "Fluxer - Community",
-                                                        "https://fluxer.gg/OqH9tI3d",
-                                                    );
-                                                });
+                                                }
                                                 ui.hyperlink_to(
-                                                    "G-ExtensionStore",
-                                                    "https://github.com/Tear1338/G-ExtensionStore",
+                                                    "Fluxer - Community",
+                                                    "https://fluxer.gg/OqH9tI3d",
                                                 );
                                             });
+                                            ui.hyperlink_to(
+                                                "G-ExtensionStore",
+                                                "https://github.com/Tear1338/G-ExtensionStore",
+                                            );
                                         });
                                     });
                                 });
