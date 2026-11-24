@@ -2,6 +2,19 @@
 
 Rust port in progress of [G-Realm/G-Earth](https://github.com/G-Realm/G-Earth), based on **1.5.4-beta-29**, commit `242155c291b1109d6c9a02370f6a2af1ead41ea8`.
 
+## Community
+
+Want to join the community, get support, or share feedback and extensions? Join us on **Fluxer**!
+
+<a href="https://fluxer.gg/OqH9tI3d">
+  <img src="docs/assets/fluxer-logo.png" alt="Join our Fluxer community" width="48" height="48" align="left" />
+</a>
+
+**[Join the Fluxer Community →](https://fluxer.gg/OqH9tI3d)**  
+Discussions, updates, help, and community extensions.
+
+<br clear="left" />
+
 **Development version. This does not yet replace the original G-Earth.** Windows Flash state discovery and hosts-based Flash/Origins attachment are now implemented and tested with a controlled client process. Raw-IP command mapping and preconnected relay behavior are implemented with mocked privileged commands and real loopback sockets. The Nitro HTTP/TLS/WebSocket provider, beta-29 hotel adapters and Windows proxy/certificate controls are also implemented with fixture tests. Unity WebGL hooks/communicator and a native extension store are implemented and tested with controlled fixtures. Real hotel/firewall sessions and exact UI parity remain outstanding. The Rust host runs external Java extensions, and the released G-Presets 1.6.5 authenticates in an isolated test; real G-Presets game workflows remain untested. [Feature-by-feature status](docs/PARITY.md).
 
 ## Implemented
