@@ -21,15 +21,15 @@ end run";
 #[cfg(any(target_os = "macos", test))]
 const ALIAS_LOOPBACK_SCRIPT: &str = "\
 on run argv
-  set cmd to \"\"
-  repeat with ip in argv
-    if cmd is not \"\" then
-      set cmd to cmd & \" && \"
+  set shellCmd to \"\"
+  repeat with addr in argv
+    if shellCmd is not \"\" then
+      set shellCmd to shellCmd & \" && \"
     end if
-    set cmd to cmd & \"/sbin/ifconfig lo0 alias \" & quoted form of ip & \" up\"
+    set shellCmd to shellCmd & \"/sbin/ifconfig lo0 alias \" & quoted form of (addr as text) & \" up\"
   end repeat
-  if cmd is not \"\" then
-    do shell script cmd with administrator privileges
+  if shellCmd is not \"\" then
+    do shell script shellCmd with administrator privileges
   end if
 end run";
 
@@ -336,5 +336,33 @@ mod tests {
         assert_eq!(calls.len(), 1);
         assert_eq!(calls[0].0, Path::new("/usr/bin/osascript"));
         assert_eq!(&calls[0].1[3..], &["127.0.0.2", "127.0.0.3"]);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn applescripts_compile_cleanly_with_osacompile() {
+        use std::process::Command;
+        let dir =
+            std::env::temp_dir().join(format!("gearth-osacompile-test-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        for (idx, script) in [COPY_HOSTS_SCRIPT, ALIAS_LOOPBACK_SCRIPT]
+            .iter()
+            .enumerate()
+        {
+            let out = dir.join(format!("script-{idx}.scpt"));
+            let output = Command::new("/usr/bin/osacompile")
+                .arg("-o")
+                .arg(&out)
+                .arg("-e")
+                .arg(script)
+                .output()
+                .expect("osacompile must execute on macOS");
+            assert!(
+                output.status.success(),
+                "AppleScript {idx} failed to compile: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        let _ = fs::remove_dir_all(&dir);
     }
 }
