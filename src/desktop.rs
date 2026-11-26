@@ -432,10 +432,17 @@ struct Desktop {
     custom_name_header: u16,
     custom_name_input: String,
     rename_header_dialog: Option<(Direction, u16, String)>,
+    diff_base: Option<logger_ui::PacketSnapshot>,
+    diff_pair: Option<(logger_ui::PacketSnapshot, logger_ui::PacketSnapshot)>,
     packet_dump: Option<String>,
     expression: String,
     direction: Direction,
     injection_history: InjectionHistory,
+    injection_favorites: Vec<logger_ui::InjectionFavorite>,
+    injection_right_tab_favorites: bool,
+    injection_fav_name: String,
+    builder_field_kind: String,
+    builder_field_value: String,
     schedule_draft: ScheduleDraft,
     interval_ms: u64,
     align_schedule: bool,
@@ -1180,10 +1187,17 @@ impl Default for Desktop {
             custom_name_header: 0,
             custom_name_input: String::new(),
             rename_header_dialog: None,
+            diff_base: None,
+            diff_pair: None,
             packet_dump: None,
             expression: "{h:123}{i:42}{s:\"hello\"}".into(),
             direction: Direction::ToServer,
             injection_history: InjectionHistory::default(),
+            injection_favorites: Vec::new(),
+            injection_right_tab_favorites: false,
+            injection_fav_name: String::new(),
+            builder_field_kind: "String".into(),
+            builder_field_value: String::new(),
             schedule_draft: ScheduleDraft {
                 expression: r#"{in:Chat}{i:-1}{s:"Frank loves G-Earth"}{i:0}{i:33}{i:0}{i:0}"#
                     .into(),
@@ -4224,10 +4238,15 @@ impl Desktop {
             .collect();
         let mut inspection = None;
         let mut open_injection_req: Option<(Direction, String)> = None;
+        let mut replay_req: Option<(Direction, gearth_rust::packet::Packet)> = None;
+        let mut diff_base_req: Option<logger_ui::PacketSnapshot> = None;
+        let mut diff_compare_req: Option<logger_ui::PacketSnapshot> = None;
         let mut block_header_req: Option<(Direction, u16)> = None;
         let mut hide_header_req: Option<(Direction, u16)> = None;
         let mut rename_header_req: Option<(Direction, u16, String)> = None;
         let mut copy_status_req: Option<String> = None;
+        let logger_connected = self.relay.as_ref().is_some_and(Connection::connected);
+        let has_diff_base = self.diff_base.is_some();
         let hide_empty_header = logger_display::hide_empty_byte_header(
             self.logger_display_hide_empty_header,
             self.logger_representation,
@@ -4426,7 +4445,22 @@ impl Desktop {
                             );
                         }
                         let response = card.response.interact(egui::Sense::click());
+                        let editable_expr = row
+                            .packet_expression
+                            .get()
+                            .and_then(|(e, _, clean)| (!e.is_empty() && *clean).then(|| e.clone()))
+                            .unwrap_or_else(|| row.expression.clone());
                         response.context_menu(|ui| {
+                            if ui
+                                .add_enabled(
+                                    !row.skipped && logger_connected,
+                                    egui::Button::new(self.i18n.text("rust.logger.replay_now")),
+                                )
+                                .clicked()
+                            {
+                                replay_req = Some((m.direction, m.packet.clone()));
+                                ui.close_menu();
+                            }
                             if ui
                                 .add_enabled(
                                     !row.skipped,
@@ -4434,9 +4468,49 @@ impl Desktop {
                                 )
                                 .clicked()
                             {
-                                open_injection_req = Some((m.direction, row.expression.clone()));
+                                open_injection_req = Some((m.direction, editable_expr.clone()));
                                 ui.close_menu();
                             }
+                            if ui
+                                .add_enabled(
+                                    !row.skipped,
+                                    egui::Button::new(self.i18n.text("rust.logger.diff_set_base")),
+                                )
+                                .clicked()
+                            {
+                                let fields = logger_ui::parse_expression_fields(&editable_expr);
+                                diff_base_req = Some(logger_ui::PacketSnapshot {
+                                    direction: m.direction,
+                                    header: m.packet.header(),
+                                    title: title.clone(),
+                                    expression: editable_expr.clone(),
+                                    fields,
+                                    bytes: m.packet.bytes().to_vec(),
+                                });
+                                ui.close_menu();
+                            }
+                            if has_diff_base
+                                && ui
+                                    .add_enabled(
+                                        !row.skipped,
+                                        egui::Button::new(
+                                            self.i18n.text("rust.logger.diff_compare"),
+                                        ),
+                                    )
+                                    .clicked()
+                            {
+                                let fields = logger_ui::parse_expression_fields(&editable_expr);
+                                diff_compare_req = Some(logger_ui::PacketSnapshot {
+                                    direction: m.direction,
+                                    header: m.packet.header(),
+                                    title: title.clone(),
+                                    expression: editable_expr.clone(),
+                                    fields,
+                                    bytes: m.packet.bytes().to_vec(),
+                                });
+                                ui.close_menu();
+                            }
+                            ui.separator();
                             if ui
                                 .add_enabled(
                                     !row.skipped,
@@ -4542,7 +4616,7 @@ impl Desktop {
                             }
                         });
                         if response.double_clicked() && !row.skipped {
-                            open_injection_req = Some((m.direction, row.expression.clone()));
+                            open_injection_req = Some((m.direction, editable_expr));
                         } else if response.clicked() {
                             self.selected_log_index = Some(m.index);
                         }
@@ -4681,6 +4755,15 @@ impl Desktop {
                         ui.add_space(4.0);
                         ui.horizontal_wrapped(|ui| {
                             let ui_fg = ui.visuals().text_color();
+                            if ui
+                                .add_enabled(
+                                    !row.skipped && logger_connected,
+                                    egui::Button::new(self.i18n.text("rust.logger.replay_now")),
+                                )
+                                .clicked()
+                            {
+                                replay_req = Some((m.direction, m.packet.clone()));
+                            }
                             let send_clicked = ui
                                 .add_enabled_ui(!row.skipped, |ui| {
                                     vector_text_button(
@@ -4696,7 +4779,49 @@ impl Desktop {
                                 })
                                 .inner;
                             if send_clicked {
-                                open_injection_req = Some((m.direction, row.expression.clone()));
+                                let best_expr = row
+                                    .packet_expression
+                                    .get()
+                                    .and_then(|(e, _, clean)| {
+                                        (!e.is_empty() && *clean).then(|| e.clone())
+                                    })
+                                    .unwrap_or_else(|| row.expression.clone());
+                                open_injection_req = Some((m.direction, best_expr));
+                            }
+                            if ui
+                                .add_enabled(
+                                    !row.skipped,
+                                    egui::Button::new(self.i18n.text("rust.logger.diff_set_base")),
+                                )
+                                .clicked()
+                            {
+                                diff_base_req = Some(logger_ui::PacketSnapshot {
+                                    direction: m.direction,
+                                    header: m.packet.header(),
+                                    title: title.clone(),
+                                    expression: expr_source.to_owned(),
+                                    fields: fields.clone(),
+                                    bytes: m.packet.bytes().to_vec(),
+                                });
+                            }
+                            if has_diff_base
+                                && ui
+                                    .add_enabled(
+                                        !row.skipped,
+                                        egui::Button::new(
+                                            self.i18n.text("rust.logger.diff_compare"),
+                                        ),
+                                    )
+                                    .clicked()
+                            {
+                                diff_compare_req = Some(logger_ui::PacketSnapshot {
+                                    direction: m.direction,
+                                    header: m.packet.header(),
+                                    title: title.clone(),
+                                    expression: expr_source.to_owned(),
+                                    fields: fields.clone(),
+                                    bytes: m.packet.bytes().to_vec(),
+                                });
                             }
                             if ui
                                 .add_enabled(
@@ -4922,6 +5047,107 @@ impl Desktop {
                         );
                         response.context_menu(|ui| {
                             if ui
+                                .add_enabled(
+                                    !row.skipped && logger_connected,
+                                    egui::Button::new(self.i18n.text("rust.logger.replay_now")),
+                                )
+                                .clicked()
+                            {
+                                replay_req = Some((m.direction, m.packet.clone()));
+                                ui.close_menu();
+                            }
+                            if ui
+                                .add_enabled(
+                                    !row.skipped,
+                                    egui::Button::new(self.i18n.text("rust.logger.open_injection")),
+                                )
+                                .clicked()
+                            {
+                                let expr = row
+                                    .packet_expression
+                                    .get()
+                                    .and_then(|(e, _, clean)| {
+                                        (!e.is_empty() && *clean).then(|| e.clone())
+                                    })
+                                    .unwrap_or_else(|| row.expression.clone());
+                                open_injection_req = Some((m.direction, expr));
+                                ui.close_menu();
+                            }
+                            if ui
+                                .add_enabled(
+                                    !row.skipped,
+                                    egui::Button::new(self.i18n.text("rust.logger.diff_set_base")),
+                                )
+                                .clicked()
+                            {
+                                let (names, _) = row.packet_metadata.get_or_init(|| {
+                                    log_packet_metadata(
+                                        &self.packet_info,
+                                        m.direction,
+                                        m.packet.header(),
+                                    )
+                                });
+                                let expr_src = row
+                                    .packet_expression
+                                    .get()
+                                    .map(|(e, _, _)| e.as_str())
+                                    .filter(|s| !s.is_empty())
+                                    .unwrap_or(&row.expression);
+                                let title = if !names.is_empty() {
+                                    names.replace("][", " / ")
+                                } else {
+                                    format!("Packet #{}", m.packet.header())
+                                };
+                                diff_base_req = Some(logger_ui::PacketSnapshot {
+                                    direction: m.direction,
+                                    header: m.packet.header(),
+                                    title,
+                                    expression: expr_src.to_owned(),
+                                    fields: logger_ui::parse_expression_fields(expr_src),
+                                    bytes: m.packet.bytes().to_vec(),
+                                });
+                                ui.close_menu();
+                            }
+                            if has_diff_base
+                                && ui
+                                    .add_enabled(
+                                        !row.skipped,
+                                        egui::Button::new(
+                                            self.i18n.text("rust.logger.diff_compare"),
+                                        ),
+                                    )
+                                    .clicked()
+                            {
+                                let (names, _) = row.packet_metadata.get_or_init(|| {
+                                    log_packet_metadata(
+                                        &self.packet_info,
+                                        m.direction,
+                                        m.packet.header(),
+                                    )
+                                });
+                                let expr_src = row
+                                    .packet_expression
+                                    .get()
+                                    .map(|(e, _, _)| e.as_str())
+                                    .filter(|s| !s.is_empty())
+                                    .unwrap_or(&row.expression);
+                                let title = if !names.is_empty() {
+                                    names.replace("][", " / ")
+                                } else {
+                                    format!("Packet #{}", m.packet.header())
+                                };
+                                diff_compare_req = Some(logger_ui::PacketSnapshot {
+                                    direction: m.direction,
+                                    header: m.packet.header(),
+                                    title,
+                                    expression: expr_src.to_owned(),
+                                    fields: logger_ui::parse_expression_fields(expr_src),
+                                    bytes: m.packet.bytes().to_vec(),
+                                });
+                                ui.close_menu();
+                            }
+                            ui.separator();
+                            if ui
                                 .button(self.i18n.text("rust.logger.copy_displayed"))
                                 .clicked()
                             {
@@ -5103,6 +5329,21 @@ impl Desktop {
                     }
                 });
         }
+        if let Some((dir, packet)) = replay_req {
+            self.replay_logged_packet(dir, packet);
+        }
+        if let Some(base) = diff_base_req {
+            self.status = self
+                .i18n
+                .text("rust.logger.diff_base_pinned")
+                .replace("{header}", &base.header.to_string());
+            self.diff_base = Some(base);
+        }
+        if let Some(target) = diff_compare_req {
+            if let Some(base) = self.diff_base.clone() {
+                self.diff_pair = Some((base, target));
+            }
+        }
         if let Some((dir, expr)) = open_injection_req {
             self.expression = expr;
             self.direction = dir;
@@ -5168,6 +5409,181 @@ impl Desktop {
                 self.rename_header_dialog = None;
             } else {
                 self.rename_header_dialog = Some((dir, header, name_buf));
+            }
+        }
+        // Side-by-side Packet Diff window (A <-> B)
+        if let Some((left, right)) = self.diff_pair.clone() {
+            let mut open = true;
+            let mut swap = false;
+            let mut clear_base = false;
+            let palette = self.theme.palette_with_accent(self.custom_accent);
+            let field_diff = logger_ui::diff_packet_fields(&left.fields, &right.fields);
+            let byte_diff = logger_ui::diff_packet_bytes(&left.bytes, &right.bytes, 512);
+            let changed_fields = field_diff
+                .iter()
+                .filter(|r| r.kind != logger_ui::FieldDiffKind::Same)
+                .count();
+            let changed_bytes = byte_diff.iter().filter(|b| b.changed).count();
+            egui::Window::new(self.i18n.text("rust.logger.diff_title"))
+                .open(&mut open)
+                .resizable(true)
+                .default_size([560.0, 380.0])
+                .show(ui.ctx(), |ui| {
+                    ui.horizontal_wrapped(|ui| {
+                        ui.strong(format!(
+                            "A: {} (#{}, {} B)",
+                            left.title,
+                            left.header,
+                            left.bytes.len()
+                        ));
+                        ui.label(egui::RichText::new("↔").color(palette.primary_accent));
+                        ui.strong(format!(
+                            "B: {} (#{}, {} B)",
+                            right.title,
+                            right.header,
+                            right.bytes.len()
+                        ));
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            if ui
+                                .small_button(self.i18n.text("rust.logger.diff_clear"))
+                                .clicked()
+                            {
+                                clear_base = true;
+                            }
+                            if ui
+                                .small_button(self.i18n.text("rust.logger.diff_swap"))
+                                .clicked()
+                            {
+                                swap = true;
+                            }
+                        });
+                    });
+                    ui.small(
+                        egui::RichText::new(
+                            self.i18n
+                                .text("rust.logger.diff_summary")
+                                .replace("{fields}", &changed_fields.to_string())
+                                .replace("{bytes}", &changed_bytes.to_string()),
+                        )
+                        .color(palette.text_muted),
+                    );
+                    ui.separator();
+                    ui.label(
+                        egui::RichText::new(self.i18n.text("rust.logger.diff_fields"))
+                            .small()
+                            .strong(),
+                    );
+                    egui::ScrollArea::vertical()
+                        .id_salt("packet_diff_fields_scroll")
+                        .max_height(155.0)
+                        .show(ui, |ui| {
+                            if field_diff.is_empty() {
+                                ui.small(
+                                    egui::RichText::new(
+                                        self.i18n.text("rust.logger.empty_payload"),
+                                    )
+                                    .italics()
+                                    .color(palette.text_muted),
+                                );
+                            } else {
+                                egui::Grid::new("packet_diff_fields_grid")
+                                    .striped(true)
+                                    .spacing([10.0, 3.0])
+                                    .show(ui, |ui| {
+                                        ui.strong("#");
+                                        ui.strong("Δ");
+                                        ui.strong("Packet A");
+                                        ui.strong("Packet B");
+                                        ui.end_row();
+                                        for row in &field_diff {
+                                            let (badge, color) = match row.kind {
+                                                logger_ui::FieldDiffKind::Same => {
+                                                    ("=", palette.text_muted)
+                                                }
+                                                logger_ui::FieldDiffKind::Changed => {
+                                                    ("~", egui::Color32::from_rgb(0xd9, 0x82, 0x2b))
+                                                }
+                                                logger_ui::FieldDiffKind::Added => {
+                                                    ("+", egui::Color32::from_rgb(0x2e, 0xa0, 0x43))
+                                                }
+                                                logger_ui::FieldDiffKind::Removed => {
+                                                    ("-", egui::Color32::from_rgb(0xd9, 0x3b, 0x3b))
+                                                }
+                                            };
+                                            ui.monospace(format!("{}", row.index));
+                                            ui.label(
+                                                egui::RichText::new(badge)
+                                                    .monospace()
+                                                    .strong()
+                                                    .color(color),
+                                            );
+                                            let fmt_side =
+                                                |f: &Option<logger_ui::DecodedField>| match f {
+                                                    Some(d) => format!("{}: {}", d.kind, d.value),
+                                                    None => "—".into(),
+                                                };
+                                            ui.label(
+                                                egui::RichText::new(fmt_side(&row.left))
+                                                    .monospace()
+                                                    .small()
+                                                    .color(color),
+                                            );
+                                            ui.label(
+                                                egui::RichText::new(fmt_side(&row.right))
+                                                    .monospace()
+                                                    .small()
+                                                    .color(color),
+                                            );
+                                            ui.end_row();
+                                        }
+                                    });
+                            }
+                        });
+                    ui.separator();
+                    ui.label(
+                        egui::RichText::new(self.i18n.text("rust.logger.diff_bytes"))
+                            .small()
+                            .strong(),
+                    );
+                    egui::ScrollArea::vertical()
+                        .id_salt("packet_diff_bytes_scroll")
+                        .max_height(110.0)
+                        .show(ui, |ui| {
+                            ui.horizontal_wrapped(|ui| {
+                                ui.spacing_mut().item_spacing = egui::vec2(4.0, 2.0);
+                                for chunk in &byte_diff {
+                                    let l_hex = chunk
+                                        .left
+                                        .map(|b| format!("{b:02X}"))
+                                        .unwrap_or_else(|| "--".into());
+                                    let r_hex = chunk
+                                        .right
+                                        .map(|b| format!("{b:02X}"))
+                                        .unwrap_or_else(|| "--".into());
+                                    let text = if chunk.changed {
+                                        format!("{:02X}:{l_hex}→{r_hex}", chunk.offset)
+                                    } else {
+                                        l_hex
+                                    };
+                                    let color = if chunk.changed {
+                                        egui::Color32::from_rgb(0xd9, 0x82, 0x2b)
+                                    } else {
+                                        palette.text_muted
+                                    };
+                                    ui.label(
+                                        egui::RichText::new(text).monospace().small().color(color),
+                                    );
+                                }
+                            });
+                        });
+                });
+            if clear_base {
+                self.diff_base = None;
+                self.diff_pair = None;
+            } else if swap {
+                self.diff_pair = Some((right, left));
+            } else if !open {
+                self.diff_pair = None;
             }
         }
         // Custom Packet Names Manager window (HabboCity / custom Nitro headers)
@@ -5533,12 +5949,12 @@ impl Desktop {
         let avail_w = ui.available_width().max(580.0);
         let history_w = 182.0;
         let left_w = (avail_w - history_w - 14.0).max(320.0);
-        let editor_h = (ui.available_height() - 114.0).clamp(110.0, 380.0);
+        let editor_h = (ui.available_height() - 140.0).clamp(96.0, 360.0);
 
-        // Exact Injection.fxml 2-column layout: Left editor + Right 180px History list
+        // Exact Injection.fxml 2-column layout: Left editor (+ Visual Field Builder) + Right History/Favorites card
         ui.horizontal_top(|ui| {
             ui.allocate_ui_with_layout(
-                egui::vec2(left_w, editor_h + 62.0),
+                egui::vec2(left_w, editor_h + 88.0),
                 egui::Layout::top_down(egui::Align::Min),
                 |ui| {
                     ui.horizontal(|ui| {
@@ -5586,6 +6002,47 @@ impl Desktop {
                                 ),
                             );
                         });
+                    });
+                    ui.add_space(2.0);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 4.0;
+                        egui::ComboBox::from_id_salt("injection-builder-kind")
+                            .width(68.0)
+                            .selected_text(&self.builder_field_kind)
+                            .show_ui(ui, |ui| {
+                                for kind in logger_ui::BUILDER_FIELD_KINDS {
+                                    ui.selectable_value(
+                                        &mut self.builder_field_kind,
+                                        (*kind).to_owned(),
+                                        *kind,
+                                    );
+                                }
+                            });
+                        let val_w = (left_w - 150.0).max(80.0);
+                        let val_resp = ui.add(
+                            egui::TextEdit::singleline(&mut self.builder_field_value)
+                                .desired_width(val_w)
+                                .hint_text(self.i18n.text("rust.injection.builder_value_hint")),
+                        );
+                        let insert_enter =
+                            val_resp.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+                        if insert_enter
+                            || ui
+                                .add(
+                                    egui::Button::new(
+                                        self.i18n.text("rust.injection.builder_insert"),
+                                    )
+                                    .small(),
+                                )
+                                .clicked()
+                        {
+                            let token = logger_ui::format_builder_token(
+                                &self.builder_field_kind,
+                                &self.builder_field_value,
+                            );
+                            self.expression.push_str(&token);
+                            self.builder_field_value.clear();
+                        }
                     });
                     ui.add_space(3.0);
                     egui::ScrollArea::vertical()
@@ -5639,67 +6096,210 @@ impl Desktop {
             ui.add_space(10.0);
 
             ui.allocate_ui_with_layout(
-                egui::vec2(history_w, editor_h + 62.0),
+                egui::vec2(history_w, editor_h + 88.0),
                 egui::Layout::top_down(egui::Align::Min),
                 |ui| {
                     ui.horizontal(|ui| {
-                        ui.label(self.i18n.text("tab.injection.history"));
-                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui
-                                .link(self.i18n.text("tab.injection.history.clear"))
-                                .clicked()
-                            {
-                                self.injection_history.clear();
-                                self.status = match self
-                                    .injection_history
-                                    .save_to_settings(&self.settings_path)
-                                {
-                                    Ok(()) => "Injection history cleared".into(),
-                                    Err(error) => {
-                                        format!(
-                                            "History cleared in memory; could not save: {error}"
-                                        )
+                        ui.selectable_value(
+                            &mut self.injection_right_tab_favorites,
+                            false,
+                            self.i18n.text("tab.injection.history"),
+                        );
+                        ui.selectable_value(
+                            &mut self.injection_right_tab_favorites,
+                            true,
+                            self.i18n.text("rust.injection.favorites"),
+                        );
+                        if !self.injection_right_tab_favorites {
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if ui
+                                        .link(self.i18n.text("tab.injection.history.clear"))
+                                        .clicked()
+                                    {
+                                        self.injection_history.clear();
+                                        self.status = match self
+                                            .injection_history
+                                            .save_to_settings(&self.settings_path)
+                                        {
+                                            Ok(()) => "Injection history cleared".into(),
+                                            Err(error) => {
+                                                format!(
+                                                    "History cleared in memory; could not save: {error}"
+                                                )
+                                            }
+                                        };
                                     }
-                                };
-                            }
-                        });
+                                },
+                            );
+                        }
                     });
                     ui.add_space(3.0);
                     group_box(ui, self.theme, egui::Margin::same(4.0), |ui| {
-                        ui.set_min_size(egui::vec2(history_w - 10.0, editor_h + 26.0));
-                        egui::ScrollArea::vertical()
-                            .id_salt("injection_history")
-                            .max_height(editor_h + 26.0)
-                            .show(ui, |ui| {
-                                for entry in self.injection_history.entries() {
-                                    let label = if entry.direction.is_empty() {
-                                        entry.expression.replace('\n', " ")
-                                    } else {
-                                        format!(
-                                            "{}: {}",
-                                            entry.direction,
+                        ui.set_min_size(egui::vec2(history_w - 10.0, editor_h + 52.0));
+                        if !self.injection_right_tab_favorites {
+                            egui::ScrollArea::vertical()
+                                .id_salt("injection_history")
+                                .max_height(editor_h + 52.0)
+                                .show(ui, |ui| {
+                                    for entry in self.injection_history.entries() {
+                                        let label = if entry.direction.is_empty() {
                                             entry.expression.replace('\n', " ")
-                                        )
-                                    };
-                                    let resp = ui
-                                        .add(
-                                            egui::Label::new(
-                                                egui::RichText::new(label).monospace().small(),
+                                        } else {
+                                            format!(
+                                                "{}: {}",
+                                                entry.direction,
+                                                entry.expression.replace('\n', " ")
                                             )
-                                            .truncate()
-                                            .sense(egui::Sense::click()),
-                                        )
-                                        .on_hover_text(
-                                            self.i18n.text("tab.injection.history.tooltip"),
-                                        );
-                                    if resp.double_clicked() {
-                                        self.expression = entry.expression.clone();
-                                        if let Ok(direction) = Direction::parse(&entry.direction) {
-                                            self.direction = direction;
+                                        };
+                                        let resp = ui
+                                            .add(
+                                                egui::Label::new(
+                                                    egui::RichText::new(label).monospace().small(),
+                                                )
+                                                .truncate()
+                                                .sense(egui::Sense::click()),
+                                            )
+                                            .on_hover_text(
+                                                self.i18n.text("tab.injection.history.tooltip"),
+                                            );
+                                        if resp.double_clicked() {
+                                            self.expression = entry.expression.clone();
+                                            if let Ok(direction) =
+                                                Direction::parse(&entry.direction)
+                                            {
+                                                self.direction = direction;
+                                            }
                                         }
                                     }
+                                });
+                        } else {
+                            let connected =
+                                self.relay.as_ref().is_some_and(Connection::connected);
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 3.0;
+                                ui.add(
+                                    egui::TextEdit::singleline(&mut self.injection_fav_name)
+                                        .desired_width((history_w - 64.0).max(80.0))
+                                        .hint_text(self.i18n.text("rust.injection.favorite_name")),
+                                );
+                                let can_save = !self.expression.trim().is_empty();
+                                if ui
+                                    .add_enabled(
+                                        can_save,
+                                        egui::Button::new("★")
+                                            .small(),
+                                    )
+                                    .on_hover_text(self.i18n.text("rust.injection.favorite_save"))
+                                    .clicked()
+                                {
+                                    let name = if self.injection_fav_name.trim().is_empty() {
+                                        self.expression
+                                            .trim()
+                                            .chars()
+                                            .take(24)
+                                            .collect::<String>()
+                                    } else {
+                                        self.injection_fav_name.trim().to_owned()
+                                    };
+                                    self.injection_favorites
+                                        .retain(|f| !f.name.eq_ignore_ascii_case(&name));
+                                    self.injection_favorites.push(logger_ui::InjectionFavorite {
+                                        name,
+                                        direction: self.direction,
+                                        expression: self.expression.clone(),
+                                    });
+                                    self.injection_fav_name.clear();
+                                    self.save_settings();
                                 }
                             });
+                            ui.separator();
+                            let mut load_fav: Option<(Direction, String)> = None;
+                            let mut send_fav: Option<(Direction, String)> = None;
+                            let mut delete_fav: Option<usize> = None;
+                            egui::ScrollArea::vertical()
+                                .id_salt("injection_favorites_scroll")
+                                .max_height(editor_h + 18.0)
+                                .show(ui, |ui| {
+                                    if self.injection_favorites.is_empty() {
+                                        ui.small(
+                                            egui::RichText::new(
+                                                self.i18n.text("rust.injection.favorites_empty"),
+                                            )
+                                            .italics()
+                                            .color(
+                                                self.theme
+                                                    .palette_with_accent(self.custom_accent)
+                                                    .text_muted,
+                                            ),
+                                        );
+                                    }
+                                    for (idx, fav) in self.injection_favorites.iter().enumerate() {
+                                        ui.horizontal(|ui| {
+                                            ui.spacing_mut().item_spacing.x = 3.0;
+                                            let dir_tag = if fav.direction == Direction::ToServer {
+                                                "↑"
+                                            } else {
+                                                "↓"
+                                            };
+                                            let resp = ui
+                                                .add(
+                                                    egui::Label::new(
+                                                        egui::RichText::new(format!(
+                                                            "{dir_tag} {}",
+                                                            fav.name
+                                                        ))
+                                                        .small(),
+                                                    )
+                                                    .truncate()
+                                                    .sense(egui::Sense::click()),
+                                                )
+                                                .on_hover_text(&fav.expression);
+                                            if resp.double_clicked() {
+                                                load_fav =
+                                                    Some((fav.direction, fav.expression.clone()));
+                                            }
+                                            ui.with_layout(
+                                                egui::Layout::right_to_left(egui::Align::Center),
+                                                |ui| {
+                                                    if ui.small_button("×").clicked() {
+                                                        delete_fav = Some(idx);
+                                                    }
+                                                    if ui
+                                                        .add_enabled(
+                                                            connected,
+                                                            egui::Button::new("▶").small(),
+                                                        )
+                                                        .on_hover_text(
+                                                            self.i18n
+                                                                .text("rust.logger.replay_now"),
+                                                        )
+                                                        .clicked()
+                                                    {
+                                                        send_fav = Some((
+                                                            fav.direction,
+                                                            fav.expression.clone(),
+                                                        ));
+                                                    }
+                                                },
+                                            );
+                                        });
+                                    }
+                                });
+                            if let Some((dir, expr)) = load_fav {
+                                self.direction = dir;
+                                self.expression = expr;
+                            }
+                            if let Some((dir, expr)) = send_fav {
+                                self.expression = expr;
+                                self.send_injection(dir);
+                            }
+                            if let Some(idx) = delete_fav {
+                                self.injection_favorites.remove(idx);
+                                self.save_settings();
+                            }
+                        }
                     });
                 },
             );
@@ -5899,6 +6499,39 @@ impl Desktop {
                 self.status = format!("Rules changed in memory; could not save: {error}");
             }
         }
+    }
+    fn replay_logged_packet(&mut self, direction: Direction, packet: gearth_rust::packet::Packet) {
+        let header = packet.header();
+        let Some(relay) = self.relay.as_ref() else {
+            self.status = "Not connected".into();
+            return;
+        };
+        let allowed = match self.packet_safety.lock() {
+            Ok(safety) => safety.may_send(
+                Some(&self.hotel_version),
+                direction,
+                header,
+                self.developer_mode,
+            ),
+            Err(_) => {
+                self.status = "Packet safety state unavailable".into();
+                return;
+            }
+        };
+        if !allowed {
+            self.status = format!(
+                "Packet {header} has not been observed in this direction for this hotel version"
+            );
+            return;
+        }
+        self.status = match relay.inject(direction, packet) {
+            Ok(()) => self
+                .i18n
+                .text("rust.logger.replayed")
+                .replace("{dir}", direction.name())
+                .replace("{header}", &header.to_string()),
+            Err(error) => error.to_string(),
+        };
     }
     fn send_injection(&mut self, direction: Direction) {
         self.direction = direction;
@@ -8766,6 +9399,8 @@ impl Desktop {
         self.python_console.restore_settings(&self.settings);
         self.injection_history =
             InjectionHistory::from_json(self.settings.get("injection_history"));
+        self.injection_favorites =
+            logger_ui::parse_injection_favorites(self.settings.get("injection_favorites"));
         self.logger_representation =
             PacketRepresentation::from_setting(self.settings.get("logger_representation"));
         self.logger_extra_legacy = self
@@ -9082,6 +9717,14 @@ impl Desktop {
         self.settings
             .values
             .insert("injection_history".into(), self.injection_history.to_json());
+        if self.injection_favorites.is_empty() {
+            self.settings.values.remove("injection_favorites");
+        } else {
+            self.settings.values.insert(
+                "injection_favorites".into(),
+                logger_ui::serialize_injection_favorites(&self.injection_favorites),
+            );
+        }
         self.settings.values.insert(
             "logger_representation".into(),
             self.logger_representation.name().into(),

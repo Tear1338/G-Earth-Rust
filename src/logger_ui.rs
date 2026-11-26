@@ -13,6 +13,167 @@ pub struct DecodedField {
     pub is_string: bool,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PacketSnapshot {
+    pub direction: Direction,
+    pub header: u16,
+    pub title: String,
+    pub expression: String,
+    pub fields: Vec<DecodedField>,
+    pub bytes: Vec<u8>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FieldDiffKind {
+    Same,
+    Changed,
+    Added,
+    Removed,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FieldDiffRow {
+    pub index: usize,
+    pub kind: FieldDiffKind,
+    pub left: Option<DecodedField>,
+    pub right: Option<DecodedField>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ByteDiffChunk {
+    pub offset: usize,
+    pub left: Option<u8>,
+    pub right: Option<u8>,
+    pub changed: bool,
+}
+
+pub fn diff_packet_fields(left: &[DecodedField], right: &[DecodedField]) -> Vec<FieldDiffRow> {
+    let max_len = left.len().max(right.len());
+    let mut rows = Vec::with_capacity(max_len);
+    for idx in 0..max_len {
+        let l = left.get(idx).cloned();
+        let r = right.get(idx).cloned();
+        let kind = match (&l, &r) {
+            (Some(a), Some(b)) if a == b => FieldDiffKind::Same,
+            (Some(_), Some(_)) => FieldDiffKind::Changed,
+            (None, Some(_)) => FieldDiffKind::Added,
+            (Some(_), None) => FieldDiffKind::Removed,
+            (None, None) => FieldDiffKind::Same,
+        };
+        rows.push(FieldDiffRow {
+            index: idx,
+            kind,
+            left: l,
+            right: r,
+        });
+    }
+    rows
+}
+
+pub fn diff_packet_bytes(left: &[u8], right: &[u8], limit: usize) -> Vec<ByteDiffChunk> {
+    let len = left.len().max(right.len()).min(limit);
+    let mut out = Vec::with_capacity(len);
+    for offset in 0..len {
+        let l = left.get(offset).copied();
+        let r = right.get(offset).copied();
+        out.push(ByteDiffChunk {
+            offset,
+            left: l,
+            right: r,
+            changed: l != r,
+        });
+    }
+    out
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InjectionFavorite {
+    pub name: String,
+    pub direction: Direction,
+    pub expression: String,
+}
+
+pub fn parse_injection_favorites(raw: &str) -> Vec<InjectionFavorite> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    let Ok(serde_json::Value::Array(items)) = serde_json::from_str::<serde_json::Value>(trimmed)
+    else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for item in items.into_iter().take(128) {
+        let Some(name) = item
+            .get("name")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty() && s.len() <= 80)
+        else {
+            continue;
+        };
+        let Some(expression) = item
+            .get("expression")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.trim().is_empty() && s.len() <= 16384)
+        else {
+            continue;
+        };
+        let direction = item
+            .get("direction")
+            .and_then(|v| v.as_str())
+            .and_then(|s| Direction::parse(s).ok())
+            .unwrap_or(Direction::ToServer);
+        out.push(InjectionFavorite {
+            name: name.to_owned(),
+            direction,
+            expression: expression.to_owned(),
+        });
+    }
+    out
+}
+
+pub fn serialize_injection_favorites(favorites: &[InjectionFavorite]) -> String {
+    let arr: Vec<serde_json::Value> = favorites
+        .iter()
+        .map(|f| {
+            serde_json::json!({
+                "name": f.name,
+                "direction": f.direction.name(),
+                "expression": f.expression,
+            })
+        })
+        .collect();
+    serde_json::to_string(&arr).unwrap_or_else(|_| "[]".into())
+}
+
+pub const BUILDER_FIELD_KINDS: &[&str] =
+    &["Header", "String", "Int", "Bool", "Short", "Byte", "Long"];
+
+pub fn format_builder_token(kind: &str, value: &str) -> String {
+    let trimmed = value.trim();
+    match kind {
+        "Header" => format!("{{h:{}}}", if trimmed.is_empty() { "0" } else { trimmed }),
+        "String" => format!("{{s:\"{}\"}}", escape_double_quoted(value)),
+        "Int" => format!("{{i:{}}}", if trimmed.is_empty() { "0" } else { trimmed }),
+        "Bool" => {
+            let v = if trimmed.eq_ignore_ascii_case("true") || trimmed == "1" {
+                "true"
+            } else {
+                "false"
+            };
+            format!("{{b:{v}}}")
+        }
+        "Short" => format!("{{u:{}}}", if trimmed.is_empty() { "0" } else { trimmed }),
+        "Byte" => format!(
+            "{{byte:{}}}",
+            if trimmed.is_empty() { "0" } else { trimmed }
+        ),
+        "Long" => format!("{{l:{}}}", if trimmed.is_empty() { "0" } else { trimmed }),
+        _ => format!("{{s:\"{}\"}}", escape_double_quoted(value)),
+    }
+}
+
 /// Detect common high-frequency / noisy keepalive & ping packets (Nitro, Flash, HabboCity).
 pub fn is_noisy_packet(direction: Direction, header: u16, names: &str) -> bool {
     // HabboCity link control frames (7701..=7705)
@@ -631,5 +792,37 @@ mod tests {
         );
         stats.reset();
         assert!(stats.top_headers(5).is_empty());
+    }
+
+    #[test]
+    fn diff_and_favorites_and_builder_work() {
+        let a = parse_expression_fields(r#"{h:10}{s:"hello"}{i:1}"#);
+        let b = parse_expression_fields(r#"{h:10}{s:"world"}{i:1}{b:true}"#);
+        let rows = diff_packet_fields(&a, &b);
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].kind, FieldDiffKind::Changed);
+        assert_eq!(rows[1].kind, FieldDiffKind::Same);
+        assert_eq!(rows[2].kind, FieldDiffKind::Added);
+
+        let bdiff = diff_packet_bytes(&[0, 1, 2], &[0, 9, 2, 4], 64);
+        assert_eq!(bdiff.len(), 4);
+        assert!(!bdiff[0].changed);
+        assert!(bdiff[1].changed);
+        assert!(!bdiff[2].changed);
+        assert!(bdiff[3].changed);
+
+        let favs = vec![InjectionFavorite {
+            name: "Say hi".into(),
+            direction: Direction::ToServer,
+            expression: r#"{out:Chat}{s:"hi"}{i:0}"#.into(),
+        }];
+        let json = serialize_injection_favorites(&favs);
+        assert_eq!(parse_injection_favorites(&json), favs);
+
+        assert_eq!(format_builder_token("Header", "1314"), "{h:1314}");
+        assert_eq!(format_builder_token("String", r#"a"b"#), r#"{s:"a\"b"}"#);
+        assert_eq!(format_builder_token("Int", "42"), "{i:42}");
+        assert_eq!(format_builder_token("Bool", "1"), "{b:true}");
+        assert_eq!(format_builder_token("Short", "7"), "{u:7}");
     }
 }
