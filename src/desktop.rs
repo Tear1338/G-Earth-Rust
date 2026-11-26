@@ -558,6 +558,11 @@ struct Desktop {
     doctor_report: Option<doctor::DoctorReport>,
     doctor_task: Option<Receiver<doctor::DoctorReport>>,
     doctor_expanded: bool,
+    connection_profiles: Vec<doctor::ConnectionProfile>,
+    active_profile_name: String,
+    new_profile_name: String,
+    last_saved_settings_hash: Option<u64>,
+    settings_dirty_since: Option<Instant>,
     schedule_interval_input: String,
     ext_console_open: bool,
     ext_store_open: bool,
@@ -1324,6 +1329,11 @@ impl Default for Desktop {
             doctor_report: None,
             doctor_task: None,
             doctor_expanded: false,
+            connection_profiles: Vec::new(),
+            active_profile_name: String::new(),
+            new_profile_name: String::new(),
+            last_saved_settings_hash: None,
+            settings_dirty_since: None,
             schedule_interval_input: "500+0".into(),
             ext_console_open: false,
             ext_store_open: false,
@@ -2463,6 +2473,8 @@ impl Desktop {
             ui.add_space(4.0);
         }
 
+        self.show_connection_profiles_bar(ui, idle, palette);
+        ui.add_space(6.0);
         self.show_connection_doctor(ui, idle, palette);
         ui.add_space(6.0);
 
@@ -2986,6 +2998,174 @@ impl Desktop {
             self.apply_doctor_fix(fix);
         } else if trigger_refresh {
             self.start_doctor_check();
+        }
+    }
+    fn apply_connection_profile(&mut self, profile: &doctor::ConnectionProfile) {
+        self.origins = profile.mode == doctor::DoctorMode::Origins;
+        self.nitro = profile.mode.is_browser();
+        self.unity = profile.mode == doctor::DoctorMode::Unity;
+        self.city = profile.mode == doctor::DoctorMode::City;
+        if !profile.host.is_empty() {
+            self.attachment_host = profile.host.clone();
+        }
+        if !profile.port.is_empty() {
+            self.connection_port = profile.port.clone();
+        }
+        if !profile.listen.is_empty() {
+            self.listen = profile.listen.clone();
+        }
+        self.auto_detect = profile.auto_detect;
+        self.system_proxy = profile.system_proxy;
+        self.system_proxy_pac = profile.system_proxy_pac;
+        self.nitro_urls = profile.nitro_urls.clone();
+        self.allow_city_helper = profile.allow_city_helper;
+        self.city_key_path = profile.city_key_path.clone();
+        self.active_profile_name = profile.name.clone();
+        if self.city {
+            let _ = self.prepare_certificate();
+        }
+        self.update_rules();
+        self.start_doctor_check();
+        self.status = self
+            .i18n
+            .text("rust.profiles.loaded")
+            .replace("{name}", &profile.name);
+    }
+    fn show_connection_profiles_bar(
+        &mut self,
+        ui: &mut egui::Ui,
+        idle: bool,
+        palette: theme_ui::ThemePalette,
+    ) {
+        let builtins = doctor::builtin_profiles();
+        let mut apply_profile: Option<doctor::ConnectionProfile> = None;
+        let mut save_profile_name: Option<String> = None;
+        let mut delete_profile_name: Option<String> = None;
+
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 5.0;
+            ui.label(
+                egui::RichText::new(self.i18n.text("rust.profiles.label"))
+                    .small()
+                    .strong(),
+            );
+            let selected_label = if self.active_profile_name.is_empty() {
+                self.i18n.text("rust.profiles.select")
+            } else {
+                self.active_profile_name.clone()
+            };
+            ui.add_enabled_ui(idle, |ui| {
+                egui::ComboBox::from_id_salt("connection-profiles-combo")
+                    .width(155.0)
+                    .selected_text(selected_label)
+                    .show_ui(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new(self.i18n.text("rust.profiles.builtin"))
+                                .small()
+                                .color(palette.text_muted),
+                        );
+                        for p in &builtins {
+                            if ui
+                                .selectable_label(self.active_profile_name == p.name, &p.name)
+                                .clicked()
+                            {
+                                apply_profile = Some(p.clone());
+                            }
+                        }
+                        if !self.connection_profiles.is_empty() {
+                            ui.separator();
+                            ui.label(
+                                egui::RichText::new(self.i18n.text("rust.profiles.saved"))
+                                    .small()
+                                    .color(palette.text_muted),
+                            );
+                            for p in &self.connection_profiles {
+                                if ui
+                                    .selectable_label(self.active_profile_name == p.name, &p.name)
+                                    .clicked()
+                                {
+                                    apply_profile = Some(p.clone());
+                                }
+                            }
+                        }
+                    });
+            });
+
+            let is_custom_active = !self.active_profile_name.is_empty()
+                && self
+                    .connection_profiles
+                    .iter()
+                    .any(|p| p.name.eq_ignore_ascii_case(&self.active_profile_name));
+            if is_custom_active
+                && ui
+                    .add_enabled(idle, egui::Button::new("×").small())
+                    .on_hover_text(self.i18n.text("rust.profiles.delete"))
+                    .clicked()
+            {
+                delete_profile_name = Some(self.active_profile_name.clone());
+            }
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let can_save = !self.new_profile_name.trim().is_empty();
+                if ui
+                    .add_enabled(
+                        can_save,
+                        egui::Button::new(self.i18n.text("rust.profiles.save")).small(),
+                    )
+                    .clicked()
+                {
+                    save_profile_name = Some(self.new_profile_name.trim().to_owned());
+                }
+                let edit = ui.add(
+                    egui::TextEdit::singleline(&mut self.new_profile_name)
+                        .desired_width(120.0)
+                        .hint_text(self.i18n.text("rust.profiles.name_hint")),
+                );
+                if can_save && edit.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    save_profile_name = Some(self.new_profile_name.trim().to_owned());
+                }
+            });
+        });
+
+        if let Some(profile) = apply_profile {
+            self.apply_connection_profile(&profile);
+        }
+        if let Some(name) = save_profile_name {
+            let mode =
+                doctor::DoctorMode::from_flags(self.origins, self.nitro, self.unity, self.city);
+            let profile = doctor::ConnectionProfile {
+                name: name.clone(),
+                mode,
+                host: self.attachment_host.clone(),
+                port: self.connection_port.clone(),
+                listen: self.listen.clone(),
+                auto_detect: self.auto_detect,
+                system_proxy: self.system_proxy,
+                system_proxy_pac: self.system_proxy_pac,
+                nitro_urls: self.nitro_urls.clone(),
+                allow_city_helper: self.allow_city_helper,
+                city_key_path: self.city_key_path.clone(),
+            };
+            self.connection_profiles
+                .retain(|p| !p.name.eq_ignore_ascii_case(&name));
+            self.connection_profiles.push(profile);
+            self.active_profile_name = name.clone();
+            self.new_profile_name.clear();
+            self.save_settings_internal(true);
+            self.status = self
+                .i18n
+                .text("rust.profiles.saved_status")
+                .replace("{name}", &name);
+        }
+        if let Some(name) = delete_profile_name {
+            self.connection_profiles
+                .retain(|p| !p.name.eq_ignore_ascii_case(&name));
+            self.active_profile_name.clear();
+            self.save_settings_internal(true);
+            self.status = self
+                .i18n
+                .text("rust.profiles.deleted_status")
+                .replace("{name}", &name);
         }
     }
     fn identity_directory(&self) -> PathBuf {
@@ -7812,6 +7992,7 @@ impl eframe::App for Desktop {
             self.extensions_autostarted = true;
             self.start_installed_extensions();
         }
+        self.poll_auto_save_settings();
         if self.launch_args_auto_connect {
             self.launch_args_auto_connect = false;
             if self.relay.is_none() && self.attachment_pending.is_none() {
@@ -9401,6 +9582,8 @@ impl Desktop {
             InjectionHistory::from_json(self.settings.get("injection_history"));
         self.injection_favorites =
             logger_ui::parse_injection_favorites(self.settings.get("injection_favorites"));
+        self.connection_profiles =
+            doctor::parse_connection_profiles(self.settings.get("connection_profiles"));
         self.logger_representation =
             PacketRepresentation::from_setting(self.settings.get("logger_representation"));
         self.logger_extra_legacy = self
@@ -9711,8 +9894,79 @@ impl Desktop {
         }
         self.update_rules();
         self.start_doctor_check();
+        self.last_saved_settings_hash = Some(self.settings_fingerprint());
+        self.settings_dirty_since = None;
+    }
+    fn settings_fingerprint(&self) -> u64 {
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        self.theme.name().hash(&mut h);
+        self.custom_accent.map(format_hex_color).hash(&mut h);
+        self.language.hash(&mut h);
+        self.listen.hash(&mut h);
+        self.remote.hash(&mut h);
+        self.attachment_host.hash(&mut h);
+        self.connection_port.hash(&mut h);
+        self.nitro_urls.hash(&mut h);
+        self.city_key_path.hash(&mut h);
+        self.notepad.hash(&mut h);
+        self.origins.hash(&mut h);
+        self.nitro.hash(&mut h);
+        self.unity.hash(&mut h);
+        self.city.hash(&mut h);
+        self.auto_detect.hash(&mut h);
+        self.system_proxy.hash(&mut h);
+        self.system_proxy_pac.hash(&mut h);
+        self.allow_city_helper.hash(&mut h);
+        self.auto_update.hash(&mut h);
+        self.always_on_top.hash(&mut h);
+        self.scheduler_auto_start.hash(&mut h);
+        self.socks_enabled.hash(&mut h);
+        self.socks_proxy.hash(&mut h);
+        self.outgoing.hash(&mut h);
+        self.incoming.hash(&mut h);
+        self.logger_friendly.hash(&mut h);
+        self.logger_hide_noisy.hash(&mut h);
+        self.logger_show_stats.hash(&mut h);
+        self.logger_autoscroll.hash(&mut h);
+        self.logger_timestamp.hash(&mut h);
+        self.logger_names.hash(&mut h);
+        self.logger_hashes.hash(&mut h);
+        self.logger_structure.hash(&mut h);
+        self.logger_split.hash(&mut h);
+        self.logger_hidden_headers.len().hash(&mut h);
+        self.logger_presets.len().hash(&mut h);
+        self.injection_favorites.len().hash(&mut h);
+        self.connection_profiles.len().hash(&mut h);
+        self.custom_hotels.hash(&mut h);
+        self.developer_mode.hash(&mut h);
+        self.disable_decryption.hash(&mut h);
+        self.debug_stdout.hash(&mut h);
+        self.python_enabled.hash(&mut h);
+        h.finish()
+    }
+    fn poll_auto_save_settings(&mut self) {
+        let fp = self.settings_fingerprint();
+        match self.last_saved_settings_hash {
+            None => {
+                self.last_saved_settings_hash = Some(fp);
+            }
+            Some(saved) if saved == fp => {
+                self.settings_dirty_since = None;
+            }
+            Some(_) => {
+                let now = Instant::now();
+                let since = *self.settings_dirty_since.get_or_insert(now);
+                if now.duration_since(since) >= Duration::from_millis(800) {
+                    self.save_settings_internal(true);
+                }
+            }
+        }
     }
     fn save_settings(&mut self) {
+        self.save_settings_internal(false);
+    }
+    fn save_settings_internal(&mut self, quiet: bool) {
         self.python_console.save_settings(&mut self.settings);
         self.settings
             .values
@@ -9723,6 +9977,14 @@ impl Desktop {
             self.settings.values.insert(
                 "injection_favorites".into(),
                 logger_ui::serialize_injection_favorites(&self.injection_favorites),
+            );
+        }
+        if self.connection_profiles.is_empty() {
+            self.settings.values.remove("connection_profiles");
+        } else {
+            self.settings.values.insert(
+                "connection_profiles".into(),
+                doctor::serialize_connection_profiles(&self.connection_profiles),
             );
         }
         self.settings.values.insert(
@@ -9874,9 +10136,17 @@ impl Desktop {
         match self.settings.save(&self.settings_path) {
             Ok(()) => {
                 self.settings_loaded = true;
-                self.status = "Settings saved".into();
+                self.last_saved_settings_hash = Some(self.settings_fingerprint());
+                self.settings_dirty_since = None;
+                if !quiet {
+                    self.status = "Settings saved".into();
+                }
             }
-            Err(e) => self.status = e.to_string(),
+            Err(e) => {
+                if !quiet {
+                    self.status = e.to_string();
+                }
+            }
         }
     }
     fn custom_packet_names_path(&self) -> PathBuf {
@@ -10436,8 +10706,12 @@ impl Drop for Desktop {
         if let Some(redirect) = &mut self.redirect {
             let _ = redirect.restore();
         }
-        if self.settings_loaded {
-            self.save_settings();
+        if self.settings_loaded
+            || self
+                .last_saved_settings_hash
+                .is_some_and(|saved| saved != self.settings_fingerprint())
+        {
+            self.save_settings_internal(true);
         }
         if let Some(guard) = &mut self.proxy_guard {
             let _ = guard.restore();

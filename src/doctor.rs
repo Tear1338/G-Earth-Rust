@@ -137,6 +137,198 @@ pub fn find_free_loopback_port() -> Option<u16> {
         .filter(|&port| port != 0)
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConnectionProfile {
+    pub name: String,
+    pub mode: DoctorMode,
+    pub host: String,
+    pub port: String,
+    pub listen: String,
+    pub auto_detect: bool,
+    pub system_proxy: bool,
+    pub system_proxy_pac: bool,
+    pub nitro_urls: String,
+    pub allow_city_helper: bool,
+    pub city_key_path: String,
+}
+
+impl DoctorMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Flash => "flash",
+            Self::Origins => "origins",
+            Self::Unity => "unity",
+            Self::Nitro => "nitro",
+            Self::City => "city",
+        }
+    }
+
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "flash" => Some(Self::Flash),
+            "origins" | "shockwave" => Some(Self::Origins),
+            "unity" => Some(Self::Unity),
+            "nitro" => Some(Self::Nitro),
+            "city" | "habbocity" => Some(Self::City),
+            _ => None,
+        }
+    }
+}
+
+pub fn builtin_profiles() -> Vec<ConnectionProfile> {
+    vec![
+        ConnectionProfile {
+            name: "HabboCity (PAC)".into(),
+            mode: DoctorMode::City,
+            host: "habbocity.fr".into(),
+            port: "30000".into(),
+            listen: "127.0.0.1:9090".into(),
+            auto_detect: false,
+            system_proxy: true,
+            system_proxy_pac: true,
+            nitro_urls: String::new(),
+            allow_city_helper: true,
+            city_key_path: String::new(),
+        },
+        ConnectionProfile {
+            name: "Habbo FR (Flash)".into(),
+            mode: DoctorMode::Flash,
+            host: "game-fr.habbo.com".into(),
+            port: "30000".into(),
+            listen: "127.0.0.1:9090".into(),
+            auto_detect: true,
+            system_proxy: false,
+            system_proxy_pac: true,
+            nitro_urls: String::new(),
+            allow_city_helper: false,
+            city_key_path: String::new(),
+        },
+        ConnectionProfile {
+            name: "Habbo Origins".into(),
+            mode: DoctorMode::Origins,
+            host: "game-od.habbo.com".into(),
+            port: "40001".into(),
+            listen: "127.0.0.1:9090".into(),
+            auto_detect: true,
+            system_proxy: false,
+            system_proxy_pac: true,
+            nitro_urls: String::new(),
+            allow_city_helper: false,
+            city_key_path: String::new(),
+        },
+        ConnectionProfile {
+            name: "Nitro (PAC)".into(),
+            mode: DoctorMode::Nitro,
+            host: String::new(),
+            port: "30000".into(),
+            listen: "127.0.0.1:9090".into(),
+            auto_detect: false,
+            system_proxy: true,
+            system_proxy_pac: true,
+            nitro_urls: String::new(),
+            allow_city_helper: false,
+            city_key_path: String::new(),
+        },
+    ]
+}
+
+pub fn parse_connection_profiles(raw: &str) -> Vec<ConnectionProfile> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Vec::new();
+    }
+    let Ok(serde_json::Value::Array(items)) = serde_json::from_str::<serde_json::Value>(trimmed)
+    else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for item in items.into_iter().take(64) {
+        let Some(name) = item
+            .get("name")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty() && s.len() <= 80)
+        else {
+            continue;
+        };
+        let Some(mode) = item
+            .get("mode")
+            .and_then(|v| v.as_str())
+            .and_then(DoctorMode::parse)
+        else {
+            continue;
+        };
+        out.push(ConnectionProfile {
+            name: name.to_owned(),
+            mode,
+            host: item
+                .get("host")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_owned(),
+            port: item
+                .get("port")
+                .and_then(|v| v.as_str())
+                .unwrap_or("30000")
+                .to_owned(),
+            listen: item
+                .get("listen")
+                .and_then(|v| v.as_str())
+                .unwrap_or("127.0.0.1:9090")
+                .to_owned(),
+            auto_detect: item
+                .get("auto_detect")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true),
+            system_proxy: item
+                .get("system_proxy")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true),
+            system_proxy_pac: item
+                .get("system_proxy_pac")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(true),
+            nitro_urls: item
+                .get("nitro_urls")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_owned(),
+            allow_city_helper: item
+                .get("allow_city_helper")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            city_key_path: item
+                .get("city_key_path")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_owned(),
+        });
+    }
+    out
+}
+
+pub fn serialize_connection_profiles(profiles: &[ConnectionProfile]) -> String {
+    let arr: Vec<serde_json::Value> = profiles
+        .iter()
+        .map(|p| {
+            serde_json::json!({
+                "name": p.name,
+                "mode": p.mode.as_str(),
+                "host": p.host,
+                "port": p.port,
+                "listen": p.listen,
+                "auto_detect": p.auto_detect,
+                "system_proxy": p.system_proxy,
+                "system_proxy_pac": p.system_proxy_pac,
+                "nitro_urls": p.nitro_urls,
+                "allow_city_helper": p.allow_city_helper,
+                "city_key_path": p.city_key_path,
+            })
+        })
+        .collect();
+    serde_json::to_string(&arr).unwrap_or_else(|_| "[]".into())
+}
+
 fn check_port_availability(addr: SocketAddr, active: bool, allow_pick_free: bool) -> DoctorItem {
     if active {
         return DoctorItem {
@@ -496,5 +688,20 @@ mod tests {
         .unwrap();
         assert!(HostsRedirect::has_stale(&path));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn connection_profiles_roundtrip_and_builtins_cover_modes() {
+        let builtins = builtin_profiles();
+        assert!(builtins
+            .iter()
+            .any(|p| p.mode == DoctorMode::City && p.system_proxy_pac));
+        assert!(builtins.iter().any(|p| p.mode == DoctorMode::Flash));
+        assert!(builtins.iter().any(|p| p.mode == DoctorMode::Origins));
+        assert!(builtins.iter().any(|p| p.mode == DoctorMode::Nitro));
+
+        let json = serialize_connection_profiles(&builtins);
+        let parsed = parse_connection_profiles(&json);
+        assert_eq!(parsed, builtins);
     }
 }
