@@ -2894,18 +2894,41 @@ impl Desktop {
                 ui.painter()
                     .circle_filled(dot_rect.center(), 4.5, dot_color);
 
-                let toggle_label = format!(
-                    "{} {}",
-                    if self.doctor_expanded { "▾" } else { "▸" },
-                    self.i18n.text("rust.doctor.title")
-                );
-                if ui
+                let (chev_rect, chev_resp) =
+                    ui.allocate_exact_size(egui::vec2(10.0, 14.0), egui::Sense::click());
+                if ui.is_rect_visible(chev_rect) {
+                    let c = chev_rect.center();
+                    let pts = if self.doctor_expanded {
+                        vec![
+                            egui::pos2(c.x - 4.0, c.y - 2.0),
+                            egui::pos2(c.x + 4.0, c.y - 2.0),
+                            egui::pos2(c.x, c.y + 3.0),
+                        ]
+                    } else {
+                        vec![
+                            egui::pos2(c.x - 2.0, c.y - 4.0),
+                            egui::pos2(c.x + 3.0, c.y),
+                            egui::pos2(c.x - 2.0, c.y + 4.0),
+                        ]
+                    };
+                    ui.painter().add(egui::Shape::convex_polygon(
+                        pts,
+                        ui.visuals().text_color(),
+                        egui::Stroke::NONE,
+                    ));
+                }
+                let title_resp = ui
                     .add(
-                        egui::Label::new(egui::RichText::new(toggle_label).strong())
-                            .sense(egui::Sense::click()),
+                        egui::Label::new(
+                            egui::RichText::new(self.i18n.text("rust.doctor.title")).strong(),
+                        )
+                        .sense(egui::Sense::click()),
                     )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand);
+                if chev_resp
                     .on_hover_cursor(egui::CursorIcon::PointingHand)
                     .clicked()
+                    || title_resp.clicked()
                 {
                     self.doctor_expanded = !self.doctor_expanded;
                 }
@@ -5616,7 +5639,11 @@ impl Desktop {
                             left.header,
                             left.bytes.len()
                         ));
-                        ui.label(egui::RichText::new("↔").color(palette.primary_accent));
+                        ui.label(
+                            egui::RichText::new("vs")
+                                .color(palette.primary_accent)
+                                .strong(),
+                        );
                         ui.strong(format!(
                             "B: {} (#{}, {} B)",
                             right.title,
@@ -5671,7 +5698,7 @@ impl Desktop {
                                     .spacing([10.0, 3.0])
                                     .show(ui, |ui| {
                                         ui.strong("#");
-                                        ui.strong("Δ");
+                                        ui.strong("Diff");
                                         ui.strong("Packet A");
                                         ui.strong("Packet B");
                                         ui.end_row();
@@ -6365,15 +6392,27 @@ impl Desktop {
                                         .hint_text(self.i18n.text("rust.injection.favorite_name")),
                                 );
                                 let can_save = !self.expression.trim().is_empty();
-                                if ui
-                                    .add_enabled(
-                                        can_save,
-                                        egui::Button::new("★")
-                                            .small(),
-                                    )
-                                    .on_hover_text(self.i18n.text("rust.injection.favorite_save"))
-                                    .clicked()
-                                {
+                                let fav_accent = self
+                                    .theme
+                                    .palette_with_accent(self.custom_accent)
+                                    .primary_accent;
+                                let save_clicked = ui
+                                    .add_enabled_ui(can_save, |ui| {
+                                        vector_icon_button(
+                                            ui,
+                                            VectorIcon::Star,
+                                            egui::vec2(22.0, 20.0),
+                                            11.0,
+                                            None,
+                                            fav_accent,
+                                        )
+                                        .on_hover_text(
+                                            self.i18n.text("rust.injection.favorite_save"),
+                                        )
+                                        .clicked()
+                                    })
+                                    .inner;
+                                if save_clicked {
                                     let name = if self.injection_fav_name.trim().is_empty() {
                                         self.expression
                                             .trim()
@@ -6398,6 +6437,10 @@ impl Desktop {
                             let mut load_fav: Option<(Direction, String)> = None;
                             let mut send_fav: Option<(Direction, String)> = None;
                             let mut delete_fav: Option<usize> = None;
+                            let fav_accent = self
+                                .theme
+                                .palette_with_accent(self.custom_accent)
+                                .primary_accent;
                             egui::ScrollArea::vertical()
                                 .id_salt("injection_favorites_scroll")
                                 .max_height(editor_h + 18.0)
@@ -6419,9 +6462,9 @@ impl Desktop {
                                         ui.horizontal(|ui| {
                                             ui.spacing_mut().item_spacing.x = 3.0;
                                             let dir_tag = if fav.direction == Direction::ToServer {
-                                                "↑"
+                                                "→"
                                             } else {
-                                                "↓"
+                                                "←"
                                             };
                                             let resp = ui
                                                 .add(
@@ -6443,20 +6486,36 @@ impl Desktop {
                                             ui.with_layout(
                                                 egui::Layout::right_to_left(egui::Align::Center),
                                                 |ui| {
-                                                    if ui.small_button("×").clicked() {
+                                                    if vector_icon_button(
+                                                        ui,
+                                                        VectorIcon::Close,
+                                                        egui::vec2(18.0, 18.0),
+                                                        8.0,
+                                                        None,
+                                                        ui.visuals().text_color(),
+                                                    )
+                                                    .clicked()
+                                                    {
                                                         delete_fav = Some(idx);
                                                     }
-                                                    if ui
-                                                        .add_enabled(
-                                                            connected,
-                                                            egui::Button::new("▶").small(),
-                                                        )
-                                                        .on_hover_text(
-                                                            self.i18n
-                                                                .text("rust.logger.replay_now"),
-                                                        )
-                                                        .clicked()
-                                                    {
+                                                    let play_clicked = ui
+                                                        .add_enabled_ui(connected, |ui| {
+                                                            vector_icon_button(
+                                                                ui,
+                                                                VectorIcon::Play,
+                                                                egui::vec2(20.0, 18.0),
+                                                                9.0,
+                                                                None,
+                                                                fav_accent,
+                                                            )
+                                                            .on_hover_text(
+                                                                self.i18n
+                                                                    .text("rust.logger.replay_now"),
+                                                            )
+                                                            .clicked()
+                                                        })
+                                                        .inner;
+                                                    if play_clicked {
                                                         send_fav = Some((
                                                             fav.direction,
                                                             fav.expression.clone(),
