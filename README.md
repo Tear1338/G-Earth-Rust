@@ -77,7 +77,7 @@ Get up and running in **3 steps**:
 ### Extensions, Multi-Source Store & G-Python
 - **Full beta-29 extension IPC (`127.0.0.1:9092`)**: runs `.jar`, `.py`, `.py3`, `.exe`, `.sh`, and `.js` extensions with one-use launch tokens, approval prompts, inactive-row restart/uninstall, and colorized Extension Console.
 - **Multi-source G-ExtensionStore**: browse and install extensions from the official `sirjonasxx/G-ExtensionStore`, **`Tear1338/G-ExtensionStore`**, or any custom GitHub repository in an independent OS window.
-- **Theme sync**: `G-Earth`, `G-Earth Dark`, and `Tanji` themes automatically synchronize to connected extensions via `HostInfo`.
+- **Themes & custom accents**: `G-Earth`, `G-Earth Dark`, **`Fluxer`** (`#4641D9`), and `Tanji` themes with customizable accent colors (presets + RGB picker) and automatic `HostInfo` theme sync to connected extensions.
 - **G-Python shell**: native dependency check and authenticated Jupyter / QtConsole launcher.
 
 ### Injection, Rules, Scheduler & Localization
@@ -105,7 +105,7 @@ cargo run --release --bin gearth-rust -- encode '{h:123}{i:42}{s:"hello"}'
 cargo run --release --bin gearth-rust -- relay 127.0.0.1:1234 test-server.example:30000
 ```
 
-Desktop CLI flags: `-c / --connect <flash|origins|unity|nitro|city>`, `--host <HOST>`, `--port <PORT>`, `-t / --theme <light|dark|tanji>`, `-d / --debug`.
+Desktop CLI flags: `-c / --connect <flash|origins|unity|nitro|city>`, `--host <HOST>`, `--port <PORT>`, `-t / --theme <light|dark|fluxer|tanji>`, `-d / --debug`.
 
 ---
 

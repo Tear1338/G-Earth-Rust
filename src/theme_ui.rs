@@ -6,7 +6,39 @@ use std::collections::HashMap;
 pub enum AppTheme {
     GEarth,
     GEarthDark,
+    Fluxer,
     Tanji,
+}
+
+pub const ACCENT_PRESETS: &[(&str, egui::Color32)] = &[
+    ("Fluxer Indigo", egui::Color32::from_rgb(0x46, 0x41, 0xd9)),
+    ("Habbo Blue", egui::Color32::from_rgb(0x33, 0x7a, 0xb7)),
+    ("Emerald", egui::Color32::from_rgb(0x22, 0xa0, 0x6b)),
+    ("Cyan", egui::Color32::from_rgb(0x0e, 0xa5, 0xe9)),
+    ("Violet", egui::Color32::from_rgb(0x8b, 0x5c, 0xf6)),
+    ("Rose", egui::Color32::from_rgb(0xe0, 0x4f, 0x7b)),
+    ("Amber", egui::Color32::from_rgb(0xe5, 0x9a, 0x1a)),
+];
+
+pub fn parse_hex_color(raw: &str) -> Option<egui::Color32> {
+    let hex = raw.trim().strip_prefix('#').unwrap_or(raw.trim());
+    if hex.len() != 6 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let r = u8::from_str_radix(&hex[0..2], 16).ok()?;
+    let g = u8::from_str_radix(&hex[2..4], 16).ok()?;
+    let b = u8::from_str_radix(&hex[4..6], 16).ok()?;
+    Some(egui::Color32::from_rgb(r, g, b))
+}
+
+pub fn format_hex_color(color: egui::Color32) -> String {
+    format!("#{:02x}{:02x}{:02x}", color.r(), color.g(), color.b())
+}
+
+fn blend_color(a: egui::Color32, b: egui::Color32, t: f32) -> egui::Color32 {
+    let t = t.clamp(0.0, 1.0);
+    let mix = |x: u8, y: u8| ((x as f32) * (1.0 - t) + (y as f32) * t).round() as u8;
+    egui::Color32::from_rgb(mix(a.r(), b.r()), mix(a.g(), b.g()), mix(a.b(), b.b()))
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -32,26 +64,36 @@ pub struct ThemePalette {
 }
 
 impl AppTheme {
-    pub const ALL: [Self; 3] = [Self::GEarth, Self::GEarthDark, Self::Tanji];
+    pub const ALL: [Self; 4] = [Self::GEarth, Self::GEarthDark, Self::Fluxer, Self::Tanji];
 
     pub fn name(self) -> &'static str {
         match self {
             Self::GEarth => "G-Earth",
             Self::GEarthDark => "G-Earth Dark",
+            Self::Fluxer => "Fluxer",
             Self::Tanji => "Tanji",
+        }
+    }
+
+    /// Theme name reported to external beta-29 Java extensions via `HostInfo`.
+    pub fn extension_theme_name(self) -> &'static str {
+        match self {
+            Self::Fluxer => "G-Earth Dark",
+            other => other.name(),
         }
     }
 
     pub fn title(self) -> &'static str {
         match self {
             Self::Tanji => "Tanji",
-            Self::GEarth | Self::GEarthDark => "G-Earth",
+            Self::GEarth | Self::GEarthDark | Self::Fluxer => "G-Earth",
         }
     }
 
     pub fn from_settings(theme: Option<&str>, dark_mode: bool) -> Self {
         match theme {
             Some("G-Earth Dark") => Self::GEarthDark,
+            Some("Fluxer") => Self::Fluxer,
             Some("Tanji") => Self::Tanji,
             Some("G-Earth") => Self::GEarth,
             _ if dark_mode => Self::GEarthDark,
@@ -60,11 +102,15 @@ impl AppTheme {
     }
 
     pub fn is_dark(self) -> bool {
-        matches!(self, Self::GEarthDark)
+        matches!(self, Self::GEarthDark | Self::Fluxer)
     }
 
     pub fn palette(self) -> ThemePalette {
-        match self {
+        self.palette_with_accent(None)
+    }
+
+    pub fn palette_with_accent(self, custom_accent: Option<egui::Color32>) -> ThemePalette {
+        let mut p = match self {
             Self::GEarth => ThemePalette {
                 titlebar_bg: egui::Color32::from_rgb(0xf4, 0xf4, 0xf4),
                 content_bg: egui::Color32::WHITE,
@@ -105,6 +151,26 @@ impl AppTheme {
                 primary_accent: egui::Color32::from_rgb(0x5d, 0x83, 0xb4),
                 text_muted: egui::Color32::from_rgb(0xb8, 0xb8, 0xb8),
             },
+            Self::Fluxer => ThemePalette {
+                titlebar_bg: egui::Color32::from_rgb(0x13, 0x11, 0x1c),
+                content_bg: egui::Color32::from_rgb(0x1a, 0x18, 0x26),
+                outer_border: egui::Color32::from_rgb(0x2e, 0x2a, 0x45),
+                group_border: egui::Color32::from_rgb(0x3d, 0x38, 0x5c),
+                tab_inactive_text: egui::Color32::from_rgb(0x8c, 0x88, 0xff),
+                tab_hover_bg: egui::Color32::from_rgb(0x25, 0x22, 0x38),
+                tab_active_bg: egui::Color32::from_rgb(0x1a, 0x18, 0x26),
+                tab_active_text: egui::Color32::from_rgb(0xf2, 0xf1, 0xff),
+                tab_active_border: egui::Color32::from_rgb(0x46, 0x41, 0xd9),
+                table_header_bg: egui::Color32::from_rgb(0x15, 0x13, 0x20),
+                table_header_text: egui::Color32::from_rgb(0xe2, 0xe0, 0xff),
+                table_row_alt_bg: egui::Color32::from_rgb(0x20, 0x1d, 0x30),
+                table_row_blue: egui::Color32::from_rgb(0x26, 0x23, 0x54),
+                table_row_active: egui::Color32::from_rgb(0x2b, 0x27, 0x42),
+                table_row_inactive: egui::Color32::from_rgb(0x2e, 0x2b, 0x3e),
+                table_grid_line: egui::Color32::from_rgb(0x38, 0x34, 0x54),
+                primary_accent: egui::Color32::from_rgb(0x46, 0x41, 0xd9),
+                text_muted: egui::Color32::from_rgb(0x9c, 0x99, 0xb8),
+            },
             Self::Tanji => ThemePalette {
                 titlebar_bg: egui::Color32::from_rgb(0xf4, 0xf2, 0xee),
                 content_bg: egui::Color32::from_rgb(0xff, 0xfe, 0xfc),
@@ -125,12 +191,29 @@ impl AppTheme {
                 primary_accent: egui::Color32::from_rgb(0xb7, 0x77, 0x14),
                 text_muted: egui::Color32::from_rgb(0x55, 0x55, 0x55),
             },
+        };
+        if let Some(accent) = custom_accent {
+            p.primary_accent = accent;
+            p.tab_inactive_text = if self.is_dark() {
+                blend_color(accent, egui::Color32::WHITE, 0.35)
+            } else {
+                blend_color(accent, egui::Color32::BLACK, 0.15)
+            };
+            if matches!(self, Self::Fluxer) {
+                p.tab_active_border = accent;
+            }
         }
+        p
     }
 
+    #[cfg(test)]
     pub fn visuals(self) -> egui::Visuals {
-        let p = self.palette();
-        match self {
+        self.visuals_with_accent(None)
+    }
+
+    pub fn visuals_with_accent(self, custom_accent: Option<egui::Color32>) -> egui::Visuals {
+        let p = self.palette_with_accent(custom_accent);
+        let mut v = match self {
             Self::GEarth => {
                 let mut v = egui::Visuals::light();
                 let focus = egui::Color32::from_rgb(0x66, 0xaf, 0xe9);
@@ -210,6 +293,48 @@ impl AppTheme {
                 v.widgets.open.rounding = egui::Rounding::same(4.0);
                 v
             }
+            Self::Fluxer => {
+                let mut v = egui::Visuals::dark();
+                let accent = p.primary_accent;
+                let focus = blend_color(accent, egui::Color32::WHITE, 0.28);
+                let border = egui::Color32::from_rgb(0x3d, 0x38, 0x5c);
+                let btn_bg = egui::Color32::from_rgb(0x23, 0x20, 0x34);
+                let hover_bg = egui::Color32::from_rgb(0x2e, 0x2a, 0x48);
+                let input_bg = egui::Color32::from_rgb(0x14, 0x12, 0x1f);
+                let text = egui::Color32::from_rgb(0xf2, 0xf1, 0xff);
+                v.window_fill = p.content_bg;
+                v.panel_fill = p.content_bg;
+                v.extreme_bg_color = input_bg;
+                v.faint_bg_color = p.table_header_bg;
+                v.override_text_color = Some(text);
+                v.hyperlink_color = p.tab_inactive_text;
+                v.window_rounding = egui::Rounding::same(7.0);
+                v.window_stroke = egui::Stroke::new(1.0_f32, p.outer_border);
+                v.selection.bg_fill = blend_color(p.content_bg, accent, 0.55);
+                v.selection.stroke = egui::Stroke::new(1.0_f32, focus);
+                v.widgets.noninteractive.bg_fill = p.content_bg;
+                v.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0_f32, border);
+                v.widgets.noninteractive.rounding = egui::Rounding::same(5.0);
+                v.widgets.inactive.bg_fill = btn_bg;
+                v.widgets.inactive.weak_bg_fill = btn_bg;
+                v.widgets.inactive.bg_stroke = egui::Stroke::new(1.0_f32, border);
+                v.widgets.inactive.fg_stroke = egui::Stroke::new(1.0_f32, text);
+                v.widgets.inactive.rounding = egui::Rounding::same(5.0);
+                v.widgets.hovered.bg_fill = hover_bg;
+                v.widgets.hovered.weak_bg_fill = hover_bg;
+                v.widgets.hovered.bg_stroke = egui::Stroke::new(1.0_f32, focus);
+                v.widgets.hovered.fg_stroke = egui::Stroke::new(1.0_f32, egui::Color32::WHITE);
+                v.widgets.hovered.rounding = egui::Rounding::same(5.0);
+                v.widgets.active.bg_fill = blend_color(hover_bg, accent, 0.45);
+                v.widgets.active.weak_bg_fill = blend_color(hover_bg, accent, 0.45);
+                v.widgets.active.bg_stroke = egui::Stroke::new(1.0_f32, focus);
+                v.widgets.active.fg_stroke = egui::Stroke::new(1.0_f32, egui::Color32::WHITE);
+                v.widgets.active.rounding = egui::Rounding::same(5.0);
+                v.widgets.open.bg_fill = btn_bg;
+                v.widgets.open.bg_stroke = egui::Stroke::new(1.0_f32, focus);
+                v.widgets.open.rounding = egui::Rounding::same(5.0);
+                v
+            }
             Self::Tanji => {
                 let mut v = egui::Visuals::light();
                 let focus = egui::Color32::from_rgb(0xe9, 0xb3, 0x65);
@@ -249,7 +374,25 @@ impl AppTheme {
                 v.widgets.open.rounding = egui::Rounding::same(4.0);
                 v
             }
+        };
+        if let Some(accent) = custom_accent {
+            let focus = if self.is_dark() {
+                blend_color(accent, egui::Color32::WHITE, 0.25)
+            } else {
+                accent
+            };
+            v.hyperlink_color = p.tab_inactive_text;
+            v.selection.bg_fill = if self.is_dark() {
+                blend_color(p.content_bg, accent, 0.50)
+            } else {
+                blend_color(egui::Color32::WHITE, accent, 0.22)
+            };
+            v.selection.stroke = egui::Stroke::new(1.0_f32, focus);
+            v.widgets.hovered.bg_stroke = egui::Stroke::new(1.0_f32, focus);
+            v.widgets.active.bg_stroke = egui::Stroke::new(1.0_f32, focus);
+            v.widgets.open.bg_stroke = egui::Stroke::new(1.0_f32, focus);
         }
+        v
     }
 }
 
@@ -382,14 +525,18 @@ impl ThemeLogos {
     pub fn large(&self, theme: AppTheme) -> Option<&egui::TextureHandle> {
         match theme {
             AppTheme::Tanji => self.tanji_large.as_ref(),
-            AppTheme::GEarth | AppTheme::GEarthDark => self.gearth_large.as_ref(),
+            AppTheme::GEarth | AppTheme::GEarthDark | AppTheme::Fluxer => {
+                self.gearth_large.as_ref()
+            }
         }
     }
 
     pub fn small(&self, theme: AppTheme) -> Option<&egui::TextureHandle> {
         match theme {
             AppTheme::Tanji => self.tanji_small.as_ref(),
-            AppTheme::GEarth | AppTheme::GEarthDark => self.gearth_small.as_ref(),
+            AppTheme::GEarth | AppTheme::GEarthDark | AppTheme::Fluxer => {
+                self.gearth_small.as_ref()
+            }
         }
     }
 
@@ -455,8 +602,12 @@ pub fn icon_action(
     }
 }
 
-/// Exact beta-29 titlebar pill switch to toggle G-Earth Light / G-Earth Dark (right-click for Tanji).
-pub fn dark_mode_pill_switch(ui: &mut egui::Ui, theme: &mut AppTheme) -> egui::Response {
+/// Titlebar pill switch: left-click toggles Light/Dark, right-click cycles Fluxer/Tanji.
+pub fn dark_mode_pill_switch(
+    ui: &mut egui::Ui,
+    theme: &mut AppTheme,
+    custom_accent: Option<egui::Color32>,
+) -> egui::Response {
     let desired = egui::vec2(38.0, 20.0);
     let (rect, response) = ui.allocate_exact_size(desired, egui::Sense::click());
     if response.clicked() {
@@ -466,19 +617,29 @@ pub fn dark_mode_pill_switch(ui: &mut egui::Ui, theme: &mut AppTheme) -> egui::R
             AppTheme::GEarthDark
         };
     } else if response.secondary_clicked() {
-        *theme = AppTheme::Tanji;
+        *theme = if *theme == AppTheme::Fluxer {
+            AppTheme::Tanji
+        } else {
+            AppTheme::Fluxer
+        };
     }
     if ui.is_rect_visible(rect) {
         let radius = rect.height() * 0.5;
         let is_dark = theme.is_dark();
-        let bg = if is_dark {
-            egui::Color32::from_rgb(0x4a, 0x4a, 0x4a)
+        let bg = if *theme == AppTheme::Fluxer {
+            custom_accent.unwrap_or(egui::Color32::from_rgb(0x46, 0x41, 0xd9))
+        } else if is_dark {
+            custom_accent
+                .map(|c| blend_color(egui::Color32::from_rgb(0x3a, 0x3a, 0x3a), c, 0.45))
+                .unwrap_or(egui::Color32::from_rgb(0x4a, 0x4a, 0x4a))
         } else if *theme == AppTheme::Tanji {
             egui::Color32::from_rgb(0xe9, 0xb3, 0x65)
         } else {
             egui::Color32::from_rgb(0xd4, 0xd4, 0xd4)
         };
-        let border = if is_dark {
+        let border = if *theme == AppTheme::Fluxer {
+            blend_color(bg, egui::Color32::WHITE, 0.35)
+        } else if is_dark {
             egui::Color32::from_rgb(0x88, 0x88, 0x88)
         } else {
             egui::Color32::from_rgb(0x99, 0x99, 0x99)
@@ -504,9 +665,9 @@ pub fn tab_button(
     ui: &mut egui::Ui,
     selected: bool,
     label: &str,
-    theme: AppTheme,
+    palette: ThemePalette,
 ) -> egui::Response {
-    let p = theme.palette();
+    let p = palette;
     let font = egui::FontId::proportional(13.0);
     let galley = ui.painter().layout_no_wrap(
         label.to_owned(),

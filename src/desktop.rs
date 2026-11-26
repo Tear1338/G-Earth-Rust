@@ -36,8 +36,9 @@ use std::{
     time::{Duration, Instant, SystemTime},
 };
 use theme_ui::{
-    dark_mode_pill_switch, group_box, icon_action, parse_interval_spec, tab_button,
-    vector_icon_button, vector_text_button, AppTheme, ThemeLogos, VectorIcon,
+    dark_mode_pill_switch, format_hex_color, group_box, icon_action, parse_hex_color,
+    parse_interval_spec, tab_button, vector_icon_button, vector_text_button, AppTheme, ThemeLogos,
+    VectorIcon, ACCENT_PRESETS,
 };
 
 // Both lazy prediction caches count against the capture byte budget.
@@ -202,6 +203,27 @@ mod window_icon_tests {
         );
         assert!(!AppTheme::Tanji.visuals().dark_mode);
         assert!(AppTheme::GEarthDark.visuals().dark_mode);
+        assert_eq!(
+            AppTheme::from_settings(Some("Fluxer"), false),
+            AppTheme::Fluxer
+        );
+        assert!(AppTheme::Fluxer.visuals().dark_mode);
+        assert_eq!(
+            AppTheme::Fluxer.palette().primary_accent,
+            egui::Color32::from_rgb(0x46, 0x41, 0xd9)
+        );
+        assert_eq!(AppTheme::Fluxer.extension_theme_name(), "G-Earth Dark");
+        let custom = egui::Color32::from_rgb(0x22, 0xa0, 0x6b);
+        assert_eq!(
+            super::parse_hex_color(&super::format_hex_color(custom)),
+            Some(custom)
+        );
+        assert_eq!(
+            AppTheme::Fluxer
+                .palette_with_accent(Some(custom))
+                .primary_accent,
+            custom
+        );
     }
 }
 
@@ -250,6 +272,7 @@ fn parse_cli_client_mode(raw: &str) -> Option<CliClientMode> {
 fn parse_cli_theme(raw: &str) -> Option<AppTheme> {
     match raw.trim().to_ascii_lowercase().as_str() {
         "tanji" => Some(AppTheme::Tanji),
+        "fluxer" => Some(AppTheme::Fluxer),
         "dark" | "g-earth dark" | "gearth-dark" => Some(AppTheme::GEarthDark),
         "light" | "g-earth" | "gearth" => Some(AppTheme::GEarth),
         _ => None,
@@ -491,6 +514,8 @@ struct Desktop {
     settings_loaded: bool,
     legacy_cache_path: String,
     theme: AppTheme,
+    custom_accent: Option<egui::Color32>,
+    accent_picker_open: bool,
     language: String,
     i18n: I18n,
     notepad: String,
@@ -1241,6 +1266,8 @@ impl Default for Desktop {
             settings_loaded: false,
             legacy_cache_path: String::new(),
             theme: AppTheme::GEarth,
+            custom_accent: None,
+            accent_picker_open: false,
             language: "en".into(),
             i18n: I18n::new("en"),
             notepad: String::new(),
@@ -1960,7 +1987,9 @@ impl Desktop {
         } else {
             (
                 self.i18n.text("tab.connection.state.notconnected"),
-                self.theme.palette().text_muted,
+                self.theme
+                    .palette_with_accent(self.custom_accent)
+                    .text_muted,
             )
         }
     }
@@ -2054,7 +2083,7 @@ impl Desktop {
     }
     fn connection(&mut self, ui: &mut egui::Ui) {
         let idle = self.relay.is_none() && self.attachment_pending.is_none();
-        let palette = self.theme.palette();
+        let palette = self.theme.palette_with_accent(self.custom_accent);
         let avail_w = ui.available_width().max(600.0);
         let top_left_w = (avail_w * 0.58).floor();
         let top_right_w = (avail_w - top_left_w - 14.0).max(210.0);
@@ -3450,7 +3479,9 @@ impl Desktop {
                     egui::Color32::from_rgb(132, 32, 41)
                 }
             } else {
-                self.theme.palette().text_muted
+                self.theme
+                    .palette_with_accent(self.custom_accent)
+                    .text_muted
             };
             if vector_text_button(
                 ui,
@@ -3481,7 +3512,9 @@ impl Desktop {
                     egui::Color32::from_rgb(8, 66, 152)
                 }
             } else {
-                self.theme.palette().text_muted
+                self.theme
+                    .palette_with_accent(self.custom_accent)
+                    .text_muted
             };
             if vector_text_button(
                 ui,
@@ -3550,7 +3583,9 @@ impl Desktop {
                     egui::Color32::from_rgb(130, 78, 8)
                 }
             } else {
-                self.theme.palette().text_muted
+                self.theme
+                    .palette_with_accent(self.custom_accent)
+                    .text_muted
             };
             if vector_text_button(
                 ui,
@@ -3619,7 +3654,11 @@ impl Desktop {
                     ui.small(
                         egui::RichText::new(self.i18n.text("rust.logger.no_presets"))
                             .italics()
-                            .color(self.theme.palette().text_muted),
+                            .color(
+                                self.theme
+                                    .palette_with_accent(self.custom_accent)
+                                    .text_muted,
+                            ),
                     );
                 } else {
                     for (idx, preset) in self.logger_presets.iter().enumerate() {
@@ -3753,7 +3792,9 @@ impl Desktop {
                 if vector_text_button(
                     ui,
                     VectorIcon::Sparkle,
-                    self.theme.palette().primary_accent,
+                    self.theme
+                        .palette_with_accent(self.custom_accent)
+                        .primary_accent,
                     &self.i18n.text("rust.logger.friendly_mode"),
                     None,
                     None,
@@ -3771,7 +3812,7 @@ impl Desktop {
             }
         });
         if self.logger_show_stats {
-            let palette = self.theme.palette();
+            let palette = self.theme.palette_with_accent(self.custom_accent);
             let top = self.logger_stats.top_headers(8);
             let mut stats_filter_req = None;
             let mut stats_hide_req = None;
@@ -3905,7 +3946,7 @@ impl Desktop {
         let inspector_reserve = if has_selected { 164.0 } else { 0.0 };
         let log_height = (ui.available_height() - 28.0 - inspector_reserve).max(96.0);
         if self.logger_friendly {
-            let palette = self.theme.palette();
+            let palette = self.theme.palette_with_accent(self.custom_accent);
             let dark = ui.visuals().dark_mode;
             let empty_payload = self.i18n.text("rust.logger.empty_payload");
             let friendly_row_h = 46.0;
@@ -4895,7 +4936,11 @@ impl Desktop {
                                         self.i18n.text("rust.logger.no_custom_names"),
                                     )
                                     .italics()
-                                    .color(self.theme.palette().text_muted),
+                                    .color(
+                                        self.theme
+                                            .palette_with_accent(self.custom_accent)
+                                            .text_muted,
+                                    ),
                                 );
                             } else {
                                 for (dir, hdr, name) in &self.custom_packet_names {
@@ -5238,10 +5283,11 @@ impl Desktop {
                         );
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             ui.label(
-                                egui::RichText::new(&info_text)
-                                    .italics()
-                                    .small()
-                                    .color(self.theme.palette().text_muted),
+                                egui::RichText::new(&info_text).italics().small().color(
+                                    self.theme
+                                        .palette_with_accent(self.custom_accent)
+                                        .text_muted,
+                                ),
                             );
                         });
                     });
@@ -5616,7 +5662,7 @@ impl Desktop {
     }
     fn schedule(&mut self, ui: &mut egui::Ui) {
         let mut templates_changed = false;
-        let palette = self.theme.palette();
+        let palette = self.theme.palette_with_accent(self.custom_accent);
         let avail_w = ui.available_width().max(580.0);
         let table_h = (ui.available_height() - 130.0).clamp(96.0, 380.0);
 
@@ -6483,7 +6529,7 @@ impl Desktop {
     }
     fn tools(&mut self, ui: &mut egui::Ui) {
         let avail_w = ui.available_width().max(580.0);
-        let palette = self.theme.palette();
+        let palette = self.theme.palette_with_accent(self.custom_accent);
 
         // Exact Tools.fxml Section 1: Encoding/Decoding
         ui.label(
@@ -6850,13 +6896,13 @@ impl eframe::App for Desktop {
                 }
             }
         }
-        ctx.set_visuals(self.theme.visuals());
+        ctx.set_visuals(self.theme.visuals_with_accent(self.custom_accent));
         self.poll();
         if self.update_close_requested {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
-        let palette = self.theme.palette();
+        let palette = self.theme.palette_with_accent(self.custom_accent);
         egui::TopBottomPanel::top("tabs")
             .frame(
                 egui::Frame::none()
@@ -6915,33 +6961,153 @@ impl eframe::App for Desktop {
                             ui.visuals().text_color(),
                         );
                         if gear_resp.clicked() {
+                            self.accent_picker_open = false;
                             ui.memory_mut(|m| m.toggle_popup(gear_popup_id));
                         }
                         egui::popup::popup_below_widget(
                             ui,
                             gear_popup_id,
                             &gear_resp,
-                            egui::popup::PopupCloseBehavior::CloseOnClick,
+                            egui::popup::PopupCloseBehavior::CloseOnClickOutside,
                             |ui| {
-                                ui.set_min_width(150.0);
+                                ui.set_min_width(190.0);
                                 if ui.button(self.i18n.text("rust.settings.save")).clicked() {
                                     self.save_settings();
+                                    self.accent_picker_open = false;
+                                    ui.memory_mut(|m| m.close_popup());
                                 }
                                 if ui.button(self.i18n.text("rust.settings.reload")).clicked() {
                                     self.load_settings();
+                                    self.accent_picker_open = false;
+                                    ui.memory_mut(|m| m.close_popup());
                                 }
                                 ui.separator();
                                 for theme in AppTheme::ALL {
-                                    ui.selectable_value(&mut self.theme, theme, theme.name());
+                                    if ui
+                                        .selectable_value(&mut self.theme, theme, theme.name())
+                                        .clicked()
+                                    {
+                                        self.accent_picker_open = false;
+                                        ui.memory_mut(|m| m.close_popup());
+                                    }
+                                }
+                                ui.separator();
+                                ui.label(
+                                    egui::RichText::new(self.i18n.text("rust.theme.accent"))
+                                        .small()
+                                        .strong(),
+                                );
+                                ui.add_space(2.0);
+                                ui.horizontal_wrapped(|ui| {
+                                    ui.spacing_mut().item_spacing = egui::vec2(5.0, 5.0);
+                                    for (preset_name, preset_color) in ACCENT_PRESETS {
+                                        let is_selected = self.custom_accent == Some(*preset_color);
+                                        let (rect, resp) = ui.allocate_exact_size(
+                                            egui::vec2(16.0, 16.0),
+                                            egui::Sense::click(),
+                                        );
+                                        if ui.is_rect_visible(rect) {
+                                            ui.painter().circle_filled(
+                                                rect.center(),
+                                                7.0,
+                                                *preset_color,
+                                            );
+                                            if is_selected || resp.hovered() {
+                                                let stroke_color = if is_selected {
+                                                    egui::Color32::WHITE
+                                                } else {
+                                                    ui.visuals().text_color()
+                                                };
+                                                ui.painter().circle_stroke(
+                                                    rect.center(),
+                                                    7.5,
+                                                    egui::Stroke::new(1.5_f32, stroke_color),
+                                                );
+                                            }
+                                        }
+                                        if resp
+                                            .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                            .on_hover_text(*preset_name)
+                                            .clicked()
+                                        {
+                                            self.custom_accent = Some(*preset_color);
+                                        }
+                                    }
+                                });
+                                ui.add_space(4.0);
+                                let active_accent = self
+                                    .custom_accent
+                                    .unwrap_or_else(|| self.theme.palette().primary_accent);
+                                ui.horizontal(|ui| {
+                                    let (swatch_rect, swatch_resp) = ui.allocate_exact_size(
+                                        egui::vec2(22.0, 18.0),
+                                        egui::Sense::click(),
+                                    );
+                                    if ui.is_rect_visible(swatch_rect) {
+                                        ui.painter().rect(
+                                            swatch_rect,
+                                            egui::Rounding::same(3.0),
+                                            active_accent,
+                                            egui::Stroke::new(
+                                                1.0_f32,
+                                                ui.visuals().widgets.inactive.bg_stroke.color,
+                                            ),
+                                        );
+                                    }
+                                    if swatch_resp
+                                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                        .on_hover_text(format_hex_color(active_accent))
+                                        .clicked()
+                                    {
+                                        self.accent_picker_open = !self.accent_picker_open;
+                                    }
+                                    if ui
+                                        .add(
+                                            egui::Button::new(
+                                                egui::RichText::new(format_hex_color(
+                                                    active_accent,
+                                                ))
+                                                .monospace()
+                                                .small(),
+                                            )
+                                            .small(),
+                                        )
+                                        .clicked()
+                                    {
+                                        self.accent_picker_open = !self.accent_picker_open;
+                                    }
+                                    if ui
+                                        .add_enabled(
+                                            self.custom_accent.is_some(),
+                                            egui::Button::new(
+                                                self.i18n.text("rust.theme.accent_default"),
+                                            )
+                                            .small(),
+                                        )
+                                        .clicked()
+                                    {
+                                        self.custom_accent = None;
+                                    }
+                                });
+                                if self.accent_picker_open {
+                                    ui.add_space(4.0);
+                                    let mut picker_color = active_accent;
+                                    if egui::color_picker::color_picker_color32(
+                                        ui,
+                                        &mut picker_color,
+                                        egui::color_picker::Alpha::Opaque,
+                                    ) {
+                                        self.custom_accent = Some(picker_color);
+                                    }
                                 }
                             },
                         );
                         ui.add_space(4.0);
-                        dark_mode_pill_switch(ui, &mut self.theme)
+                        dark_mode_pill_switch(ui, &mut self.theme, self.custom_accent)
                             .on_hover_text(self.i18n.text("rust.theme.toggle_hint"));
                         if self.theme != theme_before {
                             if let Some(host) = &self.extension_host {
-                                if let Err(e) = host.set_theme(self.theme.name()) {
+                                if let Err(e) = host.set_theme(self.theme.extension_theme_name()) {
                                     self.status = e.to_string();
                                 }
                             }
@@ -7045,7 +7211,7 @@ impl eframe::App for Desktop {
                         (Tab::Logger, "rust.logger.tab"),
                     ] {
                         let label = self.i18n.text(key);
-                        let resp = tab_button(ui, self.tab == tab, &label, self.theme);
+                        let resp = tab_button(ui, self.tab == tab, &label, palette);
                         if self.tab == tab {
                             active_tab_rect = Some(resp.rect);
                         }
@@ -7403,7 +7569,7 @@ impl eframe::App for Desktop {
         // Independent native OS windows matching beta-29 separate windows
         if self.ext_store_open {
             let mut open = true;
-            let theme_visuals = self.theme.visuals();
+            let theme_visuals = self.theme.visuals_with_accent(self.custom_accent);
             ctx.show_viewport_immediate(
                 egui::ViewportId::from_hash_of("extension_store_window"),
                 with_gearth_icon(
@@ -7464,7 +7630,7 @@ impl eframe::App for Desktop {
             let title = self
                 .i18n
                 .text("tab.extensions.button.pythonshell.windowtitle");
-            let theme_visuals = self.theme.visuals();
+            let theme_visuals = self.theme.visuals_with_accent(self.custom_accent);
             ctx.show_viewport_immediate(
                 egui::ViewportId::from_hash_of("gpython_shell_window"),
                 with_gearth_icon(
@@ -7518,7 +7684,7 @@ impl eframe::App for Desktop {
             let mut open = true;
             let title = self.i18n.text("tab.extensions.button.logs.windowtitle");
             let dark = ui_is_dark(self.theme);
-            let theme_visuals = self.theme.visuals();
+            let theme_visuals = self.theme.visuals_with_accent(self.custom_accent);
             ctx.show_viewport_immediate(
                 egui::ViewportId::from_hash_of("extension_console_window"),
                 with_gearth_icon(
@@ -7686,7 +7852,7 @@ impl eframe::App for Desktop {
             } else {
                 egui::WindowLevel::Normal
             };
-            let theme_visuals = self.theme.visuals();
+            let theme_visuals = self.theme.visuals_with_accent(self.custom_accent);
             ctx.show_viewport_immediate(
                 egui::ViewportId::from_hash_of("logger_window"),
                 with_gearth_icon(
@@ -7894,7 +8060,7 @@ impl Desktop {
         if let Some(theme) = args.theme {
             self.theme = theme;
             if let Some(host) = &self.extension_host {
-                if let Err(e) = host.set_theme(self.theme.name()) {
+                if let Err(e) = host.set_theme(self.theme.extension_theme_name()) {
                     self.status = e.to_string();
                 }
             }
@@ -8586,6 +8752,11 @@ impl Desktop {
             self.settings.values.get("theme").map(String::as_str),
             legacy_dark,
         );
+        self.custom_accent = self
+            .settings
+            .values
+            .get("theme_accent")
+            .and_then(|value| parse_hex_color(value));
         self.outgoing = self
             .settings
             .booleans
@@ -8603,7 +8774,7 @@ impl Desktop {
             if let Err(e) = host.set_language(&self.language) {
                 self.status = e.to_string();
             }
-            if let Err(e) = host.set_theme(self.theme.name()) {
+            if let Err(e) = host.set_theme(self.theme.extension_theme_name()) {
                 self.status = e.to_string();
             }
         }
@@ -8661,6 +8832,13 @@ impl Desktop {
         self.settings
             .values
             .insert("theme".into(), self.theme.name().into());
+        if let Some(accent) = self.custom_accent {
+            self.settings
+                .values
+                .insert("theme_accent".into(), format_hex_color(accent));
+        } else {
+            self.settings.values.remove("theme_accent");
+        }
         if self.custom_hotels.is_empty() {
             self.settings.values.remove("custom_hotels");
         } else {
@@ -8910,7 +9088,7 @@ impl Desktop {
         })
     }
     fn extensions(&mut self, ui: &mut egui::Ui) {
-        let palette = self.theme.palette();
+        let palette = self.theme.palette_with_accent(self.custom_accent);
         let avail_w = ui.available_width().max(580.0);
         let table_h = (ui.available_height() - 80.0).clamp(110.0, 460.0);
         let fire_tex = self
