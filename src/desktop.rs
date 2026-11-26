@@ -558,6 +558,8 @@ struct Desktop {
     doctor_report: Option<doctor::DoctorReport>,
     doctor_task: Option<Receiver<doctor::DoctorReport>>,
     doctor_expanded: bool,
+    #[cfg(target_os = "macos")]
+    relaunch_admin_task: Option<Receiver<std::io::Result<()>>>,
     connection_profiles: Vec<doctor::ConnectionProfile>,
     active_profile_name: String,
     new_profile_name: String,
@@ -1329,6 +1331,8 @@ impl Default for Desktop {
             doctor_report: None,
             doctor_task: None,
             doctor_expanded: false,
+            #[cfg(target_os = "macos")]
+            relaunch_admin_task: None,
             connection_profiles: Vec::new(),
             active_profile_name: String::new(),
             new_profile_name: String::new(),
@@ -1466,6 +1470,26 @@ impl Desktop {
         }
         if recheck_doctor {
             self.start_doctor_check();
+        }
+        #[cfg(target_os = "macos")]
+        if let Some(task) = &self.relaunch_admin_task {
+            match task.try_recv() {
+                Ok(Ok(())) => {
+                    self.relaunch_admin_task = None;
+                    if let Some(host) = self.extension_host.take() {
+                        host.stop();
+                    }
+                    self.update_close_requested = true;
+                }
+                Ok(Err(e)) => {
+                    self.relaunch_admin_task = None;
+                    self.status = e.to_string();
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.relaunch_admin_task = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            }
         }
         let mut auto_apply_info = None;
         if let Some(task) = &self.update_task {
@@ -2048,6 +2072,12 @@ impl Desktop {
     fn start_flash_or_origins_attach(&mut self) {
         self.connection_error = None;
         self.connected_endpoint = None;
+        #[cfg(target_os = "macos")]
+        if !gearth_platform::is_elevated() {
+            let mode = if self.origins { "origins" } else { "flash" };
+            self.start_macos_admin_relaunch(Some(mode));
+            return;
+        }
         if !cfg!(target_os = "macos") && !gearth_platform::is_elevated() {
             self.admin_warning_open = true;
             self.status = self.i18n.text("alert.adminvalidator.content");
@@ -2825,6 +2855,10 @@ impl Desktop {
                 self.start_doctor_check();
             }
             #[cfg(target_os = "macos")]
+            doctor::FixAction::RelaunchAsAdmin => {
+                self.start_macos_admin_relaunch(None);
+            }
+            #[cfg(target_os = "macos")]
             doctor::FixAction::PrepareMacosFlash => {
                 self.status = match gearth_platform::prepare_macos_flash_client() {
                     Ok(backup) => format!(
@@ -2837,6 +2871,48 @@ impl Desktop {
                 self.start_doctor_check();
             }
         }
+    }
+    #[cfg(target_os = "macos")]
+    fn start_macos_admin_relaunch(&mut self, auto_connect_mode: Option<&str>) {
+        if self.relaunch_admin_task.is_some() {
+            return;
+        }
+        self.save_settings_internal(true);
+        let Ok(exe) = std::env::current_exe() else {
+            self.status = "Could not locate current executable for admin relaunch".into();
+            return;
+        };
+        let config_path = self.settings_path.clone();
+        let user_home = std::env::var_os("HOME").map(PathBuf::from);
+        let mut extra_args = Vec::new();
+        if let Some(mode) = auto_connect_mode {
+            extra_args.push("--connect".into());
+            extra_args.push(mode.to_owned());
+            if !self.auto_detect {
+                let host = self.attachment_host.trim();
+                if !host.is_empty() {
+                    extra_args.push("--host".into());
+                    extra_args.push(host.to_owned());
+                }
+                let port = self.connection_port.trim();
+                if !port.is_empty() {
+                    extra_args.push("--port".into());
+                    extra_args.push(port.to_owned());
+                }
+            }
+        }
+        let (send, receive) = std::sync::mpsc::channel();
+        self.relaunch_admin_task = Some(receive);
+        self.status = self.i18n.text("rust.doctor.fix.relaunch_admin");
+        std::thread::spawn(move || {
+            let result = gearth_platform::relaunch_macos_as_admin(
+                &exe,
+                &config_path,
+                user_home.as_deref(),
+                &extra_args,
+            );
+            let _ = send.send(result);
+        });
     }
     fn show_connection_doctor(
         &mut self,
@@ -9086,7 +9162,11 @@ impl eframe::App for Desktop {
         }
         self.developer_mode_dialog(ctx);
         self.extension_confirmation_dialogs(ctx);
-        if self.relay.is_some()
+        #[cfg(target_os = "macos")]
+        let relaunching = self.relaunch_admin_task.is_some();
+        #[cfg(not(target_os = "macos"))]
+        let relaunching = false;
+        let needs_repaint = self.relay.is_some()
             || self.attachment_pending.is_some()
             || self.extension_host.is_some()
             || self.python_console.is_pending()
@@ -9095,7 +9175,9 @@ impl eframe::App for Desktop {
             || self.update_apply_task.is_some()
             || self.extension_launch_task.is_some()
             || self.extension_autostart_rx.is_some()
-        {
+            || self.doctor_task.is_some()
+            || relaunching;
+        if needs_repaint {
             let mut delay = Duration::from_millis(50);
             if self.relay.as_ref().is_some_and(Connection::connected) {
                 if let Some(next) = self.scheduler.next_wake_in(Instant::now()) {

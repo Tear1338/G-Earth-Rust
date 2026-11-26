@@ -20,7 +20,9 @@ pub use ip_mapping::{system_ip_mapper, IpMapper};
 pub use macos_flash_prep::{
     check_macos_flash_client, prepare_macos_flash_client, MacosFlashPrepStatus,
 };
-pub use macos_hosts::{ensure_macos_loopback_aliases, write_macos_hosts_privileged};
+pub use macos_hosts::{
+    ensure_macos_loopback_aliases, relaunch_macos_as_admin, write_macos_hosts_privileged,
+};
 pub use port_checker::process_using_port;
 pub use process_tree::ProcessTree;
 pub use tray::{SystemTray, TrayEvent};

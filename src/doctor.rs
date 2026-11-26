@@ -53,6 +53,8 @@ pub enum FixAction {
     EnableCityHelper,
     ClearCityKey,
     #[cfg(target_os = "macos")]
+    RelaunchAsAdmin,
+    #[cfg(target_os = "macos")]
     PrepareMacosFlash,
 }
 
@@ -66,6 +68,8 @@ impl FixAction {
             Self::CleanHosts => "rust.doctor.fix.clean_hosts",
             Self::EnableCityHelper => "rust.doctor.fix.enable_city",
             Self::ClearCityKey => "rust.doctor.fix.clear_key",
+            #[cfg(target_os = "macos")]
+            Self::RelaunchAsAdmin => "rust.doctor.fix.relaunch_admin",
             #[cfg(target_os = "macos")]
             Self::PrepareMacosFlash => "rust.doctor.fix.prepare_flash",
         }
@@ -519,19 +523,26 @@ pub fn run_diagnostics(req: DoctorRequest) -> DoctorReport {
         }
     } else {
         // 1. Administrator / root check
-        let admin_item = if cfg!(target_os = "macos") {
+        #[cfg(target_os = "macos")]
+        let admin_item = if gearth_platform::is_elevated() {
             DoctorItem {
                 label_key: "rust.doctor.check.admin",
-                detail_key: if gearth_platform::is_elevated() {
-                    "rust.doctor.admin_ok"
-                } else {
-                    "rust.doctor.admin_macos"
-                },
+                detail_key: "rust.doctor.admin_ok",
                 detail_arg: None,
                 severity: CheckSeverity::Ok,
                 fix: None,
             }
-        } else if gearth_platform::is_elevated() {
+        } else {
+            DoctorItem {
+                label_key: "rust.doctor.check.admin",
+                detail_key: "rust.doctor.admin_macos",
+                detail_arg: None,
+                severity: CheckSeverity::Warn,
+                fix: Some(FixAction::RelaunchAsAdmin),
+            }
+        };
+        #[cfg(not(target_os = "macos"))]
+        let admin_item = if gearth_platform::is_elevated() {
             DoctorItem {
                 label_key: "rust.doctor.check.admin",
                 detail_key: "rust.doctor.admin_ok",
