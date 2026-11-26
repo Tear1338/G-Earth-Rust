@@ -146,6 +146,16 @@ pub(crate) struct ProxyGuard {
     refresh: bool,
 }
 impl ProxyGuard {
+    pub(crate) fn has_stale_journal() -> bool {
+        let Some(base) = std::env::var_os("LOCALAPPDATA").or_else(|| std::env::var_os("APPDATA"))
+        else {
+            return false;
+        };
+        PathBuf::from(base)
+            .join("G-Earth-Rust")
+            .join("system-proxy.state")
+            .is_file()
+    }
     pub(crate) fn recover() -> io::Result<()> {
         let directory = std::env::var_os("LOCALAPPDATA")
             .or_else(|| std::env::var_os("APPDATA"))

@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use eframe::egui;
+mod doctor;
 mod gpython_ui;
 mod logger_ui;
 mod store_ui;
@@ -547,6 +548,9 @@ struct Desktop {
     connection_port: String,
     connected_endpoint: Option<String>,
     connection_error: Option<String>,
+    doctor_report: Option<doctor::DoctorReport>,
+    doctor_task: Option<Receiver<doctor::DoctorReport>>,
+    doctor_expanded: bool,
     schedule_interval_input: String,
     ext_console_open: bool,
     ext_store_open: bool,
@@ -1303,6 +1307,9 @@ impl Default for Desktop {
             connection_port: "30000".into(),
             connected_endpoint: None,
             connection_error: None,
+            doctor_report: None,
+            doctor_task: None,
+            doctor_expanded: false,
             schedule_interval_input: "500+0".into(),
             ext_console_open: false,
             ext_store_open: false,
@@ -1402,18 +1409,39 @@ impl Desktop {
                 }
             }
         }
+        let mut recheck_doctor = false;
         if let Some(task) = &self.certificate_task {
             match task.try_recv() {
                 Ok(result) => {
                     self.status = result.unwrap_or_else(|e| e.to_string());
                     self.certificate_task = None;
+                    recheck_doctor = true;
                 }
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                     self.status = "Certificate operation stopped".into();
                     self.certificate_task = None;
+                    recheck_doctor = true;
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => {}
             }
+        }
+        if let Some(task) = &self.doctor_task {
+            match task.try_recv() {
+                Ok(report) => {
+                    if report.overall_severity() != doctor::CheckSeverity::Ok {
+                        self.doctor_expanded = true;
+                    }
+                    self.doctor_report = Some(report);
+                    self.doctor_task = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    self.doctor_task = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        if recheck_doctor {
+            self.start_doctor_check();
         }
         let mut auto_apply_info = None;
         if let Some(task) = &self.update_task {
@@ -2182,6 +2210,7 @@ impl Desktop {
                                 }
                                 if switched {
                                     self.update_rules();
+                                    self.start_doctor_check();
                                 }
                             });
                         });
@@ -2419,6 +2448,9 @@ impl Desktop {
             ui.colored_label(egui::Color32::from_rgb(0xc9, 0x30, 0x2c), error);
             ui.add_space(4.0);
         }
+
+        self.show_connection_doctor(ui, idle, palette);
+        ui.add_space(6.0);
 
         // Expandable mode-specific details below the iconic 2x2 Connection.fxml grid
         if self.nitro {
@@ -2677,6 +2709,270 @@ impl Desktop {
         self.events = None;
         self.scheduler.jobs.clear();
         self.active_schedule_edit = None;
+        self.start_doctor_check();
+    }
+    fn start_doctor_check(&mut self) {
+        let mode = doctor::DoctorMode::from_flags(self.origins, self.nitro, self.unity, self.city);
+        let req = doctor::DoctorRequest {
+            mode,
+            active: self.relay.is_some() || self.attachment_pending.is_some(),
+            listen: self.listen.clone(),
+            connection_port: self.connection_port.clone(),
+            auto_detect: self.auto_detect,
+            system_proxy: self.system_proxy,
+            system_proxy_pac: self.system_proxy_pac,
+            allow_city_helper: self.allow_city_helper,
+            city_key_path: self.city_key_path.clone(),
+            identity_dir: self.identity_directory(),
+            hosts_path: gearth_rust::attachment::HostsRedirect::system_path(),
+        };
+        let (send, receive) = std::sync::mpsc::channel();
+        self.doctor_task = Some(receive);
+        std::thread::spawn(move || {
+            let _ = send.send(doctor::run_diagnostics(req));
+        });
+    }
+    fn apply_doctor_fix(&mut self, action: doctor::FixAction) {
+        match action {
+            doctor::FixAction::InstallCertificate => {
+                if let Err(e) = self.prepare_certificate() {
+                    self.status = e.to_string();
+                    self.start_doctor_check();
+                    return;
+                }
+                if let Some((path, _)) = self.public_certificate.clone() {
+                    let (send, receive) = std::sync::mpsc::channel();
+                    self.certificate_task = Some(receive);
+                    self.status = "Waiting for certificate operation...".into();
+                    std::thread::spawn(move || {
+                        let result = gearth_platform::install_root_certificate(&path)
+                            .map(|()| "Certificate installed".into());
+                        let _ = send.send(result);
+                    });
+                }
+            }
+            doctor::FixAction::PickFreePort => {
+                if let Some(port) = doctor::find_free_loopback_port() {
+                    if self.nitro {
+                        self.listen = format!("127.0.0.1:{port}");
+                    } else {
+                        self.connection_port = port.to_string();
+                    }
+                    self.status = format!("Selected free local port {port}");
+                    self.start_doctor_check();
+                } else {
+                    self.status = "Could not find a free local port".into();
+                }
+            }
+            doctor::FixAction::EnablePacProxy => {
+                self.system_proxy = true;
+                if !self.unity {
+                    self.system_proxy_pac = true;
+                }
+                self.save_settings();
+                self.start_doctor_check();
+            }
+            doctor::FixAction::RestoreProxy => {
+                self.status = match gearth_platform::recover_system_proxy() {
+                    Ok(()) => self.i18n.text("rust.browser.proxy_restored"),
+                    Err(e) => e.to_string(),
+                };
+                self.start_doctor_check();
+            }
+            doctor::FixAction::CleanHosts => {
+                self.status = match gearth_rust::attachment::HostsRedirect::recover_stale(
+                    &gearth_rust::attachment::HostsRedirect::system_path(),
+                ) {
+                    Ok(()) => self.i18n.text("rust.connection.redirects_removed"),
+                    Err(e) => e.to_string(),
+                };
+                self.start_doctor_check();
+            }
+            doctor::FixAction::EnableCityHelper => {
+                self.allow_city_helper = true;
+                self.save_settings();
+                self.start_doctor_check();
+            }
+            doctor::FixAction::ClearCityKey => {
+                self.city_key_path.clear();
+                self.save_settings();
+                self.start_doctor_check();
+            }
+            #[cfg(target_os = "macos")]
+            doctor::FixAction::PrepareMacosFlash => {
+                self.status = match gearth_platform::prepare_macos_flash_client() {
+                    Ok(backup) => format!(
+                        "{} (backup: {})",
+                        self.i18n.text("alert.macosflash.title"),
+                        backup.display()
+                    ),
+                    Err(e) => format!("{}: {e}", self.i18n.text("alert.macosflash.failed")),
+                };
+                self.start_doctor_check();
+            }
+        }
+    }
+    fn show_connection_doctor(
+        &mut self,
+        ui: &mut egui::Ui,
+        idle: bool,
+        palette: theme_ui::ThemePalette,
+    ) {
+        let current_mode =
+            doctor::DoctorMode::from_flags(self.origins, self.nitro, self.unity, self.city);
+        if self.doctor_task.is_none()
+            && self
+                .doctor_report
+                .as_ref()
+                .is_none_or(|report| report.mode != current_mode)
+        {
+            self.start_doctor_check();
+        }
+        let ok_color = egui::Color32::from_rgb(0x2e, 0xa0, 0x43);
+        let warn_color = egui::Color32::from_rgb(0xd9, 0x82, 0x2b);
+        let err_color = egui::Color32::from_rgb(0xd9, 0x3b, 0x3b);
+        let mut pending_fix: Option<doctor::FixAction> = None;
+        let mut trigger_refresh = false;
+
+        group_box(ui, self.theme, egui::Margin::symmetric(8.0, 5.0), |ui| {
+            ui.horizontal(|ui| {
+                let (dot_color, summary_text) =
+                    if self.doctor_task.is_some() && self.doctor_report.is_none() {
+                        (palette.text_muted, self.i18n.text("rust.doctor.checking"))
+                    } else if let Some(report) = &self.doctor_report {
+                        let errors = report.error_count();
+                        let warns = report.warn_count();
+                        if errors > 0 {
+                            (
+                                err_color,
+                                self.i18n
+                                    .text("rust.doctor.issues")
+                                    .replace("{count}", &errors.to_string()),
+                            )
+                        } else if warns > 0 {
+                            (
+                                warn_color,
+                                self.i18n
+                                    .text("rust.doctor.warnings")
+                                    .replace("{count}", &warns.to_string()),
+                            )
+                        } else {
+                            (ok_color, self.i18n.text("rust.doctor.ready"))
+                        }
+                    } else {
+                        (palette.text_muted, self.i18n.text("rust.doctor.checking"))
+                    };
+
+                let (dot_rect, _) =
+                    ui.allocate_exact_size(egui::vec2(10.0, 14.0), egui::Sense::hover());
+                ui.painter()
+                    .circle_filled(dot_rect.center(), 4.5, dot_color);
+
+                let toggle_label = format!(
+                    "{} {}",
+                    if self.doctor_expanded { "▾" } else { "▸" },
+                    self.i18n.text("rust.doctor.title")
+                );
+                if ui
+                    .add(
+                        egui::Label::new(egui::RichText::new(toggle_label).strong())
+                            .sense(egui::Sense::click()),
+                    )
+                    .on_hover_cursor(egui::CursorIcon::PointingHand)
+                    .clicked()
+                {
+                    self.doctor_expanded = !self.doctor_expanded;
+                }
+                ui.label(egui::RichText::new("·").color(palette.text_muted));
+                ui.label(egui::RichText::new(summary_text).color(dot_color).small());
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let checking = self.doctor_task.is_some();
+                    let refresh_label = if checking {
+                        self.i18n.text("rust.doctor.checking")
+                    } else {
+                        self.i18n.text("rust.doctor.refresh")
+                    };
+                    if ui
+                        .add_enabled(!checking, egui::Button::new(refresh_label).small())
+                        .clicked()
+                    {
+                        trigger_refresh = true;
+                    }
+                });
+            });
+
+            if self.doctor_expanded {
+                if let Some(report) = &self.doctor_report {
+                    ui.add_space(4.0);
+                    for item in &report.items {
+                        let color = match item.severity {
+                            doctor::CheckSeverity::Ok => ok_color,
+                            doctor::CheckSeverity::Warn => warn_color,
+                            doctor::CheckSeverity::Error => err_color,
+                        };
+                        let mut detail = self.i18n.text(item.detail_key);
+                        if let Some(arg) = &item.detail_arg {
+                            detail = detail.replace("{detail}", arg);
+                        }
+                        ui.horizontal(|ui| {
+                            let (r, _) = ui
+                                .allocate_exact_size(egui::vec2(10.0, 14.0), egui::Sense::hover());
+                            ui.painter().circle_filled(r.center(), 3.5, color);
+                            ui.label(
+                                egui::RichText::new(self.i18n.text(item.label_key))
+                                    .small()
+                                    .strong(),
+                            );
+                            ui.label(egui::RichText::new(detail).small().color(
+                                if item.severity == doctor::CheckSeverity::Ok {
+                                    palette.text_muted
+                                } else {
+                                    color
+                                },
+                            ));
+                            if let Some(fix) = item.fix {
+                                let can_fix = idle && self.certificate_task.is_none();
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        if ui
+                                            .add_enabled(
+                                                can_fix,
+                                                egui::Button::new(
+                                                    egui::RichText::new(
+                                                        self.i18n.text(fix.label_key()),
+                                                    )
+                                                    .small(),
+                                                )
+                                                .small(),
+                                            )
+                                            .clicked()
+                                        {
+                                            pending_fix = Some(fix);
+                                        }
+                                    },
+                                );
+                            }
+                        });
+                    }
+                    if report.mode.is_browser() && report.cert_trusted {
+                        ui.add_space(2.0);
+                        ui.label(
+                            egui::RichText::new(self.i18n.text("rust.doctor.firefox_tip"))
+                                .small()
+                                .color(palette.text_muted),
+                        );
+                    }
+                }
+            }
+        });
+
+        if let Some(fix) = pending_fix {
+            self.apply_doctor_fix(fix);
+        } else if trigger_refresh {
+            self.start_doctor_check();
+        }
     }
     fn identity_directory(&self) -> PathBuf {
         self.settings_path
@@ -8779,6 +9075,7 @@ impl Desktop {
             }
         }
         self.update_rules();
+        self.start_doctor_check();
     }
     fn save_settings(&mut self) {
         self.python_console.save_settings(&mut self.settings);

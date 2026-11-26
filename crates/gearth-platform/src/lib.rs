@@ -157,6 +157,20 @@ pub struct SystemProxyGuard {
     pac: bool,
     target: String,
 }
+pub fn has_stale_system_proxy() -> bool {
+    #[cfg(windows)]
+    {
+        web_settings::ProxyGuard::has_stale_journal()
+    }
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        unix_web_settings::ProxyGuard::has_stale_journal()
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    {
+        false
+    }
+}
 pub fn recover_system_proxy() -> io::Result<()> {
     #[cfg(windows)]
     {

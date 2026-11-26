@@ -1108,6 +1108,11 @@ pub(crate) struct ProxyGuard(LinuxProxyGuard);
 
 #[cfg(target_os = "macos")]
 impl ProxyGuard {
+    pub(crate) fn has_stale_journal() -> bool {
+        state_directory()
+            .map(|dir| dir.join("system-proxy.state").is_file())
+            .unwrap_or(false)
+    }
     pub(crate) fn activate(address: SocketAddr) -> io::Result<Self> {
         let dir = state_directory()?;
         MacProxyGuard::activate_at(
@@ -1136,6 +1141,11 @@ impl ProxyGuard {
 
 #[cfg(target_os = "linux")]
 impl ProxyGuard {
+    pub(crate) fn has_stale_journal() -> bool {
+        state_directory()
+            .map(|dir| dir.join("system-proxy.state").is_file())
+            .unwrap_or(false)
+    }
     pub(crate) fn activate(address: SocketAddr) -> io::Result<Self> {
         let dir = state_directory()?;
         LinuxProxyGuard::activate_at(

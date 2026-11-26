@@ -172,6 +172,23 @@ impl HostsRedirect {
                 .collect())
         })
     }
+    pub fn has_stale(path: &Path) -> bool {
+        let Ok(file) = std::fs::File::open(path) else {
+            return false;
+        };
+        let mut bytes = Vec::new();
+        if Read::take(file, 1024 * 1024 + 1)
+            .read_to_end(&mut bytes)
+            .is_err()
+            || bytes.len() > 1024 * 1024
+        {
+            return false;
+        }
+        let Ok(text) = std::str::from_utf8(&bytes) else {
+            return false;
+        };
+        text.lines().any(|line| owned(line, None))
+    }
     pub fn system_path() -> PathBuf {
         if cfg!(windows) {
             PathBuf::from(std::env::var_os("SystemRoot").unwrap_or_else(|| "C:\\Windows".into()))
