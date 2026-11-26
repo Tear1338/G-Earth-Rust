@@ -8,7 +8,7 @@ use std::{
     path::PathBuf,
     time::{SystemTime, UNIX_EPOCH},
 };
-use std::{io, path::Path};
+use std::{io, net::Ipv4Addr, path::Path};
 
 #[cfg(any(target_os = "macos", test))]
 const COPY_HOSTS_SCRIPT: &str = "\
@@ -16,6 +16,21 @@ on run argv
   set src to item 1 of argv
   set dst to item 2 of argv
   do shell script \"/bin/cp \" & quoted form of src & \" \" & quoted form of dst & \" && /bin/chmod 644 \" & quoted form of dst with administrator privileges
+end run";
+
+#[cfg(any(target_os = "macos", test))]
+const ALIAS_LOOPBACK_SCRIPT: &str = "\
+on run argv
+  set cmd to \"\"
+  repeat with ip in argv
+    if cmd is not \"\" then
+      set cmd to cmd & \" && \"
+    end if
+    set cmd to cmd & \"/sbin/ifconfig lo0 alias \" & quoted form of ip & \" up\"
+  end repeat
+  if cmd is not \"\" then
+    do shell script cmd with administrator privileges
+  end if
 end run";
 
 #[cfg(any(target_os = "macos", test))]
@@ -129,6 +144,115 @@ pub fn write_macos_hosts_privileged(path: &Path, content: &str) -> io::Result<()
     }
 }
 
+#[cfg(any(target_os = "macos", test))]
+fn ensure_loopback_aliases_with_runner(
+    ips: &[Ipv4Addr],
+    elevated: bool,
+    mut run: impl FnMut(&Path, &[OsString]) -> io::Result<ScriptOutput>,
+) -> io::Result<()> {
+    let mut needed: Vec<String> = Vec::new();
+    for &ip in ips {
+        if !ip.is_loopback() || ip == Ipv4Addr::LOCALHOST {
+            continue;
+        }
+        let s = ip.to_string();
+        if !needed.contains(&s) {
+            needed.push(s);
+        }
+    }
+    if needed.is_empty() {
+        return Ok(());
+    }
+    if elevated {
+        for ip in &needed {
+            let args = vec![
+                OsString::from("lo0"),
+                OsString::from("alias"),
+                OsString::from(ip),
+                OsString::from("up"),
+            ];
+            let output = run(Path::new("/sbin/ifconfig"), &args)?;
+            if !output.success {
+                let detail = output.stderr.trim();
+                return Err(io::Error::other(if detail.is_empty() {
+                    format!(
+                        "ifconfig lo0 alias {ip} failed with status {:?}",
+                        output.code
+                    )
+                } else {
+                    format!("ifconfig lo0 alias {ip} failed: {detail}")
+                }));
+            }
+        }
+        return Ok(());
+    }
+    let mut args = vec![
+        OsString::from("-e"),
+        OsString::from(ALIAS_LOOPBACK_SCRIPT),
+        OsString::from("--"),
+    ];
+    args.extend(needed.into_iter().map(OsString::from));
+    let output = run(Path::new("/usr/bin/osascript"), &args)?;
+    if output.success {
+        return Ok(());
+    }
+    let detail = output.stderr.trim();
+    if detail.contains("-128") || detail.contains("User canceled") {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            "administrator prompt for macOS loopback aliases was cancelled",
+        ));
+    }
+    Err(io::Error::other(if detail.is_empty() {
+        format!(
+            "privileged macOS loopback alias setup failed with status {:?}",
+            output.code
+        )
+    } else {
+        format!("privileged macOS loopback alias setup failed: {detail}")
+    }))
+}
+
+/// Ensure additional `127.0.0.x` loopback addresses are aliased on macOS `lo0` so multi-hotel
+/// auto-detect listeners can bind them without `EADDRNOTAVAIL` (os error 49).
+pub fn ensure_macos_loopback_aliases(ips: &[Ipv4Addr]) -> io::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        use std::{
+            net::TcpListener,
+            process::{Command, Stdio},
+        };
+        let missing: Vec<Ipv4Addr> = ips
+            .iter()
+            .copied()
+            .filter(|&ip| {
+                ip.is_loopback() && ip != Ipv4Addr::LOCALHOST && TcpListener::bind((ip, 0)).is_err()
+            })
+            .collect();
+        if missing.is_empty() {
+            return Ok(());
+        }
+        ensure_loopback_aliases_with_runner(&missing, crate::is_elevated(), |program, args| {
+            let output = Command::new(program)
+                .args(args)
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::piped())
+                .output()?;
+            Ok(ScriptOutput {
+                success: output.status.success(),
+                code: output.status.code(),
+                stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            })
+        })
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = ips;
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -181,5 +305,36 @@ mod tests {
             io::ErrorKind::PermissionDenied
         );
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn loopback_alias_helper_skips_localhost_and_batches_non_root_osascript() {
+        let mut calls = Vec::new();
+        ensure_loopback_aliases_with_runner(
+            &[
+                Ipv4Addr::new(127, 0, 0, 1),
+                Ipv4Addr::new(127, 0, 0, 2),
+                Ipv4Addr::new(127, 0, 0, 3),
+                Ipv4Addr::new(127, 0, 0, 2),
+            ],
+            false,
+            |program, args| {
+                calls.push((
+                    program.to_path_buf(),
+                    args.iter()
+                        .map(|a| a.to_string_lossy().into_owned())
+                        .collect::<Vec<_>>(),
+                ));
+                Ok(ScriptOutput {
+                    success: true,
+                    code: Some(0),
+                    stderr: String::new(),
+                })
+            },
+        )
+        .unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].0, Path::new("/usr/bin/osascript"));
+        assert_eq!(&calls[0].1[3..], &["127.0.0.2", "127.0.0.3"]);
     }
 }

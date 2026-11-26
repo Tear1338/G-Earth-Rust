@@ -356,8 +356,8 @@ fn main() -> eframe::Result<()> {
         eframe::NativeOptions {
             viewport: with_gearth_icon(
                 egui::ViewportBuilder::default()
-                    .with_inner_size([700.0, 420.0])
-                    .with_min_inner_size([660.0, 360.0]),
+                    .with_inner_size([700.0, 480.0])
+                    .with_min_inner_size([660.0, 380.0]),
             ),
             ..Default::default()
         },

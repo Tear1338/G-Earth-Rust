@@ -348,10 +348,19 @@ impl Attachment {
             let Some(remote) = resolved else {
                 continue;
             };
+            let loopback_ip = if cfg!(target_os = "macos") && loopback_index == 0 {
+                Ipv4Addr::LOCALHOST
+            } else {
+                let offset = if cfg!(target_os = "macos") {
+                    loopback_index
+                } else {
+                    loopback_index.saturating_add(1)
+                };
+                let octet3 = (offset / 254) as u8;
+                let octet4 = 1u8.saturating_add((offset % 254) as u8);
+                Ipv4Addr::new(127, 0, octet3, octet4)
+            };
             loopback_index = loopback_index.saturating_add(1);
-            let octet3 = (loopback_index / 254) as u8;
-            let octet4 = 1u8.saturating_add((loopback_index % 254) as u8);
-            let loopback_ip = Ipv4Addr::new(127, 0, octet3, octet4);
             routes.push(ListenerRoute {
                 listen: SocketAddr::from((loopback_ip, *port)),
                 remote: remote.to_string(),
@@ -363,6 +372,11 @@ impl Attachment {
             return Err(io::Error::other(
                 "no hotel domains resolved to a non-loopback IPv4 address; check your network or other running proxies",
             ));
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let aliases: Vec<Ipv4Addr> = host_entries.iter().map(|(_, ip)| *ip).collect();
+            gearth_platform::ensure_macos_loopback_aliases(&aliases)?;
         }
         let (relay, events) = Relay::start_multi(routes, options)?;
         let redirect = HostsRedirect::install_many(path, &host_entries)?;
@@ -385,7 +399,12 @@ impl Attachment {
             ));
         }
         let remote=(host,port).to_socket_addrs()?.find(|a|a.is_ipv4()&&!a.ip().is_loopback()).ok_or_else(||io::Error::other("hotel did not resolve to a non-loopback IPv4 address; check other running proxies"))?;
-        let listen = SocketAddr::from(([127, 0, 0, 2], port));
+        let loopback_ip = if cfg!(target_os = "macos") {
+            Ipv4Addr::LOCALHOST
+        } else {
+            Ipv4Addr::new(127, 0, 0, 2)
+        };
+        let listen = SocketAddr::from((loopback_ip, port));
         if let Some(details) = &mut options.connection {
             details.host = host.into();
             details.port = port;
@@ -397,7 +416,7 @@ impl Attachment {
             },
             options,
         )?;
-        let redirect = HostsRedirect::install(path, host, Ipv4Addr::new(127, 0, 0, 2))?;
+        let redirect = HostsRedirect::install(path, host, loopback_ip)?;
         Ok(Self {
             relay,
             events,
