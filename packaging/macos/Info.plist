@@ -9,7 +9,7 @@
     <key>CFBundleExecutable</key>
     <string>gearth-desktop</string>
     <key>CFBundleIconFile</key>
-    <string>g_earth_icon.png</string>
+    <string>AppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>dev.gearth.rust</string>
     <key>CFBundleInfoDictionaryVersion</key>

@@ -38,7 +38,7 @@ Get up and running in **3 steps**:
 
 1. **Download** the latest package from [**GitHub Releases**](https://github.com/Tear1338/G-Earth-Rust/releases/latest):
    - **Windows**: `G-Earth-Rust-Setup-x64.exe` (installer) or portable `gearth-desktop-windows-x64.exe`
-   - **macOS**: `G-Earth-Rust-macOS-app.zip`
+   - **macOS (Universal Apple Silicon + Intel, macOS 11+)**: `G-Earth-Rust-macOS-app.zip` *(unzip and launch `G-Earth Rust.app`; on first launch run `xattr -cr "G-Earth Rust.app"` if Gatekeeper warns)*
    - **Linux**: `G-Earth-Rust-Linux.tar.gz`
 2. **Choose your client mode** in the **Connection** tab:
    - `Flash` · `Origins` · `Unity` · `Nitro` · **`City`** *(dedicated mode for `https://habbocity.fr/hotel`)*

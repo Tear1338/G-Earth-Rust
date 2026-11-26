@@ -100,12 +100,14 @@ jobs:
     timeout-minutes: 30
     runs-on: macos-latest
     env:
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
       GEARTH_BUILD_TAG: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || format('development-{0}', github.run_number) }}
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+          targets: aarch64-apple-darwin, x86_64-apple-darwin
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
       - run: cargo test --locked --workspace --all-targets
@@ -113,13 +115,29 @@ jobs:
         run: cargo test --locked -p gearth-platform --lib identifies_ -- --nocapture
       - run: cargo test --locked --features desktop,web --lib
       - run: cargo clippy --locked --features desktop,web --all-targets -- -D warnings
-      - run: cargo build --locked --release --features desktop,web --bin gearth-desktop
+      - name: Build Universal macOS desktop binary (Apple Silicon + Intel, macOS 11+)
+        run: |
+          cargo build --locked --release --target aarch64-apple-darwin --features desktop,web --bin gearth-desktop
+          cargo build --locked --release --target x86_64-apple-darwin --features desktop,web --bin gearth-desktop
+          mkdir -p target/universal
+          lipo -create \
+            target/aarch64-apple-darwin/release/gearth-desktop \
+            target/x86_64-apple-darwin/release/gearth-desktop \
+            -output target/universal/gearth-desktop
+          chmod 755 target/universal/gearth-desktop
+          lipo -info target/universal/gearth-desktop
+          otool -l target/universal/gearth-desktop | grep -A4 LC_BUILD_VERSION | head -n 12
       - name: Package macOS desktop usage and license
         run: |
           mkdir -p package
-          cp target/release/gearth-desktop package/gearth-desktop
-          bash packaging/macos/make_app_bundle.sh target/release/gearth-desktop resources/g_earth_icon.png package
-          (cd package && zip -qr G-Earth-Rust-macOS-app.zip "G-Earth Rust.app")
+          cp target/universal/gearth-desktop package/gearth-desktop
+          app_ver="${GEARTH_BUILD_TAG#v}"
+          case "$app_ver" in
+            [0-9]*.[0-9]*.[0-9]*) ;;
+            *) app_ver="0.1.0" ;;
+          esac
+          bash packaging/macos/make_app_bundle.sh target/universal/gearth-desktop resources/g_earth_icon.png package "$app_ver"
+          (cd package && ditto -c -k --sequesterRsrc --keepParent "G-Earth Rust.app" G-Earth-Rust-macOS-app.zip)
           rm -rf "package/G-Earth Rust.app"
           cp README.md LICENSE LICENSE-APACHE-MAVEN NOTICE-APACHE-MAVEN package/
           cp resources/UNICODE-LICENSE.md package/UNICODE-LICENSE.md
@@ -438,7 +456,7 @@ jobs:
           ### Downloads
           - **Windows Installer**: `G-Earth-Rust-Setup-x64.exe`
           - **Windows Portable**: `G-Earth-Rust-Windows.exe`
-          - **macOS App Bundle**: `G-Earth-Rust-macOS-app.zip`
+          - **macOS App Bundle (Universal Apple Silicon + Intel, macOS 11+)**: `G-Earth-Rust-macOS-app.zip` *(unzip and open `G-Earth Rust.app`; on first launch if Gatekeeper warns, run `xattr -cr "G-Earth Rust.app"` or System Settings -> Privacy & Security -> Open Anyway)*
           - **Linux Archive**: `G-Earth-Rust-Linux.tar.gz`
           - **Checksums**: `SHA256SUMS.txt`
 
