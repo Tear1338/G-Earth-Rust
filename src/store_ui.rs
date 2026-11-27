@@ -737,10 +737,14 @@ impl StoreUi {
         let mut total_items: usize = 0;
         let mut show_pagination = false;
 
+        let viewport_w = ui.available_width();
         egui::Frame::none()
             .fill(body_bg)
             .inner_margin(egui::Margin::symmetric(12.0, 8.0))
             .show(ui, |ui| {
+                let body_w = (viewport_w - 24.0).max(200.0);
+                ui.set_min_width(body_w);
+                ui.set_max_width(body_w);
                 // Section title + quick live search bar (instant filter on list views!)
                 let is_list_view = matches!(
                     self.view,
@@ -980,12 +984,16 @@ impl StoreUi {
                     .rounding(egui::Rounding::same(5.0))
                     .inner_margin(egui::Margin::same(1.0))
                     .show(ui, |ui| {
-                        ui.set_width(ui.available_width());
+                        let inner_box_w = (body_w - 4.0).max(200.0);
+                        ui.set_min_width(inner_box_w);
+                        ui.set_max_width(inner_box_w);
                         egui::ScrollArea::vertical()
                             .id_salt("store_main_box")
                             .max_height(list_h)
+                            .auto_shrink([false, false])
                             .show(ui, |ui| {
                                 ui.set_min_height(list_h);
+                                ui.set_max_width(inner_box_w);
                                 ui.spacing_mut().item_spacing.y = 0.0;
 
                                 match self.view.clone() {
@@ -1619,11 +1627,13 @@ impl StoreUi {
                                                         .unwrap_or_else(|| ext.update_date.clone());
 
                                                 // 1) Classic Habbo forum blue header bar (#3179ac)
+                                                let detail_w = (inner_box_w - 12.0).max(240.0);
                                                 egui::Frame::none()
                                                     .fill(post_header_bg)
                                                     .inner_margin(egui::Margin::symmetric(8.0, 5.0))
                                                     .show(ui, |ui| {
-                                                        ui.set_width(ui.available_width());
+                                                        ui.set_min_width((detail_w - 16.0).max(200.0));
+                                                        ui.set_max_width((detail_w - 16.0).max(200.0));
                                                         ui.horizontal(|ui| {
                                                             ui.label(
                                                                 egui::RichText::new(&time_label)
@@ -1675,9 +1685,9 @@ impl StoreUi {
 
                                                 // 2) Forum post two-column body:
                                                 //    Left 136px light-blue author sidebar + Right white content area
-                                                let total_w = ui.available_width();
+                                                let total_w = detail_w;
                                                 let author_w = 136.0_f32;
-                                                let right_w = (total_w - author_w).max(240.0);
+                                                let right_w = (total_w - author_w).max(200.0);
                                                 let bg_content_idx =
                                                     ui.painter().add(egui::Shape::Noop);
                                                 let bg_author_idx =
@@ -1822,8 +1832,8 @@ impl StoreUi {
                                                                         .size(12.5)
                                                                         .strong(),
                                                                     );
-                                                                    ui.horizontal(|ui| {
-                                                                        ui.add_space(12.0);
+                                                                    let quote_w = (right_w - 52.0).max(140.0);
+                                                                    ui.indent("ext_desc_quote", |ui| {
                                                                         egui::Frame::none()
                                                                             .fill(quote_bg)
                                                                             .rounding(
@@ -1837,16 +1847,16 @@ impl StoreUi {
                                                                                 ),
                                                                             )
                                                                             .show(ui, |ui| {
-                                                                                ui.set_width(
-                                                                                    (ui.available_width()
-                                                                                        - 8.0)
-                                                                                        .max(120.0),
-                                                                                );
-                                                                                ui.label(
-                                                                                    egui::RichText::new(
-                                                                                        &ext.description,
+                                                                                ui.set_min_width(quote_w);
+                                                                                ui.set_max_width(quote_w);
+                                                                                ui.add(
+                                                                                    egui::Label::new(
+                                                                                        egui::RichText::new(
+                                                                                            &ext.description,
+                                                                                        )
+                                                                                        .size(12.5),
                                                                                     )
-                                                                                    .size(12.5),
+                                                                                    .wrap(),
                                                                                 );
                                                                                 if let Some(url) = ext
                                                                                     .readme
@@ -1874,7 +1884,7 @@ impl StoreUi {
                                                                         ui.label(
                                                                             egui::RichText::new(
                                                                                 format!(
-                                                                                    "{}:",
+                                                                                    "{}: ",
                                                                                     i18n.text(
                                                                                         "ext.store.extension.details.authors"
                                                                                     )
@@ -1905,7 +1915,7 @@ impl StoreUi {
                                                                         ui.label(
                                                                             egui::RichText::new(
                                                                                 format!(
-                                                                                    "{}:",
+                                                                                    "{}: ",
                                                                                     i18n.text(
                                                                                         "ext.store.extension.details.categories"
                                                                                     )
@@ -1964,8 +1974,7 @@ impl StoreUi {
                                                                     let click_here = i18n.text(
                                                                         "ext.store.extension.details.click_here",
                                                                     );
-                                                                    ui.horizontal(|ui| {
-                                                                        ui.add_space(12.0);
+                                                                    ui.indent("ext_tech_quote", |ui| {
                                                                         egui::Frame::none()
                                                                             .fill(quote_bg)
                                                                             .rounding(
@@ -1979,14 +1988,11 @@ impl StoreUi {
                                                                                 ),
                                                                             )
                                                                             .show(ui, |ui| {
-                                                                                ui.set_width(
-                                                                                    (ui.available_width()
-                                                                                        - 8.0)
-                                                                                        .max(120.0),
-                                                                                );
+                                                                                ui.set_min_width(quote_w);
+                                                                                ui.set_max_width(quote_w);
                                                                                 ui.spacing_mut()
                                                                                     .item_spacing
-                                                                                    .y = 2.0;
+                                                                                    .y = 3.0;
                                                                                 if let Some(url) = ext
                                                                                     .releases
                                                                                     .as_deref()
@@ -1996,12 +2002,12 @@ impl StoreUi {
                                                                                         )
                                                                                     })
                                                                                 {
-                                                                                    ui.horizontal(
+                                                                                    ui.horizontal_wrapped(
                                                                                         |ui| {
                                                                                             ui.label(
                                                                                                 egui::RichText::new(
                                                                                                     format!(
-                                                                                                        "{}:",
+                                                                                                        "{}: ",
                                                                                                         i18n.text(
                                                                                                             "ext.store.extension.details.releases"
                                                                                                         )
@@ -2016,17 +2022,20 @@ impl StoreUi {
                                                                                         },
                                                                                     );
                                                                                 }
-                                                                                ui.label(
-                                                                                    egui::RichText::new(
-                                                                                        format!(
-                                                                                            "{}: {}",
-                                                                                            i18n.text(
-                                                                                                "ext.store.extension.details.language"
+                                                                                ui.add(
+                                                                                    egui::Label::new(
+                                                                                        egui::RichText::new(
+                                                                                            format!(
+                                                                                                "{}: {}",
+                                                                                                i18n.text(
+                                                                                                    "ext.store.extension.details.language"
+                                                                                                ),
+                                                                                                ext.language
                                                                                             ),
-                                                                                            ext.language
-                                                                                        ),
+                                                                                        )
+                                                                                        .size(12.5),
                                                                                     )
-                                                                                    .size(12.5),
+                                                                                    .wrap(),
                                                                                 );
                                                                                 if ext
                                                                                     .source
@@ -2034,12 +2043,12 @@ impl StoreUi {
                                                                                         "https://",
                                                                                     )
                                                                                 {
-                                                                                    ui.horizontal(
+                                                                                    ui.horizontal_wrapped(
                                                                                         |ui| {
                                                                                             ui.label(
                                                                                                 egui::RichText::new(
                                                                                                     format!(
-                                                                                                        "{}:",
+                                                                                                        "{}: ",
                                                                                                         i18n.text(
                                                                                                             "ext.store.extension.details.source"
                                                                                                         )
@@ -2054,44 +2063,53 @@ impl StoreUi {
                                                                                         },
                                                                                     );
                                                                                 }
-                                                                                ui.label(
-                                                                                    egui::RichText::new(
-                                                                                        format!(
-                                                                                            "{}: {} - v{}",
-                                                                                            i18n.text(
-                                                                                                "ext.store.extension.details.framework"
+                                                                                ui.add(
+                                                                                    egui::Label::new(
+                                                                                        egui::RichText::new(
+                                                                                            format!(
+                                                                                                "{}: {} - v{}",
+                                                                                                i18n.text(
+                                                                                                    "ext.store.extension.details.framework"
+                                                                                                ),
+                                                                                                ext.framework.name,
+                                                                                                ext.framework.version
                                                                                             ),
-                                                                                            ext.framework.name,
-                                                                                            ext.framework.version
-                                                                                        ),
+                                                                                        )
+                                                                                        .size(12.5),
                                                                                     )
-                                                                                    .size(12.5),
+                                                                                    .wrap(),
                                                                                 );
-                                                                                ui.label(
-                                                                                    egui::RichText::new(
-                                                                                        format!(
-                                                                                            "{}: {}",
-                                                                                            i18n.text(
-                                                                                                "ext.store.extension.details.systems"
+                                                                                ui.add(
+                                                                                    egui::Label::new(
+                                                                                        egui::RichText::new(
+                                                                                            format!(
+                                                                                                "{}: {}",
+                                                                                                i18n.text(
+                                                                                                    "ext.store.extension.details.systems"
+                                                                                                ),
+                                                                                                ext.compatibility
+                                                                                                    .systems
+                                                                                                    .join(", ")
                                                                                             ),
-                                                                                            ext.compatibility
-                                                                                                .systems
-                                                                                                .join(", ")
-                                                                                        ),
+                                                                                        )
+                                                                                        .size(12.5),
                                                                                     )
-                                                                                    .size(12.5),
+                                                                                    .wrap(),
                                                                                 );
                                                                                 if catalog.source
                                                                                     != extension_store::STORE_SOURCE
                                                                                 {
-                                                                                    ui.label(
-                                                                                        egui::RichText::new(
-                                                                                            format!(
-                                                                                                "Store: {}",
-                                                                                                catalog.source
-                                                                                            ),
+                                                                                    ui.add(
+                                                                                        egui::Label::new(
+                                                                                            egui::RichText::new(
+                                                                                                format!(
+                                                                                                    "Store: {}",
+                                                                                                    catalog.source
+                                                                                                ),
+                                                                                            )
+                                                                                            .size(12.5),
                                                                                         )
-                                                                                        .size(12.5),
+                                                                                        .wrap(),
                                                                                     );
                                                                                 }
                                                                             });
@@ -2103,7 +2121,7 @@ impl StoreUi {
                                                                         ui.label(
                                                                             egui::RichText::new(
                                                                                 format!(
-                                                                                    "{}:",
+                                                                                    "{}: ",
                                                                                     i18n.text(
                                                                                         "ext.store.extension.details.clients"
                                                                                     )
@@ -2649,9 +2667,11 @@ impl StoreUi {
                             });
                     });
 
-                // 4. Exact beta-29 Chunky Habbo Footer: [Return] ... [Launch][Uninstall][Installer] [<<][<] 1 / N [>][>>]
+                // 4. Exact beta-29 Chunky Habbo Footer: [Return] ... [Launch][Uninstall][Install]
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
+                    ui.set_min_width(body_w);
+                    ui.set_max_width(body_w);
                     if let Some((catalog, ext, install_status, installed_record)) = detail_footer {
                         if habbo_forum_button(
                             ui,
@@ -2664,43 +2684,7 @@ impl StoreUi {
                             next_view = Some(self.previous_view.clone());
                         }
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            ui.spacing_mut().item_spacing.x = 5.0;
-                            let _ = habbo_forum_button(
-                                ui,
-                                ">>",
-                                egui::vec2(26.0, 27.0),
-                                false,
-                                HabboBtnStyle::White,
-                                dark,
-                            );
-                            let _ = habbo_forum_button(
-                                ui,
-                                ">",
-                                egui::vec2(26.0, 27.0),
-                                false,
-                                HabboBtnStyle::White,
-                                dark,
-                            );
-                            ui.add_space(4.0);
-                            ui.label(egui::RichText::new("1 / 1").color(muted_fg));
-                            ui.add_space(4.0);
-                            let _ = habbo_forum_button(
-                                ui,
-                                "<",
-                                egui::vec2(26.0, 27.0),
-                                false,
-                                HabboBtnStyle::White,
-                                dark,
-                            );
-                            let _ = habbo_forum_button(
-                                ui,
-                                "<<",
-                                egui::vec2(26.0, 27.0),
-                                false,
-                                HabboBtnStyle::White,
-                                dark,
-                            );
-                            ui.add_space(8.0);
+                            ui.spacing_mut().item_spacing.x = 6.0;
                             let (btn_label, btn_style) = match install_status {
                                 InstallStatus::Installed => (
                                     i18n.text("ext.store.button.installed"),
@@ -2721,7 +2705,7 @@ impl StoreUi {
                             if habbo_forum_button(
                                 ui,
                                 &btn_label,
-                                egui::vec2(104.0, 27.0),
+                                egui::vec2(108.0, 27.0),
                                 ready && install_status != InstallStatus::Installed,
                                 btn_style,
                                 dark,
@@ -2732,7 +2716,7 @@ impl StoreUi {
                                 if habbo_forum_button(
                                     ui,
                                     &i18n.text("rust.store.launch"),
-                                    egui::vec2(76.0, 27.0),
+                                    egui::vec2(78.0, 27.0),
                                     host.is_some(),
                                     HabboBtnStyle::Grey,
                                     dark,
@@ -2742,7 +2726,7 @@ impl StoreUi {
                                 if habbo_forum_button(
                                     ui,
                                     &i18n.text("rust.store.uninstall"),
-                                    egui::vec2(84.0, 27.0),
+                                    egui::vec2(88.0, 27.0),
                                     ready,
                                     HabboBtnStyle::Grey,
                                     dark,

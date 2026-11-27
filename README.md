@@ -9,7 +9,7 @@ Built for **Flash**, **Origins**, **Unity WebGL**, **Nitro**, and **HabboCity** 
 
 [![Latest Release](https://img.shields.io/github/v/release/Tear1338/G-Earth-Rust?style=flat-square&logo=github&color=2b7a78)](https://github.com/Tear1338/G-Earth-Rust/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/Tear1338/G-Earth-Rust/total?style=flat-square&color=3a86ff)](https://github.com/Tear1338/G-Earth-Rust/releases)
-[![CI](https://img.shields.io/github/actions/workflow/status/Tear1338/G-Earth-Rust/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/Tear1338/G-Earth-Rust/actions)
+[![CI](https://github.com/Tear1338/G-Earth-Rust/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/Tear1338/G-Earth-Rust/actions)
 [![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-555555?style=flat-square)](#download--quick-start)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 
