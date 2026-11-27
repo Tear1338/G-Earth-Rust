@@ -587,19 +587,22 @@ pub fn run_diagnostics(req: DoctorRequest) -> DoctorReport {
         } else {
             30000u16
         };
+        let check_ip = if cfg!(target_os = "macos") {
+            [127, 0, 0, 1]
+        } else {
+            [127, 0, 0, 2]
+        };
         let port_item = if req.auto_detect {
             check_port_availability(
-                SocketAddr::from(([127, 0, 0, 1], default_port)),
+                SocketAddr::from((check_ip, default_port)),
                 req.active,
                 false,
             )
         } else {
             match req.connection_port.trim().parse::<u16>() {
-                Ok(port) if port != 0 => check_port_availability(
-                    SocketAddr::from(([127, 0, 0, 1], port)),
-                    req.active,
-                    true,
-                ),
+                Ok(port) if port != 0 => {
+                    check_port_availability(SocketAddr::from((check_ip, port)), req.active, true)
+                }
                 _ => DoctorItem {
                     label_key: "rust.doctor.check.port",
                     detail_key: "rust.doctor.port_invalid",

@@ -1724,6 +1724,8 @@ impl Desktop {
             .retain_mut(|p| !matches!(p.try_wait(), Ok(Some(_))));
         let mut relay_events_drained = true;
         let mut auto_start_schedules = false;
+        let mut finish_single_session_tcp = false;
+        let mut recheck_doctor_after_events = false;
         if let Some(events) = &self.events {
             let mut processed_events = 0;
             for event in events.try_iter().take(512) {
@@ -1858,6 +1860,7 @@ impl Desktop {
                                 }
                             }
                         }
+                        recheck_doctor_after_events = true;
                     }
                     Event::Identified {
                         version,
@@ -1873,41 +1876,49 @@ impl Desktop {
                         if self.logger_clear_on_disconnect {
                             clear_log_contents(&mut self.logs, &mut self.logs_bytes);
                         }
-                        self.status = "Client disconnected; listening".into();
-                        // Re-enable the system proxy if it was restored on connect while the
-                        // local proxy is still waiting for the user to reload their hotel.
-                        if self.system_proxy && self.proxy_guard.is_none() {
-                            let reactivated = match self.relay.as_ref() {
-                                Some(Connection::Web(proxy)) => {
-                                    if self.system_proxy_pac {
-                                        let label = if self.city {
-                                            "*.habbocity.fr".to_owned()
+                        if matches!(
+                            self.relay.as_ref(),
+                            Some(Connection::Tcp(tcp)) if tcp.is_single_session()
+                        ) {
+                            finish_single_session_tcp = true;
+                            self.status = "Disconnected".into();
+                        } else {
+                            self.status = "Client disconnected; listening".into();
+                            // Re-enable the system proxy if it was restored on connect while the
+                            // local proxy is still waiting for the user to reload their hotel.
+                            if self.system_proxy && self.proxy_guard.is_none() {
+                                let reactivated = match self.relay.as_ref() {
+                                    Some(Connection::Web(proxy)) => {
+                                        if self.system_proxy_pac {
+                                            let label = if self.city {
+                                                "*.habbocity.fr".to_owned()
+                                            } else {
+                                                format!("Nitro ({})", proxy.address)
+                                            };
+                                            Some(gearth_platform::SystemProxyGuard::activate_pac(
+                                                proxy.address,
+                                                &proxy.pac_url,
+                                                label,
+                                            ))
                                         } else {
-                                            format!("Nitro ({})", proxy.address)
-                                        };
-                                        Some(gearth_platform::SystemProxyGuard::activate_pac(
-                                            proxy.address,
-                                            &proxy.pac_url,
-                                            label,
-                                        ))
-                                    } else {
-                                        Some(gearth_platform::SystemProxyGuard::activate(
-                                            proxy.address,
-                                        ))
+                                            Some(gearth_platform::SystemProxyGuard::activate(
+                                                proxy.address,
+                                            ))
+                                        }
                                     }
-                                }
-                                Some(Connection::Unity(unity)) => {
-                                    Some(gearth_platform::SystemProxyGuard::activate(unity.address))
-                                }
-                                _ => None,
-                            };
-                            if let Some(result) = reactivated {
-                                match result {
-                                    Ok(guard) => self.proxy_guard = Some(guard),
-                                    Err(e) => {
-                                        self.status = format!(
-                                            "Client disconnected; proxy activation failed: {e}"
-                                        );
+                                    Some(Connection::Unity(unity)) => Some(
+                                        gearth_platform::SystemProxyGuard::activate(unity.address),
+                                    ),
+                                    _ => None,
+                                };
+                                if let Some(result) = reactivated {
+                                    match result {
+                                        Ok(guard) => self.proxy_guard = Some(guard),
+                                        Err(e) => {
+                                            self.status = format!(
+                                                "Client disconnected; proxy activation failed: {e}"
+                                            );
+                                        }
                                     }
                                 }
                             }
@@ -1917,6 +1928,24 @@ impl Desktop {
                 }
             }
             relay_events_drained = processed_events < 512;
+        }
+        if finish_single_session_tcp {
+            if let Some(redirect) = &mut self.redirect {
+                match redirect.restore() {
+                    Ok(()) => self.redirect = None,
+                    Err(e) => {
+                        self.status = format!("Disconnected; redirect restoration failed: {e}")
+                    }
+                }
+            }
+            self.relay.take();
+            self.events = None;
+            self.scheduler.jobs.clear();
+            self.active_schedule_edit = None;
+            recheck_doctor_after_events = true;
+        }
+        if recheck_doctor_after_events {
+            self.start_doctor_check();
         }
         if auto_start_schedules
             && self.scheduler_auto_start
@@ -3284,6 +3313,33 @@ impl Desktop {
         self.public_certificate = Some((identity.certificate_path, identity.certificate_der));
         Ok(())
     }
+    fn resolve_browser_listen_addr(&self) -> std::io::Result<std::net::SocketAddr> {
+        let configured: std::net::SocketAddr =
+            self.listen.trim().parse().map_err(std::io::Error::other)?;
+        if configured.port() == 0 {
+            return Ok(configured);
+        }
+        match std::net::TcpListener::bind(configured) {
+            Ok(listener) => {
+                drop(listener);
+                Ok(configured)
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::AddrInUse => {
+                for offset in 1..=16u16 {
+                    let Some(candidate_port) = configured.port().checked_add(offset) else {
+                        break;
+                    };
+                    let candidate = std::net::SocketAddr::new(configured.ip(), candidate_port);
+                    if let Ok(listener) = std::net::TcpListener::bind(candidate) {
+                        drop(listener);
+                        return Ok(candidate);
+                    }
+                }
+                Ok(std::net::SocketAddr::new(configured.ip(), 0))
+            }
+            Err(err) => Err(err),
+        }
+    }
     fn start_unity(&mut self) -> std::io::Result<()> {
         let socks = configured_socks(
             self.socks_enabled,
@@ -3312,7 +3368,7 @@ impl Desktop {
             self.logger_search_cache = None;
         }
         let mut http = WebOptions::new(
-            self.listen.parse().map_err(std::io::Error::other)?,
+            self.resolve_browser_listen_addr()?,
             self.identity_directory(),
         );
         http.upstream_socks = socks;
@@ -3367,7 +3423,7 @@ impl Desktop {
             ));
         }
         let mut options = WebOptions::new(
-            self.listen.parse().map_err(std::io::Error::other)?,
+            self.resolve_browser_listen_addr()?,
             self.identity_directory(),
         );
         options.packet_info = self.packet_info.clone();
@@ -10437,6 +10493,7 @@ impl Desktop {
             )?,
             outgoing_rc4: cipher(&self.outgoing_key)?,
             incoming_rc4: cipher(&self.incoming_key)?,
+            single_session: false,
         })
     }
     fn extensions(&mut self, ui: &mut egui::Ui) {

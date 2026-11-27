@@ -324,9 +324,10 @@ impl Attachment {
     /// Auto-detect across multiple Habbo hotels simultaneously, matching beta-29 ConnectionInterceptor.
     pub fn start_auto_detect(
         candidates: &[(String, u16)],
-        options: RelayOptions,
+        mut options: RelayOptions,
         path: &Path,
     ) -> io::Result<Self> {
+        options.single_session = true;
         let mut routes = Vec::new();
         let mut host_entries = Vec::new();
         let mut loopback_index: u16 = 0;
@@ -409,6 +410,7 @@ impl Attachment {
             details.host = host.into();
             details.port = port;
         }
+        options.single_session = true;
         let (relay, events) = Relay::start_with_options(
             Config {
                 listen,
@@ -452,6 +454,7 @@ impl Attachment {
             details.host = ip.to_string();
             details.port = port;
         }
+        options.single_session = true;
         let (relay, events) = Relay::start_raw(
             Config {
                 listen: SocketAddr::from(([0, 0, 0, 0], port)),

@@ -274,6 +274,9 @@ pub struct RelayOptions {
     pub admin_service: Option<Arc<Mutex<crate::admin_service::AdminService>>>,
     /// Disable automatic Origins metadata retrieval for offline use.
     pub disable_origins_metadata: bool,
+    /// Close listening sockets as soon as a client session connects so another
+    /// G-Earth instance can attach to a separate Habbo client simultaneously.
+    pub single_session: bool,
     #[cfg(test)]
     flash_lookup: Option<
         Arc<dyn Fn(String) -> io::Result<crate::packet_info::PacketInfoManager> + Send + Sync>,
@@ -311,6 +314,7 @@ pub struct Relay {
     worker: Option<JoinHandle<()>>,
     rules: Arc<Mutex<Rules>>,
     missed_errors: Arc<Mutex<Option<MissedRelayErrors>>>,
+    single_session: bool,
     pub address: SocketAddr,
 }
 impl Relay {
@@ -430,6 +434,16 @@ impl Relay {
             let listener = TcpListener::bind(route.listen).map_err(|error| {
                 if error.kind() == io::ErrorKind::AddrInUse {
                     if let Some(owner) = gearth_platform::process_using_port(route.listen.port()) {
+                        let lower = owner.to_ascii_lowercase();
+                        if lower.contains("g-earth") || lower.contains("gearth") {
+                            return io::Error::new(
+                                io::ErrorKind::AddrInUse,
+                                format!(
+                                    "Port {} is currently held by another G-Earth instance ({owner}) waiting for a client. Connect that Habbo client (or click Abort on it), then click Connect here.",
+                                    route.listen.port()
+                                ),
+                            );
+                        }
                         return io::Error::new(
                             io::ErrorKind::AddrInUse,
                             format!(
@@ -450,6 +464,7 @@ impl Relay {
             });
         }
         let address = bound_routes[0].listener.local_addr()?;
+        let single_session = options.single_session;
         let (events, rx) = mpsc::sync_channel(2048);
         let stop = Arc::new(AtomicBool::new(false));
         let active = Arc::new(Mutex::new(None));
@@ -487,9 +502,11 @@ impl Relay {
                 }
                 match accepted {
                     Some((route_idx, client)) => {
-                        let route = &bound_routes[route_idx];
+                        let remote_addrs = bound_routes[route_idx].remote_addrs.clone();
+                        let remote_str = bound_routes[route_idx].remote_str.clone();
+                        let host_label = bound_routes[route_idx].host_label.clone();
                         let mut session_options = options.clone();
-                        if let Some((host, port)) = &route.host_label {
+                        if let Some((host, port)) = &host_label {
                             if let Some(details) = &mut session_options.connection {
                                 details.host = host.clone();
                                 details.port = *port;
@@ -509,7 +526,7 @@ impl Relay {
                         }
                         let server = if let Some(socks) = &options.socks {
                             socks
-                                .connect(&route.remote_str)
+                                .connect(&remote_str)
                                 .map_err(|error| format!("SOCKS connection failed: {error}"))
                         } else if let Some(upstream) = &mut raw_upstream {
                             upstream.pop_front().ok_or_else(|| {
@@ -518,7 +535,7 @@ impl Relay {
                         } else {
                             let mut last_error = None;
                             let mut connected = None;
-                            for addr in &route.remote_addrs {
+                            for addr in &remote_addrs {
                                 if worker_stop.load(Ordering::Acquire) {
                                     break;
                                 }
@@ -667,8 +684,7 @@ impl Relay {
                                 *metadata = Some((version, Arc::new(packets)));
                             }
                         }
-                        let connected_label = route
-                            .host_label
+                        let connected_label = host_label
                             .as_ref()
                             .map(|(h, p)| format!("{h}:{p}"))
                             .unwrap_or_else(|| {
@@ -677,6 +693,9 @@ impl Relay {
                                     .map(|v| v.to_string())
                                     .unwrap_or_default()
                             });
+                        if single_session {
+                            bound_routes.clear();
+                        }
                         let _ = events.try_send(Event::Connected(connected_label));
                         let mut extension_session = None;
                         if let (Some(host), Some(details)) =
@@ -718,6 +737,16 @@ impl Relay {
                         if let Err(e) = result {
                             emit_error(&events, &worker_missed_errors, e.to_string());
                         }
+                        if single_session {
+                            let deadline = Instant::now() + Duration::from_millis(500);
+                            while !worker_stop.load(Ordering::Acquire)
+                                && !events.flush()
+                                && Instant::now() < deadline
+                            {
+                                thread::sleep(Duration::from_millis(5));
+                            }
+                            break;
+                        }
                     }
                     None => {
                         if let Some(e) = accept_err {
@@ -736,10 +765,14 @@ impl Relay {
                 worker: Some(worker),
                 rules,
                 missed_errors,
+                single_session,
                 address,
             },
             rx,
         ))
+    }
+    pub fn is_single_session(&self) -> bool {
+        self.single_session
     }
     pub fn set_rules(&self, rules: Rules) -> io::Result<()> {
         *self
@@ -3079,6 +3112,7 @@ mod tests {
             worker: None,
             rules: Arc::new(Mutex::new(Rules::default())),
             missed_errors: Arc::new(Mutex::new(None)),
+            single_session: false,
             address: "127.0.0.1:0".parse().unwrap(),
         };
         let now = Instant::now();
@@ -3439,5 +3473,111 @@ mod tests {
             [77, 79]
         );
         assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn single_session_releases_listener_on_connect_for_second_instance() {
+        let remote = TcpListener::bind("127.0.0.1:0").unwrap();
+        let remote_addr = remote.local_addr().unwrap();
+
+        let (relay1, events1) = Relay::start_with_options(
+            Config {
+                listen: "127.0.0.1:0".parse().unwrap(),
+                remote: remote_addr.to_string(),
+            },
+            RelayOptions {
+                single_session: true,
+                ..RelayOptions::default()
+            },
+        )
+        .unwrap();
+        assert!(relay1.is_single_session());
+        let shared_listen_addr = relay1.address;
+
+        // First Habbo client connects to instance #1.
+        let mut client1 = TcpStream::connect(shared_listen_addr).unwrap();
+        let (mut server1, _) = remote.accept().unwrap();
+        client1
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        server1
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let mut connected1 = false;
+        while Instant::now() < deadline {
+            if let Ok(Event::Connected(_)) = events1.recv_timeout(Duration::from_millis(50)) {
+                connected1 = true;
+                break;
+            }
+        }
+        assert!(connected1, "instance #1 should emit Connected");
+
+        // While instance #1 is still connected, instance #2 immediately binds the EXACT same port.
+        let (relay2, events2) = Relay::start_with_options(
+            Config {
+                listen: shared_listen_addr,
+                remote: remote_addr.to_string(),
+            },
+            RelayOptions {
+                single_session: true,
+                ..RelayOptions::default()
+            },
+        )
+        .expect("instance #2 must bind the same port once instance #1 is connected");
+
+        let mut client2 = TcpStream::connect(shared_listen_addr).unwrap();
+        let (mut server2, _) = remote.accept().unwrap();
+        client2
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        server2
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let mut connected2 = false;
+        while Instant::now() < deadline {
+            if let Ok(Event::Connected(_)) = events2.recv_timeout(Duration::from_millis(50)) {
+                connected2 = true;
+                break;
+            }
+        }
+        assert!(connected2, "instance #2 should emit Connected");
+
+        // Both instances forward packets independently and simultaneously.
+        let p1 = Packet::new(101);
+        let p2 = Packet::new(202);
+        client1.write_all(p1.bytes()).unwrap();
+        client2.write_all(p2.bytes()).unwrap();
+        let mut buf1 = vec![0u8; p1.bytes().len()];
+        let mut buf2 = vec![0u8; p2.bytes().len()];
+        server1.read_exact(&mut buf1).unwrap();
+        server2.read_exact(&mut buf2).unwrap();
+        assert_eq!(buf1, p1.bytes());
+        assert_eq!(buf2, p2.bytes());
+
+        // Closing client #1 disconnects instance #1 cleanly without affecting instance #2.
+        drop(client1);
+        drop(server1);
+        let deadline = Instant::now() + Duration::from_secs(3);
+        let mut disconnected1 = false;
+        while Instant::now() < deadline {
+            if let Ok(Event::Disconnected) = events1.recv_timeout(Duration::from_millis(50)) {
+                disconnected1 = true;
+                break;
+            }
+        }
+        assert!(disconnected1, "instance #1 should emit Disconnected");
+
+        let p3 = Packet::new(303);
+        client2.write_all(p3.bytes()).unwrap();
+        let mut buf3 = vec![0u8; p3.bytes().len()];
+        server2.read_exact(&mut buf3).unwrap();
+        assert_eq!(buf3, p3.bytes());
+
+        drop(relay1);
+        drop(relay2);
     }
 }
