@@ -159,6 +159,7 @@ pub struct StoreUi {
     image_tx: Option<Sender<(String, String)>>,
     image_rx: Option<Receiver<ImageDecodeResult>>,
     zoomed_screenshot: Option<(String, String)>,
+    notice: Option<(String, bool)>,
 }
 
 impl StoreUi {
@@ -192,6 +193,7 @@ impl StoreUi {
             image_tx: None,
             image_rx: None,
             zoomed_screenshot: None,
+            notice: None,
         }
     }
 
@@ -339,27 +341,37 @@ impl StoreUi {
                                 ) {
                                     Ok(process) => {
                                         processes.push(process);
-                                        *status = format!(
+                                        let msg = format!(
                                             "Installed & launched {} {}",
                                             record.title, record.version
                                         );
+                                        *status = msg.clone();
+                                        self.notice = Some((msg, false));
                                     }
                                     Err(error) => {
-                                        *status = format!(
+                                        let msg = format!(
                                             "Installed {} {} (launch failed: {error})",
                                             record.title, record.version
                                         );
+                                        *status = msg.clone();
+                                        self.notice = Some((msg, true));
                                     }
                                 }
                             } else {
-                                *status = format!("Installed {} {}", record.title, record.version);
+                                let msg = format!("Installed {} {}", record.title, record.version);
+                                *status = msg.clone();
+                                self.notice = Some((msg, false));
                             }
                         }
                         Ok(Outcome::Changed(message)) => {
+                            self.notice = Some((message.clone(), false));
                             *status = message;
                             self.refresh(status);
                         }
-                        Err(error) => *status = error,
+                        Err(error) => {
+                            self.notice = Some((error.clone(), true));
+                            *status = error;
+                        }
                     }
                     self.worker = None;
                 }
@@ -955,9 +967,75 @@ impl StoreUi {
                 }
 
                 ui.add_space(6.0);
+                if let Some((msg, is_error)) = self.notice.clone() {
+                    let (bg, fg) = if is_error {
+                        (
+                            if dark {
+                                egui::Color32::from_rgb(0x4a, 0x1d, 0x1d)
+                            } else {
+                                egui::Color32::from_rgb(0xfd, 0xe8, 0xe8)
+                            },
+                            if dark {
+                                egui::Color32::from_rgb(0xff, 0xb4, 0xb4)
+                            } else {
+                                egui::Color32::from_rgb(0x9b, 0x1c, 0x1c)
+                            },
+                        )
+                    } else {
+                        (
+                            if dark {
+                                egui::Color32::from_rgb(0x1b, 0x3b, 0x26)
+                            } else {
+                                egui::Color32::from_rgb(0xe6, 0xf7, 0xec)
+                            },
+                            if dark {
+                                egui::Color32::from_rgb(0x9f, 0xe6, 0xb8)
+                            } else {
+                                egui::Color32::from_rgb(0x1b, 0x6b, 0x34)
+                            },
+                        )
+                    };
+                    let mut dismiss_notice = false;
+                    egui::Frame::none()
+                        .fill(bg)
+                        .rounding(egui::Rounding::same(4.0))
+                        .inner_margin(egui::Margin::symmetric(8.0, 4.0))
+                        .show(ui, |ui| {
+                            ui.set_min_width((body_w - 16.0).max(160.0));
+                            ui.set_max_width((body_w - 16.0).max(160.0));
+                            ui.horizontal(|ui| {
+                                ui.add(
+                                    egui::Label::new(egui::RichText::new(&msg).small().color(fg))
+                                        .wrap(),
+                                );
+                                ui.with_layout(
+                                    egui::Layout::right_to_left(egui::Align::Center),
+                                    |ui| {
+                                        if vector_icon_button(
+                                            ui,
+                                            VectorIcon::Close,
+                                            egui::vec2(18.0, 18.0),
+                                            8.5,
+                                            None,
+                                            fg,
+                                        )
+                                        .clicked()
+                                        {
+                                            dismiss_notice = true;
+                                        }
+                                    },
+                                );
+                            });
+                        });
+                    if dismiss_notice {
+                        self.notice = None;
+                    }
+                    ui.add_space(4.0);
+                }
 
                 // Reserve space for pagination / action footer
-                let list_h = (ui.available_height() - 44.0).max(200.0);
+                let notice_h = if self.notice.is_some() { 32.0 } else { 0.0 };
+                let list_h = (ui.available_height() - 44.0 - notice_h).max(180.0);
                 let is_details_view = matches!(self.view, StoreView::Details { .. });
                 let mut detail_footer: Option<(
                     Catalog,
@@ -2838,9 +2916,17 @@ impl StoreUi {
         match action {
             Some(Action::Install(pair)) => {
                 let (catalog, extension) = *pair;
+                if let Some(host) = host {
+                    for ext in host.extensions() {
+                        if ext.info.title.eq_ignore_ascii_case(&extension.title) {
+                            let _ = host.disconnect(ext.id);
+                        }
+                    }
+                }
                 let root = self.root.clone();
                 let (sender, receiver) = mpsc::channel();
                 self.worker = Some(receiver);
+                self.notice = None;
                 *status = format!("Installing {} {}...", extension.title, extension.version);
                 std::thread::spawn(move || {
                     let result = extension_store::install(&catalog, &extension, &root)
@@ -2850,18 +2936,56 @@ impl StoreUi {
                 });
             }
             Some(Action::Remove(record)) => {
+                if let Some(host) = host {
+                    let dir_name = record
+                        .directory
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("");
+                    for ext in host.extensions() {
+                        let matches_file =
+                            !dir_name.is_empty() && ext.info.file.as_deref() == Some(dir_name);
+                        let matches_title = ext.info.title.eq_ignore_ascii_case(&record.title);
+                        if matches_file || matches_title {
+                            let _ = host.disconnect(ext.id);
+                        }
+                    }
+                }
                 let root = self.root.clone();
                 let (sender, receiver) = mpsc::channel();
                 self.worker = Some(receiver);
+                self.notice = None;
+                *status = format!("Uninstalling {} {}...", record.title, record.version);
                 std::thread::spawn(move || {
-                    let result = extension_store::uninstall(&root, &record)
-                        .map(|()| {
-                            Outcome::Changed(format!(
-                                "Uninstalled {} {}",
-                                record.title, record.version
-                            ))
-                        })
-                        .map_err(|error| error.to_string());
+                    let mut last_err = None;
+                    for attempt in 0..16 {
+                        if attempt > 0 {
+                            std::thread::sleep(std::time::Duration::from_millis(150));
+                        }
+                        match extension_store::uninstall(&root, &record) {
+                            Ok(()) => {
+                                last_err = None;
+                                break;
+                            }
+                            Err(err) if err.kind() == std::io::ErrorKind::NotFound => {
+                                last_err = None;
+                                break;
+                            }
+                            Err(err) => {
+                                last_err = Some(err);
+                            }
+                        }
+                    }
+                    let result = match last_err {
+                        None => Ok(Outcome::Changed(format!(
+                            "Uninstalled {} {}",
+                            record.title, record.version
+                        ))),
+                        Some(error) => Err(format!(
+                            "Could not uninstall {} (close the extension first if still running): {error}",
+                            record.title
+                        )),
+                    };
                     let _ = sender.send(result);
                 });
             }
@@ -2881,9 +3005,15 @@ impl StoreUi {
                     ) {
                         Ok(process) => {
                             processes.push(process);
-                            *status = format!("Launched {} {}", record.title, record.version);
+                            let msg = format!("Launched {} {}", record.title, record.version);
+                            *status = msg.clone();
+                            self.notice = Some((msg, false));
                         }
-                        Err(error) => *status = error.to_string(),
+                        Err(error) => {
+                            let msg = error.to_string();
+                            *status = msg.clone();
+                            self.notice = Some((msg, true));
+                        }
                     }
                 }
             }
