@@ -531,6 +531,7 @@ impl ThemeLogos {
         }
     }
 
+    #[allow(dead_code)]
     pub fn small(&self, theme: AppTheme) -> Option<&egui::TextureHandle> {
         match theme {
             AppTheme::Tanji => self.tanji_small.as_ref(),

@@ -351,13 +351,17 @@ fn parse_cli_args(args: &[String]) -> LaunchArgs {
 
 fn main() -> eframe::Result<()> {
     gearth_rust::update_checker::cleanup_old_binary();
+    let initial_title = format!(
+        "G-Earth 1.5.4-beta-29 (G-Earth-Rust · {})",
+        gearth_rust::update_checker::current_build_tag()
+    );
     eframe::run_native(
-        "G-Earth",
+        &initial_title,
         eframe::NativeOptions {
             viewport: with_gearth_icon(
                 egui::ViewportBuilder::default()
-                    .with_inner_size([700.0, 480.0])
-                    .with_min_inner_size([660.0, 380.0]),
+                    .with_inner_size([740.0, 470.0])
+                    .with_min_inner_size([700.0, 380.0]),
             ),
             ..Default::default()
         },
@@ -571,6 +575,7 @@ struct Desktop {
     ext_install_open: bool,
     ext_gpython_open: bool,
     donate_dialog_open: bool,
+    last_window_title: String,
     logos: Option<ThemeLogos>,
 }
 struct LogRow {
@@ -1344,6 +1349,7 @@ impl Default for Desktop {
             ext_install_open: false,
             ext_gpython_open: false,
             donate_dialog_open: false,
+            last_window_title: String::new(),
             logos: None,
         };
         if let Some(host) = &desktop.extension_host {
@@ -8148,6 +8154,15 @@ impl eframe::App for Desktop {
             return;
         }
         let palette = self.theme.palette_with_accent(self.custom_accent);
+        let desired_title = format!(
+            "{} 1.5.4-beta-29 (G-Earth-Rust · {})",
+            self.theme.title(),
+            gearth_rust::update_checker::current_build_tag()
+        );
+        if self.last_window_title != desired_title {
+            ctx.send_viewport_cmd(egui::ViewportCommand::Title(desired_title.clone()));
+            self.last_window_title = desired_title;
+        }
         egui::TopBottomPanel::top("tabs")
             .frame(
                 egui::Frame::none()
@@ -8155,7 +8170,7 @@ impl eframe::App for Desktop {
                     .inner_margin(egui::Margin {
                         left: 8.0,
                         right: 8.0,
-                        top: 5.0,
+                        top: 6.0,
                         bottom: 0.0,
                     }),
             )
@@ -8163,35 +8178,27 @@ impl eframe::App for Desktop {
                 if self.developer_mode_confirmation {
                     ui.disable();
                 }
-                // Exact G-Earth 1.5.4-beta-29 Titlebar strip (logo + title left, flag + dark pill switch right)
+                // Single compact top strip: Bootstrap TabPane left + Fluxer/Flag/Theme/Gear right
+                let mut active_tab_rect = None;
                 ui.horizontal(|ui| {
-                    if let Some(tex) = self.logos.as_ref().and_then(|l| l.small(self.theme)) {
-                        ui.add(egui::Image::new((tex.id(), egui::vec2(16.0, 16.0))));
-                    }
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "{} 1.5.4-beta-29 (G-Earth-Rust · {})",
-                            self.theme.title(),
-                            gearth_rust::update_checker::current_build_tag()
-                        ))
-                        .size(13.0),
-                    );
-                    if let Some(Ok(info)) = self.update_result.clone() {
-                        if info.outdated
-                            && self.update_apply_task.is_none()
-                            && vector_text_button(
-                                ui,
-                                VectorIcon::UpdateArrow,
-                                egui::Color32::from_rgb(210, 120, 15),
-                                &info.latest_version,
-                                Some(egui::Color32::from_rgb(210, 120, 15)),
-                                None,
-                                true,
-                            )
-                            .on_hover_text(self.i18n.text("rust.info.update_now"))
-                            .clicked()
-                        {
-                            self.start_update_apply(info);
+                    ui.spacing_mut().item_spacing.x = 2.0;
+                    for (tab, key) in [
+                        (Tab::Connection, "tab.connection"),
+                        (Tab::Injection, "tab.injection"),
+                        (Tab::Tools, "tab.tools"),
+                        (Tab::Scheduler, "tab.scheduler"),
+                        (Tab::Extensions, "tab.extensions"),
+                        (Tab::Extra, "tab.extra"),
+                        (Tab::Info, "tab.info"),
+                        (Tab::Logger, "rust.logger.tab"),
+                    ] {
+                        let label = self.i18n.text(key);
+                        let resp = tab_button(ui, self.tab == tab, &label, palette);
+                        if self.tab == tab {
+                            active_tab_rect = Some(resp.rect);
+                        }
+                        if resp.clicked() {
+                            self.tab = tab;
                         }
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -8438,32 +8445,26 @@ impl eframe::App for Desktop {
                                     .open_url(egui::OpenUrl::new_tab("https://fluxer.gg/OqH9tI3d"));
                             }
                         }
+                        if let Some(Ok(info)) = self.update_result.clone() {
+                            if info.outdated && self.update_apply_task.is_none() {
+                                ui.add_space(6.0);
+                                if vector_text_button(
+                                    ui,
+                                    VectorIcon::UpdateArrow,
+                                    egui::Color32::from_rgb(210, 120, 15),
+                                    &info.latest_version,
+                                    Some(egui::Color32::from_rgb(210, 120, 15)),
+                                    None,
+                                    true,
+                                )
+                                .on_hover_text(self.i18n.text("rust.info.update_now"))
+                                .clicked()
+                                {
+                                    self.start_update_apply(info);
+                                }
+                            }
+                        }
                     });
-                });
-                ui.add_space(4.0);
-                // Exact G-Earth.fxml Bootstrap TabPane strip
-                let mut active_tab_rect = None;
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing.x = 2.0;
-                    for (tab, key) in [
-                        (Tab::Connection, "tab.connection"),
-                        (Tab::Injection, "tab.injection"),
-                        (Tab::Tools, "tab.tools"),
-                        (Tab::Scheduler, "tab.scheduler"),
-                        (Tab::Extensions, "tab.extensions"),
-                        (Tab::Extra, "tab.extra"),
-                        (Tab::Info, "tab.info"),
-                        (Tab::Logger, "rust.logger.tab"),
-                    ] {
-                        let label = self.i18n.text(key);
-                        let resp = tab_button(ui, self.tab == tab, &label, palette);
-                        if self.tab == tab {
-                            active_tab_rect = Some(resp.rect);
-                        }
-                        if resp.clicked() {
-                            self.tab = tab;
-                        }
-                    }
                 });
                 let bottom_rect = ui.available_rect_before_wrap();
                 ui.painter().line_segment(
